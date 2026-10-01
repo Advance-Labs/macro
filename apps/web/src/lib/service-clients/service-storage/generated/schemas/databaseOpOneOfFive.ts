@@ -7,12 +7,12 @@
 import type { DatabaseOpOneOfFiveKind } from './databaseOpOneOfFiveKind';
 
 /**
- * Remove rows and their cells.
+ * Remove a table with its columns, rows and views. A database keeps at
+least one table, and a table another table's relation points at
+stays until that relation goes.
  */
 export type DatabaseOpOneOfFive = {
   kind: DatabaseOpOneOfFiveKind;
-  /** The rows, each named once. */
-  rows: string[];
-  /** The table the rows belong to. */
+  /** The table. */
   table: string;
 };

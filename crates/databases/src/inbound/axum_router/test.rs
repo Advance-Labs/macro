@@ -1,89 +1,9 @@
 use super::*;
-use crate::domain::models::{DatabaseId, RowId, SchemaError, TableId};
+use uuid::Uuid;
+
+use crate::domain::models::{RowId, SchemaError, TableId};
 
 mod fakes;
-
-#[test]
-fn a_column_request_takes_infer_type_in_camel_case() {
-    let camel: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "inferType": true,
-        "binding": {"kind": "existing", "propertyDefinitionId": Uuid::nil()},
-    }))
-    .unwrap();
-    assert!(camel.infer_type);
-
-    let omitted: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "binding": {"kind": "existing", "propertyDefinitionId": Uuid::nil()},
-    }))
-    .unwrap();
-    assert!(!omitted.infer_type);
-}
-
-#[test]
-fn a_new_column_binding_takes_its_fields_in_camel_case() {
-    let request: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "binding": {
-            "kind": "new",
-            "name": "Status",
-            "dataType": "SELECT_STRING",
-            "isMultiSelect": true,
-            "options": ["Todo", "Done"],
-        },
-        "linkToTableId": "00000000-0000-0000-0000-000000000007",
-        "linkToDatabaseId": "00000000-0000-0000-0000-000000000008",
-    }))
-    .unwrap();
-    let ColumnBindingRequest::New {
-        name,
-        data_type,
-        is_multi_select,
-        options,
-    } = request.binding
-    else {
-        panic!("expected a new binding, got {:?}", request.binding);
-    };
-    assert_eq!(name, "Status");
-    assert_eq!(data_type, DataType::SelectString);
-    assert!(is_multi_select);
-    assert_eq!(options, Some(vec!["Todo".to_string(), "Done".to_string()]));
-    assert_eq!(
-        request.link_to_table_id,
-        Some(TableId::from_uuid(Uuid::from_u128(7)))
-    );
-    assert_eq!(
-        request.link_to_database_id,
-        Some(DatabaseId::from_uuid(Uuid::from_u128(8)))
-    );
-}
-
-#[test]
-fn an_existing_column_binding_takes_its_definition_in_camel_case() {
-    let request: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "binding": {
-            "kind": "existing",
-            "propertyDefinitionId": "00000000-0000-0000-0000-000000000009",
-        },
-    }))
-    .unwrap();
-    let ColumnBindingRequest::Existing {
-        property_definition_id,
-    } = request.binding
-    else {
-        panic!("expected an existing binding, got {:?}", request.binding);
-    };
-    assert_eq!(property_definition_id, Uuid::from_u128(9));
-}
-
-#[test]
-fn a_snake_case_column_binding_is_refused() {
-    let refused = serde_json::from_value::<CreateColumnRequest>(serde_json::json!({
-        "binding": {
-            "kind": "existing",
-            "property_definition_id": "00000000-0000-0000-0000-000000000009",
-        },
-    }));
-    assert!(refused.is_err());
-}
 
 #[test]
 fn an_infer_type_request_takes_camel_case_and_an_optional_entity_type() {
@@ -108,28 +28,6 @@ fn an_infer_type_request_takes_camel_case_and_an_optional_entity_type() {
     assert_eq!(number.data_type, DataType::Number);
     assert_eq!(number.specific_entity_type, None);
     assert_eq!(number.base_version, TableVersion(5));
-}
-
-#[test]
-fn a_table_order_request_takes_table_ids_in_camel_case() {
-    let first = TableId::from_uuid(Uuid::from_u128(1));
-    let second = TableId::from_uuid(Uuid::from_u128(2));
-    let request: ReorderTablesRequest = serde_json::from_value(serde_json::json!({
-        "tableIds": [second, first],
-    }))
-    .unwrap();
-    assert_eq!(request.table_ids, vec![second, first]);
-}
-
-#[test]
-fn a_type_change_takes_clear_invalid_in_camel_case_and_refuses_by_default() {
-    let body = serde_json::json!({ "dataType": "NUMBER", "baseVersion": 3 });
-    let refusing: column_mutations::ChangeColumnTypeRequest = serde_json::from_value(body).unwrap();
-    assert!(!refusing.clear_invalid);
-
-    let body = serde_json::json!({ "dataType": "NUMBER", "baseVersion": 3, "clearInvalid": true });
-    let clearing: column_mutations::ChangeColumnTypeRequest = serde_json::from_value(body).unwrap();
-    assert!(clearing.clear_invalid);
 }
 
 #[test]
@@ -273,12 +171,12 @@ async fn view_access_cannot_apply_ops() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -311,12 +209,12 @@ async fn view_access_cannot_change_an_option() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -347,12 +245,12 @@ async fn view_access_cannot_remove_an_option() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -382,12 +280,12 @@ async fn view_access_cannot_create_a_view() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -418,12 +316,12 @@ async fn view_access_cannot_change_a_view() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -453,12 +351,12 @@ async fn view_access_cannot_remove_a_view() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -488,12 +386,12 @@ async fn view_access_cannot_reorder_views() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -527,12 +425,12 @@ async fn view_access_cannot_move_a_card() {
     let (viewing, service) = fakes::ops_router(AccessLevel::View);
     let response = viewing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(*service.applied.lock().unwrap(), 0);
+    assert_eq!(service.applied.lock().unwrap().len(), 0);
 
     let (editing, service) = fakes::ops_router(AccessLevel::Edit);
     let response = editing.oneshot(request()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(*service.applied.lock().unwrap(), 1);
+    assert_eq!(service.applied.lock().unwrap().len(), 1);
 }
 
 async fn error_body(error: DatabaseError) -> (StatusCode, serde_json::Value) {
@@ -551,6 +449,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
         op: 1,
         row: Some(2),
         column: Some(ColumnId::from_uuid(column)),
+        taken: None,
         reason: "\"soon\" is not a number".into(),
     }))
     .await;
@@ -562,6 +461,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
             "op": 1,
             "row": 2,
             "column": column,
+            "taken": null,
         })
     );
 
@@ -569,6 +469,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
         op: 0,
         row: None,
         column: None,
+        taken: None,
         reason: "table is not in this database".into(),
     }))
     .await;
@@ -579,6 +480,7 @@ async fn a_refused_op_answers_where_it_was_refused() {
             "op": 0,
             "row": null,
             "column": null,
+            "taken": null,
         })
     );
 }
@@ -593,5 +495,347 @@ async fn an_invalid_schema_operation_answers_its_reason_alone() {
     assert_eq!(
         body,
         serde_json::json!({"message": "name must not be empty"})
+    );
+}
+
+/// The schema writes the deleted routes made are ops now: each reaches the
+/// service as written, under the ids the client minted, with the versions
+/// the batch is guarded on.
+#[tokio::test]
+async fn a_schema_batch_reaches_the_service_with_its_base_versions() {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use models_databases::{ColumnKind, DatabaseOp, EntityKind, NewColumn, NewOption, PropertyId};
+    use std::collections::HashMap;
+    use tower::ServiceExt;
+
+    use crate::domain::models::{OpBatch, OptionId};
+
+    let database = Uuid::from_u128(0x0dbb);
+    let guests = Uuid::from_u128(0x7ab1);
+    let sessions = Uuid::from_u128(0x7ab2);
+    let archive = Uuid::from_u128(0x7ab3);
+    let status = Uuid::from_u128(0xc01a);
+    let stage = Uuid::from_u128(0xc01b);
+    let notes = Uuid::from_u128(0xc01c);
+    let owner = Uuid::from_u128(0xc01d);
+    let retired = Uuid::from_u128(0xc01e);
+    let going = Uuid::from_u128(0x0b71);
+    let maybe = Uuid::from_u128(0x0b72);
+    let property = Uuid::from_u128(0x9a09);
+    let body = serde_json::json!({
+        "ops": [
+            {"kind": "create_table", "id": sessions, "name": "Sessions"},
+            {
+                "kind": "create_column",
+                "table": sessions,
+                "id": stage,
+                "definition": {
+                    "source": "new",
+                    "name": "Stage",
+                    "type": {"type": "select", "multi": false},
+                    "options": [{"id": going, "label": "Going"}],
+                },
+            },
+            {
+                "kind": "create_column",
+                "table": sessions,
+                "id": notes,
+                "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}, "inferType": true},
+                "after": stage,
+            },
+            {
+                "kind": "create_column",
+                "table": guests,
+                "id": owner,
+                "definition": {"source": "existing", "property": property},
+            },
+            {"kind": "rename_table", "table": guests, "name": "Guests", "previousName": "Table 1"},
+            {"kind": "rename_column", "table": guests, "column": status, "name": "RSVP", "previousName": "Status"},
+            {"kind": "reorder_columns", "table": guests, "order": [owner, status]},
+            {"kind": "add_options", "table": guests, "column": status, "options": [{"id": maybe, "label": "Maybe"}]},
+            {
+                "kind": "change_column_type",
+                "table": guests,
+                "column": status,
+                "to": {"type": "entity", "target": "USER", "multi": true},
+            },
+            {"kind": "delete_column", "table": guests, "column": retired},
+            {"kind": "reorder_tables", "order": [sessions, guests, archive]},
+            {"kind": "delete_table", "table": archive},
+        ],
+        "baseVersions": {guests.to_string(): 3},
+    })
+    .to_string();
+
+    let (router, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = router
+        .oneshot(
+            Request::post(format!("/{database}/ops"))
+                .header(header::AUTHORIZATION, "Bearer valid")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let guests = TableId::from_uuid(guests);
+    let sessions = TableId::from_uuid(sessions);
+    let archive = TableId::from_uuid(archive);
+    assert_eq!(
+        *service.applied.lock().unwrap(),
+        vec![OpBatch {
+            ops: vec![
+                DatabaseOp::CreateTable {
+                    id: sessions,
+                    name: "Sessions".into(),
+                },
+                DatabaseOp::CreateColumn {
+                    table: sessions,
+                    id: ColumnId::from_uuid(stage),
+                    definition: NewColumn::New {
+                        name: "Stage".into(),
+                        kind: ColumnKind::Select { multi: false },
+                        options: vec![NewOption {
+                            id: OptionId::from_uuid(going),
+                            label: "Going".into(),
+                        }],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
+                DatabaseOp::CreateColumn {
+                    table: sessions,
+                    id: ColumnId::from_uuid(notes),
+                    definition: NewColumn::New {
+                        name: "Notes".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: true,
+                    },
+                    after: Some(ColumnId::from_uuid(stage)),
+                },
+                DatabaseOp::CreateColumn {
+                    table: guests,
+                    id: ColumnId::from_uuid(owner),
+                    definition: NewColumn::Existing {
+                        property: PropertyId::from_uuid(property),
+                    },
+                    after: None,
+                },
+                DatabaseOp::RenameTable {
+                    table: guests,
+                    name: "Guests".into(),
+                    previous_name: Some("Table 1".into()),
+                },
+                DatabaseOp::RenameColumn {
+                    table: guests,
+                    column: ColumnId::from_uuid(status),
+                    name: "RSVP".into(),
+                    previous_name: Some("Status".into()),
+                },
+                DatabaseOp::ReorderColumns {
+                    table: guests,
+                    order: vec![ColumnId::from_uuid(owner), ColumnId::from_uuid(status)],
+                },
+                DatabaseOp::AddOptions {
+                    table: guests,
+                    column: ColumnId::from_uuid(status),
+                    options: vec![NewOption {
+                        id: OptionId::from_uuid(maybe),
+                        label: "Maybe".into(),
+                    }],
+                },
+                DatabaseOp::ChangeColumnType {
+                    table: guests,
+                    column: ColumnId::from_uuid(status),
+                    to: ColumnKind::Entity {
+                        target: EntityKind::User,
+                        multi: true,
+                    },
+                    clear_invalid: false,
+                },
+                DatabaseOp::DeleteColumn {
+                    table: guests,
+                    column: ColumnId::from_uuid(retired),
+                },
+                DatabaseOp::ReorderTables {
+                    order: vec![sessions, guests, archive],
+                },
+                DatabaseOp::DeleteTable { table: archive },
+            ],
+            base_versions: HashMap::from([(guests, TableVersion(3))]),
+        }]
+    );
+}
+
+/// A retried batch whose first attempt committed finds its minted ids taken;
+/// the refusal names the id, so the client can tell a retry from a clash.
+#[tokio::test]
+async fn a_taken_id_refuses_the_batch_with_400_naming_it() {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use models_databases::TakenId;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let table = Uuid::from_u128(0x7ab1);
+    let column = Uuid::from_u128(0xc01a);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "create_column",
+            "table": table,
+            "id": column,
+            "definition": {"source": "new", "name": "Notes", "type": {"type": "text"}},
+        }],
+    })
+    .to_string();
+
+    let (router, service) = fakes::ops_router(AccessLevel::Edit);
+    *service.refusal.lock().unwrap() =
+        Some(DatabaseError::InvalidOp(crate::domain::models::OpRefusal {
+            op: 0,
+            row: None,
+            column: Some(ColumnId::from_uuid(column)),
+            taken: Some(TakenId::Column(ColumnId::from_uuid(column))),
+            reason: "column id is already taken".into(),
+        }));
+    let response = router
+        .oneshot(
+            Request::post(format!("/{database}/ops"))
+                .header(header::AUTHORIZATION, "Bearer valid")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+        serde_json::json!({
+            "message": "column id is already taken",
+            "op": 0,
+            "row": null,
+            "column": column,
+            "taken": {"kind": "column", "id": column},
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_table_off_its_base_version_answers_409() {
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let table = Uuid::from_u128(0x7ab1);
+    let body = serde_json::json!({
+        "ops": [{"kind": "delete_column", "table": table, "column": Uuid::from_u128(0xc01a)}],
+        "baseVersions": {table.to_string(): 3},
+    })
+    .to_string();
+
+    let (router, service) = fakes::ops_router(AccessLevel::Edit);
+    *service.refusal.lock().unwrap() = Some(DatabaseError::VersionConflict);
+    let response = router
+        .oneshot(
+            Request::post(format!("/{database}/ops"))
+                .header(header::AUTHORIZATION, "Bearer valid")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+        serde_json::json!({"message": "The table changed since it was read. Refresh and try again."})
+    );
+}
+
+/// Schema writes have one surface: the routes that made them one at a time
+/// are not routed, while the ops route is.
+#[tokio::test]
+async fn the_schema_routes_are_gone() {
+    use axum::body::Body;
+    use axum::http::{Method, Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let table = Uuid::from_u128(0x7ab1);
+    let column = Uuid::from_u128(0xc01a);
+    let router = fakes::full_router(AccessLevel::Owner);
+    let send = |method: Method, path: String| {
+        let router = router.clone();
+        async move {
+            router
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header(header::AUTHORIZATION, "Bearer valid")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(r#"{"ops": []}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+    };
+
+    for (method, path) in [
+        (Method::POST, format!("/{database}/tables")),
+        (Method::PUT, format!("/{database}/tables/order")),
+        (Method::PATCH, format!("/{database}/tables/{table}")),
+        (Method::DELETE, format!("/{database}/tables/{table}")),
+        (Method::POST, format!("/{database}/tables/{table}/columns")),
+        (
+            Method::PATCH,
+            format!("/{database}/tables/{table}/columns/order"),
+        ),
+        (
+            Method::PATCH,
+            format!("/{database}/tables/{table}/columns/{column}"),
+        ),
+        (
+            Method::DELETE,
+            format!("/{database}/tables/{table}/columns/{column}"),
+        ),
+        (
+            Method::PATCH,
+            format!("/{database}/tables/{table}/columns/{column}/type"),
+        ),
+        (
+            Method::POST,
+            format!("/{database}/tables/{table}/columns/{column}/options"),
+        ),
+    ] {
+        assert_eq!(
+            send(method.clone(), path.clone()).await,
+            StatusCode::NOT_FOUND,
+            "{method} {path}"
+        );
+    }
+    assert_eq!(
+        send(Method::POST, format!("/{database}/ops")).await,
+        StatusCode::OK
     );
 }

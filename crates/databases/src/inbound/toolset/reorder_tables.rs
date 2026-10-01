@@ -5,13 +5,12 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{DatabaseId, TableId};
+use models_databases::{DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-};
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Reorder a database's tables.
@@ -83,21 +82,22 @@ where
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::ReorderTables {
+                    order: self.table_ids.clone(),
+                }]),
+            )
             .await?;
-        let tables = service_context
-            .service
-            .reorder_tables(receipt, self.table_ids.clone())
-            .await
-            .map_err(database_error)?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
         Ok(ReorderTablesResponse {
             database_id: self.database_id,
-            table_ids: tables.into_iter().map(|table| table.id).collect(),
+            table_ids: self.table_ids.clone(),
             database,
             warning,
         })

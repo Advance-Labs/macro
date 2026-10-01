@@ -10,5 +10,5 @@ export type OpResultOneOfFiveKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfFiveKind = {
-  option_changed: 'option_changed',
+  table_deleted: 'table_deleted',
 } as const;

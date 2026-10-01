@@ -1,3 +1,5 @@
+use models_databases::DatabaseOp;
+
 use super::*;
 
 fn failed_refresh() -> (Context, Arc<Mutex<Calls>>) {
@@ -65,7 +67,11 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
     .await
     .unwrap();
     assert_eq!(table.database_id, DATABASE_ID);
-    assert_eq!(table.table_id, TABLE_ID);
+    let created_table = match calls.lock().unwrap().applied[0].ops[0] {
+        DatabaseOp::CreateTable { id, .. } => id,
+        ref other => panic!("a table creation, got {other:?}"),
+    };
+    assert_eq!(table.table_id, created_table);
     assert!(table.database.is_none());
     assert_warning(table.warning);
 
@@ -76,12 +82,17 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
         data_type: ColumnType::Select,
         is_multi_select: false,
         options: Some(vec!["Going".into()]),
+        specific_entity_type: None,
         link_to_table_id: None,
     }
     .call(ServiceContext(context.clone()), request_context())
     .await
     .unwrap();
-    assert_eq!(column.column_id, COLUMN_ID);
+    let created_column = match calls.lock().unwrap().applied[1].ops[0] {
+        DatabaseOp::CreateColumn { id, .. } => id,
+        ref other => panic!("a column creation, got {other:?}"),
+    };
+    assert_eq!(column.column_id, created_column);
     assert_eq!(column.table_id, TABLE_ID);
     assert_eq!(column.database_id, DATABASE_ID);
     assert!(column.database.is_none());
@@ -99,13 +110,13 @@ async fn committed_table_column_and_options_keep_ids_when_schema_refresh_fails()
     assert_eq!(options.database_id, DATABASE_ID);
     assert_eq!(options.table_id, TABLE_ID);
     assert_eq!(options.column_id, COLUMN_ID);
-    assert_eq!(options.options, ["Going", "Declined", "Waitlisted"]);
+    assert!(
+        options.options.is_empty(),
+        "the labels come from the schema that could not be read"
+    );
     assert!(options.database.is_none());
     assert_warning(options.warning);
-    let calls = calls.lock().unwrap();
-    assert_eq!(calls.created_tables, ["Tickets"]);
-    assert_eq!(calls.created_columns.len(), 1);
-    assert_eq!(calls.added_options.len(), 1);
+    assert_eq!(calls.lock().unwrap().applied.len(), 3);
 }
 
 #[tokio::test]
@@ -124,12 +135,19 @@ async fn writes_reach_the_service_as_the_contexts_agent_for_the_user() {
         database_id: DATABASE_ID,
         name: "Party Planning".to_string(),
     }
+    .call(ServiceContext(context.clone()), request_context())
+    .await
+    .unwrap();
+    CreateTable {
+        database_id: DATABASE_ID,
+        name: "Tickets".into(),
+    }
     .call(ServiceContext(context), request_context())
     .await
     .unwrap();
 
     assert_eq!(
         calls.lock().unwrap().acting_bots,
-        [Some(agent), Some(agent)]
+        [Some(agent), Some(agent), Some(agent)]
     );
 }

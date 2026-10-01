@@ -11,7 +11,8 @@ use models_databases::views::{
 };
 use models_databases::{
     CellValue, CellWrite, ColumnId, ColumnKind, DatabaseId, DatabaseOp, EntityKind, EntityRef,
-    OpResult, OptionId, OptionRef, RowChange, RowChanges, RowId, TableId, TableVersion, ViewId,
+    NewColumn, NewOption, OpResult, OptionId, OptionRef, PropertyId, RowChange, RowChanges, RowId,
+    TableId, TableVersion, VersionedTable, ViewId,
 };
 use serde_json::{Map, Value};
 use utoipa::OpenApi;
@@ -29,6 +30,7 @@ const NAME: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01a));
 const ROW: RowId = RowId::from_uuid(Uuid::from_u128(0x5a11));
 const OTHER_ROW: RowId = RowId::from_uuid(Uuid::from_u128(0xa1e8));
 const DONE: OptionId = OptionId::from_uuid(Uuid::from_u128(0xd0e));
+const PROPERTY: PropertyId = PropertyId::from_uuid(Uuid::from_u128(0x9e0));
 
 fn every_filter_test() -> FilterGroup {
     let tests = vec![
@@ -132,6 +134,75 @@ fn every_cell_value() -> Vec<CellWrite> {
 
 fn ops() -> Vec<DatabaseOp> {
     let mut ops = vec![
+        DatabaseOp::CreateTable {
+            id: TABLE,
+            name: "Guests".into(),
+        },
+        DatabaseOp::RenameTable {
+            table: TABLE,
+            name: "People".into(),
+            previous_name: Some("Guests".into()),
+        },
+        DatabaseOp::RenameTable {
+            table: TABLE,
+            name: "People".into(),
+            previous_name: None,
+        },
+        DatabaseOp::DeleteTable { table: TABLE },
+        DatabaseOp::ReorderTables { order: vec![TABLE] },
+        DatabaseOp::CreateColumn {
+            table: TABLE,
+            id: STATUS,
+            definition: NewColumn::New {
+                name: "Status".into(),
+                kind: ColumnKind::Select { multi: false },
+                options: vec![NewOption {
+                    id: DONE,
+                    label: "Done".into(),
+                }],
+                infer_type: false,
+            },
+            after: Some(NAME),
+        },
+        DatabaseOp::CreateColumn {
+            table: TABLE,
+            id: NAME,
+            definition: NewColumn::New {
+                name: "Name".into(),
+                kind: ColumnKind::Text,
+                options: vec![],
+                infer_type: true,
+            },
+            after: None,
+        },
+        DatabaseOp::CreateColumn {
+            table: TABLE,
+            id: STATUS,
+            definition: NewColumn::Existing { property: PROPERTY },
+            after: None,
+        },
+        DatabaseOp::RenameColumn {
+            table: TABLE,
+            column: NAME,
+            name: "Title".into(),
+            previous_name: Some("Name".into()),
+        },
+        DatabaseOp::DeleteColumn {
+            table: TABLE,
+            column: NAME,
+        },
+        DatabaseOp::ReorderColumns {
+            table: TABLE,
+            order: vec![STATUS, NAME],
+        },
+        DatabaseOp::AddOptions {
+            table: TABLE,
+            column: STATUS,
+            options: vec![NewOption {
+                id: DONE,
+                label: "Done".into(),
+            }],
+        },
         DatabaseOp::InsertRows {
             table: TABLE,
             rows: vec![every_cell_value()],
@@ -256,6 +327,37 @@ fn results() -> Vec<OpResult> {
     let version = TableVersion(7);
     let at = Utc.with_ymd_and_hms(2026, 10, 1, 0, 0, 0).unwrap();
     vec![
+        OpResult::TableCreated {
+            table: TABLE,
+            table_version: version,
+        },
+        OpResult::TableRenamed {
+            table_version: version,
+        },
+        OpResult::TableDeleted { table: TABLE },
+        OpResult::TablesReordered {
+            tables: vec![VersionedTable {
+                table: TABLE,
+                version,
+            }],
+        },
+        OpResult::ColumnCreated {
+            column: NAME,
+            table_version: version,
+        },
+        OpResult::ColumnRenamed {
+            table_version: version,
+        },
+        OpResult::ColumnDeleted {
+            table_version: version,
+        },
+        OpResult::ColumnsReordered {
+            table_version: version,
+        },
+        OpResult::OptionsAdded {
+            table_version: version,
+            added: vec![DONE],
+        },
         OpResult::RowsWritten {
             table_version: version,
             inserted: vec![ROW],

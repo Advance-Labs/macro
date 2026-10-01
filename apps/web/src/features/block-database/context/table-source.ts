@@ -3,8 +3,7 @@ import type {
   DatabaseView,
   Outcome,
 } from '@core/database-sql/generated/types';
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import type { DatabaseViewColumn } from '../core/database-view';
@@ -51,7 +50,7 @@ export type DatabaseRowsSource = {
   addOption(
     columnId: string,
     label: string
-  ): ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>;
+  ): ResultAsync<void, DatabaseOpsError>;
   /** Keep reading these rows by id, whether or not the view shows them. */
   retain(rowIds: Accessor<readonly string[]>): void;
 };

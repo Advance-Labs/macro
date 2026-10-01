@@ -9,7 +9,6 @@ import { createColumnCasts } from './column-casts';
 
 const transport = vi.hoisted(() => ({
   columnCasts: vi.fn(),
-  changeColumnType: vi.fn(),
 }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
@@ -90,6 +89,7 @@ it('reads the dry run only once the menu opens, in the menu’s terms', async ()
   await waitFor(() =>
     expect(casts()).toEqual({
       status: 'ready',
+      version: 4,
       casts: [
         {
           target: {
@@ -133,29 +133,5 @@ it('reads the dry run only once the menu opens, in the menu’s terms', async ()
     id: 'db',
     tableId: 'tasks',
     columnId: 'price',
-  });
-});
-
-it('sends clearInvalid with a type change', async () => {
-  transport.changeColumnType.mockResolvedValue(
-    ok({ table_versions: {}, cleared_cells: 3, trimmed_cells: 0 })
-  );
-  const { updateDatabaseColumns } = await import('./column-schema');
-  await updateDatabaseColumns({
-    databaseId: 'db',
-    tableId: 'tasks',
-    baseVersion: 4,
-    mutation: {
-      kind: 'type',
-      columnId: 'price',
-      change: { dataType: 'NUMBER', clearInvalid: true },
-    },
-  });
-  expect(transport.changeColumnType).toHaveBeenCalledExactlyOnceWith({
-    id: 'db',
-    tableId: 'tasks',
-    baseVersion: 4,
-    columnId: 'price',
-    request: { dataType: 'NUMBER', clearInvalid: true, baseVersion: 4 },
   });
 });

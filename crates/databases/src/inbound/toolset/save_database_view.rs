@@ -16,7 +16,8 @@ use models_databases::{DatabaseOp, OpResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{DatabasesToolContext, database_error, table_of};
+use super::{DatabasesToolContext, table_of};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Save a named view of an existing table.
@@ -127,14 +128,9 @@ where
                 },
             },
         };
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
         let results = service_context
-            .service
-            .apply_ops(receipt, service_context.viewer(user_id), vec![op])
-            .await
-            .map_err(database_error)?;
+            .apply(user_id, self.database_id, OpBatch::from(vec![op]))
+            .await?;
         match results.into_iter().next() {
             Some(OpResult::ViewWritten { view, .. }) => Ok(SavedDatabaseView {
                 view: *view,

@@ -5,16 +5,17 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
-use models_properties::shared::DataType;
+use std::collections::HashMap;
+
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OpResult, OptionId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
     ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, ToolEntityType,
-    WriteWarning, WriteWarnings, column_of, database_error, table_of,
+    WriteWarnings, column_kind, column_of, table_of,
 };
-use crate::domain::models::{AddColumnOptions, ChangeColumnType as ChangeColumnTypeCommand};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Change a column's type.
@@ -153,77 +154,65 @@ where
         let table = table_of(&detail, self.table_id)?;
         column_of(table, self.column_id)?;
         let base_version = table.table.version;
+        let to = column_kind(
+            self.data_type,
+            self.is_multi_select,
+            self.specific_entity_type,
+            self.link_to_table_id
+                .map(|table_id| (self.database_id, table_id)),
+        )?;
 
-        let data_type = DataType::from(self.data_type);
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
-        let changed = service_context
-            .service
-            .change_column_type(
-                receipt,
-                service_context.viewer(user_id),
-                ChangeColumnTypeCommand {
-                    table_id: self.table_id,
-                    column_id: self.column_id,
-                    data_type,
-                    is_multi_select: self.is_multi_select,
-                    specific_entity_type: self.specific_entity_type.map(Into::into),
-                    relation: self
-                        .link_to_table_id
-                        .map(|table_id| (self.database_id, table_id)),
-                    base_version,
-                    clear_invalid: self.clear_invalid,
+        // The labels no row has yet join the new type's options in the same
+        // request, so the change and its options commit together.
+        let mut ops = vec![DatabaseOp::ChangeColumnType {
+            table: self.table_id,
+            column: self.column_id,
+            to,
+            clear_invalid: self.clear_invalid,
+        }];
+        if let Some(labels) = self.options.as_ref().filter(|labels| !labels.is_empty()) {
+            ops.push(DatabaseOp::AddOptions {
+                table: self.table_id,
+                column: self.column_id,
+                options: labels
+                    .iter()
+                    .map(|label| NewOption {
+                        id: OptionId::new(),
+                        label: label.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        let results = service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch {
+                    ops,
+                    base_versions: HashMap::from([(self.table_id, base_version)]),
                 },
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
+        let (cleared_cells, trimmed_cells) = match results.first() {
+            Some(OpResult::ColumnTyped {
+                cleared_cells,
+                trimmed_cells,
+                ..
+            }) => (*cleared_cells as usize, *trimmed_cells as usize),
+            _ => (0, 0),
+        };
 
-        // The type change committed; a failure adding options is reported
-        // alongside it rather than as a failed conversion.
-        let mut warnings = Vec::new();
-        if let Some(labels) = self.options.as_ref().filter(|labels| !labels.is_empty()) {
-            let added = async {
-                let receipt = service_context
-                    .edit_receipt(user_id, self.database_id)
-                    .await?;
-                service_context
-                    .service
-                    .add_column_options(
-                        receipt,
-                        service_context.viewer(user_id),
-                        AddColumnOptions {
-                            table_id: self.table_id,
-                            column_id: self.column_id,
-                            labels: labels.clone(),
-                        },
-                    )
-                    .await
-                    .map_err(database_error)
-            }
-            .await;
-            if let Err(error) = added {
-                warnings.push(WriteWarning::OptionsNotAdded {
-                    cause: error.description,
-                });
-            }
-        }
-
-        let SchemaAfterWrite {
-            database,
-            warning: refresh_warning,
-        } = service_context
+        let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
-        warnings.extend(refresh_warning.into_iter().flat_map(|refresh| refresh.0));
         Ok(ChangeColumnTypeResponse {
             database_id: self.database_id,
             table_id: self.table_id,
             column_id: self.column_id,
-            cleared_cells: changed.cleared_cells,
-            trimmed_cells: changed.trimmed_cells,
+            cleared_cells,
+            trimmed_cells,
             database,
-            warning: (!warnings.is_empty()).then_some(WriteWarnings(warnings)),
+            warning,
         })
     }
 }

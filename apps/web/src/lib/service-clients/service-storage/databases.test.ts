@@ -29,15 +29,9 @@ describe('databases client failures', () => {
   it('names a refused schema change INVALID_SCHEMA with the service’s message', async () => {
     answer(400, JSON.stringify({ message: 'A column named Status exists.' }));
 
-    const renamed = await databasesClient.renameColumn({
-      id: 'db',
-      tableId: 'table',
-      columnId: 'column',
-      name: 'Status',
-      previousName: 'State',
-    });
+    const created = await databasesClient.create({ name: 'Tasks' });
 
-    expect(renamed._unsafeUnwrapErr()).toEqual([
+    expect(created._unsafeUnwrapErr()).toEqual([
       { code: 'INVALID_SCHEMA', message: 'A column named Status exists.' },
     ]);
   });
@@ -52,28 +46,6 @@ describe('databases client failures', () => {
     expect(
       (await databasesClient.get({ id: 'db' }))._unsafeUnwrapErr()
     ).toEqual([{ code: 'FORBIDDEN', message: 'unauthorized' }]);
-
-    answer(
-      409,
-      JSON.stringify({
-        message: 'The table changed. Refresh before entering this value.',
-      })
-    );
-    expect(
-      (
-        await databasesClient.reorderColumns({
-          id: 'db',
-          tableId: 'table',
-          columnIds: ['a', 'b'],
-          baseVersion: 3,
-        })
-      )._unsafeUnwrapErr()
-    ).toEqual([
-      {
-        code: 'CONFLICT',
-        message: 'The table changed. Refresh before entering this value.',
-      },
-    ]);
 
     answer(500, 'Internal server error');
     expect((await databasesClient.list())._unsafeUnwrapErr()).toEqual([
@@ -125,9 +97,73 @@ describe('databases client failures', () => {
           op: 0,
           row: 1,
           column: 'col-status',
+          taken: null,
         },
       },
     ]);
+  });
+
+  it('names the id a refused batch found already taken', async () => {
+    answer(
+      400,
+      JSON.stringify({
+        message: 'op 0: table 0199a3c4-0000-7000-8000-000000000001 exists',
+        op: 0,
+        row: null,
+        column: null,
+        taken: { kind: 'table', id: '0199a3c4-0000-7000-8000-000000000001' },
+      })
+    );
+
+    const applied = await databasesClient.applyOps({
+      id: 'db',
+      request: {
+        ops: [
+          {
+            kind: 'create_table',
+            id: '0199a3c4-0000-7000-8000-000000000001',
+            name: 'Tasks',
+          },
+        ],
+      },
+    });
+
+    expect(applied._unsafeUnwrapErr()).toEqual([
+      {
+        code: 'INVALID_OP',
+        message: 'op 0: table 0199a3c4-0000-7000-8000-000000000001 exists',
+        refusal: {
+          message: 'op 0: table 0199a3c4-0000-7000-8000-000000000001 exists',
+          op: 0,
+          row: null,
+          column: null,
+          taken: { kind: 'table', id: '0199a3c4-0000-7000-8000-000000000001' },
+        },
+      },
+    ]);
+  });
+
+  it('sends the base versions with the ops', async () => {
+    fetch.mockResolvedValue(ok({ results: [] }));
+
+    await databasesClient.applyOps({
+      id: 'db',
+      request: {
+        ops: [{ kind: 'delete_column', table: 'table', column: 'column' }],
+        baseVersions: { table: 7 },
+      },
+    });
+
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/\/databases\/db\/ops$/),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          ops: [{ kind: 'delete_column', table: 'table', column: 'column' }],
+          baseVersions: { table: 7 },
+        }),
+      })
+    );
   });
 
   it('leaves the refusal empty when the body is not an op refusal', async () => {

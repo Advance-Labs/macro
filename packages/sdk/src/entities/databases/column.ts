@@ -2,7 +2,6 @@ import type {
   ColumnCast,
   ColumnConfig,
   ColumnDetail,
-  ColumnTypeChangeOutcome,
   DataType,
   PropertyDefinitionWithOptions,
 } from '../../../generated/storage/types.gen';
@@ -10,6 +9,7 @@ import { MacroNotFoundError } from '../../utils';
 import type {
   ChangeColumnTypeOptions,
   InferColumnTypeOptions,
+  OpResultOf,
 } from './database';
 import type { DatabaseTable } from './table';
 
@@ -57,7 +57,10 @@ export class DatabaseColumn {
     );
   }
 
-  /** Rename this placement without changing its shared property definition. */
+  /**
+   * Rename this placement, only if its last-read name is still current,
+   * without changing its shared property definition.
+   */
   async rename(name: string): Promise<DatabaseColumn> {
     await this.table.database.renameColumn(this, name);
     return this;
@@ -72,7 +75,7 @@ export class DatabaseColumn {
   /** Change this column's type. See {@link Database.changeColumnType}. */
   changeType(
     options: ChangeColumnTypeOptions,
-  ): Promise<ColumnTypeChangeOutcome> {
+  ): Promise<OpResultOf<'column_typed'>> {
     return this.table.database.changeColumnType(this, options);
   }
 
@@ -122,7 +125,7 @@ export class DatabaseColumn {
   }
 
   /**
-   * Add select options to the column. Labels it already has are ignored, so
+   * Add select options to the column. Labels it already has are skipped, so
    * the call is safe to repeat. Only select and tag columns accept options.
    */
   async addOptions(labels: string[]): Promise<DatabaseColumn> {

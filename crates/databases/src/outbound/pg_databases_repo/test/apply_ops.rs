@@ -13,7 +13,8 @@ use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_event_broker::NoopMacroEventBroker;
 use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
 use models_databases::{
-    CellValue, CellWrite, ColumnKind, DatabaseOp, OpResult, OptionRef, RowChange, RowChanges,
+    CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionRef,
+    RowChange, RowChanges,
 };
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
@@ -23,8 +24,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    ChangeColumnType, ColumnBinding, ColumnConfig, ColumnId, CreateColumn, CreateDatabase,
-    CreateTable, DatabaseError, DatabaseId, NewOption, OpRefusal, PropertyDefinitionId, RowId,
+    ColumnId, CreateDatabase, DatabaseError, DatabaseId, OpRefusal, PropertyDefinitionId, RowId,
     TableId, TableVersion, Viewer,
 };
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService};
@@ -100,21 +100,26 @@ pub(super) async fn guests(pool: &PgPool) -> Guests {
     let table_id = repo.get_database(database.id).await.unwrap().unwrap().1[0].id;
     // The database starts with its title column, Name.
     let name = repo.columns_for_tables(&[table_id]).await.unwrap()[0].id;
-    let status = service
-        .create_column(
+    let status = ColumnId::new();
+    service
+        .apply_ops(
             edit(database.id),
             viewer(),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
+            vec![DatabaseOp::CreateColumn {
+                table: table_id,
+                id: status,
+                definition: NewColumn::New {
                     name: "Status".into(),
-                    data_type: DataType::SelectString,
-                    is_multi_select: false,
-                    options: vec!["Going".into()],
+                    kind: ColumnKind::Select { multi: false },
+                    options: vec![NewOption {
+                        id: OptionId::new(),
+                        label: "Going".into(),
+                    }],
+                    infer_type: false,
                 },
-                config: None,
-            },
+                after: None,
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -192,7 +197,8 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                     }],
                 ],
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -267,7 +273,8 @@ async fn ops_insert_update_and_delete_rows_bumping_the_table_once_per_request(po
                     table: guests.table_id,
                     rows: vec![robin],
                 },
-            ],
+            ]
+            .into(),
         )
         .await
         .unwrap();
@@ -336,7 +343,8 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
                     value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
                 }]],
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap_err();
@@ -349,6 +357,7 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
             op: 0,
             row: Some(0),
             column: Some(guests.status),
+            taken: None,
             reason: "`Maybe` is not an option of \"Status\"".into(),
         }
     );
@@ -364,7 +373,8 @@ async fn a_new_label_becomes_a_palette_coloured_option_and_an_unknown_one_is_ref
                     value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
                 }]],
                 create_missing_options: true,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -417,7 +427,8 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
                     table: guests.table_id,
                     rows: vec![RowId::from_uuid(ghost)],
                 },
-            ],
+            ]
+            .into(),
         )
         .await
         .unwrap_err();
@@ -431,6 +442,7 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
             op: 1,
             row: Some(0),
             column: None,
+            taken: None,
             reason: format!("no row {ghost} in this table"),
         }
     );
@@ -488,7 +500,8 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
                     rows: vec![vec![]],
                     create_missing_options: false,
                 },
-            ],
+            ]
+            .into(),
         )
         .await
         .unwrap_err();
@@ -511,34 +524,33 @@ async fn a_refused_op_leaves_nothing_of_its_batch_behind(pool: PgPool) {
 async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
-    let sessions = service
-        .create_table(
-            edit(guests.database_id),
-            CreateTable {
-                database_id: guests.database_id,
-                name: "Sessions".into(),
-            },
-        )
-        .await
-        .unwrap();
-    let relation = service
-        .create_column(
+    let sessions = TableId::new();
+    let relation = ColumnId::new();
+    service
+        .apply_ops(
             edit(guests.database_id),
             viewer(),
-            CreateColumn {
-                infer_type: false,
-                table_id: guests.table_id,
-                binding: ColumnBinding::NewDefinition {
+            vec![
+                DatabaseOp::CreateTable {
+                    id: sessions,
                     name: "Sessions".into(),
-                    data_type: DataType::Entity,
-                    is_multi_select: true,
-                    options: vec![],
                 },
-                config: Some(ColumnConfig::Link {
-                    database_id: guests.database_id,
-                    table_id: sessions.id,
-                }),
-            },
+                DatabaseOp::CreateColumn {
+                    table: guests.table_id,
+                    id: relation,
+                    definition: NewColumn::New {
+                        name: "Sessions".into(),
+                        kind: ColumnKind::Relation {
+                            database: guests.database_id,
+                            table: sessions,
+                        },
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
+            ]
+            .into(),
         )
         .await
         .unwrap();
@@ -556,10 +568,11 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
             edit(guests.database_id),
             viewer(),
             vec![DatabaseOp::InsertRows {
-                table: sessions.id,
+                table: sessions,
                 rows: vec![vec![]],
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -579,7 +592,8 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
                     value: CellValue::Rows(vec![keynote]),
                 }]],
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -612,7 +626,8 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap_err();
@@ -625,6 +640,7 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
             op: 0,
             row: Some(0),
             column: Some(relation),
+            taken: None,
             reason: format!("row {guest} is not a row of the related table"),
         }
     );
@@ -639,7 +655,7 @@ async fn a_relation_cell_holds_rows_of_its_target_table(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool) {
+async fn a_type_change_refuses_misfits_unless_told_to_clear_them(pool: PgPool) {
     let guests = guests(&pool).await;
     let service = service(&pool);
     let inserted = service
@@ -659,7 +675,8 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
                     }],
                 ],
                 create_missing_options: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -676,31 +693,13 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
                 column: guests.name,
                 to: ColumnKind::Number,
                 clear_invalid: false,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap_err();
-    let direct = service
-        .change_column_type(
-            edit(guests.database_id),
-            viewer(),
-            ChangeColumnType {
-                table_id: guests.table_id,
-                column_id: guests.name,
-                data_type: DataType::Number,
-                is_multi_select: false,
-                specific_entity_type: None,
-                relation: None,
-                base_version: version(&pool, guests.table_id).await,
-                clear_invalid: false,
-            },
-        )
-        .await
-        .unwrap_err();
-    let (DatabaseError::InvalidOp(refusal), DatabaseError::InvalidSchemaOperation(reason)) =
-        (refused, direct)
-    else {
-        panic!("expected both to refuse the misfit");
+    let DatabaseError::InvalidOp(refusal) = refused else {
+        panic!("expected a refused op, got {refused:?}");
     };
     assert_eq!(
         refusal,
@@ -708,7 +707,8 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
             op: 0,
             row: None,
             column: Some(guests.name),
-            reason: reason.to_string(),
+            taken: None,
+            reason: "1 value in \"Name\" isn't a number: 'TBD'. Fix it, or convert with clearing to empty it.".into(),
         }
     );
 
@@ -721,7 +721,8 @@ async fn a_type_change_through_ops_converts_like_change_column_type(pool: PgPool
                 column: guests.name,
                 to: ColumnKind::Number,
                 clear_invalid: true,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -774,7 +775,8 @@ async fn an_option_is_relabelled_and_recoloured_in_place(pool: PgPool) {
                 option: OptionId::from_uuid(going),
                 label: Some("Attending".into()),
                 color: Some(Some(properties::TagColor::Pink.hex().into())),
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -823,7 +825,8 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
                     }],
                 ],
                 create_missing_options: true,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -847,7 +850,8 @@ async fn a_removed_option_leaves_its_cells_empty_and_the_others_alone(pool: PgPo
                 table: guests.table_id,
                 column: guests.status,
                 option: OptionId::from_uuid(going),
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -930,34 +934,52 @@ async fn a_shared_property_is_editable_by_its_owner_alone(pool: PgPool) {
 async fn appended_options_follow_the_existing_ones_in_place_and_colour(pool: PgPool) {
     let guests = guests(&pool).await;
     let before = version(&pool, guests.table_id).await;
-    let maybe = macro_uuid::generate_uuid_v7();
-    let declined = macro_uuid::generate_uuid_v7();
+    let maybe = OptionId::new();
+    let declined = OptionId::new();
 
-    let after = cells(&pool)
-        .add_options(
-            guests.table_id,
-            &[
-                NewOption {
-                    definition_id: guests.status_definition,
-                    id: OptionId::from_uuid(maybe),
-                    value: PropertyOptionValue::String("Maybe".into()),
-                },
-                NewOption {
-                    definition_id: guests.status_definition,
-                    id: OptionId::from_uuid(declined),
-                    value: PropertyOptionValue::String("Declined".into()),
-                },
-            ],
+    let results = service(&pool)
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::AddOptions {
+                table: guests.table_id,
+                column: guests.status,
+                options: vec![
+                    NewOption {
+                        id: maybe,
+                        label: "Maybe".into(),
+                    },
+                    NewOption {
+                        id: declined,
+                        label: "Declined".into(),
+                    },
+                ],
+            }]
+            .into(),
         )
         .await
         .unwrap();
 
-    assert_eq!(after, Some(TableVersion(before.0 + 1)));
+    assert_eq!(
+        results,
+        vec![OpResult::OptionsAdded {
+            table_version: TableVersion(before.0 + 1),
+            added: vec![maybe, declined],
+        }]
+    );
     let options = &PgDefinitionStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
         .definitions(&[guests.status_definition])
         .await
         .unwrap()[0]
         .property_options;
+    assert_eq!(
+        options
+            .iter()
+            .skip(1)
+            .map(|option| option.id)
+            .collect::<Vec<_>>(),
+        vec![maybe.into_uuid(), declined.into_uuid()]
+    );
     let stored: Vec<(i32, PropertyOptionValue, Option<&str>)> = options
         .iter()
         .map(|option| {

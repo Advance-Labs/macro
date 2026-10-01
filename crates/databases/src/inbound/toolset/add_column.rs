@@ -5,15 +5,15 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewColumn, NewOption, OptionId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings,
-    database_error,
+    ColumnType, DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, ToolEntityType,
+    WriteWarnings, column_kind,
 };
-use crate::domain::models::{ColumnBinding, ColumnConfig, CreateColumn};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Add a column to a table.
@@ -36,8 +36,8 @@ as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.\n\
 side reference rows on the other by row id. Write it as a list of row ids and join through \
 it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the \
 target table.\n\
-- `entity` columns hold references to Macro things (people, documents). Their values are \
-typed ids such as `macro|sam@example.com`.\n\
+- `entity` columns hold references to Macro things (people, documents); say which with \
+`specificEntityType`. Their values are typed ids such as `macro|sam@example.com`.\n\
 \n\
 Select and tag columns take their options as **explicit schema**: pass every label the column \
 should accept in `options`. SQL only accepts those labels — a select column created with no \
@@ -95,6 +95,14 @@ pub struct AddColumn {
     #[serde(default)]
     pub options: Option<Vec<String>>,
 
+    /// What an entity column's ids reference.
+    #[schemars(
+        description = "Required for dataType entity without linkToTableId: what the ids \
+                       reference, e.g. USER for people or DOCUMENT."
+    )]
+    #[serde(default)]
+    pub specific_entity_type: Option<ToolEntityType>,
+
     /// Make this a link column targeting another table.
     #[schemars(
         description = "Id of another table to link to, making this a link column whose rows \
@@ -147,37 +155,42 @@ where
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
-
         // A link target in another database is expressible but not something
-        // this tool takes: the receipt covers one database, so the config
+        // this tool takes: the receipt covers one database, so the relation
         // names the same one.
-        let config = self.link_to_table_id.map(|table_id| ColumnConfig::Link {
-            database_id: self.database_id,
-            table_id,
-        });
-
-        let column_id = service_context
-            .service
-            .create_column(
-                receipt,
-                service_context.viewer(user_id),
-                CreateColumn {
-                    infer_type: false,
-                    table_id: self.table_id,
-                    binding: ColumnBinding::NewDefinition {
+        let kind = column_kind(
+            self.data_type,
+            self.is_multi_select,
+            self.specific_entity_type,
+            self.link_to_table_id
+                .map(|table_id| (self.database_id, table_id)),
+        )?;
+        let column_id = ColumnId::new();
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::CreateColumn {
+                    table: self.table_id,
+                    id: column_id,
+                    definition: NewColumn::New {
                         name: self.name.clone(),
-                        data_type: self.data_type.into(),
-                        is_multi_select: self.is_multi_select,
-                        options: self.options.clone().unwrap_or_default(),
+                        kind,
+                        options: self
+                            .options
+                            .iter()
+                            .flatten()
+                            .map(|label| NewOption {
+                                id: OptionId::new(),
+                                label: label.clone(),
+                            })
+                            .collect(),
+                        infer_type: false,
                     },
-                    config,
-                },
+                    after: None,
+                }]),
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)

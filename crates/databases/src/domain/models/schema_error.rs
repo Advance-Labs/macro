@@ -104,6 +104,19 @@ pub enum SchemaError {
     /// The table moved while the column was renamed.
     #[error("The table changed while renaming. Try again.")]
     TableChangedWhileRenaming,
+    /// A new column lists an option label twice.
+    #[error("`{label}` is listed twice; each option of a column needs its own label")]
+    OptionListedTwice {
+        /// The label.
+        label: String,
+    },
+    /// A type change came after the batch wrote the column's table or
+    /// options, so the values it would convert are not the stored ones.
+    #[error(
+        "A type change converts the values the column holds when the request starts; change the \
+         type before this request writes the table's rows or the column's options."
+    )]
+    RetypeAfterWrites,
     /// A column order does not name every column once.
     #[error("The column order must include every column exactly once.")]
     IncompleteColumnOrder,

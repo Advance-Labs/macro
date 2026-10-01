@@ -6,15 +6,12 @@
  */
 import type { OpResultOneOfOneoneKind } from './opResultOneOfOneoneKind';
 import type { TableVersion } from './tableVersion';
-import type { ViewPosition } from './viewPosition';
 
 /**
- * The table's views' new places.
+ * A column's rename.
  */
 export type OpResultOneOfOneone = {
   kind: OpResultOneOfOneoneKind;
-  /** Every view's key, in their new order. */
-  positions: ViewPosition[];
-  /** The table's version after the change. */
+  /** The table's version once the request committed. */
   tableVersion: TableVersion;
 };

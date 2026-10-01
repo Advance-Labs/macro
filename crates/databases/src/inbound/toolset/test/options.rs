@@ -1,3 +1,5 @@
+use models_databases::{DatabaseOp, NewOption};
+
 use super::*;
 
 /// The description is what stops a model creating an optionless select column
@@ -38,7 +40,7 @@ async fn adding_options_needs_more_than_view_access() {
         "{}",
         error.description
     );
-    assert!(calls.lock().unwrap().added_options.is_empty());
+    assert!(calls.lock().unwrap().applied.is_empty());
 }
 
 /// The response carries the labels SQL now accepts, so the model can write the
@@ -58,9 +60,23 @@ async fn adding_options_returns_the_labels_sql_accepts() {
 
     assert_eq!(response.column_id, COLUMN_ID);
     assert_eq!(response.options, vec!["Going", "Declined", "Waitlisted"]);
+    let calls = calls.lock().unwrap();
+    let [batch] = calls.applied.as_slice() else {
+        panic!("one batch, got {:?}", calls.applied);
+    };
+    let DatabaseOp::AddOptions { options, .. } = &batch.ops[0] else {
+        panic!("an option addition, got {:?}", batch.ops);
+    };
     assert_eq!(
-        calls.lock().unwrap().added_options,
-        vec![(COLUMN_ID, vec!["Waitlisted".to_string()])]
+        *batch,
+        OpBatch::from(vec![DatabaseOp::AddOptions {
+            table: TABLE_ID,
+            column: COLUMN_ID,
+            options: vec![NewOption {
+                id: options[0].id,
+                label: "Waitlisted".to_string(),
+            }],
+        }])
     );
 }
 

@@ -148,24 +148,38 @@ Databases are collections of tables. Tables, columns, and views are parts of
 a database, not entities of their own, so they come back as handles that
 resolve through the database's schema.
 
+Every write to a database's schema or rows is an op sent to one endpoint,
+`POST /databases/{id}/ops`. The methods below each send a one-op batch: the
+SDK mints the new table, column, and option ids (UUIDv7) itself and builds the
+handle it returns from the op's result.
+
 ```ts
 const database = await macro.databases.create({ name: 'Events' });
 const guests = await database.createTable({ name: 'Guests' });
-const email = await guests.addColumn({ name: 'Email', dataType: 'STRING' });
+const email = await guests.addColumn({ name: 'Email', type: { type: 'text' } });
 
 // A select column only accepts labels you give it, at creation or later.
 const rsvp = await guests.addColumn({
   name: 'RSVP',
-  dataType: 'SELECT_STRING',
+  type: { type: 'select', multi: false },
   options: ['Yes', 'No'],
+  after: email,
 });
-await rsvp.addOptions(['Maybe']);
+await rsvp.addOptions(['Maybe']); // labels it already has are skipped
 
 await guests.rename('Attendees');
 await rsvp.rename('Response');
 
+// A relation column holds rows of another table, named by handle.
+const hosts = await database.createTable({ name: 'Hosts' });
+await guests.addColumn({
+  name: 'Host',
+  type: { type: 'relation', table: hosts },
+});
+
 // See what each type change would do to the existing values first.
 const casts = await rsvp.casts();
+await rsvp.changeType({ to: { type: 'select', multi: true } });
 
 // Tabs: a new database starts with a "Table 1". Reorder by naming every
 // table once, or delete one; a database keeps at least one.
@@ -174,19 +188,55 @@ await database.reorderTables(tables.toReversed());
 await (await database.table('Table 1'))?.delete();
 ```
 
-Rows, select options, views, and board cards change through ops, applied as
-one batch: a refused op leaves the whole batch unwritten.
+Changing a column's type, reordering columns, and deleting a column send the
+table version last read as the batch's base version: if the table changed
+since, the server refuses with a 409 and nothing is written.
+
+To do several things at once, send the ops yourself. They apply in order in
+one transaction, later ops see what earlier ones did, and a refused op leaves
+the whole batch unwritten. Ids for new tables, columns, and options are yours
+to mint, so a later op of the batch can name them:
 
 ```ts
-const [result] = await database.applyOps([
-  {
-    kind: 'insert_rows',
-    table: guests.id,
-    rows: [
-      [{ column: email.id, value: { type: 'text', value: 'ada@example.com' } }],
-    ],
-  },
-]);
+import { v7 as uuidv7 } from 'uuid';
+
+const notes = uuidv7();
+const results = await database.applyOps(
+  [
+    {
+      kind: 'create_column',
+      table: guests.id,
+      id: notes,
+      definition: { source: 'new', name: 'Notes', type: { type: 'text' } },
+    },
+    {
+      kind: 'insert_rows',
+      table: guests.id,
+      rows: [
+        [
+          { column: email.id, value: { type: 'text', value: 'ada@example.com' } },
+          { column: notes, value: { type: 'text', value: 'Vegetarian' } },
+        ],
+      ],
+    },
+  ],
+  { baseVersions: [{ table: guests, version: await guests.version() }] },
+);
+```
+
+A refusal throws `MacroOpRefusedError`, naming the op at fault (`op`, and
+`row` / `column` when one is) and, when the batch minted an id that already
+names something, that id as `taken` (`{ kind: 'table' | 'column' | 'option',
+id }`). A retried batch whose first attempt committed refuses this way.
+
+```ts
+import { MacroOpRefusedError } from '@macro-inc/sdk';
+
+try {
+  await database.createTable({ name: 'Guests' });
+} catch (error) {
+  if (error instanceof MacroOpRefusedError) console.log(error.op, error.taken);
+}
 ```
 
 A table's views are handles too. A board view reads where its cards sit:

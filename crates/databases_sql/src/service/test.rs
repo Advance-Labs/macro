@@ -893,6 +893,7 @@ async fn a_write_the_service_refuses_names_its_row_and_reason() {
             op: 0,
             row: Some(0),
             column: Some(STATUS_COLUMN),
+            taken: None,
             reason: "\"Status\" has no option \"Gone\"".into(),
         })));
     let error = sql(&world)

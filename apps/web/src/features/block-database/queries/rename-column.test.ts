@@ -1,8 +1,9 @@
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
+import type { DatabaseOpsError } from '@service-storage/databases';
+import type { ApplyOpsResponse } from '@service-storage/generated/schemas/applyOpsResponse';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { RenameColumnOutcome } from '@service-storage/generated/schemas/renameColumnOutcome';
 import { QueryObserver } from '@tanstack/solid-query';
 import {
   err,
@@ -17,7 +18,7 @@ import { toQuerySchema } from '../../database-query/queries/query-source';
 import { renameDatabaseColumn } from './rename-column';
 import { toViewColumn } from './table-rows';
 
-const transport = vi.hoisted(() => ({ renameColumn: vi.fn() }));
+const transport = vi.hoisted(() => ({ applyOps: vi.fn() }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
@@ -82,9 +83,8 @@ const detail: DatabaseDetail = {
     },
   ],
 };
-const renamed: RenameColumnOutcome = {
-  column: { ...column.column, display_name: 'Task' },
-  table_version: 6,
+const answer: ApplyOpsResponse = {
+  results: [{ kind: 'column_renamed', tableVersion: 6 }],
 };
 const params = {
   databaseId: 'db',
@@ -97,7 +97,7 @@ const key = databasesKeys.detail('db').queryKey;
 beforeEach(() => {
   vi.resetAllMocks();
   queryClient.setQueryData(key, detail);
-  transport.renameColumn.mockImplementation(() => okAsync(renamed));
+  transport.applyOps.mockImplementation(() => okAsync(answer));
 });
 afterEach(() => queryClient.clear());
 
@@ -106,18 +106,25 @@ describe('column rename cache and labels', () => {
     const otherKey = databasesKeys.detail('other').queryKey;
     queryClient.setQueryData(otherKey, detail);
     expect(await renameDatabaseColumn(params)).toEqual(ok(undefined));
-    expect(transport.renameColumn).toHaveBeenCalledExactlyOnceWith({
+    expect(transport.applyOps).toHaveBeenCalledExactlyOnceWith({
       id: 'db',
-      tableId: 'tasks',
-      columnId: 'title',
-      name: 'Task',
-      previousName: 'Name',
+      request: {
+        ops: [
+          {
+            kind: 'rename_column',
+            table: 'tasks',
+            column: 'title',
+            name: 'Task',
+            previousName: 'Name',
+          },
+        ],
+      },
     });
     const updated = queryClient.getQueryData<DatabaseDetail>(key)!;
     expect(updated.tables[0].table.version).toBe(6);
     expect(updated.tables[0].columns[0]).toEqual({
       ...column,
-      column: renamed.column,
+      column: { ...column.column, display_name: 'Task' },
     });
     expect(toViewColumn(updated.tables[0].columns[0]).name).toBe('Task');
     expect(toQuerySchema(updated).tables[0].columns[0]).toMatchObject({
@@ -132,13 +139,18 @@ describe('column rename cache and labels', () => {
     expect(queryClient.getQueryState(otherKey)?.isInvalidated).toBe(false);
   });
   it('retains the server validation reason without changing a failed rename in cache', async () => {
-    const refused = [
-      {
-        code: 'INVALID_SCHEMA',
+    const refused: DatabaseOpsError = {
+      code: 'INVALID_OP',
+      message: 'A column with this name already exists. Choose another name.',
+      refusal: {
         message: 'A column with this name already exists. Choose another name.',
+        op: 0,
+        row: null,
+        column: 'title',
+        taken: null,
       },
-    ];
-    transport.renameColumn.mockImplementation(() => errAsync(refused));
+    };
+    transport.applyOps.mockImplementation(() => errAsync([refused]));
     expect(await renameDatabaseColumn(params)).toEqual(err(refused));
     expect(queryClient.getQueryData(key)).toEqual(detail);
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
@@ -167,11 +179,11 @@ describe('column rename cache and labels', () => {
     }
   });
   it('does not overwrite a newer label/version with a delayed rename response', async () => {
-    let resolve!: (value: Result<RenameColumnOutcome, never>) => void;
-    transport.renameColumn.mockImplementation(
+    let resolve!: (value: Result<ApplyOpsResponse, never>) => void;
+    transport.applyOps.mockImplementation(
       () =>
         new ResultAsync(
-          new Promise<Result<RenameColumnOutcome, never>>((complete) => {
+          new Promise<Result<ApplyOpsResponse, never>>((complete) => {
             resolve = complete;
           })
         )
@@ -193,7 +205,7 @@ describe('column rename cache and labels', () => {
       ],
     };
     queryClient.setQueryData(key, newer);
-    resolve(ok(renamed));
+    resolve(ok(answer));
     await pending;
     expect(queryClient.getQueryData(key)).toEqual(newer);
   });

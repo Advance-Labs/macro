@@ -38,14 +38,14 @@ async fn create_view(
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::CreateView {
+            OpBatch::from(vec![DatabaseOp::CreateView {
                 table: seeded.table_id,
                 view: NewView {
                     name: name.into(),
                     query,
                     layout,
                 },
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -63,7 +63,7 @@ async fn three_guests(seeded: &Seeded) -> [RowId; 3] {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: [("Alex", "Going"), ("Robin", "Declined")]
                     .into_iter()
@@ -81,7 +81,7 @@ async fn three_guests(seeded: &Seeded) -> [RowId; 3] {
                     })
                     .collect(),
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -210,7 +210,11 @@ async fn a_view_is_refused_when_it_does_not_fit_its_table() {
     for (op, reason) in cases {
         let error = seeded
             .service
-            .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![op])
+            .apply_ops(
+                edit(seeded.database_id),
+                viewer(OWNER),
+                OpBatch::from(vec![op]),
+            )
             .await
             .unwrap_err();
         assert_eq!(
@@ -219,6 +223,7 @@ async fn a_view_is_refused_when_it_does_not_fit_its_table() {
                 op: 0,
                 row: None,
                 column: None,
+                taken: None,
                 reason: reason.clone(),
             },
             "{reason}"
@@ -252,13 +257,13 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateView {
+            OpBatch::from(vec![DatabaseOp::UpdateView {
                 table: seeded.table_id,
                 view: stages.id,
                 name: Some("By size".into()),
                 query: Some(sorted.clone()),
                 layout: None,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -277,13 +282,13 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateView {
+            OpBatch::from(vec![DatabaseOp::UpdateView {
                 table: seeded.table_id,
                 view: stages.id,
                 name: None,
                 query: None,
                 layout: Some(ViewLayout::Table { columns: vec![] }),
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -306,7 +311,7 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![reorder(vec![third.id, first.id])],
+            OpBatch::from(vec![reorder(vec![third.id, first.id])]),
         )
         .await
         .unwrap_err();
@@ -320,7 +325,7 @@ async fn views_reorder_when_the_order_names_each_of_them_once() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![reorder(vec![third.id, first.id, second.id])],
+            OpBatch::from(vec![reorder(vec![third.id, first.id, second.id])]),
         )
         .await
         .unwrap();
@@ -379,10 +384,10 @@ async fn a_deleted_view_takes_its_card_places_with_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteView {
+            OpBatch::from(vec![DatabaseOp::DeleteView {
                 table: seeded.table_id,
                 view: stages.id,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -407,14 +412,14 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::MoveCard {
                 table: seeded.table_id,
                 view: stages.id,
                 row: sam,
                 lane: Some(declined),
                 before: None,
                 after: Some(robin),
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -440,14 +445,14 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::MoveCard {
                 table: seeded.table_id,
                 view: stages.id,
                 row: sam,
                 lane: None,
                 before: None,
                 after: None,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -469,7 +474,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: vec![extra],
@@ -479,7 +484,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -490,7 +495,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::MoveCard {
                     table: seeded.table_id,
                     view: stages.id,
@@ -507,7 +512,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                     before: None,
                     after: Some(alex),
                 },
-            ],
+            ]),
         )
         .await
         .unwrap();
@@ -591,7 +596,11 @@ async fn a_sorted_board_keeps_its_cards_in_the_sorts_order() {
     ] {
         let error = seeded
             .service
-            .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![move_on(view)])
+            .apply_ops(
+                edit(seeded.database_id),
+                viewer(OWNER),
+                OpBatch::from(vec![move_on(view)]),
+            )
             .await
             .unwrap_err();
         assert_eq!(
@@ -600,6 +609,7 @@ async fn a_sorted_board_keeps_its_cards_in_the_sorts_order() {
                 op: 0,
                 row: None,
                 column: None,
+                taken: None,
                 reason: reason.into(),
             }
         );
@@ -623,14 +633,14 @@ async fn a_card_moves_only_next_to_cards_of_its_new_lane() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::MoveCard {
+            OpBatch::from(vec![DatabaseOp::MoveCard {
                 table: seeded.table_id,
                 view: stages.id,
                 row: sam,
                 lane: Some(going),
                 before: Some(robin),
                 after: None,
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -676,7 +686,17 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
         let version = table_version(&seeded.world, seeded.table_id);
         seeded
             .service
-            .delete_column(edit(seeded.database_id), seeded.table_id, column, version)
+            .apply_ops(
+                edit(seeded.database_id),
+                viewer(OWNER),
+                OpBatch {
+                    ops: vec![DatabaseOp::DeleteColumn {
+                        table: seeded.table_id,
+                        column,
+                    }],
+                    base_versions: HashMap::from([(seeded.table_id, version)]),
+                },
+            )
             .await
     };
 
@@ -697,14 +717,15 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
     }
 
     let error = delete(seeded.status_column.id).await.unwrap_err();
-    let DatabaseError::InvalidSchemaOperation(reason) = error else {
+    let DatabaseError::InvalidOp(refusal) = error else {
         panic!("expected a refused removal, got {error:?}");
     };
     assert_eq!(
-        reason,
+        refusal.reason,
         SchemaError::BoardGroupsByRemovedColumn {
             board: "Big parties".into()
         }
+        .to_string()
     );
 
     seeded
@@ -712,10 +733,10 @@ async fn removing_a_column_takes_it_out_of_views_unless_a_board_groups_by_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteView {
+            OpBatch::from(vec![DatabaseOp::DeleteView {
                 table: seeded.table_id,
                 view: filtered.id,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -775,11 +796,11 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteOption {
+            OpBatch::from(vec![DatabaseOp::DeleteOption {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
                 option: going,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -855,10 +876,10 @@ async fn a_new_type_drops_the_tests_of_the_old_one_but_not_under_a_board() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![retype(
+            OpBatch::from(vec![retype(
                 seeded.plus_ones_column.id,
                 models_databases::ColumnKind::Text,
-            )],
+            )]),
         )
         .await
         .unwrap();
@@ -889,10 +910,10 @@ async fn a_new_type_drops_the_tests_of_the_old_one_but_not_under_a_board() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![retype(
+            OpBatch::from(vec![retype(
                 seeded.status_column.id,
                 models_databases::ColumnKind::Text,
-            )],
+            )]),
         )
         .await
         .unwrap_err();

@@ -69,27 +69,20 @@ async fn a_cell_of_a_column_of_its_rows_table_is_accepted(pool: PgPool) {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_cell_of_a_column_of_another_table_is_refused(pool: PgPool) {
     let (repo, guests, name) = fixture(&pool).await;
-    let hosts = applied_table(
-        repo.create_table(&CreateTable {
-            database_id: guests.database_id,
-            name: "Hosts".to_string(),
-        })
-        .await
-        .unwrap(),
-    );
+    let hosts = TableId::new();
     let email = insert_definition(&pool, "Email").await;
-    repo.create_column(
-        hosts.id,
-        email,
-        &CreateColumn {
-            infer_type: false,
-            table_id: hosts.id,
-            binding: ColumnBinding::ExistingDefinition(email),
-            config: None,
-        },
+    commit(
+        &pool,
+        guests.database_id,
+        vec![
+            Write::CreateTable {
+                table_id: hosts,
+                name: "Hosts".to_string(),
+            },
+            bind(hosts, email, "80"),
+        ],
     )
-    .await
-    .unwrap();
+    .await;
     let rows = repo.insert_rows(guests.id, USER, 1).await.unwrap().unwrap();
     let sam = rows[0].id.to_string();
 
@@ -185,32 +178,24 @@ async fn deleting_a_table_or_its_database_deletes_its_cells(pool: PgPool) {
 async fn deleting_a_column_deletes_its_cells_in_that_table_only(pool: PgPool) {
     let (repo, guests, name) = fixture(&pool).await;
     let email = insert_definition(&pool, "Email").await;
-    let hosts = applied_table(
-        repo.create_table(&CreateTable {
-            database_id: guests.database_id,
-            name: "Hosts".to_string(),
-        })
-        .await
-        .unwrap(),
-    );
-    for (table, definition) in [(guests.id, email), (hosts.id, name)] {
-        repo.create_column(
-            table,
-            definition,
-            &CreateColumn {
-                infer_type: false,
-                table_id: table,
-                binding: ColumnBinding::ExistingDefinition(definition),
-                config: None,
+    let hosts = TableId::new();
+    commit(
+        &pool,
+        guests.database_id,
+        vec![
+            Write::CreateTable {
+                table_id: hosts,
+                name: "Hosts".to_string(),
             },
-        )
-        .await
-        .unwrap();
-    }
+            bind(guests.id, email, "8180"),
+            bind(hosts, name, "80"),
+        ],
+    )
+    .await;
     let guest = repo.insert_rows(guests.id, USER, 1).await.unwrap().unwrap()[0]
         .id
         .to_string();
-    let host = repo.insert_rows(hosts.id, USER, 1).await.unwrap().unwrap()[0]
+    let host = repo.insert_rows(hosts, USER, 1).await.unwrap().unwrap()[0]
         .id
         .to_string();
     insert_cell(&pool, &guest, name, "Sam").await.unwrap();

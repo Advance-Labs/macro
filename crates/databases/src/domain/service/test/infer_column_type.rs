@@ -9,22 +9,23 @@ struct EmptyColumn {
 
 async fn empty_column() -> EmptyColumn {
     let seeded = seeded().await;
-    let column_id = seeded
+    let column_id = ColumnId::new();
+    seeded
         .service
-        .create_column(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                table_id: seeded.table_id,
-                infer_type: true,
-                config: None,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: column_id,
+                definition: NewColumn::New {
                     name: "Estimate".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: Vec::new(),
+                    kind: ColumnKind::Text,
+                    options: vec![],
+                    infer_type: true,
                 },
-            },
+                after: None,
+            }]),
         )
         .await
         .unwrap();
@@ -54,7 +55,7 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
                 column_id,
                 data_type: DataType::Number,
                 specific_entity_type: None,
-                base_version: TableVersion(1),
+                base_version: TableVersion(3),
             },
         )
         .await
@@ -84,24 +85,24 @@ async fn number_inference_preserves_label_old_definition_and_accepts_first_write
             .data_type,
         DataType::String
     );
-    assert_eq!(response.table_version, TableVersion(2));
+    assert_eq!(response.table_version, TableVersion(4));
     assert_eq!(
         world.lock().unwrap().published.last(),
-        Some(&(table_id, TableVersion(2)))
+        Some(&(table_id, TableVersion(4)))
     );
 
     let written = svc
         .apply_ops(
             receipt(db, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: table_id,
                 rows: vec![vec![CellWrite {
                     column: column_id,
                     value: CellValue::Number(12.0),
                 }]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -159,7 +160,7 @@ async fn entity_inference_persists_specific_type_and_text_only_settles_flag() {
                     column_id,
                     data_type,
                     specific_entity_type: entity_type,
-                    base_version: TableVersion(1),
+                    base_version: TableVersion(3),
                 },
             )
             .await
@@ -174,7 +175,7 @@ async fn entity_inference_persists_specific_type_and_text_only_settles_flag() {
             data_type == DataType::String
         );
         assert!(!response.column.column.infer_type);
-        assert_eq!(response.table_version, TableVersion(2));
+        assert_eq!(response.table_version, TableVersion(4));
         assert!(
             !world
                 .lock()
@@ -219,7 +220,7 @@ async fn inference_refuses_nonempty_column_and_removes_unused_replacement() {
                 column_id,
                 data_type: DataType::Number,
                 specific_entity_type: None,
-                base_version: TableVersion(1),
+                base_version: TableVersion(3),
             }
         )
         .await,
@@ -227,7 +228,7 @@ async fn inference_refuses_nonempty_column_and_removes_unused_replacement() {
     ));
     let w = world.lock().unwrap();
     assert_eq!(w.definitions.len(), 4);
-    assert_eq!(w.tables[0].version, TableVersion(1));
+    assert_eq!(w.tables[0].version, TableVersion(3));
     assert!(
         w.columns
             .iter()
@@ -266,7 +267,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(DatabaseId::new(), OWNER, AccessLevel::Edit),
-            command(TableVersion(1)),
+            command(TableVersion(3)),
         )
         .await
         .unwrap_err();
@@ -284,7 +285,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            command(TableVersion(1)),
+            command(TableVersion(3)),
         )
         .await
         .unwrap_err();
@@ -317,7 +318,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            command(TableVersion(1)),
+            command(TableVersion(3)),
         )
         .await
         .unwrap_err();
@@ -330,7 +331,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
     let error = svc
         .infer_column_type(
             receipt(db, OWNER, AccessLevel::Edit),
-            command(TableVersion(1)),
+            command(TableVersion(3)),
         )
         .await
         .unwrap_err();
@@ -338,7 +339,7 @@ async fn inference_rejects_stale_wrong_database_trashed_and_fixed_columns() {
 
     let w = world.lock().unwrap();
     assert_eq!(w.definitions.len(), 4);
-    assert_eq!(w.tables[0].version, TableVersion(1));
+    assert_eq!(w.tables[0].version, TableVersion(3));
 }
 
 #[tokio::test]
@@ -363,7 +364,7 @@ async fn inference_validates_type_and_entity_configuration_before_creating_defin
                     column_id,
                     data_type,
                     specific_entity_type,
-                    base_version: TableVersion(1),
+                    base_version: TableVersion(3),
                 }
             )
             .await,
@@ -374,38 +375,34 @@ async fn inference_validates_type_and_entity_configuration_before_creating_defin
 }
 
 #[tokio::test]
-async fn inference_flag_is_rejected_for_shared_or_explicitly_typed_creation() {
+async fn inference_flag_is_rejected_for_an_explicitly_typed_creation() {
     let seeded = seeded().await;
-    let (svc, db, table_id, name) = (
-        seeded.service,
-        seeded.database_id,
-        seeded.table_id,
-        seeded.name_column,
-    );
-    for binding in [
-        ColumnBinding::ExistingDefinition(name.property_definition_id),
-        ColumnBinding::NewDefinition {
-            name: "Number".into(),
-            data_type: DataType::Number,
-            is_multi_select: false,
-            options: Vec::new(),
-        },
-    ] {
-        assert!(matches!(
-            svc.create_column(
-                receipt(db, OWNER, AccessLevel::Edit),
-                viewer(OWNER),
-                CreateColumn {
-                    table_id,
+    let (svc, db, table_id) = (seeded.service, seeded.database_id, seeded.table_id);
+    let error = svc
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: table_id,
+                id: ColumnId::new(),
+                definition: NewColumn::New {
+                    name: "Number".into(),
+                    kind: ColumnKind::Number,
+                    options: vec![],
                     infer_type: true,
-                    binding,
-                    config: None
-                }
-            )
-            .await,
-            Err(DatabaseError::InvalidSchemaOperation(_))
-        ));
-    }
+                },
+                after: None,
+            }]),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        SchemaError::InferenceNeedsPlainText.to_string()
+    );
 }
 
 #[tokio::test]
@@ -428,14 +425,14 @@ async fn a_first_written_value_settles_text_type_and_later_inference_cannot_rety
     svc.apply_ops(
         receipt(db, OWNER, AccessLevel::Edit),
         viewer(OWNER),
-        vec![DatabaseOp::InsertRows {
+        OpBatch::from(vec![DatabaseOp::InsertRows {
             table: table_id,
             rows: vec![vec![CellWrite {
                 column: column_id,
                 value: CellValue::Text("first text".into()),
             }]],
             create_missing_options: false,
-        }],
+        }]),
     )
     .await
     .unwrap();
@@ -458,7 +455,7 @@ async fn a_first_written_value_settles_text_type_and_later_inference_cannot_rety
                 column_id,
                 data_type: DataType::Number,
                 specific_entity_type: None,
-                base_version: TableVersion(2),
+                base_version: TableVersion(4),
             }
         )
         .await,

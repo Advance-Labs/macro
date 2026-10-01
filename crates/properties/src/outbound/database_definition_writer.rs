@@ -19,6 +19,7 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
     ) -> Result<PropertyDefinitionWithOptions, Self::Err> {
         let definition = property_definition_queries::create_database_property_definition(
             &mut **transaction,
+            input.id,
             input.database_id,
             input.name,
             input.data_type,
@@ -27,11 +28,11 @@ impl DatabaseDefinitionWriter for PropertiesPgRepo {
         )
         .await?;
         let mut property_options = Vec::with_capacity(input.options.len());
-        for (position, value) in input.options.iter().enumerate() {
+        for (position, (id, value)) in input.options.iter().enumerate() {
             property_options.push(
                 property_option_queries::insert_property_option(
                     &mut **transaction,
-                    macro_uuid::generate_uuid_v7(),
+                    *id,
                     definition.id,
                     display_order(position)?,
                     value.clone(),

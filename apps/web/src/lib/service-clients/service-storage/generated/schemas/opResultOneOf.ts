@@ -8,18 +8,12 @@ import type { OpResultOneOfKind } from './opResultOneOfKind';
 import type { TableVersion } from './tableVersion';
 
 /**
- * What an insert, update or delete did.
+ * The table a creation added.
  */
 export type OpResultOneOf = {
-  /**
-   * How many rows the op inserted, updated or deleted.
-   * @minimum 0
-   */
-  affected: number;
-  /** The rows an insert created, in the order they were sent; empty
-for an update or a delete. */
-  inserted: string[];
   kind: OpResultOneOfKind;
-  /** The table's version once the request committed. */
+  /** The new table. */
+  table: string;
+  /** Its version once the request committed. */
   tableVersion: TableVersion;
 };

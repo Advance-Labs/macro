@@ -1,19 +1,18 @@
 //! RenameColumn tool: relabel a column, keeping its values and id.
 
 use ai_toolset::{
-    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolCallError,
-    ToolResult,
+    AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolResult,
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
-    database_error, table_of,
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of, table_of,
 };
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Rename a column.
@@ -96,38 +95,27 @@ where
             .name()
             .to_string();
 
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
-        let outcome = service_context
-            .service
-            .rename_column(
-                receipt,
-                self.table_id,
-                self.column_id,
-                self.name.clone(),
-                previous_name,
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                    table: self.table_id,
+                    column: self.column_id,
+                    name: self.name.clone(),
+                    previous_name: Some(previous_name),
+                }]),
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
 
-        // A rename always stores the placement's own label.
-        let Some(renamed_name) = outcome.column.display_name else {
-            return Err(ToolCallError {
-                description: "The column was renamed, but the service did not answer its new \
-                              name. Call DescribeDatabase before continuing."
-                    .into(),
-                internal_error: anyhow::anyhow!("a renamed column came back without a label"),
-            });
-        };
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
         Ok(RenameColumnResponse {
             database_id: self.database_id,
             table_id: self.table_id,
-            column_id: outcome.column.id,
-            name: renamed_name,
+            column_id: self.column_id,
+            name: self.name.trim().to_owned(),
             database,
             warning,
         })

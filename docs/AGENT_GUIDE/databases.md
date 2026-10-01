@@ -99,9 +99,9 @@ header's **Edit options** menu item and from a board lane header. Changes show a
 once and are rolled back if the server refuses them.
 
 **New table**, beside the table tabs in the toolbar under the split header, creates another table
-with a Name column. Enter a table name and press Enter. If the table is created
-but its column setup fails,
-**Retry setup** continues that same table; **Open table** lets you finish manually.
+with a Name column. Enter a table name and press Enter. The table and its
+column are one request, so a failure creates neither and the dialog stays open
+to retry.
 To rename a table, right-click its tab and choose **Rename table**, double-click
 the tab, or focus it and press F2. These actions also work on inactive tabs.
 The tab itself becomes an input. Enter or leaving the input saves; Escape cancels.
@@ -162,9 +162,12 @@ sorting skip relations; a relation filter can only test whether it is empty.
 Rows are read in the browser: the grid runs its view, and relation pickers, CSV
 export and live answers run their SQL, in the database engine over Soup GraphQL
 (`/items/soup/graphql`), while every edit (a cell, a new or deleted record, a
-card move, an option change, a view change) is one typed op sent to
-`POST /databases/{id}/ops`. Agents and MCP write SQL, which the same engine
-turns into those ops on the server.
+card move, an option change, a view change, and every table or column change)
+is a batch of typed ops sent to `POST /databases/{id}/ops`, applied together or
+not at all. New tables, columns and options carry ids the client mints, so
+later ops of the same batch can name them. Agents and MCP write SQL,
+which the same engine turns into those ops on the server, and their schema
+tools send the same ops.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
 grid or answer within a moment through the gateway's table-changed message; a
@@ -266,7 +269,8 @@ Type a question or requested change and send it using the normal chat controls.
 Any chat, not only one opened from a database, can build databases: the assistant
 has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `SaveDatabaseQuery`,
 `CreateDatabase`, `RenameDatabase`, `CreateTable`, `RenameTable`, `ReorderTables`,
-`DeleteTable`, `AddColumn` (including relation columns via `linkToTableId`),
+`DeleteTable`, `AddColumn` (relation columns via `linkToTableId`, entity
+columns via `specificEntityType`),
 `AddColumnOptions`, `RenameColumn`, `ChangeColumnType`, `DeleteColumn`,
 `ReorderColumns`, and `SaveDatabaseView`. It reads current schema before editing
 and checks actual results before reporting success.

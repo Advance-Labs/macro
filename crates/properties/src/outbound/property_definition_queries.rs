@@ -434,13 +434,13 @@ pub async fn create_property_definition(
 #[tracing::instrument(skip(executor), err)]
 pub async fn create_database_property_definition(
     executor: impl PgExecutor<'_>,
+    id: Uuid,
     database_id: Uuid,
     display_name: &str,
     data_type: DataType,
     is_multi_select: bool,
     specific_entity_type: Option<EntityType>,
 ) -> Result<PropertyDefinition, sqlx::Error> {
-    let id = macro_uuid::generate_uuid_v7();
     let row = sqlx::query_as!(
         db::PropertyDefinition,
         r#"

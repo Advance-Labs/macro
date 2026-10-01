@@ -37,6 +37,41 @@ export const AddColumn = z.object({
   }),
   isMultiSelect: z.boolean().optional(),
   options: z.union([z.array(z.string()), z.null()]).optional(),
+  specificEntityType: z
+    .union([
+      z.any().superRefine((x, ctx) => {
+        const schemas = [
+          z.literal('USER'),
+          z.literal('DOCUMENT'),
+          z.literal('TASK'),
+          z.literal('COMPANY'),
+          z.literal('CALL_RECORD'),
+          z.literal('CHANNEL'),
+          z.literal('CHAT'),
+          z.literal('PROJECT'),
+          z.literal('THREAD'),
+          z.literal('CALENDAR_EVENT'),
+          z.literal('INITIATIVE'),
+        ];
+        const errors = schemas.reduce<z.ZodError[]>(
+          (errors, schema) =>
+            ((result) => (result.error ? [...errors, result.error] : errors))(
+              schema.safeParse(x)
+            ),
+          []
+        );
+        if (schemas.length - errors.length !== 1) {
+          ctx.addIssue({
+            path: ctx.path,
+            code: 'invalid_union',
+            unionErrors: errors,
+            message: 'Invalid input: Should pass single schema',
+          });
+        }
+      }),
+      z.null(),
+    ])
+    .optional(),
   linkToTableId: z.union([z.string().uuid(), z.null()]).optional(),
 });
 

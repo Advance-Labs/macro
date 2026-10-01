@@ -1,13 +1,11 @@
 //! Postgres repository for databases, tables, columns and row identities;
 //! cells are entity properties, written through the properties adapter.
 
-/// Schema-change statements, shared with the cell store's column rebind.
-pub(crate) mod columns;
-mod delete_table;
-mod reorder_tables;
 /// Row identity statements, shared with the cell store's batches.
 pub(crate) mod rows;
 mod saved_queries;
+/// Schema statements of the cell store's batches.
+pub(crate) mod schema;
 mod sharing;
 #[cfg(test)]
 mod test;
@@ -16,7 +14,7 @@ pub(crate) mod views;
 
 use std::collections::HashMap;
 
-use models_databases::position::{Position, PositionError, key_between, keys_between};
+use models_databases::position::{Position, PositionError, key_between};
 use uuid::Uuid;
 
 use macro_user_id::user_id::MacroUserIdStr;
@@ -30,15 +28,9 @@ use entity_access_db_utils::{AccessLevel, EntityAccessSourceType};
 use model_entity::EntityType;
 
 use crate::domain::models::{
-    CardPosition, ColumnReplacement, ColumnSchemaOutcome, DatabaseView, ViewId,
-};
-use crate::domain::models::{
-    Column, ColumnConfig, ColumnId, CreateColumn, CreateDatabase, CreateTable, Database,
-    DatabaseId, FirstTable, PropertyDefinitionId, RenameColumnOutcome, RowId, RowRef, Table,
-    TableId, TableMutationOutcome, TableVersion,
-};
-use crate::domain::models::{
-    QueryDefinition, QueryId, SavedQuery, TableDeletion, TableOrderOutcome,
+    CardPosition, Column, ColumnId, ColumnReplacement, CreateDatabase, Database, DatabaseId,
+    DatabaseView, FirstTable, PropertyDefinitionId, QueryDefinition, QueryId, RowId, RowRef,
+    SavedQuery, Table, TableId, TableVersion, ViewId,
 };
 use crate::domain::ports::DatabasesRepo;
 
@@ -227,16 +219,6 @@ where
 {
     type Error = PgDatabasesRepoError;
 
-    #[tracing::instrument(err, skip(self, table, column, views))]
-    async fn delete_column(
-        &self,
-        table: &Table,
-        column: &Column,
-        views: &[DatabaseView],
-    ) -> Result<Option<ColumnSchemaOutcome>, Self::Error> {
-        self.delete_column_placement(table, column, views).await
-    }
-
     #[tracing::instrument(err, skip(self))]
     async fn views_for_tables(
         &self,
@@ -248,20 +230,6 @@ where
     #[tracing::instrument(err, skip(self))]
     async fn view_positions(&self, view_id: ViewId) -> Result<Vec<CardPosition>, Self::Error> {
         views::view_positions(&self.pool, view_id).await
-    }
-
-    #[tracing::instrument(err, skip(self, table))]
-    async fn reorder_columns(
-        &self,
-        table: &Table,
-        column_ids: &[ColumnId],
-    ) -> Result<Option<TableVersion>, Self::Error> {
-        self.reorder_column_placements(table, column_ids).await
-    }
-
-    #[tracing::instrument(err, skip(self, table))]
-    async fn delete_table(&self, table: &Table) -> Result<TableDeletion, Self::Error> {
-        self.delete_table_and_rows(table).await
     }
 
     #[tracing::instrument(err, skip(self, definition))]
@@ -302,6 +270,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
+                    id: macro_uuid::generate_uuid_v7(),
                     database_id: database.id.into_uuid(),
                     name: first_table.title_column,
                     data_type: DataType::String,
@@ -420,188 +389,6 @@ where
 
         transaction.commit().await?;
         Ok(())
-    }
-
-    #[tracing::instrument(err, skip(self, command))]
-    async fn create_table(
-        &self,
-        command: &CreateTable,
-    ) -> Result<TableMutationOutcome, Self::Error> {
-        let mut transaction = self.pool.begin().await?;
-        if !rows::lock_live_database(&mut *transaction, command.database_id).await? {
-            return Ok(TableMutationOutcome::NotFound);
-        }
-
-        let max_position = sqlx::query_scalar!(
-            r#"SELECT MAX(position) FROM database_tables WHERE database_id = $1"#,
-            command.database_id.into_uuid()
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
-        let position = position_after(last_position(max_position)?.as_ref())?;
-        let id = TableId::new();
-
-        let table = sqlx::query_as!(
-            TableRecord,
-            r#"
-            INSERT INTO database_tables (id, database_id, name, position)
-            SELECT $1, $2, $3, $4
-            WHERE NOT EXISTS (
-                SELECT 1 FROM database_tables
-                WHERE database_id = $2 AND lower(name) = lower($3)
-            )
-            RETURNING id, database_id, name, position, version
-            "#,
-            id.into_uuid(),
-            command.database_id.into_uuid(),
-            command.name,
-            position.as_str(),
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(match table {
-            Some(table) => TableMutationOutcome::Applied(table.try_into()?),
-            None => TableMutationOutcome::Conflict,
-        })
-    }
-
-    #[tracing::instrument(err, skip(self, table))]
-    async fn rename_table(
-        &self,
-        table: &Table,
-        name: &str,
-        previous_name: &str,
-    ) -> Result<TableMutationOutcome, Self::Error> {
-        let mut transaction = self.pool.begin().await?;
-        // Serialize table naming and position allocation within a database.
-        if !rows::lock_live_database(&mut *transaction, table.database_id).await? {
-            return Ok(TableMutationOutcome::NotFound);
-        }
-        let renamed = sqlx::query_as!(
-            TableRecord,
-            r#"
-            UPDATE database_tables
-            SET name = $3, version = version + 1
-            WHERE id = $1 AND database_id = $2 AND name = $4
-              AND NOT EXISTS (
-                SELECT 1 FROM database_tables other
-                WHERE other.database_id = $2 AND other.id <> $1
-                  AND lower(other.name) = lower($3)
-              )
-            RETURNING id, database_id, name, position, version
-            "#,
-            table.id.into_uuid(),
-            table.database_id.into_uuid(),
-            name,
-            previous_name,
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-        transaction.commit().await?;
-        Ok(match renamed {
-            Some(table) => TableMutationOutcome::Applied(table.try_into()?),
-            None => TableMutationOutcome::Conflict,
-        })
-    }
-
-    #[tracing::instrument(err, skip(self))]
-    async fn reorder_tables(
-        &self,
-        database_id: DatabaseId,
-        table_ids: &[TableId],
-    ) -> Result<TableOrderOutcome, Self::Error> {
-        self.rewrite_table_positions(database_id, table_ids).await
-    }
-
-    #[tracing::instrument(err, skip(self, command))]
-    async fn create_column(
-        &self,
-        table_id: TableId,
-        property_definition_id: PropertyDefinitionId,
-        command: &CreateColumn,
-    ) -> Result<(ColumnId, TableVersion), Self::Error> {
-        let config = command
-            .config
-            .as_ref()
-            .map(serde_json::to_value)
-            .transpose()?;
-
-        let mut transaction = self.pool.begin().await?;
-
-        let max_position = sqlx::query_scalar!(
-            r#"SELECT MAX(position) FROM database_columns WHERE table_id = $1"#,
-            table_id.into_uuid()
-        )
-        .fetch_one(&mut *transaction)
-        .await?;
-        let position = position_after(last_position(max_position)?.as_ref())?;
-        let id = ColumnId::new();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO database_columns (id, table_id, property_definition_id, position, config, infer_type)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            "#,
-            id.into_uuid(),
-            table_id.into_uuid(),
-            property_definition_id,
-            position.as_str(),
-            config,
-            command.infer_type,
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        // A new column changes the table's shape.
-        let version = rows::bump_table_version(&mut *transaction, table_id).await?;
-        transaction.commit().await?;
-        Ok((id, version))
-    }
-
-    #[tracing::instrument(err, skip(self, table, column))]
-    async fn rename_column(
-        &self,
-        table: &Table,
-        column: &Column,
-        name: &str,
-    ) -> Result<Option<RenameColumnOutcome>, Self::Error> {
-        let mut transaction = self.pool.begin().await?;
-        let version = sqlx::query_scalar!(
-            r#"UPDATE database_tables SET version = version + 1
-            WHERE id = $1 AND database_id = $2 AND version = $3
-              AND EXISTS (SELECT 1 FROM database_columns WHERE id = $4 AND table_id = $1
-                          AND display_name IS NOT DISTINCT FROM $5)
-              AND EXISTS (SELECT 1 FROM databases WHERE id = $2 AND trashed_at IS NULL)
-            RETURNING version"#,
-            table.id.into_uuid(),
-            table.database_id.into_uuid(),
-            table.version.0,
-            column.id.into_uuid(),
-            column.display_name,
-        )
-        .fetch_optional(&mut *transaction)
-        .await?;
-        let Some(version) = version else {
-            return Ok(None);
-        };
-        sqlx::query!(
-            "UPDATE database_columns SET display_name = $2 WHERE id = $1 AND table_id = $3",
-            column.id.into_uuid(),
-            name,
-            table.id.into_uuid()
-        )
-        .execute(&mut *transaction)
-        .await?;
-        transaction.commit().await?;
-        Ok(Some(RenameColumnOutcome {
-            column: Column {
-                display_name: Some(name.to_string()),
-                ..column.clone()
-            },
-            table_version: TableVersion(version),
-        }))
     }
 
     #[tracing::instrument(err, skip(self, table, column))]

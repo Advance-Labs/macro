@@ -10,5 +10,5 @@ export type OpResultOneOfThreeKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfThreeKind = {
-  column_typed: 'column_typed',
+  table_renamed: 'table_renamed',
 } as const;

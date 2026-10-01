@@ -3,8 +3,7 @@ import type {
   Catalog,
   Outcome,
 } from '@core/database-sql/generated/types';
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import {
   cleanup,
@@ -153,17 +152,16 @@ function columnOrderFixture() {
   );
   const requests: {
     resolve: () => void;
-    reject: (errors: ResultError<DatabaseSchemaErrorCode>[]) => void;
+    reject: (error: DatabaseOpsError) => void;
   }[] = [];
   const reorder = vi.fn(
     (_order: string[]) =>
       new ResultAsync(
-        new Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>>(
-          (resolve) =>
-            requests.push({
-              resolve: () => resolve(ok(undefined)),
-              reject: (errors) => resolve(err(errors)),
-            })
+        new Promise<Result<void, DatabaseOpsError>>((resolve) =>
+          requests.push({
+            resolve: () => resolve(ok(undefined)),
+            reject: (error) => resolve(err(error)),
+          })
         )
       )
   );
@@ -2072,9 +2070,11 @@ describe('database table view', () => {
         sort: [{ column: 'title', direction: 'ascending' }],
       },
     });
-    fixture.requests[1].reject([
-      { code: 'INVALID_SCHEMA', message: 'This table changed. Try again.' },
-    ]);
+    fixture.requests[1].reject({
+      code: 'INVALID_OP',
+      message: 'This table changed. Try again.',
+      refusal: null,
+    });
     await screen.findByRole('alert');
     expect(fixture.view().layout).toEqual({
       kind: 'table',
@@ -2100,18 +2100,22 @@ describe('database table view', () => {
     const fixture = columnOrderFixture();
     await fixture.moveName('right');
     await fixture.moveName('right');
-    fixture.requests[0].reject([
-      { code: 'INVALID_SCHEMA', message: 'First save failed' },
-    ]);
+    fixture.requests[0].reject({
+      code: 'INVALID_OP',
+      message: 'First save failed',
+      refusal: null,
+    });
     await waitFor(() => expect(fixture.requests).toHaveLength(2));
     expect(fixture.headers()).toEqual([
       'Notes column menu',
       'Owner column menu',
       'Name column menu',
     ]);
-    fixture.requests[1].reject([
-      { code: 'INVALID_SCHEMA', message: 'Final save failed' },
-    ]);
+    fixture.requests[1].reject({
+      code: 'INVALID_OP',
+      message: 'Final save failed',
+      refusal: null,
+    });
     await screen.findByText('Final save failed');
     expect(fixture.view().layout).toEqual({
       kind: 'table',
@@ -2143,9 +2147,11 @@ describe('database table view', () => {
     };
     fixture.setView(selected);
     fixture.changeView.mockClear();
-    fixture.requests[0].reject([
-      { code: 'INVALID_SCHEMA', message: 'Save failed' },
-    ]);
+    fixture.requests[0].reject({
+      code: 'INVALID_OP',
+      message: 'Save failed',
+      refusal: null,
+    });
     await screen.findByText('Save failed');
     expect(fixture.changeView).not.toHaveBeenCalled();
     expect(fixture.view()).toEqual(selected);

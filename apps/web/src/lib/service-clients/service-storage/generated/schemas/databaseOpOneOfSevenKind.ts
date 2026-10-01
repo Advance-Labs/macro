@@ -10,5 +10,5 @@ export type DatabaseOpOneOfSevenKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const DatabaseOpOneOfSevenKind = {
-  change_column_type: 'change_column_type',
+  reorder_tables: 'reorder_tables',
 } as const;

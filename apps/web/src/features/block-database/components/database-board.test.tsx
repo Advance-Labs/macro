@@ -1,5 +1,4 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -636,13 +635,15 @@ describe('database board', () => {
       writable: true,
     };
     const onAddGroup = vi.fn(
-      async (
-        _label: string
-      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+      async (_label: string): Promise<Result<void, DatabaseOpsError>> =>
         ok(undefined)
     );
     onAddGroup.mockResolvedValueOnce(
-      err([{ code: 'NETWORK_ERROR', message: 'Connection unavailable' }])
+      err({
+        code: 'NETWORK_ERROR',
+        message: 'Connection unavailable',
+        refusal: null,
+      })
     );
     render(() => (
       <DatabaseBoard
@@ -704,9 +705,7 @@ describe('database board', () => {
       writable: true,
     };
     const onAddGroup = vi.fn(
-      async (
-        _label: string
-      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+      async (_label: string): Promise<Result<void, DatabaseOpsError>> =>
         ok(undefined)
     );
     render(() => (
@@ -763,9 +762,7 @@ describe('database board', () => {
       writable: true,
     };
     const onAddGroup = vi.fn(
-      async (
-        _label: string
-      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+      async (_label: string): Promise<Result<void, DatabaseOpsError>> =>
         ok(undefined)
     );
     render(() => (
@@ -822,9 +819,7 @@ describe('database board', () => {
       writable: true,
     };
     const onAddGroup = vi.fn(
-      async (
-        _label: string
-      ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> =>
+      async (_label: string): Promise<Result<void, DatabaseOpsError>> =>
         ok(undefined)
     );
     render(() => (

@@ -7,6 +7,9 @@ use uuid::Uuid;
 
 /// Definition input owned by the properties domain.
 pub struct NewDatabaseDefinition<'a> {
+    /// The definition's id, minted by the caller (UUIDv7) so it can name
+    /// the definition before the transaction commits.
+    pub id: Uuid,
     /// Owning database.
     pub database_id: Uuid,
     /// User-visible name.
@@ -17,8 +20,9 @@ pub struct NewDatabaseDefinition<'a> {
     pub is_multi_select: bool,
     /// Optional entity-reference restriction.
     pub specific_entity_type: Option<EntityType>,
-    /// Initial options in display order, each coloured by its position.
-    pub options: &'a [PropertyOptionValue],
+    /// Initial options in display order, each under the id the caller
+    /// minted and coloured by its position.
+    pub options: &'a [(Uuid, PropertyOptionValue)],
 }
 
 /// Lets a composition root create schema within an owning use case's transaction.

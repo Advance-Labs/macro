@@ -171,12 +171,11 @@ describe('editable blank row', () => {
       await controller.save({ kind: 'create', values: { name: 'Too late' } })
     ).toEqual(err({ kind: 'unmounted' }));
     expect(await controller.addGroup('status', 'Too late')).toEqual(
-      err([
-        {
-          code: 'UNKNOWN_ERROR',
-          message: 'The table was closed before the group was added.',
-        },
-      ])
+      err({
+        code: 'UNKNOWN_ERROR',
+        message: 'The table was closed before the group was added.',
+        refusal: null,
+      })
     );
     expect(source.addOption).not.toHaveBeenCalled();
 

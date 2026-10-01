@@ -21,7 +21,7 @@ mod write_warning;
 #[cfg(test)]
 mod test;
 
-use models_databases::{ColumnId, DatabaseId, OptionId, TableId};
+use models_databases::{ColumnId, ColumnKind, DatabaseId, OpResult, OptionId, TableId};
 use std::sync::Arc;
 
 use ai_toolset::{AsyncToolCollection, ToolCallError};
@@ -39,10 +39,10 @@ use models_properties::shared::DataType;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::catalog::{cast_targets, option_labels, sql_table_name};
+use crate::domain::catalog::{cast_targets, entity_kind, option_labels, sql_table_name};
 use crate::domain::models::{
     ColumnConfig, ColumnDetail, DatabaseDetail, DatabaseError, DatabaseView, ListedDatabase,
-    TableDetail, Viewer,
+    OpBatch, TableDetail, Viewer,
 };
 use crate::domain::ports::DatabasesService;
 use crate::domain::receipt::database_receipt;
@@ -174,6 +174,21 @@ impl<Service: DatabasesService, EntityAccess: EntityAccessService>
         let receipt = self.view_receipt(user_id, database_id).await?;
         self.service
             .get_database(receipt)
+            .await
+            .map_err(database_error)
+    }
+
+    /// Apply ops to one database as the requesting user: every schema and
+    /// data write of the tools goes through here.
+    pub(crate) async fn apply(
+        &self,
+        user_id: &MacroUserIdStr<'static>,
+        database_id: DatabaseId,
+        batch: OpBatch,
+    ) -> Result<Vec<OpResult>, ToolCallError> {
+        let receipt = self.edit_receipt(user_id, database_id).await?;
+        self.service
+            .apply_ops(receipt, self.viewer(user_id), batch)
             .await
             .map_err(database_error)
     }
@@ -413,6 +428,50 @@ impl From<DataType> for ColumnType {
     }
 }
 
+/// The column type a tool's arguments name: its value type, whether a cell
+/// holds several values, what an entity column points at, and the table a
+/// relation relates to.
+pub(crate) fn column_kind(
+    data_type: ColumnType,
+    is_multi_select: bool,
+    specific_entity_type: Option<ToolEntityType>,
+    relation: Option<(DatabaseId, TableId)>,
+) -> Result<ColumnKind, ToolCallError> {
+    if let Some((database, table)) = relation {
+        if data_type != ColumnType::Entity {
+            return Err(ToolCallError {
+                description: "A relation column's type is entity; pass dataType entity with \
+                              linkToTableId."
+                    .into(),
+                internal_error: anyhow::anyhow!("a relation asked for another type"),
+            });
+        }
+        return Ok(ColumnKind::Relation { database, table });
+    }
+    let multi = is_multi_select;
+    Ok(match data_type {
+        ColumnType::Text => ColumnKind::Text,
+        ColumnType::Number => ColumnKind::Number,
+        ColumnType::Boolean => ColumnKind::Boolean,
+        ColumnType::Date => ColumnKind::Date,
+        ColumnType::Link => ColumnKind::Link,
+        ColumnType::Select => ColumnKind::Select { multi },
+        ColumnType::SelectNumber => ColumnKind::SelectNumber { multi },
+        ColumnType::Tag => ColumnKind::Tag,
+        ColumnType::Entity => {
+            let target = specific_entity_type
+                .and_then(|kind| entity_kind(kind.into()))
+                .ok_or_else(|| ToolCallError {
+                    description: "An entity column needs specificEntityType, what its ids \
+                                  reference: USER for people, DOCUMENT, TASK and so on."
+                        .into(),
+                    internal_error: anyhow::anyhow!("an entity column without its kind"),
+                })?;
+            ColumnKind::Entity { target, multi }
+        }
+    })
+}
+
 /// The kind of Macro entity an entity column references, as the model names
 /// it. A mirror of the property system's entity types, minus database rows:
 /// a relation to another table is made with `linkToTableId`.
@@ -590,6 +649,26 @@ pub struct ToolTable {
     // Opaque: the filter tree is recursive, which the web's tool-type generator cannot follow.
     #[schemars(with = "Vec<serde_json::Value>")]
     pub views: Vec<DatabaseView>,
+}
+
+impl ToolDatabaseSchema {
+    /// The option labels of one column, in order; `None` when the schema
+    /// has no such column.
+    pub(crate) fn column_options(&self, table: TableId, column: ColumnId) -> Option<Vec<String>> {
+        self.tables
+            .iter()
+            .find(|candidate| candidate.id == table)?
+            .columns
+            .iter()
+            .find(|candidate| candidate.id == column)
+            .map(|column| {
+                column
+                    .options
+                    .iter()
+                    .map(|option| option.label.clone())
+                    .collect()
+            })
+    }
 }
 
 /// Everything a model needs to write SQL against one database.

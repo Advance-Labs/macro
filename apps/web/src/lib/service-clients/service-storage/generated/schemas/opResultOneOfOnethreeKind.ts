@@ -10,5 +10,5 @@ export type OpResultOneOfOnethreeKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfOnethreeKind = {
-  card_moved: 'card_moved',
+  column_deleted: 'column_deleted',
 } as const;

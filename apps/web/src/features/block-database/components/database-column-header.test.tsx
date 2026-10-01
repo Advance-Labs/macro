@@ -1,5 +1,4 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -111,16 +110,14 @@ describe('column header interactions', () => {
   });
 
   it('retains a failed draft and its original identity across refresh, then retries without duplicate writes', async () => {
-    let settle!: (
-      result: Result<void, ResultError<DatabaseSchemaErrorCode>[]>
-    ) => void;
+    let settle!: (result: Result<void, DatabaseOpsError>) => void;
     const rename = vi
       .fn<
         (
           id: string,
           name: string,
           previousName: string
-        ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>
+        ) => ResultAsync<void, DatabaseOpsError>
       >()
       .mockImplementationOnce(
         () =>
@@ -153,7 +150,9 @@ describe('column header interactions', () => {
     expect(rename).toHaveBeenCalledExactlyOnceWith('name', 'Task', 'Name');
     expect(input.readOnly).toBe(true);
     expect(screen.getByLabelText('Column name')).toBe(input);
-    settle(err([{ code: 'NETWORK_ERROR', message: 'Connection lost' }]));
+    settle(
+      err({ code: 'NETWORK_ERROR', message: 'Connection lost', refusal: null })
+    );
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Your change could not be sent. Check your connection.'
     );
@@ -259,9 +258,11 @@ describe('column header interactions', () => {
 
 it('requires confirmation before deleting a column and retains a failed deletion', async () => {
   const remove = vi.fn(() =>
-    errAsync<void, ResultError<DatabaseSchemaErrorCode>[]>([
-      { code: 'CONFLICT', message: 'Version conflict' },
-    ])
+    errAsync<void, DatabaseOpsError>({
+      code: 'CONFLICT',
+      message: 'Version conflict',
+      refusal: null,
+    })
   );
   render(() => (
     <DatabaseColumnHeader
@@ -294,12 +295,17 @@ it('requires confirmation before deleting a column and retains a failed deletion
 
 it('uses the type submenu and surfaces lossless conversion failures without changing the label', async () => {
   const changeType = vi.fn(() =>
-    errAsync<void, ResultError<DatabaseSchemaErrorCode>[]>([
-      {
-        code: 'INVALID_SCHEMA',
+    errAsync<void, DatabaseOpsError>({
+      code: 'INVALID_OP',
+      message: 'op 0: Some text cannot become a number without changing it.',
+      refusal: {
         message: 'Some text cannot become a number without changing it.',
+        op: 0,
+        row: null,
+        column: 'name',
+        taken: null,
       },
-    ])
+    })
   );
   render(() => (
     <DatabaseColumnHeader
@@ -322,7 +328,8 @@ it('uses the type submenu and surfaces lossless conversion failures without chan
   );
   await waitFor(() =>
     expect(changeType).toHaveBeenCalledExactlyOnceWith('name', {
-      dataType: 'NUMBER',
+      to: { type: 'number' },
+      baseVersion: undefined,
     })
   );
   expect((await screen.findByRole('alert')).textContent).toContain(

@@ -1,10 +1,10 @@
 import PlusIcon from '@phosphor/plus.svg';
-import { createDatabaseColumn } from '@queries/storage/databases';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import { Button } from '@ui/components/Button';
 import { createSignal, Show } from 'solid-js';
 import { columnSchemaMessage } from '../core/column-schema';
 import { defaultDatabaseColumnName } from '../core/property-creation';
+import { createDatabaseColumn } from '../queries/columns';
 
 /**
  * Add a Text column with the next free default name at the table's end; its
@@ -24,15 +24,9 @@ export function createDefaultColumn(args: {
   return createDatabaseColumn({
     databaseId: args.databaseId,
     tableId: args.tableId,
-    request: {
-      inferType: true,
-      binding: {
-        kind: 'new',
-        name,
-        dataType: 'STRING',
-        isMultiSelect: false,
-      },
-    },
+    name,
+    type: { type: 'text' },
+    inferType: true,
   });
 }
 
@@ -54,7 +48,7 @@ export function AddColumnMenu(props: {
     setPending(false);
     created.match(
       (id) => props.onCreated?.(id),
-      (errors) => setError(columnSchemaMessage(errors))
+      (error) => setError(columnSchemaMessage(error))
     );
   }
   return (

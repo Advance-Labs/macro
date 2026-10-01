@@ -72,16 +72,6 @@ export type ActiveMeetingsResponse = {
 export type ActivityType = 'view' | 'interact';
 
 /**
- * Request body for adding options to a select column.
- */
-export type AddColumnOptionsRequest = {
-    /**
-     * Display labels to add. Labels the column already has are ignored.
-     */
-    labels: Array<string>;
-};
-
-/**
  * Request body for favoriting an entity.
  */
 export type AddFavoriteRequest = {
@@ -1177,12 +1167,24 @@ export type ApiThreadReply = {
 };
 
 /**
- * A batch of ops for one database, applied together or not at all.
+ * A batch of ops for one database, applied in order, in one transaction,
+ * together or not at all.
  */
 export type ApplyOpsRequest = {
     /**
+     * The version each named table must still be at, as the caller read
+     * it. A table that moved refuses the batch as a conflict, so a schema
+     * edit made against what the caller saw does not overwrite another's.
+     * Left out, ops are last-write-wins.
+     */
+    baseVersions?: {
+        [key: string]: TableVersion;
+    };
+    /**
      * The ops, in the order they apply. Every one names a table of this
-     * database; a column type change is sent on its own.
+     * database, or one an earlier op of the batch creates: tables, columns
+     * and options carry ids the client mints (UUIDv7), so a later op can
+     * name them. An id that already names something refuses the batch.
      */
     ops: Array<DatabaseOp>;
 };
@@ -2452,39 +2454,6 @@ export type CellWrite = {
 };
 
 /**
- * Explicit column type configuration. Existing values must convert without
- * loss, unless `clearInvalid` empties the ones that do not.
- */
-export type ChangeColumnTypeRequest = {
-    /**
-     * Table version shown when the type menu opened.
-     */
-    baseVersion: TableVersion;
-    /**
-     * Empty the values that do not fit the new type instead of refusing the
-     * change; a cell with several values keeps its first.
-     */
-    clearInvalid?: boolean;
-    /**
-     * Requested property type.
-     */
-    dataType: DataType;
-    /**
-     * Whether select, link or entity values may hold multiple items.
-     */
-    isMultiSelect?: boolean;
-    /**
-     * Related database; defaults to the current database.
-     */
-    linkToDatabaseId?: string | null;
-    /**
-     * Related table, when choosing a database-row relationship.
-     */
-    linkToTableId?: string | null;
-    specificEntityType?: null | EntityType;
-};
-
-/**
  * Channel metadata in soup payloads.
  */
 export type Channel = {
@@ -3431,36 +3400,6 @@ export type Column = {
 };
 
 /**
- * How a new column obtains its definition.
- */
-export type ColumnBindingRequest = {
-    /**
-     * Value type.
-     */
-    dataType: DataType;
-    /**
-     * Whether the column holds multiple values.
-     */
-    isMultiSelect?: boolean;
-    kind: 'new';
-    /**
-     * Column display name.
-     */
-    name: string;
-    /**
-     * For a select or tag column, the labels SQL will accept. A select
-     * column created without any accepts nothing until options are added.
-     */
-    options?: Array<string>;
-} | {
-    kind: 'existing';
-    /**
-     * The definition to bind.
-     */
-    propertyDefinitionId: string;
-};
-
-/**
  * What changing a column to one type would do to its values: the dry run
  * of a type change, for one target.
  */
@@ -3591,39 +3530,6 @@ export type ColumnKind = {
      */
     table: string;
     type: 'relation';
-};
-
-/**
- * Table versions changed by a placement deletion or reorder.
- */
-export type ColumnSchemaOutcome = {
-    /**
-     * Includes the related table when a relation column goes.
-     */
-    table_versions: {
-        [key: string]: TableVersion;
-    };
-};
-
-/**
- * What a column type change did.
- */
-export type ColumnTypeChangeOutcome = {
-    /**
-     * Cells emptied because their value did not fit the new type.
-     */
-    cleared_cells: number;
-    /**
-     * The table's version after the change; unchanged when the column
-     * already had the type.
-     */
-    table_versions: {
-        [key: string]: TableVersion;
-    };
-    /**
-     * Cells that held several values and kept only their first.
-     */
-    trimmed_cells: number;
 };
 
 /**
@@ -3971,38 +3877,6 @@ export type CreateChannelScopedBotResponse = {
      * Token metadata.
      */
     token: BotToken;
-};
-
-/**
- * Request body for creating a column.
- */
-export type CreateColumnRequest = {
-    /**
-     * Definition source.
-     */
-    binding: ColumnBindingRequest;
-    /**
-     * Infer the first value type of a newly owned text column.
-     */
-    inferType?: boolean;
-    /**
-     * Database of the linked table (defaults to this database).
-     */
-    linkToDatabaseId?: string;
-    /**
-     * Link this column to another table (many-to-many).
-     */
-    linkToTableId?: string;
-};
-
-/**
- * Response for a created column.
- */
-export type CreateColumnResponse = {
-    /**
-     * Identifier of the new column placement.
-     */
-    columnId: string;
 };
 
 export type CreateCommentRequest = {
@@ -4429,16 +4303,6 @@ export type CreateSnippetResponse = {
      * The document ID of the created snippet.
      */
     documentId: string;
-};
-
-/**
- * Request body for creating a table.
- */
-export type CreateTableRequest = {
-    /**
-     * Display name.
-     */
-    name: string;
 };
 
 /**
@@ -5091,10 +4955,124 @@ export type DatabaseDetail = {
 };
 
 /**
- * One write to a database's data. A request's ops apply together or not at
- * all, and every op names a table of the database the request is for.
+ * One write to a database: its tables, columns, options, rows or views. A
+ * request's ops apply in order and together, or not at all, and every op
+ * names a table of the database the request is for (or, creating one, adds
+ * it there).
  */
 export type DatabaseOp = {
+    /**
+     * The new table's id, minted by the client; later ops of the
+     * request may name it.
+     */
+    id: string;
+    kind: 'create_table';
+    /**
+     * Its name, unique within the database ignoring case.
+     */
+    name: string;
+} | {
+    kind: 'rename_table';
+    /**
+     * Its new name, unique within the database ignoring case.
+     */
+    name: string;
+    /**
+     * The name the caller saw. Given, the rename is refused if the
+     * table goes by another one now, so a concurrent rename is not
+     * overwritten.
+     */
+    previousName?: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    kind: 'delete_table';
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    kind: 'reorder_tables';
+    /**
+     * Every table, in its new order.
+     */
+    order: Array<string>;
+} | {
+    /**
+     * The column it goes right after; left out, it goes after the
+     * table's last column.
+     */
+    after?: string;
+    /**
+     * What the column holds.
+     */
+    definition: NewColumn;
+    /**
+     * The new column's id, minted by the client; later ops of the
+     * request may name it.
+     */
+    id: string;
+    kind: 'create_column';
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The column.
+     */
+    column: string;
+    kind: 'rename_column';
+    /**
+     * Its new name, unique within the table ignoring case.
+     */
+    name: string;
+    /**
+     * The name the caller saw. Given, the rename is refused if the
+     * column goes by another one now.
+     */
+    previousName?: string;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The column.
+     */
+    column: string;
+    kind: 'delete_column';
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    kind: 'reorder_columns';
+    /**
+     * Its columns, in their new order.
+     */
+    order: Array<string>;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
+    /**
+     * The select or tag column.
+     */
+    column: string;
+    kind: 'add_options';
+    /**
+     * The options, each under an id the client mints.
+     */
+    options: Array<NewOption>;
+    /**
+     * The table.
+     */
+    table: string;
+} | {
     /**
      * Create a select option for a label the column does not have yet,
      * instead of refusing the op.
@@ -5327,16 +5305,6 @@ export type DateOperator = 'before' | 'after' | 'onOrBefore' | 'onOrAfter';
 
 export type DeleteAnchorInfo = AnchorId & {
     deleted: boolean;
-};
-
-/**
- * Guard a column deletion against concurrent writes.
- */
-export type DeleteColumnRequest = {
-    /**
-     * Table version shown in the confirmation.
-     */
-    baseVersion: TableVersion;
 };
 
 export type DeleteCommentRequest = {
@@ -8549,6 +8517,54 @@ export type NewChannelAttachment = {
 };
 
 /**
+ * What a new column holds.
+ */
+export type NewColumn = {
+    /**
+     * Let the column's first value settle its type: only for a plain
+     * text column.
+     */
+    inferType?: boolean;
+    /**
+     * The column's name, unique within the table ignoring case.
+     */
+    name: string;
+    /**
+     * For a select or tag column, the options it starts with, in
+     * order, each under an id the client mints. A select column with
+     * none accepts nothing until options are added.
+     */
+    options?: Array<NewOption>;
+    source: 'new';
+    /**
+     * Its type. A relation names the table whose rows it holds, one the
+     * caller can see.
+     */
+    type: ColumnKind;
+} | {
+    /**
+     * The property's definition.
+     */
+    property: string;
+    source: 'existing';
+};
+
+/**
+ * A select or tag option to create.
+ */
+export type NewOption = {
+    /**
+     * Its id, minted by the client; later ops of the request may name it.
+     */
+    id: string;
+    /**
+     * Its label, unique within the column ignoring case. A numeric
+     * select's labels are numbers.
+     */
+    label: string;
+};
+
+/**
  * Location supplied when creating a document discussion.
  */
 export type NewThreadAnchor = {
@@ -8671,12 +8687,81 @@ export type OpRefusalResponse = {
      * The row's index within the op, when one row is at fault.
      */
     row: number | null;
+    taken: null | TakenId;
 };
 
 /**
  * What one op did, in the order the ops were sent.
  */
 export type OpResult = {
+    kind: 'table_created';
+    /**
+     * The new table.
+     */
+    table: string;
+    /**
+     * Its version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'table_renamed';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'table_deleted';
+    /**
+     * The table removed.
+     */
+    table: string;
+} | {
+    kind: 'tables_reordered';
+    /**
+     * Every table, in its new order, with its version once the request
+     * committed.
+     */
+    tables: Array<VersionedTable>;
+} | {
+    /**
+     * The new column.
+     */
+    column: string;
+    kind: 'column_created';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'column_renamed';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'column_deleted';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    kind: 'columns_reordered';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
+    /**
+     * The options created, in order: those sent, less any whose label
+     * the column already had.
+     */
+    added: Array<string>;
+    kind: 'options_added';
+    /**
+     * The table's version once the request committed.
+     */
+    tableVersion: TableVersion;
+} | {
     /**
      * How many rows the op inserted, updated or deleted.
      */
@@ -9748,62 +9833,6 @@ export type RenameChannelLabelRequest = {
 };
 
 /**
- * A renamed placement and its table's version after the atomic update.
- */
-export type RenameColumnOutcome = {
-    /**
-     * The placement with its new display label; IDs and binding are preserved.
-     */
-    column: Column;
-    /**
-     * Monotonic table version used to reconcile concurrent client refreshes.
-     */
-    table_version: TableVersion;
-};
-
-/**
- * Rename one column placement without changing its property's SQL identifier.
- */
-export type RenameColumnRequest = {
-    /**
-     * New display name.
-     */
-    name: string;
-    /**
-     * Label shown when the rename editor opened.
-     */
-    previousName: string;
-};
-
-/**
- * Request body for renaming a table without overwriting a concurrent rename.
- */
-export type RenameTableRequest = {
-    /**
-     * New display name.
-     */
-    name: string;
-    /**
-     * Name shown when the rename editor opened.
-     */
-    previousName: string;
-};
-
-/**
- * A complete placement order, identified by stable column IDs.
- */
-export type ReorderColumnsRequest = {
-    /**
-     * Table version used to build the order.
-     */
-    baseVersion: TableVersion;
-    /**
-     * Every column, exactly once.
-     */
-    columnIds: Array<string>;
-};
-
-/**
  * Request body for reordering favorites.
  */
 export type ReorderFavoritesRequest = {
@@ -9826,16 +9855,6 @@ export type ReorderPinRequest = {
      * The type of the pin
      */
     pinnedItemType: string;
-};
-
-/**
- * A complete tab order, identified by stable table IDs.
- */
-export type ReorderTablesRequest = {
-    /**
-     * Every table of the database, exactly once, in the new left-to-right order.
-     */
-    tableIds: Array<string>;
 };
 
 /**
@@ -11909,6 +11928,31 @@ export type TableVersion = number;
 export type TagFilterMode = 'any' | 'all';
 
 /**
+ * An id a request minted for something new that already names something,
+ * which refuses the request: a retried request whose first attempt
+ * committed, or an id minted twice.
+ */
+export type TakenId = {
+    /**
+     * A table's.
+     */
+    id: string;
+    kind: 'table';
+} | {
+    /**
+     * A column's.
+     */
+    id: string;
+    kind: 'column';
+} | {
+    /**
+     * An option's.
+     */
+    id: string;
+    kind: 'option';
+};
+
+/**
  * Task-only filters nested under document filters.
  */
 export type TaskFilters = {
@@ -12638,6 +12682,20 @@ export type Vec = Array<{
      */
     ids?: Array<string> | null;
 }>;
+
+/**
+ * A table and its version.
+ */
+export type VersionedTable = {
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * Its version.
+     */
+    version: TableVersion;
+};
 
 export type View = {
     /**
@@ -16248,7 +16306,7 @@ export type ApplyDatabaseOpsErrors = {
     403: ErrorResponse;
     404: ErrorResponse;
     /**
-     * A column type change raced another schema change
+     * A table moved from its base version, or a schema change raced another
      */
     409: ErrorResponse;
     500: ErrorResponse;
@@ -16310,276 +16368,6 @@ export type UpdateDatabasePermissionsResponses = {
 };
 
 export type UpdateDatabasePermissionsResponse = UpdateDatabasePermissionsResponses[keyof UpdateDatabasePermissionsResponses];
-
-export type CreateDatabaseTableData = {
-    body: CreateTableRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables';
-};
-
-export type CreateDatabaseTableErrors = {
-    400: ErrorResponse;
-    /**
-     * Missing or invalid credentials
-     */
-    401: ErrorResponse;
-    /**
-     * No edit access to the database
-     */
-    403: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type CreateDatabaseTableError = CreateDatabaseTableErrors[keyof CreateDatabaseTableErrors];
-
-export type CreateDatabaseTableResponses = {
-    201: Table;
-};
-
-export type CreateDatabaseTableResponse = CreateDatabaseTableResponses[keyof CreateDatabaseTableResponses];
-
-export type ReorderDatabaseTablesData = {
-    body: ReorderTablesRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/order';
-};
-
-export type ReorderDatabaseTablesErrors = {
-    /**
-     * The order does not name every table exactly once
-     */
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    /**
-     * The database's tables changed while the order was written
-     */
-    409: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type ReorderDatabaseTablesError = ReorderDatabaseTablesErrors[keyof ReorderDatabaseTablesErrors];
-
-export type ReorderDatabaseTablesResponses = {
-    /**
-     * The tables in their new order
-     */
-    200: Array<Table>;
-};
-
-export type ReorderDatabaseTablesResponse = ReorderDatabaseTablesResponses[keyof ReorderDatabaseTablesResponses];
-
-export type DeleteDatabaseTableData = {
-    body?: never;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-        /**
-         * Table id
-         */
-        table_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}';
-};
-
-export type DeleteDatabaseTableErrors = {
-    /**
-     * The last table, or a relation still points at it
-     */
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type DeleteDatabaseTableError = DeleteDatabaseTableErrors[keyof DeleteDatabaseTableErrors];
-
-export type DeleteDatabaseTableResponses = {
-    /**
-     * Deleted
-     */
-    204: void;
-};
-
-export type DeleteDatabaseTableResponse = DeleteDatabaseTableResponses[keyof DeleteDatabaseTableResponses];
-
-export type RenameDatabaseTableData = {
-    body: RenameTableRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-        /**
-         * Table id
-         */
-        table_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}';
-};
-
-export type RenameDatabaseTableErrors = {
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type RenameDatabaseTableError = RenameDatabaseTableErrors[keyof RenameDatabaseTableErrors];
-
-export type RenameDatabaseTableResponses = {
-    200: Table;
-};
-
-export type RenameDatabaseTableResponse = RenameDatabaseTableResponses[keyof RenameDatabaseTableResponses];
-
-export type CreateDatabaseColumnData = {
-    body: CreateColumnRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-        /**
-         * Table id
-         */
-        table_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns';
-};
-
-export type CreateDatabaseColumnErrors = {
-    400: ErrorResponse;
-    /**
-     * Missing or invalid credentials
-     */
-    401: ErrorResponse;
-    /**
-     * No edit access to the database
-     */
-    403: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type CreateDatabaseColumnError = CreateDatabaseColumnErrors[keyof CreateDatabaseColumnErrors];
-
-export type CreateDatabaseColumnResponses = {
-    201: CreateColumnResponse;
-};
-
-export type CreateDatabaseColumnResponse = CreateDatabaseColumnResponses[keyof CreateDatabaseColumnResponses];
-
-export type ReorderDatabaseColumnsData = {
-    body: ReorderColumnsRequest;
-    path: {
-        id: string;
-        table_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns/order';
-};
-
-export type ReorderDatabaseColumnsErrors = {
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    409: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type ReorderDatabaseColumnsError = ReorderDatabaseColumnsErrors[keyof ReorderDatabaseColumnsErrors];
-
-export type ReorderDatabaseColumnsResponses = {
-    200: ColumnSchemaOutcome;
-};
-
-export type ReorderDatabaseColumnsResponse = ReorderDatabaseColumnsResponses[keyof ReorderDatabaseColumnsResponses];
-
-export type DeleteDatabaseColumnData = {
-    body: DeleteColumnRequest;
-    path: {
-        id: string;
-        table_id: string;
-        column_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
-};
-
-export type DeleteDatabaseColumnErrors = {
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    409: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type DeleteDatabaseColumnError = DeleteDatabaseColumnErrors[keyof DeleteDatabaseColumnErrors];
-
-export type DeleteDatabaseColumnResponses = {
-    200: ColumnSchemaOutcome;
-};
-
-export type DeleteDatabaseColumnResponse = DeleteDatabaseColumnResponses[keyof DeleteDatabaseColumnResponses];
-
-export type RenameDatabaseColumnData = {
-    body: RenameColumnRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-        /**
-         * Table id
-         */
-        table_id: string;
-        /**
-         * Column id
-         */
-        column_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns/{column_id}';
-};
-
-export type RenameDatabaseColumnErrors = {
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type RenameDatabaseColumnError = RenameDatabaseColumnErrors[keyof RenameDatabaseColumnErrors];
-
-export type RenameDatabaseColumnResponses = {
-    200: RenameColumnOutcome;
-};
-
-export type RenameDatabaseColumnResponse = RenameDatabaseColumnResponses[keyof RenameDatabaseColumnResponses];
 
 export type ListDatabaseColumnCastsData = {
     body?: never;
@@ -16643,79 +16431,6 @@ export type InferDatabaseColumnTypeResponses = {
 };
 
 export type InferDatabaseColumnTypeResponse = InferDatabaseColumnTypeResponses[keyof InferDatabaseColumnTypeResponses];
-
-export type AddDatabaseColumnOptionsData = {
-    body: AddColumnOptionsRequest;
-    path: {
-        /**
-         * Database id
-         */
-        id: string;
-        /**
-         * Table id
-         */
-        table_id: string;
-        /**
-         * Column id
-         */
-        column_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/options';
-};
-
-export type AddDatabaseColumnOptionsErrors = {
-    /**
-     * Not a select column, or an invalid label
-     */
-    400: ErrorResponse;
-    /**
-     * Missing or invalid credentials
-     */
-    401: ErrorResponse;
-    /**
-     * No edit access to the database
-     */
-    403: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type AddDatabaseColumnOptionsError = AddDatabaseColumnOptionsErrors[keyof AddDatabaseColumnOptionsErrors];
-
-export type AddDatabaseColumnOptionsResponses = {
-    200: ColumnDetail;
-};
-
-export type AddDatabaseColumnOptionsResponse = AddDatabaseColumnOptionsResponses[keyof AddDatabaseColumnOptionsResponses];
-
-export type ChangeDatabaseColumnTypeData = {
-    body: ChangeColumnTypeRequest;
-    path: {
-        id: string;
-        table_id: string;
-        column_id: string;
-    };
-    query?: never;
-    url: '/databases/{id}/tables/{table_id}/columns/{column_id}/type';
-};
-
-export type ChangeDatabaseColumnTypeErrors = {
-    400: ErrorResponse;
-    401: ErrorResponse;
-    403: ErrorResponse;
-    404: ErrorResponse;
-    409: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type ChangeDatabaseColumnTypeError = ChangeDatabaseColumnTypeErrors[keyof ChangeDatabaseColumnTypeErrors];
-
-export type ChangeDatabaseColumnTypeResponses = {
-    200: ColumnTypeChangeOutcome;
-};
-
-export type ChangeDatabaseColumnTypeResponse = ChangeDatabaseColumnTypeResponses[keyof ChangeDatabaseColumnTypeResponses];
 
 export type GetDatabaseViewPositionsData = {
     body?: never;

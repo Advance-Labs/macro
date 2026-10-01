@@ -5,14 +5,12 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{DatabaseId, TableId};
+use models_databases::{DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-};
-use crate::domain::models::CreateTable as CreateTableCommand;
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Add a table to a database.
@@ -86,21 +84,17 @@ where
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
-
-        let table = service_context
-            .service
-            .create_table(
-                receipt,
-                CreateTableCommand {
-                    database_id: self.database_id,
+        let id = TableId::new();
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::CreateTable {
+                    id,
                     name: self.name.clone(),
-                },
+                }]),
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
 
         // Read the schema back rather than deriving the SQL name here: the
         // catalog disambiguates names against the ones already taken, so a
@@ -110,7 +104,7 @@ where
             .await;
 
         Ok(CreateTableResponse {
-            table_id: table.id,
+            table_id: id,
             database_id: self.database_id,
             database,
             warning,

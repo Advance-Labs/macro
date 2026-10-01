@@ -6,19 +6,30 @@
  */
 import type { DatabaseOpOneOf } from './databaseOpOneOf';
 import type { DatabaseOpOneOfFive } from './databaseOpOneOfFive';
+import type { DatabaseOpOneOfFourzero } from './databaseOpOneOfFourzero';
 import type { DatabaseOpOneOfNine } from './databaseOpOneOfNine';
-import type { DatabaseOpOneOfOneeight } from './databaseOpOneOfOneeight';
-import type { DatabaseOpOneOfOnefour } from './databaseOpOneOfOnefour';
-import type { DatabaseOpOneOfOnesix } from './databaseOpOneOfOnesix';
-import type { DatabaseOpOneOfOnetwo } from './databaseOpOneOfOnetwo';
+import type { DatabaseOpOneOfOnefive } from './databaseOpOneOfOnefive';
+import type { DatabaseOpOneOfOnenine } from './databaseOpOneOfOnenine';
+import type { DatabaseOpOneOfOneone } from './databaseOpOneOfOneone';
+import type { DatabaseOpOneOfOneseven } from './databaseOpOneOfOneseven';
+import type { DatabaseOpOneOfOnethree } from './databaseOpOneOfOnethree';
 import type { DatabaseOpOneOfSeven } from './databaseOpOneOfSeven';
 import type { DatabaseOpOneOfThree } from './databaseOpOneOfThree';
-import type { DatabaseOpOneOfTwotwo } from './databaseOpOneOfTwotwo';
-import type { DatabaseOpOneOfTwozero } from './databaseOpOneOfTwozero';
+import type { DatabaseOpOneOfThreeeight } from './databaseOpOneOfThreeeight';
+import type { DatabaseOpOneOfThreefour } from './databaseOpOneOfThreefour';
+import type { DatabaseOpOneOfThreesix } from './databaseOpOneOfThreesix';
+import type { DatabaseOpOneOfThreetwo } from './databaseOpOneOfThreetwo';
+import type { DatabaseOpOneOfThreezero } from './databaseOpOneOfThreezero';
+import type { DatabaseOpOneOfTwofive } from './databaseOpOneOfTwofive';
+import type { DatabaseOpOneOfTwoone } from './databaseOpOneOfTwoone';
+import type { DatabaseOpOneOfTwoseven } from './databaseOpOneOfTwoseven';
+import type { DatabaseOpOneOfTwothree } from './databaseOpOneOfTwothree';
 
 /**
- * One write to a database's data. A request's ops apply together or not at
-all, and every op names a table of the database the request is for.
+ * One write to a database: its tables, columns, options, rows or views. A
+request's ops apply in order and together, or not at all, and every op
+names a table of the database the request is for (or, creating one, adds
+it there).
  */
 export type DatabaseOp =
   | DatabaseOpOneOf
@@ -26,9 +37,18 @@ export type DatabaseOp =
   | DatabaseOpOneOfFive
   | DatabaseOpOneOfSeven
   | DatabaseOpOneOfNine
-  | DatabaseOpOneOfOnetwo
-  | DatabaseOpOneOfOnefour
-  | DatabaseOpOneOfOnesix
-  | DatabaseOpOneOfOneeight
-  | DatabaseOpOneOfTwozero
-  | DatabaseOpOneOfTwotwo;
+  | DatabaseOpOneOfOneone
+  | DatabaseOpOneOfOnethree
+  | DatabaseOpOneOfOnefive
+  | DatabaseOpOneOfOneseven
+  | DatabaseOpOneOfOnenine
+  | DatabaseOpOneOfTwoone
+  | DatabaseOpOneOfTwothree
+  | DatabaseOpOneOfTwofive
+  | DatabaseOpOneOfTwoseven
+  | DatabaseOpOneOfThreezero
+  | DatabaseOpOneOfThreetwo
+  | DatabaseOpOneOfThreefour
+  | DatabaseOpOneOfThreesix
+  | DatabaseOpOneOfThreeeight
+  | DatabaseOpOneOfFourzero;

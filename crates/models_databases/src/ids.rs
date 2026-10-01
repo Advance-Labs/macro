@@ -135,6 +135,11 @@ database_id!(
     /// Identifier of a saved query.
     QueryId
 );
+database_id!(
+    /// Identifier of a property definition, the type and options behind a
+    /// column. The properties system mints and owns it.
+    PropertyId
+);
 
 /// Monotonic per-table version, bumped once by every committed change to a
 /// table's schema or rows. Schema edits name the version they were made

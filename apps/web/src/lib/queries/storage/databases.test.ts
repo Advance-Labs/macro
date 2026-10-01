@@ -3,6 +3,7 @@ import type { DatabaseDetail } from '@service-storage/generated/schemas/database
 import { errAsync, okAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  applyDatabaseOps,
   applyDatabaseTableVersions,
   createDatabase,
   fetchViewerDatabases,
@@ -10,6 +11,7 @@ import {
 import { databasesKeys } from './keys';
 
 const mock = vi.hoisted(() => ({
+  applyOps: vi.fn(),
   create: vi.fn(),
   list: vi.fn(),
   get: vi.fn(),
@@ -18,7 +20,12 @@ const mock = vi.hoisted(() => ({
 vi.mock('@app/lib/analytics', () => ({ analytics: { track: mock.track } }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: {
-    databases: { create: mock.create, list: mock.list, get: mock.get },
+    databases: {
+      applyOps: mock.applyOps,
+      create: mock.create,
+      list: mock.list,
+      get: mock.get,
+    },
   },
 }));
 vi.mock('@queries/client', async () => {
@@ -113,6 +120,57 @@ describe('database write version acknowledgments', () => {
       table: { ...detail.tables[0].table, version: 6 },
     });
     expect(updated.tables[1]).toEqual(detail.tables[1]);
+  });
+});
+
+describe('applying ops', () => {
+  it('sends the base versions with the batch and returns its results', async () => {
+    mock.applyOps.mockReturnValue(
+      okAsync({ results: [{ kind: 'column_deleted', tableVersion: 6 }] })
+    );
+
+    const applied = await applyDatabaseOps(
+      'db',
+      [{ kind: 'delete_column', table: 'tasks', column: 'status' }],
+      { tasks: 5 }
+    );
+
+    expect(applied._unsafeUnwrap()).toEqual([
+      { kind: 'column_deleted', tableVersion: 6 },
+    ]);
+    expect(mock.applyOps).toHaveBeenCalledExactlyOnceWith({
+      id: 'db',
+      request: {
+        ops: [{ kind: 'delete_column', table: 'tasks', column: 'status' }],
+        baseVersions: { tasks: 5 },
+      },
+    });
+  });
+
+  it('hands back the first refusal of a refused batch', async () => {
+    mock.applyOps.mockReturnValue(
+      errAsync([
+        {
+          code: 'CONFLICT',
+          message: 'The table changed.',
+          refusal: null,
+        },
+      ])
+    );
+
+    const applied = await applyDatabaseOps('db', [
+      { kind: 'delete_table', table: 'tasks' },
+    ]);
+
+    expect(applied._unsafeUnwrapErr()).toEqual({
+      code: 'CONFLICT',
+      message: 'The table changed.',
+      refusal: null,
+    });
+    expect(mock.applyOps).toHaveBeenCalledExactlyOnceWith({
+      id: 'db',
+      request: { ops: [{ kind: 'delete_table', table: 'tasks' }] },
+    });
   });
 });
 

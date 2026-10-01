@@ -1,5 +1,4 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import {
   err,
   errAsync,
@@ -79,8 +78,7 @@ const move: DatabaseRowMutation = {
 describe('table controller', () => {
   it('serializes adding a group with row writes and uses the schema refresh version', async () => {
     const { controller, source, setSnapshot, snapshot, dispose } = setup();
-    const option =
-      deferred<Result<void, ResultError<DatabaseSchemaErrorCode>[]>>();
+    const option = deferred<Result<void, DatabaseOpsError>>();
     vi.mocked(source.addOption).mockImplementation(
       () => new ResultAsync(option.promise)
     );

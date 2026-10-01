@@ -12,7 +12,7 @@ use super::{Place, Planner, RelatedRow};
 use crate::domain::catalog::{self, ColumnEntry, TableEntry, entity_type};
 use crate::domain::models::{CellChanges, ColumnConfig, DatabaseError, NewOption};
 
-impl Planner<'_> {
+impl Planner {
     /// One row's cells as stored values; `None` empties a cell.
     pub(super) fn cells(
         &mut self,
@@ -220,6 +220,7 @@ impl Planner<'_> {
             .next()
             .ok_or_else(|| place.refuse("an option label must not be empty"))?;
         let id = OptionId::new();
+        self.changed_options.insert(definition.definition.id);
         self.labels_of(definition)
             .push((id, catalog::option_display(&value)));
         self.options.push(NewOption {
@@ -231,7 +232,7 @@ impl Planner<'_> {
     }
 }
 
-impl Planner<'_> {
+impl Planner {
     /// The options of a definition as the ops planned so far leave them.
     pub(super) fn labels_of(
         &mut self,

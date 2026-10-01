@@ -1,17 +1,29 @@
-use models_databases::{DatabaseOp, OpResult};
+use std::collections::HashMap;
 
-use crate::domain::models::OpRefusal;
+use models_databases::{DatabaseOp, OpResult, TakenId};
+
+use crate::domain::models::{OpBatch, OpRefusal};
 use serde::Serialize;
 
 use super::*;
 
-/// A batch of ops for one database, applied together or not at all.
+/// A batch of ops for one database, applied in order, in one transaction,
+/// together or not at all.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApplyOpsRequest {
     /// The ops, in the order they apply. Every one names a table of this
-    /// database; a column type change is sent on its own.
+    /// database, or one an earlier op of the batch creates: tables, columns
+    /// and options carry ids the client mints (UUIDv7), so a later op can
+    /// name them. An id that already names something refuses the batch.
     pub ops: Vec<DatabaseOp>,
+    /// The version each named table must still be at, as the caller read
+    /// it. A table that moved refuses the batch as a conflict, so a schema
+    /// edit made against what the caller saw does not overwrite another's.
+    /// Left out, ops are last-write-wins.
+    #[serde(default)]
+    #[schema(value_type = HashMap<String, TableVersion>)]
+    pub base_versions: HashMap<TableId, TableVersion>,
 }
 
 /// What each op of a batch did.
@@ -36,6 +48,11 @@ pub struct OpRefusalResponse {
     /// The column placement at fault, when one is.
     #[schema(required = true, value_type = Option<Uuid>)]
     pub column: Option<ColumnId>,
+    /// The id the op minted that already names something, when that is why
+    /// it was refused: a retried request whose first attempt committed, or
+    /// an id minted twice.
+    #[schema(required = true)]
+    pub taken: Option<TakenId>,
 }
 
 impl From<OpRefusal> for OpRefusalResponse {
@@ -45,14 +62,19 @@ impl From<OpRefusal> for OpRefusalResponse {
             op: refusal.op,
             row: refusal.row,
             column: refusal.column,
+            taken: refusal.taken,
         }
     }
 }
 
-/// Apply a batch of typed ops: insert, update and delete rows, or change a
-/// column's type. Row ops are last-write-wins. A refused op, named by its
-/// index (and row and column where relevant), leaves the whole batch
-/// unwritten.
+/// Apply a batch of typed ops, the one write surface of a database: add,
+/// rename, remove and order tables and columns, change a column's type, add
+/// and change options, insert, update and delete rows, and write views and a
+/// board's card places. The ops apply in order in one transaction, so a
+/// later op may name a table, column or option an earlier one created under
+/// the id its client minted. Ops are last-write-wins unless the batch names
+/// base versions. A refused op, named by its index (and row and column where
+/// relevant), leaves the whole batch unwritten.
 #[utoipa::path(
     post,
     tag = "databases",
@@ -66,7 +88,7 @@ impl From<OpRefusal> for OpRefusalResponse {
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
         (status = 403, description = "No edit access to the database", body = ErrorResponse),
         (status = 404, body = ErrorResponse),
-        (status = 409, description = "A column type change raced another schema change", body = ErrorResponse),
+        (status = 409, description = "A table moved from its base version, or a schema change raced another", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
     )
 )]
@@ -84,7 +106,14 @@ where
 {
     let results = state
         .service
-        .apply_ops(access.entity_access_receipt, viewer_of(&user), request.ops)
+        .apply_ops(
+            access.entity_access_receipt,
+            viewer_of(&user),
+            OpBatch {
+                ops: request.ops,
+                base_versions: request.base_versions,
+            },
+        )
         .await?;
     Ok(Json(ApplyOpsResponse { results }))
 }

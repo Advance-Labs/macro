@@ -10,5 +10,5 @@ export type OpResultOneOfNineKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfNineKind = {
-  view_deleted: 'view_deleted',
+  column_created: 'column_created',
 } as const;

@@ -1,111 +1,222 @@
+//! Column renames through the ops over Postgres: a rename relabels one
+//! placement, and of two at once exactly one wins.
+
+use models_databases::{DatabaseOp, NewColumn, OpResult, PropertyId};
+
+use super::apply_ops::{edit, guests, service, version, viewer};
 use super::*;
+use crate::domain::models::{DatabaseError, OpBatch, OpRefusal, SchemaError};
+use crate::domain::ports::{DatabasesRepo, DatabasesService};
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn column_label_roundtrip_preserves_other_placements_and_requires_current_version(
+async fn a_column_rename_relabels_that_placement_alone_and_checks_what_the_caller_saw(
     pool: PgPool,
 ) {
-    let (repo, mut table, definition_id) = fixture(&pool).await;
-    let column = repo
-        .columns_for_tables(&[table.id])
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    let hosts = TableId::new();
+    let host_name = ColumnId::new();
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![
+                DatabaseOp::CreateTable {
+                    id: hosts,
+                    name: "Hosts".into(),
+                },
+                DatabaseOp::CreateColumn {
+                    table: hosts,
+                    id: host_name,
+                    definition: NewColumn::Existing {
+                        property: PropertyId::from_uuid(guests.name_definition),
+                    },
+                    after: None,
+                },
+            ]
+            .into(),
+        )
         .await
-        .unwrap()
-        .remove(0);
-    table.version = repo.table_versions(&[table.id]).await.unwrap()[&table.id];
-    let other = applied_table(
-        repo.create_table(&CreateTable {
-            database_id: table.database_id,
-            name: "Other".into(),
-        })
-        .await
-        .unwrap(),
-    );
-    repo.create_column(
-        other.id,
-        definition_id,
-        &CreateColumn {
-            infer_type: false,
-            table_id: other.id,
-            binding: ColumnBinding::ExistingDefinition(definition_id),
-            config: None,
-        },
-    )
-    .await
-    .unwrap();
-    let renamed = repo
-        .rename_column(&table, &column, "Task")
-        .await
-        .unwrap()
         .unwrap();
-    assert_eq!(renamed.table_version, TableVersion(table.version.0 + 1));
-    assert_eq!(renamed.column.property_definition_id, definition_id);
+    let before = version(&pool, guests.table_id).await;
+
+    let renamed = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameColumn {
+                table: guests.table_id,
+                column: guests.name,
+                name: "Task".into(),
+                previous_name: Some("Name".into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+
+    let after = TableVersion(before.0 + 1);
+    assert_eq!(
+        renamed,
+        vec![OpResult::ColumnRenamed {
+            table_version: after
+        }]
+    );
     let stored = repo
-        .columns_for_tables(&[table.id])
+        .columns_for_tables(&[guests.table_id])
         .await
         .unwrap()
-        .remove(0);
-    assert_eq!(stored.display_name.as_deref(), Some("Task"));
-    assert!(
-        repo.columns_for_tables(&[other.id]).await.unwrap()[0]
-            .display_name
-            .is_none()
-    );
-    assert!(
-        repo.rename_column(&table, &column, "Stale")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    table.version = renamed.table_version;
-    // Matching table version alone does not authorize overwriting an old label.
-    assert!(
-        repo.rename_column(&table, &column, "Wrong previous")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    let next = repo
-        .rename_column(&table, &stored, "Work item")
-        .await
-        .unwrap()
+        .into_iter()
+        .find(|column| column.id == guests.name)
         .unwrap();
-    assert_eq!(next.column.display_name.as_deref(), Some("Work item"));
+    assert_eq!(stored.display_name.as_deref(), Some("Task"));
+    assert_eq!(stored.property_definition_id, guests.name_definition);
+    let other = repo.columns_for_tables(&[hosts]).await.unwrap().remove(0);
+    assert_eq!(other.id, host_name);
+    assert_eq!(other.property_definition_id, guests.name_definition);
+    assert!(other.display_name.is_none());
+
+    let stale = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            OpBatch {
+                ops: vec![DatabaseOp::RenameColumn {
+                    table: guests.table_id,
+                    column: guests.name,
+                    name: "Stale".into(),
+                    previous_name: None,
+                }],
+                base_versions: HashMap::from([(guests.table_id, before)]),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(stale, DatabaseError::VersionConflict),
+        "expected a version conflict, got {stale:?}"
+    );
+    // The current version alone does not license overwriting another label.
+    let elsewhere = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            OpBatch {
+                ops: vec![DatabaseOp::RenameColumn {
+                    table: guests.table_id,
+                    column: guests.name,
+                    name: "Wrong previous".into(),
+                    previous_name: Some("Name".into()),
+                }],
+                base_versions: HashMap::from([(guests.table_id, after)]),
+            },
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = elsewhere else {
+        panic!("expected a refused op, got {elsewhere:?}");
+    };
+    assert_eq!(
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: Some(guests.name),
+            taken: None,
+            reason: SchemaError::ColumnRenamedElsewhere.to_string(),
+        }
+    );
+
+    let next = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameColumn {
+                table: guests.table_id,
+                column: guests.name,
+                name: "Work item".into(),
+                previous_name: Some("Task".into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        next,
+        vec![OpResult::ColumnRenamed {
+            table_version: TableVersion(after.0 + 1)
+        }]
+    );
+    assert_eq!(
+        repo.columns_for_tables(&[guests.table_id])
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|column| column.id == guests.name)
+            .unwrap()
+            .display_name
+            .as_deref(),
+        Some("Work item")
+    );
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn concurrent_column_renames_have_exactly_one_winner(pool: PgPool) {
-    let (repo, mut table, _) = fixture(&pool).await;
-    let column = repo
-        .columns_for_tables(&[table.id])
-        .await
-        .unwrap()
-        .remove(0);
-    table.version = repo.table_versions(&[table.id]).await.unwrap()[&table.id];
-    let (first, second) = tokio::join!(
-        repo.rename_column(&table, &column, "Task"),
-        repo.rename_column(&table, &column, "Work item")
-    );
-    let first = first.unwrap();
-    let second = second.unwrap();
-    assert_ne!(first.is_some(), second.is_some());
-    let winner = first.or(second).unwrap();
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let before = version(&pool, guests.table_id).await;
+    let rename = |name: &str| {
+        service.apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameColumn {
+                table: guests.table_id,
+                column: guests.name,
+                name: name.into(),
+                previous_name: Some("Name".into()),
+            }]
+            .into(),
+        )
+    };
+
+    let (task, work_item) = tokio::join!(rename("Task"), rename("Work item"));
+
+    assert_ne!(task.is_ok(), work_item.is_ok());
+    let winner = if task.is_ok() { "Task" } else { "Work item" };
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let stored = repo
-        .columns_for_tables(&[table.id])
+        .columns_for_tables(&[guests.table_id])
         .await
         .unwrap()
-        .remove(0);
-    assert_eq!(stored.display_name, winner.column.display_name);
+        .into_iter()
+        .find(|column| column.id == guests.name)
+        .unwrap();
+    assert_eq!(stored.display_name.as_deref(), Some(winner));
     assert_eq!(
-        repo.table_versions(&[table.id]).await.unwrap()[&table.id],
-        TableVersion(table.version.0 + 1)
+        version(&pool, guests.table_id).await,
+        TableVersion(before.0 + 1)
     );
-    repo.trash_database(table.database_id, chrono::Utc::now())
+
+    repo.trash_database(guests.database_id, chrono::Utc::now())
         .await
         .unwrap();
-    table.version = winner.table_version;
+    let hidden = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameColumn {
+                table: guests.table_id,
+                column: guests.name,
+                name: "Hidden".into(),
+                previous_name: Some(winner.into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
     assert!(
-        repo.rename_column(&table, &stored, "Hidden")
-            .await
-            .unwrap()
-            .is_none()
+        matches!(hidden, DatabaseError::NotFound),
+        "expected the trashed database to be gone, got {hidden:?}"
     );
 }

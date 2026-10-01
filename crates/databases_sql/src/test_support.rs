@@ -3,7 +3,6 @@
 //! receipts from the world's grants, Soup answers table rows with Soup's
 //! filter semantics, and contacts lists the world's people.
 
-use models_databases::ViewId;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -12,11 +11,9 @@ use chrono::{DateTime, Utc};
 use contacts::domain::models::messages::ContactsNodes;
 use contacts::domain::ports::ContactsService;
 use databases::domain::models::{
-    AddColumnOptions, Awareness, ChangeColumnType, ColumnCast, ColumnDetail, ColumnId,
-    ColumnSchemaOutcome, ColumnTypeChangeOutcome, CreateColumn, CreateDatabase, CreateTable,
-    Database, DatabaseDetail, DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome,
-    ListedDatabase, QueryDefinition, QueryId, RenameColumnOutcome, SavedQuery, SavedQueryError,
-    Table, TableId, TableVersion, Viewer,
+    Awareness, ColumnCast, ColumnId, CreateDatabase, Database, DatabaseDetail, DatabaseError,
+    DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch, QueryDefinition,
+    QueryId, SavedQuery, SavedQueryError, TableId, Viewer,
 };
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{
@@ -156,8 +153,9 @@ impl DatabasesService for FakeDatabases {
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        ops: Vec<DatabaseOp>,
+        batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
+        let ops = batch.ops;
         let EntityPermission::AccessLevel { access_level } = receipt.entity_permission() else {
             panic!("receipts here carry an access level");
         };
@@ -232,68 +230,12 @@ impl DatabasesService for FakeDatabases {
     ) -> Result<(), DatabaseError> {
         unimplemented!("SQL never deletes a database")
     }
-    async fn create_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: CreateTable,
-    ) -> Result<Table, DatabaseError> {
-        unimplemented!("SQL never creates a table")
-    }
-    async fn rename_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: String,
-        _: String,
-    ) -> Result<Table, DatabaseError> {
-        unimplemented!("SQL never renames a table")
-    }
-    async fn reorder_tables(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Vec<TableId>,
-    ) -> Result<Vec<Table>, DatabaseError> {
-        unimplemented!("SQL never reorders tables")
-    }
-    async fn delete_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-    ) -> Result<(), DatabaseError> {
-        unimplemented!("SQL never deletes a table")
-    }
-    async fn create_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: CreateColumn,
-    ) -> Result<ColumnId, DatabaseError> {
-        unimplemented!("SQL never creates a column")
-    }
-    async fn rename_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: ColumnId,
-        _: String,
-        _: String,
-    ) -> Result<RenameColumnOutcome, DatabaseError> {
-        unimplemented!("SQL never renames a column")
-    }
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
         _: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         unimplemented!("SQL never infers a column type")
-    }
-    async fn change_column_type(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: ChangeColumnType,
-    ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
-        unimplemented!("ALTER COLUMN goes through its op")
     }
     async fn column_casts(
         &self,
@@ -302,32 +244,6 @@ impl DatabasesService for FakeDatabases {
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
         unimplemented!("SQL never previews a type change")
-    }
-    async fn delete_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: ColumnId,
-        _: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("SQL never deletes a column")
-    }
-    async fn reorder_columns(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: Vec<ColumnId>,
-        _: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("SQL never reorders columns")
-    }
-    async fn add_column_options(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: AddColumnOptions,
-    ) -> Result<ColumnDetail, DatabaseError> {
-        unimplemented!("SQL never adds options")
     }
     async fn share_awareness(
         &self,

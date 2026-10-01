@@ -7,10 +7,19 @@
 import type { OpResultOneOf } from './opResultOneOf';
 import type { OpResultOneOfFive } from './opResultOneOfFive';
 import type { OpResultOneOfNine } from './opResultOneOfNine';
+import type { OpResultOneOfOnefive } from './opResultOneOfOnefive';
+import type { OpResultOneOfOnenine } from './opResultOneOfOnenine';
 import type { OpResultOneOfOneone } from './opResultOneOfOneone';
+import type { OpResultOneOfOneseven } from './opResultOneOfOneseven';
 import type { OpResultOneOfOnethree } from './opResultOneOfOnethree';
 import type { OpResultOneOfSeven } from './opResultOneOfSeven';
 import type { OpResultOneOfThree } from './opResultOneOfThree';
+import type { OpResultOneOfThreeone } from './opResultOneOfThreeone';
+import type { OpResultOneOfTwofive } from './opResultOneOfTwofive';
+import type { OpResultOneOfTwonine } from './opResultOneOfTwonine';
+import type { OpResultOneOfTwoone } from './opResultOneOfTwoone';
+import type { OpResultOneOfTwoseven } from './opResultOneOfTwoseven';
+import type { OpResultOneOfTwothree } from './opResultOneOfTwothree';
 
 /**
  * What one op did, in the order the ops were sent.
@@ -22,4 +31,13 @@ export type OpResult =
   | OpResultOneOfSeven
   | OpResultOneOfNine
   | OpResultOneOfOneone
-  | OpResultOneOfOnethree;
+  | OpResultOneOfOnethree
+  | OpResultOneOfOnefive
+  | OpResultOneOfOneseven
+  | OpResultOneOfOnenine
+  | OpResultOneOfTwoone
+  | OpResultOneOfTwothree
+  | OpResultOneOfTwofive
+  | OpResultOneOfTwoseven
+  | OpResultOneOfTwonine
+  | OpResultOneOfThreeone;

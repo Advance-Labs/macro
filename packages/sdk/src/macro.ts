@@ -24,6 +24,14 @@ import type { MacroEvents } from './events/receiver';
 import { MacroClient } from './utils/client';
 
 export type { MacroOpts } from './config';
+export {
+  type AddColumnOptions,
+  type ApplyOpsOptions,
+  type ChangeColumnTypeOptions,
+  type ColumnType,
+  MacroOpRefusedError,
+  type OpResultOf,
+} from './entities/databases/database';
 export type { ListenOptions, MacroEvents } from './events/receiver';
 export {
   here,

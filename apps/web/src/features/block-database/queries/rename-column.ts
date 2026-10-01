@@ -1,8 +1,8 @@
 import { queryClient } from '@queries/client';
+import { applyDatabaseOps } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
-import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseSchemaChange } from '../core/column-schema';
-import { patchTableColumn } from './detail-cache';
+import { isResult, patchTableColumn } from './detail-cache';
 
 /** Change the placement label while preserving column IDs and stored SQL. */
 export function renameDatabaseColumn(params: {
@@ -13,28 +13,33 @@ export function renameDatabaseColumn(params: {
   previousName: string;
 }): DatabaseSchemaChange {
   const queryKey = databasesKeys.detail(params.databaseId).queryKey;
-  return storageServiceClient.databases
-    .renameColumn({
-      id: params.databaseId,
-      tableId: params.tableId,
-      columnId: params.columnId,
+  return applyDatabaseOps(params.databaseId, [
+    {
+      kind: 'rename_column',
+      table: params.tableId,
+      column: params.columnId,
       name: params.name,
       previousName: params.previousName,
-    })
-    .mapErr((errors) => {
+    },
+  ])
+    .mapErr((error) => {
       void queryClient.invalidateQueries({ queryKey });
-      return errors;
+      return error;
     })
-    .map(async (renamed) => {
+    .map(async ([result]) => {
       // A newer version may contain another rename, so a delayed response
       // must not replace it.
-      await patchTableColumn(queryClient, {
-        databaseId: params.databaseId,
-        tableId: params.tableId,
-        columnId: params.columnId,
-        tableVersion: renamed.table_version,
-        change: (column) => ({ ...column, column: renamed.column }),
-      });
+      if (isResult(result, 'column_renamed'))
+        await patchTableColumn(queryClient, {
+          databaseId: params.databaseId,
+          tableId: params.tableId,
+          columnId: params.columnId,
+          tableVersion: result.tableVersion,
+          change: (column) => ({
+            ...column,
+            column: { ...column.column, display_name: params.name },
+          }),
+        });
       // Open reads rerun against the refreshed schema. The refresh may not report
       // an already-committed rename as a failed write.
       await queryClient.invalidateQueries(

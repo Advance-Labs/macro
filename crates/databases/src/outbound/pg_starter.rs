@@ -130,6 +130,7 @@ where
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
+                    id: macro_uuid::generate_uuid_v7(),
                     database_id: database_id.into_uuid(),
                     name: blueprint.title_name,
                     data_type: DataType::String,
@@ -140,16 +141,22 @@ where
             )
             .await
             .map_err(dependency)?;
-        let stage_options: Vec<PropertyOptionValue> = blueprint
+        let stage_options: Vec<(uuid::Uuid, PropertyOptionValue)> = blueprint
             .stages
             .iter()
-            .map(|stage| PropertyOptionValue::String((*stage).to_string()))
+            .map(|stage| {
+                (
+                    OptionId::new().into_uuid(),
+                    PropertyOptionValue::String((*stage).to_string()),
+                )
+            })
             .collect();
         let stage = self
             .properties
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
+                    id: macro_uuid::generate_uuid_v7(),
                     database_id: database_id.into_uuid(),
                     name: blueprint.stage_name,
                     data_type: DataType::SelectString,

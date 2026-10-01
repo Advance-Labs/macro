@@ -28,6 +28,7 @@ const column: DatabaseViewColumn = {
 
 const casts: DatabaseColumnCasts = {
   status: 'ready',
+  version: 4,
   casts: [
     {
       target: { dataType: 'STRING', isMultiSelect: false, relation: false },
@@ -152,13 +153,14 @@ it('confirms a checked type with failures, then converts with clearing', async (
   );
   await waitFor(() =>
     expect(changeType).toHaveBeenCalledExactlyOnceWith('price', {
-      dataType: 'NUMBER',
+      to: { type: 'number' },
+      baseVersion: 4,
       clearInvalid: true,
     })
   );
 });
 
-it('applies a type every value fits directly', async () => {
+it('applies a type every value fits directly, against the version its dry run read', async () => {
   const { changeType } = renderHeader();
   await openTypeMenu();
 
@@ -166,7 +168,8 @@ it('applies a type every value fits directly', async () => {
 
   await waitFor(() =>
     expect(changeType).toHaveBeenCalledExactlyOnceWith('price', {
-      dataType: 'SELECT_STRING',
+      to: { type: 'select', multi: false },
+      baseVersion: 4,
     })
   );
   expect(screen.queryByRole('dialog')).toBeNull();

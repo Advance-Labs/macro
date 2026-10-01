@@ -21,7 +21,7 @@ async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![
                     vec![
@@ -46,7 +46,7 @@ async fn an_insert_of_two_rows_mints_them_in_order_with_their_cells() {
                     ],
                 ],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -120,7 +120,7 @@ async fn a_uniform_update_gives_three_rows_the_same_cells() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: rows.clone(),
@@ -136,7 +136,7 @@ async fn a_uniform_update_gives_three_rows_the_same_cells() {
                     ],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -188,7 +188,7 @@ async fn a_per_row_update_gives_each_row_its_own_cells() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::PerRow {
                     rows: vec![
@@ -209,7 +209,7 @@ async fn a_per_row_update_gives_each_row_its_own_cells() {
                     ],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -262,10 +262,10 @@ async fn a_delete_removes_the_rows_and_their_cells() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteRows {
+            OpBatch::from(vec![DatabaseOp::DeleteRows {
                 table: seeded.table_id,
                 rows: vec![seeded.row_id],
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -299,7 +299,7 @@ async fn a_label_the_column_lacks_becomes_an_option_when_the_op_creates_them() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![
                     vec![CellWrite {
@@ -312,7 +312,7 @@ async fn a_label_the_column_lacks_becomes_an_option_when_the_op_creates_them() {
                     }],
                 ],
                 create_missing_options: true,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -352,14 +352,14 @@ async fn an_unknown_label_is_refused_without_creating_options() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![vec![CellWrite {
                     column: seeded.status_column.id,
                     value: CellValue::Options(vec![OptionRef::Label("Maybe".into())]),
                 }]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -373,6 +373,7 @@ async fn an_unknown_label_is_refused_without_creating_options() {
             op: 0,
             row: Some(0),
             column: Some(seeded.status_column.id),
+            taken: None,
             reason: "`Maybe` is not an option of \"Status\"".into(),
         }
     );
@@ -417,7 +418,7 @@ async fn an_op_on_another_databases_table_refuses_the_batch_before_anything_is_w
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::InsertRows {
                     table: seeded.table_id,
                     rows: vec![vec![]],
@@ -428,7 +429,7 @@ async fn an_op_on_another_databases_table_refuses_the_batch_before_anything_is_w
                     rows: vec![vec![]],
                     create_missing_options: false,
                 },
-            ],
+            ]),
         )
         .await
         .unwrap_err();
@@ -442,6 +443,7 @@ async fn an_op_on_another_databases_table_refuses_the_batch_before_anything_is_w
             op: 1,
             row: None,
             column: None,
+            taken: None,
             reason: format!("table {other_table} is not in this database"),
         }
     );
@@ -465,7 +467,7 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::InsertRows {
                     table: seeded.table_id,
                     rows: vec![vec![CellWrite {
@@ -496,7 +498,7 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
                     },
                     create_missing_options: false,
                 },
-            ],
+            ]),
         )
         .await
         .unwrap_err();
@@ -510,6 +512,7 @@ async fn a_failing_second_op_leaves_the_first_unapplied() {
             op: 1,
             row: Some(1),
             column: None,
+            taken: None,
             reason: format!("no row {ghost} in this table"),
         }
     );
@@ -544,7 +547,7 @@ async fn a_value_that_does_not_fit_its_column_names_the_op_row_and_column() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::PerRow {
                     rows: vec![RowChange {
@@ -556,7 +559,7 @@ async fn a_value_that_does_not_fit_its_column_names_the_op_row_and_column() {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -570,6 +573,7 @@ async fn a_value_that_does_not_fit_its_column_names_the_op_row_and_column() {
             op: 0,
             row: Some(0),
             column: Some(seeded.plus_ones_column.id),
+            taken: None,
             reason: "\"Plus ones\" is a number column; text does not fit it".into(),
         }
     );
@@ -578,36 +582,32 @@ async fn a_value_that_does_not_fit_its_column_names_the_op_row_and_column() {
 #[tokio::test]
 async fn a_relation_cell_names_rows_of_its_target_table() {
     let seeded = seeded().await;
-    let sessions = seeded
+    let (sessions, relation) = (TableId::new(), ColumnId::new());
+    seeded
         .service
-        .create_table(
-            edit(seeded.database_id),
-            CreateTable {
-                database_id: seeded.database_id,
-                name: "Sessions".into(),
-            },
-        )
-        .await
-        .unwrap();
-    let relation = seeded
-        .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![
+                DatabaseOp::CreateTable {
+                    id: sessions,
                     name: "Sessions".into(),
-                    data_type: DataType::Entity,
-                    is_multi_select: true,
-                    options: vec![],
                 },
-                config: Some(ColumnConfig::Link {
-                    database_id: seeded.database_id,
-                    table_id: sessions.id,
-                }),
-            },
+                DatabaseOp::CreateColumn {
+                    table: seeded.table_id,
+                    id: relation,
+                    definition: NewColumn::New {
+                        name: "Sessions".into(),
+                        kind: ColumnKind::Relation {
+                            database: seeded.database_id,
+                            table: sessions,
+                        },
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
+            ]),
         )
         .await
         .unwrap();
@@ -625,11 +625,11 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
-                table: sessions.id,
+            OpBatch::from(vec![DatabaseOp::InsertRows {
+                table: sessions,
                 rows: vec![vec![]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -643,7 +643,7 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: vec![seeded.row_id],
@@ -653,7 +653,7 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -671,7 +671,7 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: vec![seeded.row_id],
@@ -681,7 +681,7 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -694,6 +694,7 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
             op: 0,
             row: None,
             column: Some(relation),
+            taken: None,
             reason: format!("row {} is not a row of the related table", seeded.row_id),
         }
     );
@@ -708,42 +709,21 @@ async fn a_relation_cell_names_rows_of_its_target_table() {
 }
 
 #[tokio::test]
-async fn a_type_change_through_ops_matches_change_column_type() {
-    let through_ops = seeded().await;
-    let direct = seeded().await;
-    for seeded in [&through_ops, &direct] {
-        insert_names(seeded, &["12"]).await;
-    }
+async fn a_type_change_converts_the_columns_cells() {
+    let seeded = seeded().await;
+    insert_names(&seeded, &["12"]).await;
 
-    let results = through_ops
+    let results = seeded
         .service
         .apply_ops(
-            edit(through_ops.database_id),
+            edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::ChangeColumnType {
-                table: through_ops.table_id,
-                column: through_ops.name_column.id,
+            OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+                table: seeded.table_id,
+                column: seeded.name_column.id,
                 to: ColumnKind::Number,
                 clear_invalid: true,
-            }],
-        )
-        .await
-        .unwrap();
-    let changed = direct
-        .service
-        .change_column_type(
-            edit(direct.database_id),
-            viewer(OWNER),
-            ChangeColumnType {
-                table_id: direct.table_id,
-                column_id: direct.name_column.id,
-                data_type: DataType::Number,
-                is_multi_select: false,
-                specific_entity_type: None,
-                relation: None,
-                base_version: table_version(&direct.world, direct.table_id),
-                clear_invalid: true,
-            },
+            }]),
         )
         .await
         .unwrap();
@@ -751,76 +731,27 @@ async fn a_type_change_through_ops_matches_change_column_type() {
     assert_eq!(
         results,
         vec![OpResult::ColumnTyped {
-            table_version: table_version(&through_ops.world, through_ops.table_id),
+            table_version: table_version(&seeded.world, seeded.table_id),
             cleared_cells: 1,
             trimmed_cells: 0,
         }]
     );
-    assert_eq!(changed.cleared_cells, 1);
-    assert_eq!(changed.trimmed_cells, 0);
-    let numbers = |seeded: &Seeded| -> Vec<Option<PropertyValue>> {
-        let definition = seeded
-            .world
-            .lock()
-            .unwrap()
-            .columns
-            .iter()
-            .find(|column| column.id == seeded.name_column.id)
-            .unwrap()
-            .property_definition_id;
+    let definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == seeded.name_column.id)
+        .unwrap()
+        .property_definition_id;
+    assert_eq!(
         row_ids(&seeded.world, seeded.table_id)
             .into_iter()
             .map(|row| cell(&seeded.world, row, definition))
-            .collect()
-    };
-    assert_eq!(
-        numbers(&through_ops),
+            .collect::<Vec<_>>(),
         vec![None, Some(PropertyValue::Num(12.0))]
     );
-    assert_eq!(numbers(&through_ops), numbers(&direct));
-}
-
-#[tokio::test]
-async fn a_type_change_is_sent_on_its_own() {
-    let seeded = seeded().await;
-
-    let error = seeded
-        .service
-        .apply_ops(
-            edit(seeded.database_id),
-            viewer(OWNER),
-            vec![
-                DatabaseOp::InsertRows {
-                    table: seeded.table_id,
-                    rows: vec![vec![]],
-                    create_missing_options: false,
-                },
-                DatabaseOp::ChangeColumnType {
-                    table: seeded.table_id,
-                    column: seeded.name_column.id,
-                    to: ColumnKind::Number,
-                    clear_invalid: false,
-                },
-            ],
-        )
-        .await
-        .unwrap_err();
-
-    let DatabaseError::InvalidOp(refusal) = error else {
-        panic!("expected a refused op, got {error:?}");
-    };
-    assert_eq!(
-        refusal,
-        OpRefusal {
-            op: 1,
-            row: None,
-            column: Some(seeded.name_column.id),
-            reason: "a column type change is applied on its own; send it as the only op of its \
-                     request"
-                .into(),
-        }
-    );
-    assert_eq!(seeded.world.lock().unwrap().write_batches, 0);
 }
 
 #[tokio::test]
@@ -835,7 +766,7 @@ async fn a_batch_bumps_each_table_once_and_announces_it_once() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::InsertRows {
                     table: seeded.table_id,
                     rows: vec![vec![CellWrite {
@@ -859,7 +790,7 @@ async fn a_batch_bumps_each_table_once_and_announces_it_once() {
                     table: seeded.table_id,
                     rows: vec![seeded.row_id],
                 },
-            ],
+            ]),
         )
         .await
         .unwrap();

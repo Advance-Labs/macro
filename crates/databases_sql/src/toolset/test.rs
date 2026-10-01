@@ -466,6 +466,7 @@ async fn a_refused_write_says_what_was_refused_without_name_advice() {
                 op: 0,
                 row: None,
                 column: Some(STATUS_COLUMN),
+                taken: None,
                 reason: "\"Status\" holds one value; 2 were given".into(),
             },
         )),

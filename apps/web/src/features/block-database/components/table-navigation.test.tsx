@@ -1,5 +1,4 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import {
   cleanup,
   fireEvent,
@@ -364,10 +363,7 @@ describe('table creation and navigation', () => {
 
   it('keeps the draft after a failed create and prevents double submission', async () => {
     let settle: (
-      result: Result<
-        TableCreationResult,
-        ResultError<DatabaseSchemaErrorCode>[]
-      >
+      result: Result<TableCreationResult, DatabaseOpsError>
     ) => void = () => {};
     const create = vi.fn<CreateTable>(
       () =>
@@ -384,7 +380,7 @@ describe('table creation and navigation', () => {
     fireEvent.submit(name.closest('form')!);
     fireEvent.submit(name.closest('form')!);
     expect(create).toHaveBeenCalledTimes(1);
-    settle(err([{ code: 'NETWORK_ERROR', message: 'Offline' }]));
+    settle(err({ code: 'NETWORK_ERROR', message: 'Offline', refusal: null }));
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Could not create this table. Check your connection and try again.'
     );

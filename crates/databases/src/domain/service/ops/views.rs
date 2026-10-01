@@ -78,7 +78,7 @@ struct CardMove {
     after: Option<RowId>,
 }
 
-impl Planner<'_> {
+impl Planner {
     pub(super) fn view_write(
         &mut self,
         index: usize,
@@ -389,7 +389,7 @@ impl Planner<'_> {
         definition: PropertyDefinitionId,
         option: OptionId,
     ) -> Vec<DatabaseView> {
-        let entries = self.entries;
+        let entries = self.entries.clone();
         let mut rewritten = Vec::new();
         for entry in entries
             .iter()

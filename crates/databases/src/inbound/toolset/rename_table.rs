@@ -5,14 +5,12 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{DatabaseId, TableId};
+use models_databases::{DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-    table_of,
-};
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, table_of};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Rename a table.
@@ -97,14 +95,17 @@ where
             .await?;
         let previous_name = table_of(&detail, self.table_id)?.table.name.clone();
 
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::RenameTable {
+                    table: self.table_id,
+                    name: self.name.clone(),
+                    previous_name: Some(previous_name),
+                }]),
+            )
             .await?;
-        let table = service_context
-            .service
-            .rename_table(receipt, self.table_id, self.name.clone(), previous_name)
-            .await
-            .map_err(database_error)?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
@@ -112,8 +113,8 @@ where
 
         Ok(RenameTableResponse {
             database_id: self.database_id,
-            table_id: table.id,
-            name: table.name,
+            table_id: self.table_id,
+            name: self.name.trim().to_owned(),
             database,
             warning,
         })

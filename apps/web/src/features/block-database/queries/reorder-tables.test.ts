@@ -1,17 +1,16 @@
-import type { ResultError } from '@core/util/result';
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { Table } from '@service-storage/generated/schemas/table';
-import { err, type Result, ResultAsync } from 'neverthrow';
+import type { OpResult } from '@service-storage/generated/schemas/opResult';
+import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reorderDatabaseTables } from './reorder-tables';
 
-const transport = vi.hoisted(() => ({ reorderTables: vi.fn() }));
-vi.mock('@service-storage/client', () => ({
-  storageServiceClient: { databases: transport },
+const storage = vi.hoisted(() => ({
+  applyDatabaseOps: vi.fn(),
+  invalidateDatabase: vi.fn(),
 }));
-const storage = vi.hoisted(() => ({ invalidateDatabase: vi.fn() }));
 vi.mock('@queries/storage/databases', () => storage);
 vi.mock('@queries/client', async () => {
   const { QueryClient } = await import('@tanstack/solid-query');
@@ -69,14 +68,18 @@ describe('reordering tables', () => {
     const key = databasesKeys.detail('db').queryKey;
     queryClient.setQueryData(key, detail);
     const { promise: answered, resolve: answer } =
-      Promise.withResolvers<Result<Table[], ResultError<string>[]>>();
-    transport.reorderTables.mockReturnValue(new ResultAsync(answered));
+      Promise.withResolvers<Result<OpResult[], DatabaseOpsError>>();
+    storage.applyDatabaseOps.mockReturnValue(new ResultAsync(answered));
 
     const reordered = reorderDatabaseTables({
       databaseId: 'db',
       tableIds: ['venues', 'invites'],
     });
-    await vi.waitFor(() => expect(transport.reorderTables).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(storage.applyDatabaseOps).toHaveBeenCalledExactlyOnceWith('db', [
+        { kind: 'reorder_tables', order: ['venues', 'invites'] },
+      ])
+    );
     queryClient.setQueryData(key, (current: DatabaseDetail | undefined) =>
       current
         ? {
@@ -89,7 +92,13 @@ describe('reordering tables', () => {
           }
         : current
     );
-    answer(err([{ code: 'FORBIDDEN', message: 'Owner access required' }]));
+    answer(
+      err({
+        code: 'FORBIDDEN',
+        message: 'Owner access required',
+        refusal: null,
+      })
+    );
 
     expect((await reordered).isErr()).toBe(true);
     expect(
@@ -98,5 +107,41 @@ describe('reordering tables', () => {
         ?.tables.map((entry) => entry.table.name)
     ).toEqual(['Guests', 'Venues']);
     expect(storage.invalidateDatabase).toHaveBeenCalledExactlyOnceWith('db');
+  });
+
+  it('takes each table’s committed version from the answer', async () => {
+    const key = databasesKeys.detail('db').queryKey;
+    queryClient.setQueryData(key, detail);
+    storage.applyDatabaseOps.mockReturnValue(
+      new ResultAsync(
+        Promise.resolve(
+          ok([
+            {
+              kind: 'tables_reordered',
+              tables: [
+                { table: 'venues', version: 2 },
+                { table: 'invites', version: 4 },
+              ],
+            },
+          ])
+        )
+      )
+    );
+
+    const reordered = await reorderDatabaseTables({
+      databaseId: 'db',
+      tableIds: ['venues', 'invites'],
+    });
+
+    expect(reordered.isOk()).toBe(true);
+    expect(
+      queryClient
+        .getQueryData<DatabaseDetail>(key)
+        ?.tables.map((entry) => [entry.table.id, entry.table.version])
+    ).toEqual([
+      ['venues', 2],
+      ['invites', 4],
+    ]);
+    expect(storage.invalidateDatabase).not.toHaveBeenCalled();
   });
 });

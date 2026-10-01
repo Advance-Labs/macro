@@ -36,7 +36,7 @@ async fn lifecycle_and_writes_publish_domain_events() {
     svc.apply_ops(
         receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
         viewer(OWNER),
-        vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::UpdateRows {
             table: seeded.table_id,
             changes: RowChanges::Uniform {
                 rows: vec![row_id],
@@ -46,7 +46,7 @@ async fn lifecycle_and_writes_publish_domain_events() {
                 }],
             },
             create_missing_options: false,
-        }],
+        }]),
     )
     .await
     .unwrap();
@@ -83,7 +83,7 @@ async fn lifecycle_and_writes_publish_domain_events() {
     assert_eq!(changed["attribution"]["actor"], OWNER);
     assert_eq!(
         changed["tables"],
-        serde_json::json!([{ "table_id": seeded.table_id, "version": 2 }])
+        serde_json::json!([{ "table_id": seeded.table_id, "version": 3 }])
     );
     assert_eq!(events[4]["metadata"]["database_id"], db.to_string());
 }
@@ -141,7 +141,7 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
             user_id: user(OWNER),
             acting_bot: Some(agent),
         },
-        vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::UpdateRows {
             table: seeded.table_id,
             changes: RowChanges::Uniform {
                 rows: vec![row_id],
@@ -151,7 +151,7 @@ async fn an_agent_is_attributed_as_acting_for_the_user() {
                 }],
             },
             create_missing_options: false,
-        }],
+        }]),
     )
     .await
     .unwrap();

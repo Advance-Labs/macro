@@ -1,5 +1,5 @@
 //! Ports between the service and its adapters. `CellStore` is the one place
-//! row identities, cells and options commit together.
+//! a batch's writes, schema and data, commit together.
 
 use std::collections::HashMap;
 
@@ -13,19 +13,13 @@ use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::models::{
-    AddColumnOptions, Awareness, Column, ColumnDetail, ColumnId, CreateColumn, CreateDatabase,
-    CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable, InferColumnType,
-    InferColumnTypeOutcome, ListedDatabase, PropertyDefinitionId, RenameColumnOutcome, RowId,
-    RowRef, Table, TableId, TableMutationOutcome, TableVersion, Viewer,
+    Awareness, CardPosition, Column, ColumnCast, ColumnId, CreateDatabase, Database,
+    DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable, InferColumnType,
+    InferColumnTypeOutcome, ListedDatabase, OpBatch, PropertyDefinitionId, QueryDefinition,
+    QueryId, RowId, RowRef, SavedQuery, SavedQueryError, Table, TableId, TableVersion, ViewId,
+    Viewer, Writes, WritesOutcome,
 };
-use crate::domain::models::{
-    CardPosition, DatabaseView, NewOption, QueryDefinition, QueryId, SavedQuery, SavedQueryError,
-    TableDeletion, TableOrderOutcome, ViewId, Writes, WritesOutcome,
-};
-use crate::domain::models::{
-    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
-};
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::OpResult;
 
 /// Persistence for databases, tables, column placements and row identities.
 pub trait DatabasesRepo: Send + Sync + 'static {
@@ -72,52 +66,6 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         id: DatabaseId,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
-    /// Add a table to a database.
-    fn create_table(
-        &self,
-        command: &CreateTable,
-    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Error>> + Send;
-
-    /// Rename a table, guarded by its previous name.
-    fn rename_table(
-        &self,
-        table: &Table,
-        name: &str,
-        previous_name: &str,
-    ) -> impl Future<Output = Result<TableMutationOutcome, Self::Error>> + Send;
-
-    /// Give a database's tables the positions of `table_ids`, which must name
-    /// every one of its tables exactly once.
-    fn reorder_tables(
-        &self,
-        database_id: DatabaseId,
-        table_ids: &[TableId],
-    ) -> impl Future<Output = Result<TableOrderOutcome, Self::Error>> + Send;
-
-    /// Remove a table with its columns and row identities, unless it is its
-    /// database's last one.
-    fn delete_table(
-        &self,
-        table: &Table,
-    ) -> impl Future<Output = Result<TableDeletion, Self::Error>> + Send;
-
-    /// Bind a definition into a table as a new column placement, answering
-    /// it with the table's new version.
-    fn create_column(
-        &self,
-        table_id: TableId,
-        property_definition_id: PropertyDefinitionId,
-        command: &CreateColumn,
-    ) -> impl Future<Output = Result<(ColumnId, TableVersion), Self::Error>> + Send;
-
-    /// Rename a column placement.
-    fn rename_column(
-        &self,
-        table: &Table,
-        column: &Column,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<RenameColumnOutcome>, Self::Error>> + Send;
-
     /// Settle an untyped column on a definition, provided no row has a value
     /// in it yet.
     fn infer_column_type(
@@ -125,22 +73,6 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
-
-    /// Remove a column placement, rewriting `views` (the table's views that
-    /// referred to it, without it) in the same transaction.
-    fn delete_column(
-        &self,
-        table: &Table,
-        column: &Column,
-        views: &[DatabaseView],
-    ) -> impl Future<Output = Result<Option<ColumnSchemaOutcome>, Self::Error>> + Send;
-
-    /// Reorder a table's column placements.
-    fn reorder_columns(
-        &self,
-        table: &Table,
-        column_ids: &[ColumnId],
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Every row of a table, in position order.
@@ -225,32 +157,14 @@ pub trait CellStore: Send + Sync + 'static {
         definition: PropertyDefinitionId,
     ) -> impl Future<Output = Result<HashMap<RowId, PropertyValue>, Self::Error>> + Send;
 
-    /// Swap a placement onto a fresh definition in one transaction: rewrite
-    /// `views` (the table's views whose filters tested the old values) and
-    /// store the replacement's converted cells. `None` when the table moved
-    /// or the placement is no longer bound as the replacement expects.
-    fn replace_column(
-        &self,
-        table: &Table,
-        replacement: &ColumnReplacement,
-        views: &[DatabaseView],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
-
-    /// Add options to a definition bound on `table_id` and bump the table's
-    /// version, in one transaction. `None` when the table is gone or its
-    /// database is trashed.
-    fn add_options(
-        &self,
-        table_id: TableId,
-        options: &[NewOption],
-    ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
-
-    /// Apply a request's writes in one transaction, row identities, cells
-    /// and options together: each written table is locked and checked live,
-    /// each updated or deleted row checked to belong to its table, each
-    /// related row to its target table, each changed option to its
-    /// definition, and each changed table's version bumped once. Anything
-    /// but [`WritesOutcome::Applied`] wrote nothing.
+    /// Apply a request's writes in one transaction, in order: schema, row
+    /// identities, cells and options together. The database is locked (for
+    /// a write to its tables) or shared, each written table locked, checked
+    /// live and at its expected version, each new definition created before
+    /// any column binds it, each updated or deleted row checked to belong to
+    /// its table, each related row to its target table, each changed option
+    /// or column to its definition, and each changed table's version bumped
+    /// once. Anything but [`WritesOutcome::Applied`] wrote nothing.
     fn apply_writes(
         &self,
         writes: &Writes,
@@ -403,71 +317,12 @@ pub trait DatabasesService: Send + Sync + 'static {
         receipt: EntityAccessReceipt<OwnerAccessLevel>,
     ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
 
-    /// Add a table.
-    fn create_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        command: CreateTable,
-    ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
-
-    /// Rename a table.
-    fn rename_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        name: String,
-        previous_name: String,
-    ) -> impl Future<Output = Result<Table, DatabaseError>> + Send;
-
-    /// Set the order of a database's tables (its tabs). `table_ids` names
-    /// every table exactly once; answers the tables in their new order.
-    fn reorder_tables(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_ids: Vec<TableId>,
-    ) -> impl Future<Output = Result<Vec<Table>, DatabaseError>> + Send;
-
-    /// Remove a table with its rows and columns. A database keeps at least
-    /// one table.
-    fn delete_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-    ) -> impl Future<Output = Result<(), DatabaseError>> + Send;
-
-    /// Add a column.
-    fn create_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: CreateColumn,
-    ) -> impl Future<Output = Result<ColumnId, DatabaseError>> + Send;
-
-    /// Rename a column.
-    fn rename_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_id: ColumnId,
-        name: String,
-        previous_name: String,
-    ) -> impl Future<Output = Result<RenameColumnOutcome, DatabaseError>> + Send;
-
     /// Settle an untyped column's type from its first value.
     fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         command: InferColumnType,
     ) -> impl Future<Output = Result<InferColumnTypeOutcome, DatabaseError>> + Send;
-
-    /// Convert a column to another type, converting its cells. A value that
-    /// does not fit refuses the change unless the command clears it.
-    fn change_column_type(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: ChangeColumnType,
-    ) -> impl Future<Output = Result<ColumnTypeChangeOutcome, DatabaseError>> + Send;
 
     /// What changing a column to each type the type menu offers would do to
     /// its values, read in one pass without changing anything.
@@ -478,41 +333,16 @@ pub trait DatabasesService: Send + Sync + 'static {
         column_id: ColumnId,
     ) -> impl Future<Output = Result<Vec<ColumnCast>, DatabaseError>> + Send;
 
-    /// Remove a column.
-    fn delete_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_id: ColumnId,
-        base_version: TableVersion,
-    ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
-
-    /// Reorder a table's columns.
-    fn reorder_columns(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_ids: Vec<ColumnId>,
-        base_version: TableVersion,
-    ) -> impl Future<Output = Result<ColumnSchemaOutcome, DatabaseError>> + Send;
-
-    /// Add options to a select column.
-    fn add_column_options(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: AddColumnOptions,
-    ) -> impl Future<Output = Result<ColumnDetail, DatabaseError>> + Send;
-
-    /// Apply a batch of ops to the receipt's database: all of them, or,
-    /// when one is refused, none. Row ops are last-write-wins. A column type
-    /// change goes through [`Self::change_column_type`]'s rule and is sent
-    /// on its own.
+    /// Apply a batch of ops to the receipt's database, in order, in one
+    /// transaction: all of them, or, when one is refused, none. Every write
+    /// to a database's schema or data is one of these ops. A later op may
+    /// name what an earlier one created under the id its client minted. Ops
+    /// are last-write-wins unless the batch names base versions.
     fn apply_ops(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        ops: Vec<DatabaseOp>,
+        batch: OpBatch,
     ) -> impl Future<Output = Result<Vec<OpResult>, DatabaseError>> + Send;
 
     /// Where a board's cards sit: their lane and key, for the cards that

@@ -5,13 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OpResultOneOfFiveKind } from './opResultOneOfFiveKind';
-import type { TableVersion } from './tableVersion';
 
 /**
- * What an option change or removal did.
+ * A table's removal.
  */
 export type OpResultOneOfFive = {
   kind: OpResultOneOfFiveKind;
-  /** The table's version after the change. */
-  tableVersion: TableVersion;
+  /** The table removed. */
+  table: string;
 };

@@ -262,6 +262,7 @@ describe('database toolbar views', () => {
             op: 0,
             row: null,
             column: null,
+            taken: null,
             message: 'a view named `My work` already exists on this table',
           },
         },

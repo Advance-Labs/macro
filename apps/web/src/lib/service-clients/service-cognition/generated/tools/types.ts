@@ -26,6 +26,23 @@ export type ColumnType =
   | 'tag'
   | 'entity';
 /**
+ * The kind of Macro entity an entity column references, as the model names
+ * it. A mirror of the property system's entity types, minus database rows:
+ * a relation to another table is made with `linkToTableId`.
+ */
+export type ToolEntityType =
+  | 'USER'
+  | 'DOCUMENT'
+  | 'TASK'
+  | 'COMPANY'
+  | 'CALL_RECORD'
+  | 'CHANNEL'
+  | 'CHAT'
+  | 'PROJECT'
+  | 'THREAD'
+  | 'CALENDAR_EVENT'
+  | 'INITIATIVE';
+/**
  * What the user may do with a database, as the model sees it.
  */
 export type ToolGrant = 'view' | 'comment' | 'edit' | 'owner';
@@ -190,23 +207,6 @@ export type SpreadsheetValueKind =
   | 'text'
   | 'boolean'
   | 'error';
-/**
- * The kind of Macro entity an entity column references, as the model names
- * it. A mirror of the property system's entity types, minus database rows:
- * a relation to another table is made with `linkToTableId`.
- */
-export type ToolEntityType =
-  | 'USER'
-  | 'DOCUMENT'
-  | 'TASK'
-  | 'COMPANY'
-  | 'CALL_RECORD'
-  | 'CHANNEL'
-  | 'CHAT'
-  | 'PROJECT'
-  | 'THREAD'
-  | 'CALENDAR_EVENT'
-  | 'INITIATIVE';
 /**
  * Ownership scope of a manageable bot.
  */
@@ -1604,7 +1604,7 @@ export type ReadThreadReadContent =
  *
  * - `isMultiSelect: true` makes the column hold several values at once. In SQL it is written as a list (`['a', 'b']`) and `col HAS 'x'` tests membership.
  * - `linkToTableId` makes it a **relation column** pointing at another table, so rows on one side reference rows on the other by row id. Write it as a list of row ids and join through it (`JOIN guests g ON i.guest = g.row_id`). The response's relation metadata gives the target table.
- * - `entity` columns hold references to Macro things (people, documents). Their values are typed ids such as `macro|sam@example.com`.
+ * - `entity` columns hold references to Macro things (people, documents); say which with `specificEntityType`. Their values are typed ids such as `macro|sam@example.com`.
  *
  * Select and tag columns take their options as **explicit schema**: pass every label the column should accept in `options`. SQL only accepts those labels — a select column created with no options accepts nothing — and more can be added later with AddColumnOptions.
  *
@@ -1632,6 +1632,10 @@ export interface AddColumn {
    * For a select, select_number, or tag column, the allowed labels — e.g. ["Going", "Maybe", "Declined"]. SQL writes and reads these labels verbatim, and anything else is rejected by the statement, so list every value the data actually has. A select_number column's labels must be numbers. Omit for other column types; add more later with AddColumnOptions.
    */
   options?: string[] | null;
+  /**
+   * Required for dataType entity without linkToTableId: what the ids reference, e.g. USER for people or DOCUMENT.
+   */
+  specificEntityType?: ToolEntityType | null;
   /**
    * Id of another table to link to, making this a link column whose rows reference rows over there. Omit for an ordinary column. The target table must be one the user can reach.
    */

@@ -2,13 +2,12 @@ import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import { errAsync, ok, okAsync } from 'neverthrow';
+import { err, errAsync, ok, okAsync } from 'neverthrow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTableWithName } from './create-table';
 
 const transport = vi.hoisted(() => ({
-  createTable: vi.fn(),
-  createColumn: vi.fn(),
+  applyOps: vi.fn(),
   get: vi.fn(),
 }));
 vi.mock('@service-storage/client', () => ({
@@ -78,79 +77,95 @@ function detail(columns: ColumnDetail[]): DatabaseDetail {
     ],
   };
 }
-const failure = () =>
-  errAsync([{ code: 'HTTP_ERROR', message: 'Connection lost' }]);
+const uuidv7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  transport.createTable.mockImplementation(() =>
-    okAsync(detail([]).tables[0].table)
-  );
-  transport.createColumn.mockImplementation(() =>
-    okAsync({ columnId: 'name' })
+  transport.applyOps.mockImplementation(() =>
+    okAsync({
+      results: [
+        { kind: 'table_created', table: 'projects', tableVersion: 1 },
+        { kind: 'column_created', column: 'name', tableVersion: 1 },
+      ],
+    })
   );
   transport.get.mockImplementation(() => okAsync(detail([name])));
 });
 afterEach(() => queryClient.clear());
 
 describe('table setup', () => {
-  it('creates a Name column and loads the ready table into the shared schema cache', async () => {
+  it('creates the table and its Name column in one batch under minted ids, then loads it', async () => {
     const result = await createTableWithName({
       databaseId: 'db',
       name: 'Projects',
     });
-    expect(result).toEqual(ok({ tableId: 'projects', ready: true }));
-    expect(transport.createColumn).toHaveBeenCalledWith({
-      id: 'db',
-      tableId: 'projects',
-      request: {
-        binding: {
-          kind: 'new',
-          name: 'Name',
-          dataType: 'STRING',
-          isMultiSelect: false,
-        },
+
+    expect(transport.applyOps).toHaveBeenCalledTimes(1);
+    const [{ id, request }] = transport.applyOps.mock.calls[0];
+    const [table, column] = request.ops;
+    expect(id).toBe('db');
+    expect(request.ops).toEqual([
+      {
+        kind: 'create_table',
+        id: expect.stringMatching(uuidv7),
+        name: 'Projects',
       },
-    });
+      {
+        kind: 'create_column',
+        table: table.id,
+        id: expect.stringMatching(uuidv7),
+        definition: { source: 'new', name: 'Name', type: { type: 'text' } },
+      },
+    ]);
+    expect(column.id).not.toBe(table.id);
+    expect(result).toEqual(ok({ tableId: table.id, ready: true }));
     expect(
       queryClient.getQueryData(databasesKeys.detail('db').queryKey)
     ).toEqual(detail([name]));
   });
 
-  it('retries failed Name setup on the existing table without creating a duplicate', async () => {
-    transport.createColumn.mockImplementationOnce(failure);
-    const first = await createTableWithName({
+  it('hands back a refused batch, which created nothing', async () => {
+    const refused = {
+      code: 'INVALID_OP',
+      message: 'A table named Projects already exists.',
+      refusal: {
+        message: 'A table named Projects already exists.',
+        op: 0,
+        row: null,
+        column: null,
+        taken: null,
+      },
+    };
+    transport.applyOps.mockImplementation(() => errAsync([refused]));
+
+    const result = await createTableWithName({
       databaseId: 'db',
       name: 'Projects',
     });
-    const firstSetup = first._unsafeUnwrap();
-    expect(firstSetup).toMatchObject({ tableId: 'projects', ready: false });
-    transport.get.mockImplementationOnce(() => okAsync(detail([])));
-    const retried = await createTableWithName({
-      databaseId: 'db',
-      name: 'Projects',
-      existingTableId: firstSetup.tableId,
-    });
-    expect(retried).toEqual(ok({ tableId: 'projects', ready: true }));
-    expect(transport.createTable).toHaveBeenCalledTimes(1);
-    expect(transport.createColumn).toHaveBeenCalledTimes(2);
+
+    expect(result).toEqual(err(refused));
+    expect(transport.get).not.toHaveBeenCalled();
   });
 
-  it('does not recreate Name when its successful write was followed by a failed refresh', async () => {
-    transport.get.mockImplementationOnce(failure);
+  it('loads a committed table again on retry without creating another', async () => {
+    transport.get.mockImplementationOnce(() =>
+      errAsync([{ code: 'HTTP_ERROR', message: 'Connection lost' }])
+    );
     const first = await createTableWithName({
       databaseId: 'db',
       name: 'Projects',
     });
     const firstSetup = first._unsafeUnwrap();
-    expect(firstSetup).toMatchObject({ tableId: 'projects', ready: false });
+    expect(firstSetup).toMatchObject({ ready: false });
+
     const retried = await createTableWithName({
       databaseId: 'db',
       name: 'Projects',
       existingTableId: firstSetup.tableId,
     });
-    expect(retried).toEqual(ok({ tableId: 'projects', ready: true }));
-    expect(transport.createTable).toHaveBeenCalledTimes(1);
-    expect(transport.createColumn).toHaveBeenCalledTimes(1);
+
+    expect(retried).toEqual(ok({ tableId: firstSetup.tableId, ready: true }));
+    expect(transport.applyOps).toHaveBeenCalledTimes(1);
   });
 });

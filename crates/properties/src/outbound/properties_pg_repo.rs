@@ -157,6 +157,7 @@ impl PropertiesRepo for PropertiesPgRepo {
         Ok(
             property_definition_queries::create_database_property_definition(
                 &self.pool,
+                macro_uuid::generate_uuid_v7(),
                 database_id,
                 display_name,
                 data_type,

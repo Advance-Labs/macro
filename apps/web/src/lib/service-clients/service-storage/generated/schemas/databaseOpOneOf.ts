@@ -4,21 +4,17 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-
-import type { CellWrite } from './cellWrite';
 import type { DatabaseOpOneOfKind } from './databaseOpOneOfKind';
 
 /**
- * Append rows to a table, in order, each with the cells it starts with.
+ * Add a table, after the database's other tables. It starts with no
+columns and no rows.
  */
 export type DatabaseOpOneOf = {
-  /** Create a select option for a label the column does not have yet,
-instead of refusing the op. */
-  createMissingOptions?: boolean;
+  /** The new table's id, minted by the client; later ops of the
+request may name it. */
+  id: string;
   kind: DatabaseOpOneOfKind;
-  /** One entry per new row: the cells it starts with. Columns left out
-start empty. */
-  rows: CellWrite[][];
-  /** The table. */
-  table: string;
+  /** Its name, unique within the database ignoring case. */
+  name: string;
 };

@@ -1,5 +1,5 @@
 //! The router's collaborators, just enough to drive a request: a `valid`
-//! bearer token, one fixed grant, and a service counting applied batches.
+//! bearer token, one fixed grant, and a service recording applied batches.
 
 use std::sync::{Arc, Mutex};
 
@@ -18,20 +18,21 @@ use macro_authorization::{
 };
 use macro_user_id::lowercased::Lowercase;
 use macro_user_id::user_id::{MacroUserId, MacroUserIdStr};
-use models_databases::{DatabaseOp, OpResult};
+use models_databases::OpResult;
+use models_permissions::share_permission::{SharePermissionV2, UpdateSharePermissionRequestV2};
 use rootcause::Report;
 use uuid::Uuid;
 
 use crate::domain::models::{
-    AddColumnOptions, Awareness, ChangeColumnType, ColumnCast, ColumnDetail, ColumnId,
-    ColumnSchemaOutcome, ColumnTypeChangeOutcome, CreateColumn, CreateDatabase, CreateTable,
-    Database, DatabaseDetail, DatabaseError, DatabaseId, InferColumnType, InferColumnTypeOutcome,
-    ListedDatabase, QueryDefinition, QueryId, RenameColumnOutcome, SavedQuery, SavedQueryError,
-    Table, TableId, TableVersion, Viewer,
+    Awareness, ColumnCast, ColumnId, CreateDatabase, Database, DatabaseDetail, DatabaseError,
+    DatabaseId, InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch, QueryDefinition,
+    QueryId, SavedQuery, SavedQueryError, Table, TableId, Viewer,
 };
 use crate::domain::ports::DatabasesService;
-use crate::inbound::axum_router::DatabasesRouterState;
+use crate::domain::sharing::DatabaseSharingService;
+use crate::domain::transfer::{DatabaseTransferService, ImportTable};
 use crate::inbound::axum_router::ops::apply_ops_handler;
+use crate::inbound::axum_router::{DatabasesRouterState, databases_router};
 
 const USER: &str = "macro|ops-router@macro.com";
 
@@ -83,6 +84,17 @@ pub(super) fn ops_router(level: AccessLevel) -> (Router, Arc<RecordingService>) 
         )
         .with_state(state);
     (router, service)
+}
+
+/// Every databases route, for a caller holding `level` on every database.
+pub(super) fn full_router(level: AccessLevel) -> Router {
+    databases_router::<RecordingService, GrantingAccess, Authorization, ()>(
+        DatabasesRouterState::new(
+            Arc::new(RecordingService::default()),
+            Arc::new(GrantingAccess(level)),
+            authorization_state(),
+        ),
+    )
 }
 
 /// Grants every caller the one level it holds.
@@ -189,10 +201,12 @@ impl EntityAccessService for GrantingAccess {
     }
 }
 
-/// Counts the batches that reached it; the ops route calls nothing else.
+/// Records the batches that reached it, and answers each with no results,
+/// or with `refusal` when one is set; the ops route calls nothing else.
 #[derive(Default)]
 pub(super) struct RecordingService {
-    pub(super) applied: Mutex<usize>,
+    pub(super) applied: Mutex<Vec<OpBatch>>,
+    pub(super) refusal: Mutex<Option<DatabaseError>>,
 }
 
 const ONLY_OPS: &str = "the ops route calls only apply_ops";
@@ -202,10 +216,13 @@ impl DatabasesService for RecordingService {
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
         _viewer: Viewer,
-        _ops: Vec<DatabaseOp>,
+        batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
-        *self.applied.lock().unwrap() += 1;
-        Ok(Vec::new())
+        self.applied.lock().unwrap().push(batch);
+        match self.refusal.lock().unwrap().take() {
+            Some(refusal) => Err(refusal),
+            None => Ok(Vec::new()),
+        }
     }
 
     async fn view_positions(
@@ -256,67 +273,11 @@ impl DatabasesService for RecordingService {
     ) -> Result<(), DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
-    async fn create_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: CreateTable,
-    ) -> Result<Table, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn rename_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: String,
-        _: String,
-    ) -> Result<Table, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn reorder_tables(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Vec<TableId>,
-    ) -> Result<Vec<Table>, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn delete_table(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-    ) -> Result<(), DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn create_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: CreateColumn,
-    ) -> Result<ColumnId, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn rename_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: ColumnId,
-        _: String,
-        _: String,
-    ) -> Result<RenameColumnOutcome, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
         _: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn change_column_type(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: ChangeColumnType,
-    ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
     async fn column_casts(
@@ -325,32 +286,6 @@ impl DatabasesService for RecordingService {
         _: TableId,
         _: ColumnId,
     ) -> Result<Vec<ColumnCast>, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn delete_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: ColumnId,
-        _: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn reorder_columns(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: TableId,
-        _: Vec<ColumnId>,
-        _: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        unimplemented!("{ONLY_OPS}")
-    }
-    async fn add_column_options(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        _: AddColumnOptions,
-    ) -> Result<ColumnDetail, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
     async fn share_awareness(
@@ -370,6 +305,33 @@ impl DatabasesService for RecordingService {
         unimplemented!("{ONLY_OPS}")
     }
     async fn get_query(&self, _: Viewer, _: QueryId) -> Result<SavedQuery, SavedQueryError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+}
+
+impl DatabaseSharingService for RecordingService {
+    async fn share_permissions(
+        &self,
+        _: EntityAccessReceipt<OwnerAccessLevel>,
+    ) -> Result<SharePermissionV2, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+    async fn update_share_permissions(
+        &self,
+        _: EntityAccessReceipt<OwnerAccessLevel>,
+        _: UpdateSharePermissionRequestV2,
+    ) -> Result<SharePermissionV2, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+}
+
+impl DatabaseTransferService for RecordingService {
+    async fn import_table(
+        &self,
+        _: EntityAccessReceipt<EditAccessLevel>,
+        _: Viewer,
+        _: ImportTable,
+    ) -> Result<Table, DatabaseError> {
         unimplemented!("{ONLY_OPS}")
     }
 }

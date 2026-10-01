@@ -1,7 +1,6 @@
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { refreshInBackground } from '@queries/database-sql/create-database-sql-query';
 import {
-  addDatabaseColumnOptions,
   applyDatabaseOps,
   applyDatabaseTableVersions,
   useDatabaseDetailQuery,
@@ -40,6 +39,7 @@ import {
 import type { BoardPositionsState } from '../primitives/board-layout';
 import { createColumnCasts } from '../queries/column-casts';
 import { updateDatabaseColumns } from '../queries/column-schema';
+import { addDatabaseColumnOptions } from '../queries/columns';
 import { createDatabaseRelations } from '../queries/database-relations';
 import { useRelatedDatabaseSync } from '../queries/database-relations-sync';
 import { deleteDatabaseOption, updateDatabaseOption } from '../queries/options';
@@ -199,7 +199,7 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
           tableId: props.tableId,
           columnId,
           labels: [label],
-        }).map(() => undefined),
+        }),
     }),
     relations
   );
@@ -256,12 +256,13 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
     version: () => table().table.version,
   });
   const changeColumns = (
-    mutation: Parameters<typeof updateDatabaseColumns>[0]['mutation']
+    mutation: Parameters<typeof updateDatabaseColumns>[0]['mutation'],
+    baseVersion = table().table.version
   ) =>
     updateDatabaseColumns({
       databaseId,
       tableId: props.tableId,
-      baseVersion: table().table.version,
+      baseVersion,
       mutation,
     });
   return (
@@ -307,7 +308,12 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
             relationTables={relationTables()}
             columnCasts={columnCasts}
             onChangeColumnType={(columnId, change) =>
-              changeColumns({ kind: 'type', columnId, change })
+              // Checked against the version the menu's dry run read, so a
+              // change made since is not converted blind.
+              changeColumns(
+                { kind: 'type', columnId, change },
+                change.baseVersion
+              )
             }
             onDeleteColumn={(columnId) =>
               changeColumns({ kind: 'delete', columnId })

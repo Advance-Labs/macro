@@ -149,11 +149,18 @@ afterEach(() => {
 describe('reordering tabs', () => {
   it('moves a tab right from its menu, sends the full order, and keeps it', async () => {
     fetch.mockResolvedValue(
-      ok([
-        { ...detail.tables[1].table, position: '000000000001', version: 2 },
-        { ...detail.tables[0].table, position: '000000000002', version: 4 },
-        { ...detail.tables[2].table, position: '000000000003', version: 1 },
-      ])
+      ok({
+        results: [
+          {
+            kind: 'tables_reordered',
+            tables: [
+              { table: 'budget', version: 2 },
+              { table: 'guests', version: 4 },
+              { table: 'venues', version: 1 },
+            ],
+          },
+        ],
+      })
     );
     renderTabs();
     expect(tabNames()).toEqual(['Guests', 'Budget', 'Venues']);
@@ -177,10 +184,14 @@ describe('reordering tabs', () => {
     );
     await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
     const [url, init] = fetch.mock.calls[0];
-    expect(url).toMatch(/\/databases\/db\/tables\/order$/);
-    expect(init?.method).toBe('PUT');
+    expect(url).toMatch(/\/databases\/db\/ops$/);
+    expect(init?.method).toBe('POST');
     expect(init?.body).toBe(
-      JSON.stringify({ tableIds: ['budget', 'guests', 'venues'] })
+      JSON.stringify({
+        ops: [
+          { kind: 'reorder_tables', order: ['budget', 'guests', 'venues'] },
+        ],
+      })
     );
     await waitFor(() =>
       expect(
@@ -219,7 +230,7 @@ describe('reordering tabs', () => {
     fetch.mockResolvedValue(
       err([
         {
-          code: 'HTTP_ERROR',
+          code: 'INVALID_OP',
           message: 'The table order must include every table',
         },
       ])
@@ -230,7 +241,11 @@ describe('reordering tabs', () => {
 
     await waitFor(() => expect(toast.failure).toHaveBeenCalledOnce());
     expect(fetch.mock.calls[0][1]?.body).toBe(
-      JSON.stringify({ tableIds: ['guests', 'venues', 'budget'] })
+      JSON.stringify({
+        ops: [
+          { kind: 'reorder_tables', order: ['guests', 'venues', 'budget'] },
+        ],
+      })
     );
     await waitFor(() =>
       expect(tabNames()).toEqual(['Guests', 'Budget', 'Venues'])

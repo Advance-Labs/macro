@@ -1,3 +1,5 @@
+use models_databases::{DatabaseOp, NewOption};
+
 use super::*;
 
 /// The service's compare-and-swap needs the label being replaced; the tool
@@ -19,13 +21,13 @@ async fn renaming_a_column_replaces_its_current_label() {
     assert_eq!(response.name, "RSVP");
     assert!(response.database.is_some());
     assert_eq!(
-        calls.lock().unwrap().renamed_columns,
-        vec![(
-            TABLE_ID,
-            COLUMN_ID,
-            " RSVP ".to_string(),
-            "Status".to_string()
-        )]
+        calls.lock().unwrap().applied,
+        vec![OpBatch::from(vec![DatabaseOp::RenameColumn {
+            table: TABLE_ID,
+            column: COLUMN_ID,
+            name: " RSVP ".to_string(),
+            previous_name: Some("Status".to_string()),
+        }])]
     );
 }
 
@@ -47,11 +49,11 @@ async fn renaming_an_unknown_column_points_at_describe() {
         "{}",
         error.description
     );
-    assert!(calls.lock().unwrap().renamed_columns.is_empty());
+    assert!(calls.lock().unwrap().applied.is_empty());
 }
 
 /// The model never passes a version: the tool converts against the version it
-/// just read, then adds the labels no row has yet.
+/// just read, and adds the labels no row has yet in the same batch.
 #[tokio::test]
 async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options() {
     let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
@@ -73,19 +75,35 @@ async fn changing_a_column_type_uses_the_current_version_and_adds_extra_options(
     assert_eq!(response.column_id, COLUMN_ID);
     assert!(response.database.is_some());
     assert!(response.warning.is_none());
+    assert_eq!(response.cleared_cells, 0);
     let calls = calls.lock().unwrap();
-    assert_eq!(calls.changed_column_types.len(), 1);
-    let change = &calls.changed_column_types[0];
-    assert_eq!(change.table_id, TABLE_ID);
-    assert_eq!(change.column_id, COLUMN_ID);
-    assert_eq!(change.data_type, DataType::SelectString);
-    assert!(!change.is_multi_select);
-    assert_eq!(change.specific_entity_type, None);
-    assert_eq!(change.relation, None);
-    assert_eq!(change.base_version, TableVersion(3));
+    let [batch] = calls.applied.as_slice() else {
+        panic!("one batch, got {:?}", calls.applied);
+    };
+    let DatabaseOp::AddOptions { options, .. } = &batch.ops[1] else {
+        panic!("the options follow the change, got {:?}", batch.ops);
+    };
     assert_eq!(
-        calls.added_options,
-        vec![(COLUMN_ID, vec!["Waitlisted".to_string()])]
+        *batch,
+        OpBatch {
+            ops: vec![
+                DatabaseOp::ChangeColumnType {
+                    table: TABLE_ID,
+                    column: COLUMN_ID,
+                    to: ColumnKind::Select { multi: false },
+                    clear_invalid: false,
+                },
+                DatabaseOp::AddOptions {
+                    table: TABLE_ID,
+                    column: COLUMN_ID,
+                    options: vec![NewOption {
+                        id: options[0].id,
+                        label: "Waitlisted".to_string(),
+                    }],
+                },
+            ],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }
     );
 }
 
@@ -108,12 +126,56 @@ async fn changing_a_column_to_a_relation_targets_this_database() {
     .await
     .expect("a relation is an entity column with a target table");
 
-    let calls = calls.lock().unwrap();
-    let change = &calls.changed_column_types[0];
-    assert_eq!(change.data_type, DataType::Entity);
-    assert!(change.is_multi_valued());
-    assert_eq!(change.relation, Some((DATABASE_ID, parties)));
-    assert!(calls.added_options.is_empty());
+    assert_eq!(
+        calls.lock().unwrap().applied,
+        vec![OpBatch {
+            ops: vec![DatabaseOp::ChangeColumnType {
+                table: TABLE_ID,
+                column: COLUMN_ID,
+                to: ColumnKind::Relation {
+                    database: DATABASE_ID,
+                    table: parties,
+                },
+                clear_invalid: false,
+            }],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn changing_a_column_to_people_names_the_entity_kind() {
+    let (context, calls) = context(FakeAccess::granting(AccessLevel::Edit));
+    ChangeColumnType {
+        database_id: DATABASE_ID,
+        table_id: TABLE_ID,
+        column_id: COLUMN_ID,
+        data_type: ColumnType::Entity,
+        is_multi_select: true,
+        options: Some(vec![]),
+        specific_entity_type: Some(ToolEntityType::User),
+        link_to_table_id: None,
+        clear_invalid: false,
+    }
+    .call(ServiceContext(context), request_context())
+    .await
+    .expect("an entity column names what it references");
+
+    assert_eq!(
+        calls.lock().unwrap().applied,
+        vec![OpBatch {
+            ops: vec![DatabaseOp::ChangeColumnType {
+                table: TABLE_ID,
+                column: COLUMN_ID,
+                to: ColumnKind::Entity {
+                    target: models_databases::EntityKind::User,
+                    multi: true,
+                },
+                clear_invalid: false,
+            }],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }]
+    );
 }
 
 #[test]
@@ -160,8 +222,14 @@ async fn deleting_a_column_guards_on_the_version_just_read() {
     assert_eq!(response.column_id, COLUMN_ID);
     assert!(response.database.is_some());
     assert_eq!(
-        calls.lock().unwrap().deleted_columns,
-        vec![(TABLE_ID, COLUMN_ID, TableVersion(3))]
+        calls.lock().unwrap().applied,
+        vec![OpBatch {
+            ops: vec![DatabaseOp::DeleteColumn {
+                table: TABLE_ID,
+                column: COLUMN_ID,
+            }],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }]
     );
 }
 
@@ -179,8 +247,14 @@ async fn reordering_columns_guards_on_the_version_just_read() {
 
     assert_eq!(response.table_id, TABLE_ID);
     assert_eq!(
-        calls.lock().unwrap().reordered_columns,
-        vec![(TABLE_ID, vec![COLUMN_ID], TableVersion(3))]
+        calls.lock().unwrap().applied,
+        vec![OpBatch {
+            ops: vec![DatabaseOp::ReorderColumns {
+                table: TABLE_ID,
+                order: vec![COLUMN_ID],
+            }],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }]
     );
 }
 
@@ -199,8 +273,10 @@ async fn reordering_tables_passes_the_full_order_and_answers_the_schema() {
     assert_eq!(response.table_ids, vec![other_table, TABLE_ID]);
     assert!(response.database.is_some());
     assert_eq!(
-        calls.lock().unwrap().reordered_tables,
-        vec![vec![other_table, TABLE_ID]]
+        calls.lock().unwrap().applied,
+        vec![OpBatch::from(vec![DatabaseOp::ReorderTables {
+            order: vec![other_table, TABLE_ID],
+        }])]
     );
 }
 
@@ -222,7 +298,7 @@ async fn reordering_tables_needs_more_than_view_access() {
         "{}",
         error.description
     );
-    assert!(calls.lock().unwrap().reordered_tables.is_empty());
+    assert!(calls.lock().unwrap().applied.is_empty());
 }
 
 #[tokio::test]
@@ -243,7 +319,7 @@ async fn deleting_a_table_needs_more_than_view_access() {
         "{}",
         error.description
     );
-    assert!(calls.lock().unwrap().deleted_tables.is_empty());
+    assert!(calls.lock().unwrap().applied.is_empty());
 }
 
 #[tokio::test]
@@ -259,7 +335,12 @@ async fn deleting_a_table_returns_the_schema_after_it() {
 
     assert_eq!(response.table_id, TABLE_ID);
     assert!(response.database.is_some());
-    assert_eq!(calls.lock().unwrap().deleted_tables, vec![TABLE_ID]);
+    assert_eq!(
+        calls.lock().unwrap().applied,
+        vec![OpBatch::from(vec![DatabaseOp::DeleteTable {
+            table: TABLE_ID
+        }])]
+    );
 }
 
 #[tokio::test]
@@ -300,7 +381,18 @@ async fn clearing_passes_through_and_the_response_counts_the_emptied_cells() {
     .await
     .expect("clearing converts what fits");
 
-    assert!(calls.lock().unwrap().changed_column_types[0].clear_invalid);
+    assert_eq!(
+        calls.lock().unwrap().applied,
+        vec![OpBatch {
+            ops: vec![DatabaseOp::ChangeColumnType {
+                table: TABLE_ID,
+                column: COLUMN_ID,
+                to: ColumnKind::Number,
+                clear_invalid: true,
+            }],
+            base_versions: HashMap::from([(TABLE_ID, TableVersion(3))]),
+        }]
+    );
     assert_eq!(response.cleared_cells, 2);
     assert_eq!(response.trimmed_cells, 0);
 }

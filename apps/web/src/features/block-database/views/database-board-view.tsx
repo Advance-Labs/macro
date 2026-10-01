@@ -1,7 +1,6 @@
 import { toast } from '@core/component/Toast/Toast';
 import { engineFailure } from '@core/database-sql/driver';
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
@@ -81,7 +80,7 @@ type DatabaseBoardViewProps = {
   onAddGroup?: (
     columnId: string,
     label: string
-  ) => Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>>;
+  ) => Promise<Result<void, DatabaseOpsError>>;
   renderTextValue?: (value: string) => JSX.Element;
   controlsRef?: (controls: DatabaseBoardControls) => void;
 };

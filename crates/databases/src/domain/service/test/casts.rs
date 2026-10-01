@@ -5,38 +5,39 @@ fn version(world: &Shared) -> TableVersion {
     world.lock().unwrap().tables[0].version
 }
 
-fn to(data_type: DataType, seeded: &Seeded, column_id: ColumnId) -> ChangeColumnType {
-    ChangeColumnType {
-        table_id: seeded.table_id,
-        column_id,
-        data_type,
-        is_multi_select: false,
-        specific_entity_type: None,
-        relation: None,
-        base_version: version(&seeded.world),
-        clear_invalid: false,
+fn retype(seeded: &Seeded, column: ColumnId, to: ColumnKind, clear_invalid: bool) -> OpBatch {
+    OpBatch {
+        ops: vec![DatabaseOp::ChangeColumnType {
+            table: seeded.table_id,
+            column,
+            to,
+            clear_invalid,
+        }],
+        base_versions: HashMap::from([(seeded.table_id, version(&seeded.world))]),
     }
 }
 
 #[tokio::test]
 async fn a_never_cast_is_refused_with_its_reason_before_touching_data() {
     let seeded = seeded().await;
-    let result = seeded
+    let before = version(&seeded.world);
+    let error = seeded
         .service
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            to(DataType::Date, &seeded, seeded.plus_ones_column.id),
+            retype(&seeded, seeded.plus_ones_column.id, ColumnKind::Date, false),
         )
-        .await;
+        .await
+        .unwrap_err();
 
-    assert_eq!(
-        result.unwrap_err().to_string(),
-        "invalid schema operation: Numbers aren't dates."
-    );
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(refusal.reason, "Numbers aren't dates.");
     let w = seeded.world.lock().unwrap();
     assert_eq!(w.definitions.len(), 3);
-    assert_eq!(w.tables[0].version, TableVersion(1));
+    assert_eq!(w.tables[0].version, before);
 }
 
 #[tokio::test]
@@ -45,18 +46,22 @@ async fn a_failed_checked_cast_counts_the_misfits_and_quotes_three() {
     insert_names(&seeded, &["TBD", "n/a", "12.5.0", "7"]).await;
     let before = version(&seeded.world);
 
-    let result = seeded
+    let error = seeded
         .service
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            to(DataType::Number, &seeded, seeded.name_column.id),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number, false),
         )
-        .await;
+        .await
+        .unwrap_err();
 
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
     assert_eq!(
-        result.unwrap_err().to_string(),
-        "invalid schema operation: 4 values in \"Name\" aren't numbers: 'Sam', 'TBD', 'n/a'. \
+        refusal.reason,
+        "4 values in \"Name\" aren't numbers: 'Sam', 'TBD', 'n/a'. \
          Fix them, or convert with clearing to empty them."
     );
     let w = seeded.world.lock().unwrap();
@@ -76,24 +81,25 @@ async fn a_checked_cast_whose_values_all_fit_converts_them() {
         .get_mut(&seeded.row_id)
         .unwrap()
         .remove(&seeded.name_column.property_definition_id);
+    let before = version(&seeded.world);
 
     let outcome = seeded
         .service
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            to(DataType::Number, &seeded, seeded.name_column.id),
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number, false),
         )
         .await
         .unwrap();
 
     assert_eq!(
         outcome,
-        ColumnTypeChangeOutcome {
-            table_versions: HashMap::from([(seeded.table_id, TableVersion(3))]),
+        vec![OpResult::ColumnTyped {
+            table_version: TableVersion(before.0 + 1),
             cleared_cells: 0,
             trimmed_cells: 0,
-        }
+        }]
     );
     let w = seeded.world.lock().unwrap();
     let column = w
@@ -118,19 +124,25 @@ async fn clearing_empties_the_values_that_do_not_fit_and_counts_them() {
 
     let outcome = seeded
         .service
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            ChangeColumnType {
-                clear_invalid: true,
-                ..to(DataType::Number, &seeded, seeded.name_column.id)
-            },
+            retype(&seeded, seeded.name_column.id, ColumnKind::Number, true),
         )
         .await
         .unwrap();
 
-    assert_eq!(outcome.cleared_cells, 2);
-    assert_eq!(outcome.trimmed_cells, 0);
+    assert!(
+        matches!(
+            outcome.as_slice(),
+            [OpResult::ColumnTyped {
+                cleared_cells: 2,
+                trimmed_cells: 0,
+                ..
+            }]
+        ),
+        "{outcome:?}"
+    );
     let w = seeded.world.lock().unwrap();
     let column = w
         .columns
@@ -149,28 +161,37 @@ async fn clearing_empties_the_values_that_do_not_fit_and_counts_them() {
 async fn clearing_a_cell_with_several_values_keeps_its_first() {
     let seeded = seeded().await;
     let svc = &seeded.service;
-    let tags = svc
-        .create_column(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            CreateColumn {
+    let tags = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateColumn {
+            table: seeded.table_id,
+            id: tags,
+            definition: NewColumn::New {
+                name: "Diet".into(),
+                kind: ColumnKind::Select { multi: true },
+                options: vec![
+                    NewOption {
+                        id: OptionId::new(),
+                        label: "Vegan".into(),
+                    },
+                    NewOption {
+                        id: OptionId::new(),
+                        label: "Nut-free".into(),
+                    },
+                ],
                 infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Diet".into(),
-                    data_type: DataType::SelectString,
-                    is_multi_select: true,
-                    options: vec!["Vegan".into(), "Nut-free".into()],
-                },
-                config: None,
             },
-        )
-        .await
-        .unwrap();
+            after: None,
+        }]),
+    )
+    .await
+    .unwrap();
     svc.apply_ops(
         receipt(seeded.database_id, OWNER, AccessLevel::Edit),
         viewer(OWNER),
-        vec![DatabaseOp::UpdateRows {
+        OpBatch::from(vec![DatabaseOp::UpdateRows {
             table: seeded.table_id,
             changes: RowChanges::Uniform {
                 rows: vec![seeded.row_id],
@@ -183,38 +204,48 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
                 }],
             },
             create_missing_options: false,
-        }],
+        }]),
     )
     .await
     .unwrap();
 
-    let refused = svc
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+    let error = svc
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            to(DataType::SelectString, &seeded, tags),
+            retype(&seeded, tags, ColumnKind::Select { multi: false }, false),
         )
-        .await;
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
     assert_eq!(
-        refused.unwrap_err().to_string(),
-        "invalid schema operation: 1 cell in \"Diet\" has more than one value: 'Vegan, Nut-free'. \
+        refusal.reason,
+        "1 cell in \"Diet\" has more than one value: 'Vegan, Nut-free'. \
          Fix it, or convert with clearing to keep only its first value."
     );
 
     let outcome = svc
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            ChangeColumnType {
-                clear_invalid: true,
-                ..to(DataType::SelectString, &seeded, tags)
-            },
+            retype(&seeded, tags, ColumnKind::Select { multi: false }, true),
         )
         .await
         .unwrap();
 
-    assert_eq!(outcome.cleared_cells, 0);
-    assert_eq!(outcome.trimmed_cells, 1);
+    assert!(
+        matches!(
+            outcome.as_slice(),
+            [OpResult::ColumnTyped {
+                cleared_cells: 0,
+                trimmed_cells: 1,
+                ..
+            }]
+        ),
+        "{outcome:?}"
+    );
     let diet = seeded
         .world
         .lock()
@@ -235,31 +266,31 @@ async fn clearing_a_cell_with_several_values_keeps_its_first() {
 async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
     let seeded = seeded().await;
     let svc = &seeded.service;
-    let arrives = svc
-        .create_column(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            CreateColumn {
+    let arrives = ColumnId::new();
+    svc.apply_ops(
+        edit(seeded.database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateColumn {
+            table: seeded.table_id,
+            id: arrives,
+            definition: NewColumn::New {
+                name: "Arrives".into(),
+                kind: ColumnKind::Date,
+                options: vec![],
                 infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Arrives".into(),
-                    data_type: DataType::Date,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
             },
-        )
-        .await
-        .unwrap();
+            after: None,
+        }]),
+    )
+    .await
+    .unwrap();
     let midnight = "2026-09-30T00:00:00Z".parse().unwrap();
     let afternoon = "2026-09-30T14:05:00Z".parse().unwrap();
     let inserted = svc
         .apply_ops(
             receipt(seeded.database_id, OWNER, AccessLevel::Edit),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![
                     vec![CellWrite {
@@ -272,7 +303,7 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
                     }],
                 ],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -280,10 +311,10 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
         panic!("expected one insert, got {inserted:?}");
     };
 
-    svc.change_column_type(
-        receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+    svc.apply_ops(
+        edit(seeded.database_id),
         viewer(OWNER),
-        to(DataType::String, &seeded, arrives),
+        retype(&seeded, arrives, ColumnKind::Text, false),
     )
     .await
     .unwrap();
@@ -307,23 +338,29 @@ async fn a_date_becomes_its_calendar_day_as_text_unless_it_has_a_time() {
 #[tokio::test]
 async fn changing_a_column_to_its_own_type_changes_nothing() {
     let seeded = seeded().await;
+    let before = version(&seeded.world);
     let outcome = seeded
         .service
-        .change_column_type(
-            receipt(seeded.database_id, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(seeded.database_id),
             viewer(OWNER),
-            to(DataType::Number, &seeded, seeded.plus_ones_column.id),
+            retype(
+                &seeded,
+                seeded.plus_ones_column.id,
+                ColumnKind::Number,
+                false,
+            ),
         )
         .await
         .unwrap();
 
     assert_eq!(
         outcome,
-        ColumnTypeChangeOutcome {
-            table_versions: HashMap::from([(seeded.table_id, TableVersion(1))]),
+        vec![OpResult::ColumnTyped {
+            table_version: before,
             cleared_cells: 0,
             trimmed_cells: 0,
-        }
+        }]
     );
     let w = seeded.world.lock().unwrap();
     assert_eq!(w.definitions.len(), 3);

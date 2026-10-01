@@ -4,7 +4,7 @@ import type {
   DatabaseDetail,
   Table,
 } from '../generated/storage/types.gen';
-import { Macro } from '../src/macro';
+import { Macro, MacroOpRefusedError } from '../src/macro';
 
 const originalFetch = globalThis.fetch;
 const databaseId = '0198a4cc-e138-7670-a308-a6b766602700';
@@ -89,42 +89,58 @@ afterEach(() => {
 });
 
 describe('Database', () => {
-  test('renames with the previously read table name and reloads the schema', async () => {
+  test('renames a table by op with the previously read name and reloads the schema', async () => {
     let current = support;
     let reads = 0;
-    let renameBody: unknown;
+    const writes: { url: string; method: string; body: unknown }[] = [];
     intercept(async (request) => {
-      if (request.method === 'PATCH') {
-        expect(request.url).toBe(
-          `${host}/databases/${databaseId}/tables/${tableId}`,
-        );
-        renameBody = await request.json();
+      if (request.method === 'POST') {
+        writes.push({
+          url: request.url,
+          method: request.method,
+          body: await request.json(),
+        });
         const renamed: Table = { ...ticketsTable, name: 'Issues', version: 8 };
         current = {
           ...support,
           tables: support.tables.map((table) => ({ ...table, table: renamed })),
         };
-        return Response.json(renamed);
+        return Response.json({
+          results: [{ kind: 'table_renamed', tableVersion: 8 }],
+        });
       }
       reads++;
       return Response.json(current);
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
-    expect(table).toBeDefined();
-    await table?.rename('Issues');
-    expect(renameBody).toEqual({ name: 'Issues', previousName: 'Tickets' });
-    await expect(table?.name()).resolves.toBe('Issues');
+    if (!table) throw new Error('Missing fixture table');
+    expect(await table.database.renameTable(table, 'Issues')).toBe(8);
+    expect(writes).toEqual([
+      {
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [
+            {
+              kind: 'rename_table',
+              table: tableId,
+              name: 'Issues',
+              previousName: 'Tickets',
+            },
+          ],
+        },
+      },
+    ]);
+    await expect(table.name()).resolves.toBe('Issues');
     expect(reads).toBe(2);
   });
 
-  test('column rename uses its placement name and then reloads the placement', async () => {
+  test('renames a column by op with its placement name and then reloads the placement', async () => {
     let current = support;
     let renameBody: unknown;
     intercept(async (request) => {
-      if (request.method === 'PATCH') {
-        expect(request.url).toBe(
-          `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`,
-        );
+      if (request.method === 'POST') {
+        expect(request.url).toBe(`${host}/databases/${databaseId}/ops`);
         renameBody = await request.json();
         current = {
           ...support,
@@ -136,16 +152,28 @@ describe('Database', () => {
             })),
           })),
         };
-        return Response.json({ table_versions: { [tableId]: 8 } });
+        return Response.json({
+          results: [{ kind: 'column_renamed', tableVersion: 8 }],
+        });
       }
       return Response.json(current);
     });
     const table = await client().databases.byId(databaseId).table('Tickets');
     const column = (await table?.columns())?.[0];
-    expect(column).toBeDefined();
-    await column?.rename('Summary');
-    expect(renameBody).toEqual({ name: 'Summary', previousName: 'Name' });
-    await expect(column?.name()).resolves.toBe('Summary');
+    if (!column) throw new Error('Missing fixture column');
+    await column.rename('Summary');
+    expect(renameBody).toEqual({
+      ops: [
+        {
+          kind: 'rename_column',
+          table: tableId,
+          column: columnId,
+          name: 'Summary',
+          previousName: 'Name',
+        },
+      ],
+    });
+    await expect(column.name()).resolves.toBe('Summary');
   });
 
   test('forwards first-value inference version and rejects another database handle', async () => {
@@ -180,7 +208,7 @@ describe('Database', () => {
     expect(requests).toHaveLength(2);
   });
 
-  test('guards type, ordering and deletion writes with the table version last read', async () => {
+  test('guards type, ordering and deletion ops with the table version last read', async () => {
     const writes: { url: string; method: string; body: unknown }[] = [];
     let reads = 0;
     intercept(async (request) => {
@@ -193,55 +221,69 @@ describe('Database', () => {
         method: request.method,
         body: await request.json(),
       });
-      return Response.json(
-        request.url.endsWith('/type')
-          ? {
-              cleared_cells: 2,
-              trimmed_cells: 1,
-              table_versions: { [tableId]: 8 },
-            }
-          : { table_versions: { [tableId]: 8 } },
-      );
+      return Response.json({
+        results: [
+          [
+            {
+              kind: 'column_typed',
+              clearedCells: 2,
+              trimmedCells: 1,
+              tableVersion: 8,
+            },
+          ],
+          [{ kind: 'columns_reordered', tableVersion: 9 }],
+          [{ kind: 'column_deleted', tableVersion: 10 }],
+        ][writes.length - 1],
+      });
     });
     const database = client().databases.byId(databaseId);
     const table = await database.table('Tickets');
     const column = (await table?.columns())?.[0];
     if (!table || !column) throw new Error('Missing fixture column');
     const outcome = await column.changeType({
-      dataType: 'ENTITY',
-      isMultiSelect: true,
-      linkTo: table,
+      to: { type: 'relation', table },
       clearInvalid: true,
     });
     expect(outcome).toEqual({
-      cleared_cells: 2,
-      trimmed_cells: 1,
-      table_versions: { [tableId]: 8 },
+      kind: 'column_typed',
+      clearedCells: 2,
+      trimmedCells: 1,
+      tableVersion: 8,
     });
-    await table.reorderColumns([column]);
-    await column.delete();
+    expect(await table.database.reorderColumns(table, [column])).toBe(9);
+    expect(await column.table.database.deleteColumn(column)).toBe(10);
     expect(writes).toEqual([
       {
-        method: 'PATCH',
-        url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}/type`,
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
         body: {
-          baseVersion: 7,
-          dataType: 'ENTITY',
-          isMultiSelect: true,
-          linkToTableId: tableId,
-          linkToDatabaseId: databaseId,
-          clearInvalid: true,
+          ops: [
+            {
+              kind: 'change_column_type',
+              table: tableId,
+              column: columnId,
+              to: { type: 'relation', database: databaseId, table: tableId },
+              clearInvalid: true,
+            },
+          ],
+          baseVersions: { [tableId]: 7 },
         },
       },
       {
-        method: 'PATCH',
-        url: `${host}/databases/${databaseId}/tables/${tableId}/columns/order`,
-        body: { columnIds: [columnId], baseVersion: 7 },
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [{ kind: 'reorder_columns', table: tableId, order: [columnId] }],
+          baseVersions: { [tableId]: 7 },
+        },
       },
       {
-        method: 'DELETE',
-        url: `${host}/databases/${databaseId}/tables/${tableId}/columns/${columnId}`,
-        body: { baseVersion: 7 },
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [{ kind: 'delete_column', table: tableId, column: columnId }],
+          baseVersions: { [tableId]: 7 },
+        },
       },
     ]);
     await database.schema();
@@ -376,19 +418,24 @@ describe('Database', () => {
           ],
         });
       }
-      if (request.method === 'DELETE') {
-        writes.push({ url: request.url, method: 'DELETE', body: undefined });
-        return new Response(null, { status: 204 });
-      }
       writes.push({
         url: request.url,
         method: request.method,
         body: await request.json(),
       });
-      return Response.json([
-        { id: otherTableId, name: 'Customers' },
-        { id: tableId, name: 'Tickets' },
-      ]);
+      return Response.json({
+        results: [
+          writes.length === 1
+            ? {
+                kind: 'tables_reordered',
+                tables: [
+                  { table: otherTableId, version: 3 },
+                  { table: tableId, version: 8 },
+                ],
+              }
+            : { kind: 'table_deleted', table: otherTableId },
+        ],
+      });
     });
     const database = client().databases.byId(databaseId);
     const [tickets, customers] = await database.tables();
@@ -401,14 +448,16 @@ describe('Database', () => {
     await database.schema();
     expect(writes).toEqual([
       {
-        method: 'PUT',
-        url: `${host}/databases/${databaseId}/tables/order`,
-        body: { tableIds: [otherTableId, tableId] },
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: {
+          ops: [{ kind: 'reorder_tables', order: [otherTableId, tableId] }],
+        },
       },
       {
-        method: 'DELETE',
-        url: `${host}/databases/${databaseId}/tables/${otherTableId}`,
-        body: undefined,
+        method: 'POST',
+        url: `${host}/databases/${databaseId}/ops`,
+        body: { ops: [{ kind: 'delete_table', table: otherTableId }] },
       },
     ]);
     expect(reads).toBe(3);
@@ -419,6 +468,211 @@ describe('Database', () => {
       client().databases.byId('other').deleteTable(tickets),
     ).rejects.toThrow('does not belong');
     expect(writes).toHaveLength(2);
+  });
+
+  test('creates a table under a client-minted UUIDv7 and returns its handle', async () => {
+    let createBody: unknown;
+    let mintedId = '';
+    intercept(async (request) => {
+      createBody = await request.json();
+      mintedId = (createBody as { ops: { id: string }[] }).ops[0]?.id ?? '';
+      return Response.json({
+        results: [{ kind: 'table_created', table: mintedId, tableVersion: 1 }],
+      });
+    });
+    const database = client().databases.byId(databaseId);
+    const table = await database.createTable({ name: 'Guests' });
+    expect(createBody).toEqual({
+      ops: [
+        {
+          kind: 'create_table',
+          id: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+          ),
+          name: 'Guests',
+        },
+      ],
+    });
+    expect(table.id).toBe(mintedId);
+    expect(table.database).toBe(database);
+  });
+
+  test('adds a select column after another, minting the column and option ids', async () => {
+    const writes: unknown[] = [];
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      const body = await request.json();
+      writes.push(body);
+      const [op] = (body as { ops: { id: string }[] }).ops;
+      return Response.json({
+        results: [{ kind: 'column_created', column: op?.id, tableVersion: 8 }],
+      });
+    });
+    const table = await client().databases.byId(databaseId).table('Tickets');
+    const name = (await table?.columns())?.[0];
+    if (!table || !name) throw new Error('Missing fixture column');
+    const status = await table.addColumn({
+      name: 'Status',
+      type: { type: 'select', multi: false },
+      options: ['Open', 'Closed'],
+      after: name,
+    });
+    const v7 =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(writes).toEqual([
+      {
+        ops: [
+          {
+            kind: 'create_column',
+            table: tableId,
+            id: expect.stringMatching(v7),
+            definition: {
+              source: 'new',
+              name: 'Status',
+              type: { type: 'select', multi: false },
+              options: [
+                { id: expect.stringMatching(v7), label: 'Open' },
+                { id: expect.stringMatching(v7), label: 'Closed' },
+              ],
+            },
+            after: columnId,
+          },
+        ],
+      },
+    ]);
+    const [op] = (writes[0] as { ops: { id: string }[] }).ops;
+    expect(status.id).toBe(op?.id ?? '');
+    expect(status.table).toBe(table);
+  });
+
+  test('binds a column to an existing property definition by handle', async () => {
+    let createBody: unknown;
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      createBody = await request.json();
+      return Response.json({
+        results: [
+          { kind: 'column_created', column: columnId, tableVersion: 8 },
+        ],
+      });
+    });
+    const macro = client();
+    const table = await macro.databases.byId(databaseId).table('Tickets');
+    if (!table) throw new Error('Missing fixture table');
+    const column = await table.addColumn({
+      property: macro.properties.definition(definitionId),
+    });
+    expect(createBody).toEqual({
+      ops: [
+        {
+          kind: 'create_column',
+          table: tableId,
+          id: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+          ),
+          definition: { source: 'existing', property: definitionId },
+        },
+      ],
+    });
+    expect(column.id).toBe(columnId);
+  });
+
+  test('adds select options under minted ids and returns the ones created', async () => {
+    const optionId = '0198a4cc-e138-7670-a308-a6b76660270c';
+    let addBody: unknown;
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      addBody = await request.json();
+      return Response.json({
+        results: [
+          { kind: 'options_added', added: [optionId], tableVersion: 8 },
+        ],
+      });
+    });
+    const database = client().databases.byId(databaseId);
+    const column = (await (await database.table('Tickets'))?.columns())?.[0];
+    if (!column) throw new Error('Missing fixture column');
+    expect(await database.addColumnOptions(column, ['Maybe'])).toEqual({
+      kind: 'options_added',
+      added: [optionId],
+      tableVersion: 8,
+    });
+    expect(addBody).toEqual({
+      ops: [
+        {
+          kind: 'add_options',
+          table: tableId,
+          column: columnId,
+          options: [
+            {
+              id: expect.stringMatching(
+                /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+              ),
+              label: 'Maybe',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test('sends base versions by table handle with applied ops', async () => {
+    let opsBody: unknown;
+    intercept(async (request) => {
+      if (request.method === 'GET') return Response.json(support);
+      opsBody = await request.json();
+      return Response.json({
+        results: [{ kind: 'view_deleted', tableVersion: 8 }],
+      });
+    });
+    const database = client().databases.byId(databaseId);
+    const table = await database.table('Tickets');
+    if (!table) throw new Error('Missing fixture table');
+    const viewId = '0198a4cc-e138-7670-a308-a6b766602706';
+    await database.applyOps(
+      [{ kind: 'delete_view', table: tableId, view: viewId }],
+      { baseVersions: [{ table, version: 7 }] },
+    );
+    expect(opsBody).toEqual({
+      ops: [{ kind: 'delete_view', table: tableId, view: viewId }],
+      baseVersions: { [tableId]: 7 },
+    });
+  });
+
+  test('throws a refusal naming the op and the taken id, and keeps the cached schema', async () => {
+    let reads = 0;
+    intercept((request) => {
+      if (request.method === 'GET') {
+        reads++;
+        return Response.json(support);
+      }
+      return Response.json(
+        {
+          message: 'table id already taken',
+          op: 0,
+          row: null,
+          column: null,
+          taken: { kind: 'table', id: tableId },
+        },
+        { status: 400 },
+      );
+    });
+    const database = client().databases.byId(databaseId);
+    await database.schema();
+    const refusal = await database
+      .createTable({ name: 'Guests' })
+      .catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(MacroOpRefusedError);
+    expect(refusal).toMatchObject({
+      status: 400,
+      message: 'table id already taken',
+      op: 0,
+      row: null,
+      column: null,
+      taken: { kind: 'table', id: tableId },
+    });
+    await database.schema();
+    expect(reads).toBe(1);
   });
 
   test('lists what a column can be cast to', async () => {

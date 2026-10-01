@@ -5,14 +5,16 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
+use std::collections::HashMap;
+
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of,
-    database_error, table_of,
+    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, column_of, table_of,
 };
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Delete a column.
@@ -88,14 +90,19 @@ where
         column_of(table, self.column_id)?;
         let base_version = table.table.version;
 
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
         service_context
-            .service
-            .delete_column(receipt, self.table_id, self.column_id, base_version)
-            .await
-            .map_err(database_error)?;
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch {
+                    ops: vec![DatabaseOp::DeleteColumn {
+                        table: self.table_id,
+                        column: self.column_id,
+                    }],
+                    base_versions: HashMap::from([(self.table_id, base_version)]),
+                },
+            )
+            .await?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)

@@ -5,15 +5,12 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, NewOption, OptionId, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-};
-use crate::domain::catalog::option_labels;
-use crate::domain::models::AddColumnOptions as AddColumnOptionsCommand;
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Add options to a select column.
@@ -108,38 +105,38 @@ where
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
-
-        let column = service_context
-            .service
-            .add_column_options(
-                receipt,
-                service_context.viewer(user_id),
-                AddColumnOptionsCommand {
-                    table_id: self.table_id,
-                    column_id: self.column_id,
-                    labels: self.labels.clone(),
-                },
+        service_context
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::AddOptions {
+                    table: self.table_id,
+                    column: self.column_id,
+                    options: self
+                        .labels
+                        .iter()
+                        .map(|label| NewOption {
+                            id: OptionId::new(),
+                            label: label.clone(),
+                        })
+                        .collect(),
+                }]),
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
 
         // The catalog's labels, not the raw option text: duplicates are
         // disambiguated there, and a label that does not round-trip is one SQL
         // would reject.
-        let options = option_labels(&column.definition)
-            .into_iter()
-            .map(|(_, label)| label)
-            .collect();
-
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)
             .await;
+        let options = database
+            .as_ref()
+            .and_then(|schema| schema.column_options(self.table_id, self.column_id))
+            .unwrap_or_default();
 
         Ok(AddColumnOptionsResponse {
-            column_id: column.column.id,
+            column_id: self.column_id,
             options,
             database_id: self.database_id,
             table_id: self.table_id,

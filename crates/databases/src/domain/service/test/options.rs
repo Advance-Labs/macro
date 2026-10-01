@@ -42,13 +42,13 @@ async fn relabelling_an_option_keeps_every_cell_that_holds_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::UpdateOption {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
                 option: going,
                 label: Some("  Attending ".into()),
                 color: None,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -102,7 +102,7 @@ async fn an_option_takes_a_palette_colour_and_loses_it_again() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![recolour(Some(Some(TagColor::Teal.hex().into())))],
+            OpBatch::from(vec![recolour(Some(Some(TagColor::Teal.hex().into())))]),
         )
         .await
         .unwrap();
@@ -120,7 +120,7 @@ async fn an_option_takes_a_palette_colour_and_loses_it_again() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![recolour(Some(None))],
+            OpBatch::from(vec![recolour(Some(None))]),
         )
         .await
         .unwrap();
@@ -141,13 +141,13 @@ async fn a_colour_that_is_not_hex_is_refused() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::UpdateOption {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
                 option: going,
                 label: None,
                 color: Some(Some("teal".into())),
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -158,6 +158,7 @@ async fn a_colour_that_is_not_hex_is_refused() {
             op: 0,
             row: None,
             column: Some(seeded.status_column.id),
+            taken: None,
             reason: "teal is not a colour; give a hex string like #RRGGBB".into(),
         }
     );
@@ -174,22 +175,26 @@ async fn a_colour_that_is_not_hex_is_refused() {
 #[tokio::test]
 async fn a_tag_option_keeps_a_colour() {
     let seeded = seeded().await;
-    let labels = seeded
+    let labels = ColumnId::new();
+    seeded
         .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: labels,
+                definition: NewColumn::New {
                     name: "Labels".into(),
-                    data_type: DataType::Tag,
-                    is_multi_select: true,
-                    options: vec!["VIP".into()],
+                    kind: ColumnKind::Tag,
+                    options: vec![NewOption {
+                        id: OptionId::new(),
+                        label: "VIP".into(),
+                    }],
+                    infer_type: false,
                 },
-                config: None,
-            },
+                after: None,
+            }]),
         )
         .await
         .unwrap();
@@ -209,13 +214,13 @@ async fn a_tag_option_keeps_a_colour() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::UpdateOption {
                 table: seeded.table_id,
                 column: labels,
                 option: vip,
                 label: None,
                 color: Some(None),
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -226,6 +231,7 @@ async fn a_tag_option_keeps_a_colour() {
             op: 0,
             row: None,
             column: Some(labels),
+            taken: None,
             reason: "a tag option always has a colour; pick another instead".into(),
         }
     );
@@ -254,7 +260,7 @@ async fn a_label_is_refused_when_empty_or_already_taken_ignoring_case() {
             .apply_ops(
                 edit(seeded.database_id),
                 viewer(OWNER),
-                vec![relabel(label)],
+                OpBatch::from(vec![relabel(label)]),
             )
             .await
             .unwrap_err();
@@ -264,6 +270,7 @@ async fn a_label_is_refused_when_empty_or_already_taken_ignoring_case() {
                 op: 0,
                 row: None,
                 column: Some(seeded.status_column.id),
+                taken: None,
                 reason: reason.into(),
             },
             "{label:?}"
@@ -275,7 +282,7 @@ async fn a_label_is_refused_when_empty_or_already_taken_ignoring_case() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![relabel("GOING")],
+            OpBatch::from(vec![relabel("GOING")]),
         )
         .await
         .unwrap();
@@ -288,22 +295,32 @@ async fn a_label_is_refused_when_empty_or_already_taken_ignoring_case() {
 #[tokio::test]
 async fn a_numeric_options_label_must_be_a_number() {
     let seeded = seeded().await;
-    let size = seeded
+    let size = ColumnId::new();
+    seeded
         .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: size,
+                definition: NewColumn::New {
                     name: "Size".into(),
-                    data_type: DataType::SelectNumber,
-                    is_multi_select: false,
-                    options: vec!["1".into(), "2".into()],
+                    kind: ColumnKind::SelectNumber { multi: false },
+                    options: vec![
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "1".into(),
+                        },
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "2".into(),
+                        },
+                    ],
+                    infer_type: false,
                 },
-                config: None,
-            },
+                after: None,
+            }]),
         )
         .await
         .unwrap();
@@ -338,7 +355,7 @@ async fn a_numeric_options_label_must_be_a_number() {
             .apply_ops(
                 edit(seeded.database_id),
                 viewer(OWNER),
-                vec![relabel(label)],
+                OpBatch::from(vec![relabel(label)]),
             )
             .await
             .unwrap_err();
@@ -348,6 +365,7 @@ async fn a_numeric_options_label_must_be_a_number() {
                 op: 0,
                 row: None,
                 column: Some(size),
+                taken: None,
                 reason: reason.into(),
             },
             "{label:?}"
@@ -356,7 +374,11 @@ async fn a_numeric_options_label_must_be_a_number() {
 
     seeded
         .service
-        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![relabel("3")])
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![relabel("3")]),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -386,7 +408,11 @@ async fn an_option_the_column_lacks_is_refused() {
     ] {
         let error = seeded
             .service
-            .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![op])
+            .apply_ops(
+                edit(seeded.database_id),
+                viewer(OWNER),
+                OpBatch::from(vec![op]),
+            )
             .await
             .unwrap_err();
         assert_eq!(
@@ -395,6 +421,7 @@ async fn an_option_the_column_lacks_is_refused() {
                 op: 0,
                 row: None,
                 column: Some(seeded.status_column.id),
+                taken: None,
                 reason: format!("no option {stale} on \"Status\""),
             }
         );
@@ -411,11 +438,11 @@ async fn a_column_without_options_has_none_to_change() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteOption {
+            OpBatch::from(vec![DatabaseOp::DeleteOption {
                 table: seeded.table_id,
                 column: seeded.name_column.id,
                 option: OptionId::from_uuid(Uuid::from_u128(1)),
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -426,6 +453,7 @@ async fn a_column_without_options_has_none_to_change() {
             op: 0,
             row: None,
             column: Some(seeded.name_column.id),
+            taken: None,
             reason: "\"Name\" is a text column; only select and tag columns have options".into(),
         }
     );
@@ -437,22 +465,32 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
     let status = seeded.status_column.property_definition_id;
     let going = option_id(&seeded.world, status, "Going");
     let declined = option_id(&seeded.world, status, "Declined");
-    let diet = seeded
+    let diet = ColumnId::new();
+    seeded
         .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: diet,
+                definition: NewColumn::New {
                     name: "Diet".into(),
-                    data_type: DataType::SelectString,
-                    is_multi_select: true,
-                    options: vec!["Vegan".into(), "Halal".into()],
+                    kind: ColumnKind::Select { multi: true },
+                    options: vec![
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "Vegan".into(),
+                        },
+                        NewOption {
+                            id: OptionId::new(),
+                            label: "Halal".into(),
+                        },
+                    ],
+                    infer_type: false,
                 },
-                config: None,
-            },
+                after: None,
+            }]),
         )
         .await
         .unwrap();
@@ -472,7 +510,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: vec![seeded.row_id],
@@ -482,7 +520,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -493,7 +531,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::DeleteOption {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
@@ -504,7 +542,7 @@ async fn removing_an_option_empties_single_select_cells_and_trims_multi_select_o
                     column: diet,
                     option: vegan,
                 },
-            ],
+            ]),
         )
         .await
         .unwrap();
@@ -547,7 +585,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::UpdateOption {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
@@ -566,7 +604,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
                     },
                     create_missing_options: false,
                 },
-            ],
+            ]),
         )
         .await
         .unwrap();
@@ -580,7 +618,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![
+            OpBatch::from(vec![
                 DatabaseOp::DeleteOption {
                     table: seeded.table_id,
                     column: seeded.status_column.id,
@@ -597,7 +635,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
                     },
                     create_missing_options: false,
                 },
-            ],
+            ]),
         )
         .await
         .unwrap_err();
@@ -607,6 +645,7 @@ async fn a_later_op_sees_the_options_an_earlier_one_changed() {
             op: 1,
             row: None,
             column: Some(seeded.status_column.id),
+            taken: None,
             reason: format!("no option {declined} on \"Status\""),
         }
     );
@@ -632,33 +671,31 @@ async fn an_option_change_reaches_every_table_of_the_database_binding_it() {
     let seeded = seeded().await;
     let status = seeded.status_column.property_definition_id;
     let going = option_id(&seeded.world, status, "Going");
-    let rsvps = seeded
-        .service
-        .create_table(
-            edit(seeded.database_id),
-            CreateTable {
-                database_id: seeded.database_id,
-                name: "RSVPs".into(),
-            },
-        )
-        .await
-        .unwrap();
+    let rsvps = TableId::new();
     seeded
         .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: rsvps.id,
-                binding: ColumnBinding::ExistingDefinition(status),
-                config: None,
-            },
+            OpBatch::from(vec![
+                DatabaseOp::CreateTable {
+                    id: rsvps,
+                    name: "RSVPs".into(),
+                },
+                DatabaseOp::CreateColumn {
+                    table: rsvps,
+                    id: ColumnId::new(),
+                    definition: NewColumn::Existing {
+                        property: PropertyId::from_uuid(status),
+                    },
+                    after: None,
+                },
+            ]),
         )
         .await
         .unwrap();
     let guests_before = table_version(&seeded.world, seeded.table_id);
-    let rsvps_before = table_version(&seeded.world, rsvps.id);
+    let rsvps_before = table_version(&seeded.world, rsvps);
     seeded.world.lock().unwrap().published.clear();
 
     seeded
@@ -666,13 +703,13 @@ async fn an_option_change_reaches_every_table_of_the_database_binding_it() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateOption {
+            OpBatch::from(vec![DatabaseOp::UpdateOption {
                 table: seeded.table_id,
                 column: seeded.status_column.id,
                 option: going,
                 label: Some("Attending".into()),
                 color: None,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -681,7 +718,7 @@ async fn an_option_change_reaches_every_table_of_the_database_binding_it() {
     published.sort();
     let mut expected = vec![
         (seeded.table_id, TableVersion(guests_before.0 + 1)),
-        (rsvps.id, TableVersion(rsvps_before.0 + 1)),
+        (rsvps, TableVersion(rsvps_before.0 + 1)),
     ];
     expected.sort();
     assert_eq!(published, expected);
@@ -716,20 +753,25 @@ async fn shared_priority_column(seeded: &Seeded) -> Column {
         .unwrap()
         .definitions
         .insert(definition_id, priority);
-    let column = seeded
+    let column = ColumnId::new();
+    seeded
         .service
-        .create_column(
+        .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: seeded.table_id,
-                binding: ColumnBinding::ExistingDefinition(definition_id),
-                config: None,
-            },
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: seeded.table_id,
+                id: column,
+                definition: NewColumn::Existing {
+                    property: PropertyId::from_uuid(definition_id),
+                },
+                after: None,
+            }]),
         )
         .await
         .unwrap();
+    // Tests count the batches their own writes make, not the binding's.
+    seeded.world.lock().unwrap().write_batches = 0;
     seeded
         .world
         .lock()
@@ -759,7 +801,7 @@ async fn a_shared_propertys_options_take_the_right_to_edit_that_property() {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![relabel.clone()],
+            OpBatch::from(vec![relabel.clone()]),
         )
         .await
         .unwrap_err();
@@ -769,6 +811,7 @@ async fn a_shared_propertys_options_take_the_right_to_edit_that_property() {
             op: 0,
             row: None,
             column: Some(priority.id),
+            taken: None,
             reason: "\"Priority\" is a property shared beyond this database, and you may not \
                      change its options"
                 .into(),
@@ -784,7 +827,11 @@ async fn a_shared_propertys_options_take_the_right_to_edit_that_property() {
         .insert(OWNER.into(), vec![priority.property_definition_id]);
     seeded
         .service
-        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![relabel])
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![relabel]),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -848,7 +895,7 @@ async fn an_insert_creating_an_option_of_a_shared_property_takes_the_right_to_ed
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![insert.clone()],
+            OpBatch::from(vec![insert.clone()]),
         )
         .await
         .unwrap_err();
@@ -858,6 +905,7 @@ async fn an_insert_creating_an_option_of_a_shared_property_takes_the_right_to_ed
             op: 0,
             row: Some(0),
             column: Some(priority.id),
+            taken: None,
             reason: SHARED_REFUSAL.into(),
         }
     );
@@ -871,7 +919,11 @@ async fn an_insert_creating_an_option_of_a_shared_property_takes_the_right_to_ed
         .insert(OWNER.into(), vec![priority.property_definition_id]);
     seeded
         .service
-        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![insert])
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![insert]),
+        )
         .await
         .unwrap();
     let labels: Vec<PropertyOptionValue> = options(&seeded.world, priority.property_definition_id)
@@ -909,7 +961,7 @@ async fn an_update_creating_an_option_of_a_shared_property_takes_the_right_to_ed
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![update.clone()],
+            OpBatch::from(vec![update.clone()]),
         )
         .await
         .unwrap_err();
@@ -919,6 +971,7 @@ async fn an_update_creating_an_option_of_a_shared_property_takes_the_right_to_ed
             op: 0,
             row: None,
             column: Some(priority.id),
+            taken: None,
             reason: SHARED_REFUSAL.into(),
         }
     );
@@ -932,7 +985,11 @@ async fn an_update_creating_an_option_of_a_shared_property_takes_the_right_to_ed
         .insert(OWNER.into(), vec![priority.property_definition_id]);
     seeded
         .service
-        .apply_ops(edit(seeded.database_id), viewer(OWNER), vec![update])
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![update]),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -952,7 +1009,7 @@ async fn an_existing_option_of_a_shared_property_is_written_without_the_right_to
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
                 table: seeded.table_id,
                 changes: RowChanges::Uniform {
                     rows: vec![seeded.row_id],
@@ -962,7 +1019,7 @@ async fn an_existing_option_of_a_shared_property_is_written_without_the_right_to
                     }],
                 },
                 create_missing_options: true,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -972,21 +1029,24 @@ async fn an_existing_option_of_a_shared_property_is_written_without_the_right_to
 async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
     let seeded = seeded().await;
     let priority = shared_priority_column(&seeded).await;
-    let add = || AddColumnOptions {
-        table_id: seeded.table_id,
-        column_id: priority.id,
-        labels: vec!["Someday".into()],
+    let someday = OptionId::new();
+    let add = || {
+        OpBatch::from(vec![DatabaseOp::AddOptions {
+            table: seeded.table_id,
+            column: priority.id,
+            options: vec![NewOption {
+                id: someday,
+                label: "Someday".into(),
+            }],
+        }])
     };
 
     let error = seeded
         .service
-        .add_column_options(edit(seeded.database_id), viewer(OWNER), add())
+        .apply_ops(edit(seeded.database_id), viewer(OWNER), add())
         .await
         .unwrap_err();
-    let DatabaseError::InvalidSchemaOperation(reason) = error else {
-        panic!("expected a refused schema change, got {error:?}");
-    };
-    assert_eq!(reason.to_string(), SHARED_REFUSAL);
+    assert_eq!(refusal(error).reason, SHARED_REFUSAL);
     assert_eq!(
         options(&seeded.world, priority.property_definition_id).len(),
         2
@@ -998,10 +1058,20 @@ async fn adding_options_to_a_shared_property_takes_the_right_to_edit_it() {
         .unwrap()
         .editable_definitions
         .insert(OWNER.into(), vec![priority.property_definition_id]);
-    let column = seeded
+    let results = seeded
         .service
-        .add_column_options(edit(seeded.database_id), viewer(OWNER), add())
+        .apply_ops(edit(seeded.database_id), viewer(OWNER), add())
         .await
         .unwrap();
-    assert_eq!(column.definition.property_options.len(), 3);
+    assert!(
+        matches!(
+            results.as_slice(),
+            [OpResult::OptionsAdded { added, .. }] if added == &[someday]
+        ),
+        "{results:?}"
+    );
+    assert_eq!(
+        options(&seeded.world, priority.property_definition_id).len(),
+        3
+    );
 }

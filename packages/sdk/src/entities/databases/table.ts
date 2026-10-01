@@ -56,7 +56,8 @@ export class DatabaseTable {
   /**
    * The table's current version, bumped by every committed change to its
    * schema or rows. Schema edits such as {@link reorderColumns} send it as
-   * the version they were made against.
+   * the base version they were made against, so a table that moved since
+   * refuses the edit with a 409.
    */
   async version(): Promise<TableVersion> {
     return (await this.detail()).table.version;

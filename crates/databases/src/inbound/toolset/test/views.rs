@@ -35,7 +35,7 @@ async fn a_new_name_creates_the_view_through_an_op() {
     assert_eq!(saved.view.id, VIEW_ID);
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![vec![DatabaseOp::CreateView {
+        vec![OpBatch::from(vec![DatabaseOp::CreateView {
             table: TABLE_ID,
             view: NewView {
                 name: "Stages".into(),
@@ -47,7 +47,7 @@ async fn a_new_name_creates_the_view_through_an_op() {
                     hide_empty_lanes: true,
                 },
             },
-        }]]
+        }])]
     );
 }
 
@@ -79,7 +79,7 @@ async fn the_name_of_an_existing_view_replaces_it() {
     assert!(!saved.created);
     assert_eq!(
         calls.lock().unwrap().applied,
-        vec![vec![DatabaseOp::UpdateView {
+        vec![OpBatch::from(vec![DatabaseOp::UpdateView {
             table: TABLE_ID,
             view: VIEW_ID,
             name: Some("Stages".into()),
@@ -90,7 +90,7 @@ async fn the_name_of_an_existing_view_replaces_it() {
                 card_fields: vec![],
                 hide_empty_lanes: true,
             }),
-        }]]
+        }])]
     );
 }
 

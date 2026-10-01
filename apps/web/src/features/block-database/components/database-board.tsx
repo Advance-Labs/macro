@@ -1,12 +1,11 @@
 import type { Board } from '@core/database-sql/generated/types';
 import { isEditableInput } from '@core/util/isEditableInput';
-import type { ResultError } from '@core/util/result';
 import CaretDownIcon from '@phosphor/caret-down.svg';
 import CheckIcon from '@phosphor/check.svg';
 import GripIcon from '@phosphor/dots-six-vertical.svg';
 import DotsIcon from '@phosphor/dots-three.svg';
 import PlusIcon from '@phosphor/plus.svg';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { Key } from '@solid-primitives/keyed';
 import { Button } from '@ui/components/Button';
@@ -51,7 +50,7 @@ import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
 
 /** A new board group's option, added or refused. */
-type DatabaseGroupAdded = Result<void, ResultError<DatabaseSchemaErrorCode>[]>;
+type DatabaseGroupAdded = Result<void, DatabaseOpsError>;
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
 
@@ -559,7 +558,7 @@ function NewBoardGroup(props: {
         setAdding(false);
         setDraft('');
       },
-      (errors) => setError(columnSchemaMessage(errors))
+      (error) => setError(columnSchemaMessage(error))
     );
   }
   return (

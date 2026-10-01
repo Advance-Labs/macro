@@ -8,7 +8,7 @@ use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
 
 use super::query_error::PropertyQueryError;
-use crate::domain::database_cell_writer::ColorChange;
+use crate::domain::database_option_writer::ColorChange;
 
 use crate::domain::model::{
     GetOrCreatePropertyOptionResult, PropertyOptionReplaceOutcome, PropertyOptionReplacePlan,

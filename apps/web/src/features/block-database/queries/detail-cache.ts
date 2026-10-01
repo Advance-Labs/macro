@@ -1,4 +1,4 @@
-/** The cached database detail, patched as option and view ops are sent and read again when one is refused. */
+/** The cached database detail, patched as schema, option and view ops are sent and read again when one is refused. */
 import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { queryClient } from '@queries/client';
 import {
@@ -89,7 +89,7 @@ export async function patchTableColumn(
   );
 }
 
-function isResult<Kind extends OpResult['kind']>(
+export function isResult<Kind extends OpResult['kind']>(
   result: OpResult | undefined,
   kind: Kind
 ): result is Extract<OpResult, { kind: Kind }> {
@@ -114,9 +114,10 @@ export function applyOp<Kind extends OpResult['kind']>(
         return errAsync<Extract<OpResult, { kind: Kind }>, DatabaseOpFailure>({
           kind: 'unexpected-result',
         });
-      applyDatabaseTableVersions(databaseId, {
-        [tableId]: result.tableVersion,
-      });
+      if ('tableVersion' in result)
+        applyDatabaseTableVersions(databaseId, {
+          [tableId]: result.tableVersion,
+        });
       return okAsync(result);
     })
     .orElse((failure) => {

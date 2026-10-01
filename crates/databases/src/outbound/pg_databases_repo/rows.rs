@@ -120,25 +120,6 @@ pub(crate) async fn bump_table_version(
     Ok(TableVersion(version))
 }
 
-/// Lock the live tables among `table_ids`, in id order so concurrent batches
-/// take them in the same order, answering the ones that are live.
-pub(crate) async fn lock_live_tables(
-    executor: impl PgExecutor<'_>,
-    table_ids: &[TableId],
-) -> Result<Vec<TableId>, sqlx::Error> {
-    sqlx::query_scalar!(
-        r#"SELECT t.id FROM database_tables t
-           JOIN databases d ON d.id = t.database_id
-           WHERE t.id = ANY($1) AND d.trashed_at IS NULL
-           ORDER BY t.id
-           FOR UPDATE OF t"#,
-        &uuids(table_ids),
-    )
-    .fetch_all(executor)
-    .await
-    .map(|ids| ids.into_iter().map(TableId::from_uuid).collect())
-}
-
 /// Lock the rows among `row_ids` that belong to the table, for writing,
 /// answering them.
 pub(crate) async fn lock_rows(

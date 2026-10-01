@@ -1,25 +1,46 @@
+//! Table ops over Postgres: names, removal, and the database's lock.
+
+use models_databases::{CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, OpResult};
+
+use super::apply_ops::{edit, guests, service, version, viewer};
 use super::*;
+use crate::domain::models::{DatabaseError, OpRefusal, SchemaError};
+use crate::domain::ports::{DatabasesRepo, DatabasesService};
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn table_mutations_wait_for_trash_and_return_not_found(pool: PgPool) {
-    let (repo, table, _) = fixture(&pool).await;
-    let version = repo.table_versions(&[table.id]).await.unwrap()[&table.id];
+async fn table_ops_wait_for_a_concurrent_trash_and_then_find_the_database_gone(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let before = version(&pool, guests.table_id).await;
     let mut trash = pool.begin().await.unwrap();
     sqlx::query!(
         "UPDATE databases SET trashed_at = now() WHERE id = $1",
-        table.database_id.into_uuid(),
+        guests.database_id.into_uuid(),
     )
     .execute(&mut *trash)
     .await
     .unwrap();
-    let command = CreateTable {
-        database_id: table.database_id,
-        name: "Blocked".into(),
-    };
     let mut writes = std::pin::pin!(async {
         tokio::join!(
-            repo.create_table(&command),
-            repo.rename_table(&table, "Blocked rename", "Guests"),
+            service.apply_ops(
+                edit(guests.database_id),
+                viewer(),
+                vec![DatabaseOp::CreateTable {
+                    id: TableId::new(),
+                    name: "Blocked".into(),
+                }]
+                .into(),
+            ),
+            service.apply_ops(
+                edit(guests.database_id),
+                viewer(),
+                vec![DatabaseOp::RenameTable {
+                    table: guests.table_id,
+                    name: "Blocked rename".into(),
+                    previous_name: None,
+                }]
+                .into(),
+            ),
         )
     });
     assert!(
@@ -30,77 +51,327 @@ async fn table_mutations_wait_for_trash_and_return_not_found(pool: PgPool) {
     );
     trash.commit().await.unwrap();
     let (created, renamed) = writes.await;
-    assert!(matches!(created.unwrap(), TableMutationOutcome::NotFound));
-    assert!(matches!(renamed.unwrap(), TableMutationOutcome::NotFound));
-    let (database, tables) = repo.get_database(table.database_id).await.unwrap().unwrap();
-    assert!(database.trashed_at.is_some());
-    assert_eq!(tables.len(), 2);
-    let unchanged = tables
-        .iter()
-        .find(|candidate| candidate.id == table.id)
+    assert!(matches!(created.unwrap_err(), DatabaseError::NotFound));
+    assert!(matches!(renamed.unwrap_err(), DatabaseError::NotFound));
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    let (database, tables) = repo
+        .get_database(guests.database_id)
+        .await
+        .unwrap()
         .unwrap();
-    assert_eq!(unchanged.name, "Guests");
-    assert_eq!(unchanged.version, version);
+    assert!(database.trashed_at.is_some());
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].name, "Table 1");
+    assert_eq!(tables[0].version, before);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn deleted_parent_is_not_a_name_conflict_or_storage_error(pool: PgPool) {
+async fn a_deleted_database_is_not_found_rather_than_a_name_conflict_or_storage_error(
+    pool: PgPool,
+) {
     let (repo, table, _) = fixture(&pool).await;
     repo.delete_database(table.database_id).await.unwrap();
-    assert!(matches!(
-        repo.create_table(&CreateTable {
-            database_id: table.database_id,
+    let store = PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    for write in [
+        Write::CreateTable {
+            table_id: TableId::new(),
             name: "Missing".into(),
-        })
-        .await
-        .unwrap(),
-        TableMutationOutcome::NotFound
-    ));
-    assert!(matches!(
-        repo.rename_table(&table, "Missing", "Guests")
+        },
+        Write::RenameTable {
+            table_id: table.id,
+            from: "Guests".into(),
+            name: "Missing".into(),
+        },
+    ] {
+        let outcome = store
+            .apply_writes(&Writes {
+                database_id: table.database_id,
+                created_by: user(),
+                options: Vec::new(),
+                writes: vec![write],
+                related_rows: Vec::new(),
+                expected_versions: Vec::new(),
+            })
             .await
-            .unwrap(),
-        TableMutationOutcome::NotFound
-    ));
+            .unwrap();
+        assert!(
+            matches!(outcome, WritesOutcome::TableNotFound(_)),
+            "expected the database to be gone, got {outcome:?}"
+        );
+    }
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn deleting_a_table_takes_its_rows_and_columns_but_never_the_last_table(pool: PgPool) {
-    let (repo, table, _) = fixture(&pool).await;
-    repo.insert_rows(table.id, USER, 2).await.unwrap().unwrap();
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let sessions = TableId::new();
+    let topic = ColumnId::new();
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![
+                DatabaseOp::CreateTable {
+                    id: sessions,
+                    name: "Sessions".into(),
+                },
+                DatabaseOp::CreateColumn {
+                    table: sessions,
+                    id: topic,
+                    definition: NewColumn::New {
+                        name: "Topic".into(),
+                        kind: ColumnKind::Text,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
+                },
+                DatabaseOp::InsertRows {
+                    table: sessions,
+                    rows: vec![
+                        vec![CellWrite {
+                            column: topic,
+                            value: CellValue::Text("Keynote".into()),
+                        }],
+                        vec![],
+                    ],
+                    create_missing_options: false,
+                },
+            ]
+            .into(),
+        )
+        .await
+        .unwrap();
 
-    assert_eq!(
-        repo.delete_table(&table).await.unwrap(),
-        TableDeletion::Deleted
-    );
-    assert!(repo.row_refs(table.id).await.unwrap().is_empty());
+    let results = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::DeleteTable { table: sessions }].into(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(results, vec![OpResult::TableDeleted { table: sessions }]);
+    let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
+    assert!(repo.row_refs(sessions).await.unwrap().is_empty());
     assert!(
-        repo.columns_for_tables(&[table.id])
+        repo.columns_for_tables(&[sessions])
             .await
             .unwrap()
             .is_empty()
     );
-    let (_, tables) = repo.get_database(table.database_id).await.unwrap().unwrap();
+    let (_, tables) = repo
+        .get_database(guests.database_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
         tables.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
         vec!["Table 1"]
     );
 
+    let again = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::DeleteTable { table: sessions }].into(),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = again else {
+        panic!("expected a refused op, got {again:?}");
+    };
     assert_eq!(
-        repo.delete_table(&table).await.unwrap(),
-        TableDeletion::NotFound
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: None,
+            taken: None,
+            reason: format!("table {sessions} is not in this database"),
+        }
+    );
+    let last = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::DeleteTable {
+                table: guests.table_id,
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = last else {
+        panic!("expected a refused op, got {last:?}");
+    };
+    assert_eq!(
+        refusal,
+        OpRefusal {
+            op: 0,
+            row: None,
+            column: None,
+            taken: None,
+            reason: SchemaError::LastTable.to_string(),
+        }
     );
     assert_eq!(
-        repo.delete_table(&tables[0]).await.unwrap(),
-        TableDeletion::LastTable
-    );
-    assert_eq!(
-        repo.get_database(table.database_id)
+        repo.get_database(guests.database_id)
             .await
             .unwrap()
             .unwrap()
             .1
             .len(),
         1
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_table_rename_checks_its_previous_name_and_other_tables_names(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+    let hosts = TableId::new();
+    service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::CreateTable {
+                id: hosts,
+                name: "Hosts".into(),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+    let before = version(&pool, hosts).await;
+
+    let taken = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameTable {
+                table: hosts,
+                name: "table 1".into(),
+                previous_name: Some("Hosts".into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = taken else {
+        panic!("expected a refused op, got {taken:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        SchemaError::TableNameTaken {
+            name: "table 1".into()
+        }
+        .to_string()
+    );
+
+    let renamed = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameTable {
+                table: hosts,
+                name: "Attendees".into(),
+                previous_name: Some("Hosts".into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        renamed,
+        vec![OpResult::TableRenamed {
+            table_version: TableVersion(before.0 + 1),
+        }]
+    );
+
+    let stale = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameTable {
+                table: hosts,
+                name: "People".into(),
+                previous_name: Some("Hosts".into()),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = stale else {
+        panic!("expected a refused op, got {stale:?}");
+    };
+    assert_eq!(refusal.reason, SchemaError::TableRenameConflict.to_string());
+    let (_, tables) = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+        .get_database(guests.database_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let stored = tables.iter().find(|table| table.id == hosts).unwrap();
+    assert_eq!(stored.name, "Attendees");
+    assert_eq!(stored.version, TableVersion(before.0 + 1));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_concurrent_table_create_and_rename_cannot_take_the_same_name(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let service = service(&pool);
+
+    let (renamed, created) = tokio::join!(
+        service.apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::RenameTable {
+                table: guests.table_id,
+                name: "People".into(),
+                previous_name: Some("Table 1".into()),
+            }]
+            .into(),
+        ),
+        service.apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::CreateTable {
+                id: TableId::new(),
+                name: "people".into(),
+            }]
+            .into(),
+        ),
+    );
+
+    assert_ne!(renamed.is_ok(), created.is_ok());
+    let (_, tables) = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+        .get_database(guests.database_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        tables
+            .iter()
+            .filter(|table| table.name.eq_ignore_ascii_case("people"))
+            .count(),
+        1
+    );
+    let again = service
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::CreateTable {
+                id: TableId::new(),
+                name: "people".into(),
+            }]
+            .into(),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(again, DatabaseError::InvalidOp(OpRefusal { op: 0, .. })),
+        "expected the name to be taken, got {again:?}"
     );
 }

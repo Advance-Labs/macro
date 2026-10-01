@@ -2,6 +2,7 @@ use chrono::TimeZone;
 use serde_json::json;
 
 use super::*;
+use crate::ids::PropertyId;
 use uuid::Uuid;
 
 const TABLE: TableId = TableId::from_uuid(Uuid::from_u128(0x7ab1));
@@ -322,7 +323,7 @@ fn an_option_removal_names_its_table_column_and_option() {
             option,
         }
     );
-    assert_eq!(op.table(), TABLE);
+    assert_eq!(op.table(), Some(TABLE));
 }
 
 #[test]
@@ -373,6 +374,103 @@ fn view_ops_read_their_table_view_and_card_from_json() {
     );
     assert_eq!(
         read(json!({"kind": "delete_view", "table": TABLE, "view": view})).table(),
-        TABLE
+        Some(TABLE)
+    );
+}
+
+#[test]
+fn a_table_creation_carries_the_id_its_client_minted() {
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "create_table",
+        "id": TABLE,
+        "name": "Guests",
+    }))
+    .unwrap();
+    assert_eq!(
+        op,
+        DatabaseOp::CreateTable {
+            id: TABLE,
+            name: "Guests".into(),
+        }
+    );
+    assert_eq!(op.table(), Some(TABLE));
+}
+
+#[test]
+fn a_table_reorder_names_no_one_table() {
+    let other = TableId::from_uuid(Uuid::from_u128(0x7ab2));
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "reorder_tables",
+        "order": [other, TABLE],
+    }))
+    .unwrap();
+    assert_eq!(
+        op,
+        DatabaseOp::ReorderTables {
+            order: vec![other, TABLE],
+        }
+    );
+    assert_eq!(op.table(), None);
+}
+
+#[test]
+fn a_new_select_column_reads_its_type_and_minted_options_from_json() {
+    let op: DatabaseOp = serde_json::from_value(json!({
+        "kind": "create_column",
+        "table": TABLE,
+        "id": STATUS,
+        "definition": {
+            "source": "new",
+            "name": "Status",
+            "type": {"type": "select", "multi": false},
+            "options": [{"id": GOING, "label": "Going"}],
+        },
+        "after": NAME,
+    }))
+    .unwrap();
+    assert_eq!(
+        op,
+        DatabaseOp::CreateColumn {
+            table: TABLE,
+            id: STATUS,
+            definition: NewColumn::New {
+                name: "Status".into(),
+                kind: ColumnKind::Select { multi: false },
+                options: vec![NewOption {
+                    id: GOING,
+                    label: "Going".into(),
+                }],
+                infer_type: false,
+            },
+            after: Some(NAME),
+        }
+    );
+}
+
+#[test]
+fn a_column_binding_an_existing_property_names_only_the_property() {
+    let property = PropertyId::from_uuid(Uuid::from_u128(0x9e0));
+    let op = DatabaseOp::CreateColumn {
+        table: TABLE,
+        id: STATUS,
+        definition: NewColumn::Existing { property },
+        after: None,
+    };
+    assert_eq!(
+        serde_json::to_value(&op).unwrap(),
+        json!({
+            "kind": "create_column",
+            "table": TABLE,
+            "id": STATUS,
+            "definition": {"source": "existing", "property": property},
+        })
+    );
+}
+
+#[test]
+fn a_taken_id_names_what_it_names() {
+    assert_eq!(
+        serde_json::to_value(TakenId::Column(STATUS)).unwrap(),
+        json!({"kind": "column", "id": STATUS})
     );
 }

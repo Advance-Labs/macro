@@ -5,14 +5,14 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{ColumnId, DatabaseId, TableId};
+use std::collections::HashMap;
+
+use models_databases::{ColumnId, DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-    table_of,
-};
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, table_of};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Reorder a table's columns.
@@ -87,19 +87,19 @@ where
             .await?;
         let base_version = table_of(&detail, self.table_id)?.table.version;
 
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
         service_context
-            .service
-            .reorder_columns(
-                receipt,
-                self.table_id,
-                self.column_ids.clone(),
-                base_version,
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch {
+                    ops: vec![DatabaseOp::ReorderColumns {
+                        table: self.table_id,
+                        order: self.column_ids.clone(),
+                    }],
+                    base_versions: HashMap::from([(self.table_id, base_version)]),
+                },
             )
-            .await
-            .map_err(database_error)?;
+            .await?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)

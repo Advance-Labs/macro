@@ -3,12 +3,8 @@
 
 mod casts;
 mod column_types;
-mod columns;
-mod delete_table;
 mod infer_column_type;
 mod ops;
-mod rename_column;
-mod reorder_tables;
 mod saved_queries;
 mod sharing;
 #[cfg(test)]
@@ -37,17 +33,11 @@ use crate::domain::events::{
     DatabaseTrashedMetadata, TableVersionChange,
 };
 use crate::domain::models::{
-    AddColumnOptions, Awareness, ColumnBinding, ColumnConfig, ColumnDetail, ColumnId, CreateColumn,
-    CreateDatabase, CreateTable, Database, DatabaseDetail, DatabaseError, DatabaseId, FirstTable,
-    InferColumnType, InferColumnTypeOutcome, ListedDatabase, NewOption, PropertyDefinitionId,
-    RenameColumnOutcome, RowId, RowRef, SchemaError, SharingError, Table, TableDetail, TableId,
-    TableMutationOutcome, TableVersion, Viewer,
-};
-use crate::domain::models::{
-    CardPosition, OptionId, QueryDefinition, QueryId, SavedQuery, SavedQueryError, ViewId,
-};
-use crate::domain::models::{
-    ChangeColumnType, ColumnCast, ColumnReplacement, ColumnSchemaOutcome, ColumnTypeChangeOutcome,
+    Awareness, CardPosition, ColumnCast, ColumnDetail, ColumnId, CreateDatabase, Database,
+    DatabaseDetail, DatabaseError, DatabaseId, FirstTable, InferColumnType, InferColumnTypeOutcome,
+    ListedDatabase, OpBatch, OptionId, PropertyDefinitionId, QueryDefinition, QueryId, RowId,
+    RowRef, SavedQuery, SavedQueryError, SchemaError, SharingError, Table, TableDetail, TableId,
+    TableVersion, ViewId, Viewer,
 };
 use crate::domain::ports::{
     AccessDirectory, CellStore, ColumnDefinitionStore, DatabasesRepo, DatabasesService,
@@ -706,150 +696,12 @@ where
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
-    async fn create_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        command: CreateTable,
-    ) -> Result<Table, DatabaseError> {
-        let (database, tables) = self.database_for_edit(&receipt).await?;
-        if database.id != command.database_id {
-            return Err(DatabaseError::Unauthorized);
-        }
-        let name = validate_name(&command.name)?;
-        if tables.iter().any(|table| same_name(&table.name, &name)) {
-            return Err(DatabaseError::from(SchemaError::TableNameTaken {
-                name: name.clone(),
-            }));
-        }
-        let table = match self
-            .repository
-            .create_table(&CreateTable {
-                database_id: command.database_id,
-                name: name.clone(),
-            })
-            .await
-            .map_err(repository_error)?
-        {
-            TableMutationOutcome::Applied(table) => table,
-            TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
-            TableMutationOutcome::Conflict => {
-                return Err(DatabaseError::from(SchemaError::TableNameTaken {
-                    name: name.clone(),
-                }));
-            }
-        };
-        self.publish(
-            receipt_attribution(&receipt),
-            &[(table.database_id, table.id, table.version)],
-        )
-        .await;
-        Ok(table)
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn rename_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        name: String,
-        previous_name: String,
-    ) -> Result<Table, DatabaseError> {
-        let (_, tables) = self.database_for_edit(&receipt).await?;
-        let table = tables
-            .iter()
-            .find(|table| table.id == table_id)
-            .ok_or(DatabaseError::NotFound)?;
-        let name = validate_name(&name)?;
-        // A retry after a lost response is already complete.
-        if table.name == name {
-            return Ok(table.clone());
-        }
-        if tables
-            .iter()
-            .any(|other| other.id != table_id && same_name(&other.name, &name))
-        {
-            return Err(DatabaseError::from(SchemaError::TableNameTaken {
-                name: name.clone(),
-            }));
-        }
-        let renamed = match self
-            .repository
-            .rename_table(table, &name, &previous_name)
-            .await
-            .map_err(repository_error)?
-        {
-            TableMutationOutcome::Applied(table) => table,
-            TableMutationOutcome::NotFound => return Err(DatabaseError::NotFound),
-            TableMutationOutcome::Conflict => {
-                return Err(DatabaseError::from(SchemaError::TableRenameConflict));
-            }
-        };
-        self.publish(
-            receipt_attribution(&receipt),
-            &[(renamed.database_id, table_id, renamed.version)],
-        )
-        .await;
-        Ok(renamed)
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn reorder_tables(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_ids: Vec<TableId>,
-    ) -> Result<Vec<Table>, DatabaseError> {
-        self.order_tables(receipt, table_ids).await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn delete_table(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-    ) -> Result<(), DatabaseError> {
-        self.remove_table(receipt, table_id).await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn rename_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_id: ColumnId,
-        name: String,
-        previous_name: String,
-    ) -> Result<RenameColumnOutcome, DatabaseError> {
-        self.rename_column_label(receipt, table_id, column_id, name, previous_name)
-            .await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn create_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: CreateColumn,
-    ) -> Result<ColumnId, DatabaseError> {
-        self.add_column(receipt, viewer, command).await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
     async fn infer_column_type(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         command: InferColumnType,
     ) -> Result<InferColumnTypeOutcome, DatabaseError> {
         self.settle_column_type(receipt, command).await
-    }
-
-    #[tracing::instrument(skip(self, receipt, viewer), err)]
-    async fn change_column_type(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: ChangeColumnType,
-    ) -> Result<ColumnTypeChangeOutcome, DatabaseError> {
-        self.change_placement_type(receipt, viewer, command).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
@@ -862,48 +714,14 @@ where
         self.preview_casts(receipt, table_id, column_id).await
     }
 
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn delete_column(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_id: ColumnId,
-        base_version: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        self.remove_placement(receipt, table_id, column_id, base_version)
-            .await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn reorder_columns(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_ids: Vec<ColumnId>,
-        base_version: TableVersion,
-    ) -> Result<ColumnSchemaOutcome, DatabaseError> {
-        self.order_placements(receipt, table_id, column_ids, base_version)
-            .await
-    }
-
-    #[tracing::instrument(skip(self, receipt), err)]
-    async fn add_column_options(
-        &self,
-        receipt: EntityAccessReceipt<EditAccessLevel>,
-        viewer: Viewer,
-        command: AddColumnOptions,
-    ) -> Result<ColumnDetail, DatabaseError> {
-        self.extend_column_options(receipt, viewer, command).await
-    }
-
-    #[tracing::instrument(skip(self, receipt, viewer, ops), fields(ops = ops.len()), err)]
+    #[tracing::instrument(skip(self, receipt, viewer, batch), fields(ops = batch.ops.len()), err)]
     async fn apply_ops(
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        ops: Vec<models_databases::DatabaseOp>,
+        batch: OpBatch,
     ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
-        self.apply_database_ops(receipt, viewer, ops).await
+        self.apply_database_ops(receipt, viewer, batch).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

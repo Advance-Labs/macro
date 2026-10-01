@@ -9,35 +9,23 @@ import {
 import type { ObjectLike, ResultError } from '@core/util/result';
 import { statusError } from '@core/util/safeFetch';
 import { ResultAsync } from 'neverthrow';
-import type { AddColumnOptionsRequest } from './generated/schemas/addColumnOptionsRequest';
+import { match } from 'ts-pattern';
 import type { ApplyOpsResponse } from './generated/schemas/applyOpsResponse';
 import type { Awareness } from './generated/schemas/awareness';
-import type { ChangeColumnTypeRequest } from './generated/schemas/changeColumnTypeRequest';
 import type { ColumnCast } from './generated/schemas/columnCast';
-import type { ColumnDetail } from './generated/schemas/columnDetail';
-import type { ColumnSchemaOutcome } from './generated/schemas/columnSchemaOutcome';
-import type { ColumnTypeChangeOutcome } from './generated/schemas/columnTypeChangeOutcome';
-import type { CreateColumnRequest } from './generated/schemas/createColumnRequest';
-import type { CreateColumnResponse } from './generated/schemas/createColumnResponse';
 import type { CreateDatabaseRequest } from './generated/schemas/createDatabaseRequest';
-import type { CreateTableRequest } from './generated/schemas/createTableRequest';
 import type { Database } from './generated/schemas/database';
 import type { DatabaseDetail } from './generated/schemas/databaseDetail';
-import type { DeleteColumnRequest } from './generated/schemas/deleteColumnRequest';
 import type { ErrorResponse } from './generated/schemas/errorResponse';
 import type { ImportTable } from './generated/schemas/importTable';
 import type { InferColumnTypeOutcome } from './generated/schemas/inferColumnTypeOutcome';
 import type { InferColumnTypeRequest } from './generated/schemas/inferColumnTypeRequest';
 import type { ListedDatabase } from './generated/schemas/listedDatabase';
 import type { OpRefusalResponse } from './generated/schemas/opRefusalResponse';
-import type { RenameColumnOutcome } from './generated/schemas/renameColumnOutcome';
-import type { RenameColumnRequest } from './generated/schemas/renameColumnRequest';
-import type { RenameTableRequest } from './generated/schemas/renameTableRequest';
-import type { ReorderColumnsRequest } from './generated/schemas/reorderColumnsRequest';
-import type { ReorderTablesRequest } from './generated/schemas/reorderTablesRequest';
 import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { StarterDatabase } from './generated/schemas/starterDatabase';
 import type { Table } from './generated/schemas/table';
+import type { TakenId } from './generated/schemas/takenId';
 import type { UpdateSharePermissionRequestV2 } from './generated/schemas/updateSharePermissionRequestV2';
 import type { ViewPositionsResponse } from './generated/schemas/viewPositionsResponse';
 
@@ -49,7 +37,7 @@ export type DatabaseSchemaErrorCode =
 /** A batch of `/ops` the service refused (400); nothing of it was written. */
 type DatabaseOpsErrorCode = FetchWithTokenErrorCode | 'INVALID_OP';
 
-/** An `/ops` failure; an `INVALID_OP` names the op, row and column it refused. */
+/** An `/ops` failure; an `INVALID_OP` names the op, row, column and taken id it refused. */
 export type DatabaseOpsError = ResultError<DatabaseOpsErrorCode> & {
   refusal: OpRefusalResponse | null;
 };
@@ -65,8 +53,35 @@ function isErrorResponse(body: unknown): body is ErrorResponse {
   );
 }
 
-function isOpRefusal(body: unknown): body is OpRefusalResponse {
-  return isErrorResponse(body) && 'op' in body && typeof body.op === 'number';
+function takenIdOf(taken: unknown): TakenId | null {
+  if (
+    !taken ||
+    typeof taken !== 'object' ||
+    !('id' in taken) ||
+    typeof taken.id !== 'string' ||
+    !('kind' in taken)
+  )
+    return null;
+  const id = taken.id;
+  return match(taken.kind)
+    .returnType<TakenId | null>()
+    .with('table', 'column', 'option', (kind) => ({ kind, id }))
+    .otherwise(() => null);
+}
+
+/** The op, row, column and taken id a 400 from `/ops` names, when its body is a refusal. */
+function opRefusalOf(body: unknown): OpRefusalResponse | null {
+  if (!isErrorResponse(body) || !('op' in body) || typeof body.op !== 'number')
+    return null;
+  const row = 'row' in body ? body.row : null;
+  const column = 'column' in body ? body.column : null;
+  return {
+    message: body.message,
+    op: body.op,
+    row: typeof row === 'number' ? row : null,
+    column: typeof column === 'string' ? column : null,
+    taken: takenIdOf('taken' in body ? body.taken : null),
+  };
 }
 
 /** A failed response's body, and the message it gives. */
@@ -124,8 +139,7 @@ function withRefusal(
 ): DatabaseOpsError {
   return {
     ...error,
-    refusal:
-      'refusal' in error && isOpRefusal(error.refusal) ? error.refusal : null,
+    refusal: 'refusal' in error ? opRefusalOf(error.refusal) : null,
   };
 }
 
@@ -178,130 +192,10 @@ export const databasesClient = {
     });
   },
 
-  createTable({ id, ...request }: { id: string } & CreateTableRequest) {
-    return databasesFetch<Table, 'INVALID_SCHEMA'>(`/databases/${id}/tables`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-      invalid: 'INVALID_SCHEMA',
-    });
-  },
-
-  renameTable({
-    id,
-    tableId,
-    ...request
-  }: { id: string; tableId: string } & RenameTableRequest) {
-    return databasesFetch<Table, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  /**
-   * Set the tab order. `tableIds` names every table of the database exactly
-   * once; a stale list is refused, and the caller refetches.
-   */
-  reorderTables({ id, ...request }: { id: string } & ReorderTablesRequest) {
-    return databasesFetch<Table[], 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/order`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  createColumn({
-    id,
-    tableId,
-    request,
-  }: {
-    id: string;
-    tableId: string;
-    request: CreateColumnRequest;
-  }) {
-    return databasesFetch<CreateColumnResponse, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}/columns`,
-      {
-        method: 'POST',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  renameColumn({
-    id,
-    tableId,
-    columnId,
-    ...request
-  }: { id: string; tableId: string; columnId: string } & RenameColumnRequest) {
-    return databasesFetch<RenameColumnOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}/columns/${columnId}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  changeColumnType(params: {
-    id: string;
-    tableId: string;
-    columnId: string;
-    request: ChangeColumnTypeRequest;
-  }) {
-    return databasesFetch<ColumnTypeChangeOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/type`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(params.request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
   /** The dry run of a type change: what each menu type does to the values. */
   columnCasts(params: { id: string; tableId: string; columnId: string }) {
     return databasesFetch<ColumnCast[]>(
       `/databases/${params.id}/tables/${params.tableId}/columns/${params.columnId}/casts`
-    );
-  },
-
-  deleteColumn({
-    id,
-    tableId,
-    columnId,
-    ...request
-  }: { id: string; tableId: string; columnId: string } & DeleteColumnRequest) {
-    return databasesFetch<ColumnSchemaOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}/columns/${columnId}`,
-      {
-        method: 'DELETE',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  reorderColumns({
-    id,
-    tableId,
-    ...request
-  }: { id: string; tableId: string } & ReorderColumnsRequest) {
-    return databasesFetch<ColumnSchemaOutcome, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}/columns/order`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
     );
   },
 
@@ -322,38 +216,19 @@ export const databasesClient = {
   },
 
   /**
-   * Add select options to an existing column. Labels it already has are a
-   * no-op; the answer is the column as it now stands.
+   * Apply a batch of the engine's typed ops to a database, together or not at
+   * all. `baseVersions` names the version each table must still be at; a
+   * table that moved refuses the batch as a `CONFLICT`. A refusal naming an
+   * id already `taken` means an earlier attempt of this batch committed, or
+   * an id was minted twice.
    */
-  addColumnOptions({
-    id,
-    tableId,
-    columnId,
-    request,
-  }: {
-    id: string;
-    tableId: string;
-    columnId: string;
-    request: AddColumnOptionsRequest;
-  }) {
-    return databasesFetch<ColumnDetail, 'INVALID_SCHEMA'>(
-      `/databases/${id}/tables/${tableId}/columns/${columnId}/options`,
-      {
-        method: 'POST',
-        body: JSON.stringify(request),
-        invalid: 'INVALID_SCHEMA',
-      }
-    );
-  },
-
-  /** Apply a batch of the engine's typed ops to a database, together or not at all. */
   applyOps({
     id,
     request,
   }: {
     id: string;
     /** The engine's ops: the generated `ApplyOpsRequest` drops `null` from optional fields. */
-    request: { ops: DatabaseOp[] };
+    request: { ops: DatabaseOp[]; baseVersions?: Record<string, number> };
   }): ResultAsync<ApplyOpsResponse, DatabaseOpsError[]> {
     return new ResultAsync(
       fetchWithToken<ApplyOpsResponse, 'INVALID_OP'>(
@@ -367,7 +242,7 @@ export const databasesClient = {
             return {
               code,
               message,
-              refusal: code === 'INVALID_OP' && isOpRefusal(body) ? body : null,
+              refusal: code === 'INVALID_OP' ? opRefusalOf(body) : null,
             };
           },
         }

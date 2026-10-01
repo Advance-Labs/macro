@@ -1,38 +1,37 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
-import type { ChangeColumnTypeRequest } from '@service-storage/generated/schemas/changeColumnTypeRequest';
+import type { OpColumnKind } from '@core/database-sql/generated/types';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DataType } from '@service-storage/generated/schemas/dataType';
 import type { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import { match, P } from 'ts-pattern';
 import type { DatabaseEntityType } from './column-inference';
 
+/** The refusal's own words, when the service refused the batch. */
+function refusalMessage(error: DatabaseOpsError): string | undefined {
+  return error?.code === 'INVALID_OP'
+    ? (error.refusal?.message ?? error.message)
+    : undefined;
+}
+
 /** What the tabs say when a table rename was refused. */
-export function tableRenameMessage(
-  errors: readonly ResultError<DatabaseSchemaErrorCode>[]
-): string {
-  const error = errors[0];
-  return error?.code === 'INVALID_SCHEMA'
-    ? error.message
-    : 'Could not rename this table. Its name may have changed. Check your connection, or reopen Rename table and try again.';
+export function tableRenameMessage(error: DatabaseOpsError): string {
+  return (
+    refusalMessage(error) ??
+    'Could not rename this table. Its name may have changed. Check your connection, or reopen Rename table and try again.'
+  );
 }
 
 /** What the create dialog says when the service refused a new table. */
-export function tableCreateMessage(
-  errors: readonly ResultError<DatabaseSchemaErrorCode>[]
-): string {
-  return match(errors[0])
-    .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
-    .otherwise(
-      () => 'Could not create this table. Check your connection and try again.'
-    );
+export function tableCreateMessage(error: DatabaseOpsError): string {
+  return (
+    refusalMessage(error) ??
+    'Could not create this table. Check your connection and try again.'
+  );
 }
 
 /** What the tabs say when a new tab order was refused. */
-export function tableOrderMessage(
-  errors: readonly ResultError<DatabaseSchemaErrorCode>[]
-): string {
-  return match(errors[0]?.code)
+export function tableOrderMessage(error: DatabaseOpsError): string {
+  return match(error.code)
     .with(
       'NETWORK_ERROR',
       () => 'Could not move this table. Check your connection and try again.'
@@ -42,18 +41,19 @@ export function tableOrderMessage(
     );
 }
 
-/** A column change the service applies or refuses. */
+/** A schema change the service applies or refuses. */
 export type DatabaseSchemaChange<Value = void> = ResultAsync<
   Value,
-  ResultError<DatabaseSchemaErrorCode>[]
+  DatabaseOpsError
 >;
 
 /** What the grid says when the service refused a schema change. */
-export function columnSchemaMessage(
-  errors: readonly ResultError<DatabaseSchemaErrorCode>[]
-): string {
-  return match(errors[0])
-    .with({ code: 'INVALID_SCHEMA' }, ({ message }) => message)
+export function columnSchemaMessage(error: DatabaseOpsError): string {
+  return match(error)
+    .with(
+      { code: 'INVALID_OP' },
+      ({ refusal, message }) => refusal?.message ?? message
+    )
     .with(
       { code: 'CONFLICT' },
       () => 'This table changed. Refresh and try again.'
@@ -70,13 +70,18 @@ export function columnSchemaMessage(
     .otherwise(() => 'This column could not be updated. Try again.');
 }
 
-/** Explicit changes are validated against every stored value by the server. */
-export type DatabaseColumnTypeChange = Pick<
-  ChangeColumnTypeRequest,
-  'dataType' | 'isMultiSelect' | 'clearInvalid'
-> & {
-  specificEntityType?: DatabaseEntityType;
-  linkToTableId?: string;
+/** A type a column can become; a relation's rows live in this database. */
+export type DatabaseColumnKind =
+  | Exclude<OpColumnKind, { type: 'relation' }>
+  | { type: 'relation'; table: string };
+
+/** A type change the server validates against every stored value. */
+export type DatabaseColumnTypeChange = {
+  to: DatabaseColumnKind;
+  /** Empty the values that do not fit instead of refusing. */
+  clearInvalid?: boolean;
+  /** The table version the type menu's dry run read. */
+  baseVersion?: number;
 };
 
 /** What changing a column to one type would do to its values. */
@@ -100,11 +105,46 @@ type DatabaseColumnCastTarget = {
   relation: boolean;
 };
 
+/** How the dry run names a column kind. */
+export function castTargetOf(
+  kind: DatabaseColumnKind
+): DatabaseColumnCastTarget {
+  const plain = (dataType: DataType, isMultiSelect = false) => ({
+    dataType,
+    isMultiSelect,
+    relation: false,
+  });
+  return match(kind)
+    .returnType<DatabaseColumnCastTarget>()
+    .with({ type: 'text' }, () => plain('STRING'))
+    .with({ type: 'number' }, () => plain('NUMBER'))
+    .with({ type: 'boolean' }, () => plain('BOOLEAN'))
+    .with({ type: 'date' }, () => plain('DATE'))
+    .with({ type: 'link' }, () => plain('LINK'))
+    .with({ type: 'select' }, ({ multi }) => plain('SELECT_STRING', multi))
+    .with({ type: 'select_number' }, ({ multi }) =>
+      plain('SELECT_NUMBER', multi)
+    )
+    .with({ type: 'tag' }, () => plain('TAG', true))
+    .with({ type: 'entity' }, ({ target, multi }) => ({
+      ...plain('ENTITY', multi),
+      specificEntityType: target,
+    }))
+    .with({ type: 'relation' }, () => ({
+      dataType: 'ENTITY',
+      isMultiSelect: true,
+      relation: true,
+    }))
+    .exhaustive();
+}
+
 export type DatabaseColumnCasts =
   | { status: 'loading' }
   | { status: 'error' }
   | {
       status: 'ready';
+      /** The table version the dry run read. */
+      version: number;
       casts: { target: DatabaseColumnCastTarget; cast: DatabaseColumnCast }[];
     };
 
@@ -117,16 +157,16 @@ export type DatabaseColumnCastsSource = (
 /** The dry run's answer for one menu choice, once it has one. */
 export function castFor(
   casts: DatabaseColumnCasts,
-  change: DatabaseColumnTypeChange
+  to: DatabaseColumnKind
 ): DatabaseColumnCast | undefined {
   if (casts.status !== 'ready') return undefined;
-  const relation = !!change.linkToTableId;
+  const wanted = castTargetOf(to);
   return casts.casts.find(
     ({ target }) =>
-      target.relation === relation &&
-      (relation ||
-        (target.dataType === change.dataType &&
-          target.isMultiSelect === !!change.isMultiSelect &&
-          target.specificEntityType === change.specificEntityType))
+      target.relation === wanted.relation &&
+      (wanted.relation ||
+        (target.dataType === wanted.dataType &&
+          target.isMultiSelect === wanted.isMultiSelect &&
+          target.specificEntityType === wanted.specificEntityType))
   )?.cast;
 }

@@ -4,36 +4,29 @@ import { Dropdown } from '@ui/components/Dropdown';
 import { type Accessor, createSignal, For, type JSX, Show } from 'solid-js';
 import {
   castFor,
+  castTargetOf,
   type DatabaseColumnCast,
   type DatabaseColumnCasts,
+  type DatabaseColumnKind,
   type DatabaseColumnTypeChange,
 } from '../core/column-schema';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { PropertyIcon } from './property-icon';
 
-const types: { label: string; change: DatabaseColumnTypeChange }[] = [
-  { label: 'Text', change: { dataType: 'STRING' } },
-  { label: 'Number', change: { dataType: 'NUMBER' } },
-  { label: 'Select', change: { dataType: 'SELECT_STRING' } },
-  {
-    label: 'Multi-select',
-    change: { dataType: 'SELECT_STRING', isMultiSelect: true },
-  },
-  { label: 'Date', change: { dataType: 'DATE' } },
-  { label: 'Checkbox', change: { dataType: 'BOOLEAN' } },
-  { label: 'URL', change: { dataType: 'LINK' } },
-  {
-    label: 'People',
-    change: { dataType: 'ENTITY', specificEntityType: 'USER' },
-  },
+const types: { label: string; to: DatabaseColumnKind }[] = [
+  { label: 'Text', to: { type: 'text' } },
+  { label: 'Number', to: { type: 'number' } },
+  { label: 'Select', to: { type: 'select', multi: false } },
+  { label: 'Multi-select', to: { type: 'select', multi: true } },
+  { label: 'Date', to: { type: 'date' } },
+  { label: 'Checkbox', to: { type: 'boolean' } },
+  { label: 'URL', to: { type: 'link' } },
+  { label: 'People', to: { type: 'entity', target: 'USER', multi: false } },
   {
     label: 'Documents',
-    change: { dataType: 'ENTITY', specificEntityType: 'DOCUMENT' },
+    to: { type: 'entity', target: 'DOCUMENT', multi: false },
   },
-  {
-    label: 'Tasks',
-    change: { dataType: 'ENTITY', specificEntityType: 'TASK' },
-  },
+  { label: 'Tasks', to: { type: 'entity', target: 'TASK', multi: false } },
 ];
 
 /** A checked choice some values would not survive, awaiting confirmation. */
@@ -55,28 +48,32 @@ export function ColumnTypeMenu(props: {
 }) {
   const [open, setOpen] = createSignal(false);
   const casts = props.loadCasts?.(open);
-  const castOf = (change: DatabaseColumnTypeChange) =>
-    casts ? castFor(casts(), change) : undefined;
-  const selected = (change: DatabaseColumnTypeChange) =>
-    !props.column.relation &&
-    props.column.dataType === change.dataType &&
-    props.column.isMultiSelect === !!change.isMultiSelect &&
-    (props.column.specificEntityType ?? undefined) ===
-      change.specificEntityType;
+  const castOf = (to: DatabaseColumnKind) =>
+    casts ? castFor(casts(), to) : undefined;
+  const selected = (to: DatabaseColumnKind) => {
+    const target = castTargetOf(to);
+    return (
+      !props.column.relation &&
+      props.column.dataType === target.dataType &&
+      props.column.isMultiSelect === target.isMultiSelect &&
+      (props.column.specificEntityType ?? undefined) ===
+        target.specificEntityType
+    );
+  };
   /** A type no value converts to is left out; until the dry run answers, nothing is listed. */
-  const offered = (change: DatabaseColumnTypeChange) =>
-    castOf(change)?.verdict !== 'never';
+  const offered = (to: DatabaseColumnKind) => castOf(to)?.verdict !== 'never';
   const checking = () => casts?.().status === 'loading';
   const offeredTables = () =>
     (props.tables ?? []).filter((table) =>
-      offered({
-        dataType: 'ENTITY',
-        isMultiSelect: true,
-        linkToTableId: table.id,
-      })
+      offered({ type: 'relation', table: table.id })
     );
-  const choose = (label: string, change: DatabaseColumnTypeChange) => {
-    const cast = castOf(change);
+  const choose = (label: string, to: DatabaseColumnKind) => {
+    const read = casts?.();
+    const change: DatabaseColumnTypeChange = {
+      to,
+      baseVersion: read?.status === 'ready' ? read.version : undefined,
+    };
+    const cast = castOf(to);
     if (cast?.verdict === 'checked' && cast.failures > 0)
       props.onConfirmClearing({ label, change, cast });
     else props.onChange(change);
@@ -100,19 +97,19 @@ export function ColumnTypeMenu(props: {
         </Show>
         <Show when={!checking()}>
           <Dropdown.Group>
-            <For each={types.filter((type) => offered(type.change))}>
+            <For each={types.filter((type) => offered(type.to))}>
               {(type) => (
                 <TypeItem
                   label={type.label}
-                  cast={castOf(type.change)}
+                  cast={castOf(type.to)}
                   icon={
                     <PropertyIcon
-                      type={type.change.dataType}
-                      entityType={type.change.specificEntityType}
+                      type={castTargetOf(type.to).dataType}
+                      entityType={castTargetOf(type.to).specificEntityType}
                     />
                   }
-                  selected={selected(type.change)}
-                  onSelect={() => choose(type.label, type.change)}
+                  selected={selected(type.to)}
+                  onSelect={() => choose(type.label, type.to)}
                 />
               )}
             </For>
@@ -122,18 +119,17 @@ export function ColumnTypeMenu(props: {
               <Dropdown.GroupLabel>Related table</Dropdown.GroupLabel>
               <For each={offeredTables()}>
                 {(table) => {
-                  const change: DatabaseColumnTypeChange = {
-                    dataType: 'ENTITY',
-                    isMultiSelect: true,
-                    linkToTableId: table.id,
+                  const to: DatabaseColumnKind = {
+                    type: 'relation',
+                    table: table.id,
                   };
                   return (
                     <TypeItem
                       label={table.name}
-                      cast={castOf(change)}
+                      cast={castOf(to)}
                       icon={<PropertyIcon type="ENTITY" relation />}
                       selected={props.column.relation?.tableId === table.id}
-                      onSelect={() => choose(table.name, change)}
+                      onSelect={() => choose(table.name, to)}
                     />
                   );
                 }}

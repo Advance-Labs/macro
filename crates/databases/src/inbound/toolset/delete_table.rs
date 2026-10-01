@@ -5,13 +5,12 @@ use ai_toolset::{
 };
 use async_trait::async_trait;
 use entity_access::domain::ports::EntityAccessService;
-use models_databases::{DatabaseId, TableId};
+use models_databases::{DatabaseId, DatabaseOp, TableId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings, database_error,
-};
+use super::{DatabasesToolContext, SchemaAfterWrite, ToolDatabaseSchema, WriteWarnings};
+use crate::domain::models::OpBatch;
 use crate::domain::ports::DatabasesService;
 
 /// Delete a table.
@@ -76,14 +75,15 @@ where
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let user_id = &request_context.user_id;
-        let receipt = service_context
-            .edit_receipt(user_id, self.database_id)
-            .await?;
         service_context
-            .service
-            .delete_table(receipt, self.table_id)
-            .await
-            .map_err(database_error)?;
+            .apply(
+                user_id,
+                self.database_id,
+                OpBatch::from(vec![DatabaseOp::DeleteTable {
+                    table: self.table_id,
+                }]),
+            )
+            .await?;
 
         let SchemaAfterWrite { database, warning } = service_context
             .schema_after_write(user_id, self.database_id)

@@ -9,6 +9,7 @@ use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 
 use super::apply_ops::{Guests, cells, edit, guests, service, viewer};
 use super::*;
+use crate::domain::models::OpBatch;
 use crate::domain::ports::{CellStore, ColumnDefinitionStore, DatabasesService};
 use crate::outbound::pg_definition_store::PgDefinitionStore;
 
@@ -30,7 +31,8 @@ async fn insert_statuses(pool: &PgPool, guests: &Guests, statuses: &[&str]) -> V
                     })
                     .collect(),
                 create_missing_options: true,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -146,7 +148,8 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                         hide_empty_lanes: false,
                     },
                 },
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -170,7 +173,8 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                 lane: Some(maybe),
                 before: Some(rows[1]),
                 after: None,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -203,7 +207,8 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
             vec![DatabaseOp::DeleteRows {
                 table: guests.table_id,
                 rows: vec![rows[1]],
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -224,7 +229,8 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                 table: guests.table_id,
                 column: guests.status,
                 option: maybe,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -249,7 +255,8 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
             vec![DatabaseOp::DeleteView {
                 table: guests.table_id,
                 view: board.id,
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -279,7 +286,8 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
                         hide_empty_lanes: false,
                     },
                 },
-            }],
+            }]
+            .into(),
         )
         .await
         .unwrap();
@@ -288,11 +296,19 @@ async fn removing_a_column_rewrites_the_views_that_named_it(pool: PgPool) {
     };
 
     service
-        .delete_column(
+        .apply_ops(
             edit(guests.database_id),
-            guests.table_id,
-            guests.name,
-            version_of(&pool, guests.table_id).await,
+            viewer(),
+            OpBatch {
+                ops: vec![DatabaseOp::DeleteColumn {
+                    table: guests.table_id,
+                    column: guests.name,
+                }],
+                base_versions: HashMap::from([(
+                    guests.table_id,
+                    version_of(&pool, guests.table_id).await,
+                )]),
+            },
         )
         .await
         .unwrap();

@@ -8,20 +8,10 @@ import type { OpResultOneOfThreeKind } from './opResultOneOfThreeKind';
 import type { TableVersion } from './tableVersion';
 
 /**
- * What a column type change did.
+ * A table's rename.
  */
 export type OpResultOneOfThree = {
-  /**
-   * Cells emptied because their value did not fit the new type.
-   * @minimum 0
-   */
-  clearedCells: number;
   kind: OpResultOneOfThreeKind;
-  /** The table's version after the change. */
+  /** The table's version once the request committed. */
   tableVersion: TableVersion;
-  /**
-   * Cells that held several values and kept only their first.
-   * @minimum 0
-   */
-  trimmedCells: number;
 };

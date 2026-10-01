@@ -4,13 +4,22 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { ApplyOpsRequestBaseVersions } from './applyOpsRequestBaseVersions';
 import type { DatabaseOp } from './databaseOp';
 
 /**
- * A batch of ops for one database, applied together or not at all.
+ * A batch of ops for one database, applied in order, in one transaction,
+together or not at all.
  */
 export interface ApplyOpsRequest {
+  /** The version each named table must still be at, as the caller read
+it. A table that moved refuses the batch as a conflict, so a schema
+edit made against what the caller saw does not overwrite another's.
+Left out, ops are last-write-wins. */
+  baseVersions?: ApplyOpsRequestBaseVersions;
   /** The ops, in the order they apply. Every one names a table of this
-database; a column type change is sent on its own. */
+database, or one an earlier op of the batch creates: tables, columns
+and options carry ids the client mints (UUIDv7), so a later op can
+name them. An id that already names something refuses the batch. */
   ops: DatabaseOp[];
 }

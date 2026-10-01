@@ -1,9 +1,14 @@
+import type {
+  DatabaseOp,
+  OpColumnKind,
+} from '@core/database-sql/generated/types';
 import { queryClient } from '@queries/client';
+import { applyDatabaseOps } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
-import { storageServiceClient } from '@service-storage/client';
 import { ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
 import type {
+  DatabaseColumnKind,
   DatabaseColumnTypeChange,
   DatabaseSchemaChange,
 } from '../core/column-schema';
@@ -13,33 +18,50 @@ type ColumnMutation =
   | { kind: 'delete'; columnId: string }
   | { kind: 'order'; columnIds: string[] };
 
-/** Refresh schema and rows even on a conflict; never replay a destructive mutation. */
+/** The op's spelling of a kind; a relation's rows live in this database. */
+function opColumnKind(
+  databaseId: string,
+  kind: DatabaseColumnKind
+): OpColumnKind {
+  return kind.type === 'relation'
+    ? { type: 'relation', database: databaseId, table: kind.table }
+    : kind;
+}
+
+/**
+ * Refused if the table moved past `baseVersion`; schema and rows refresh
+ * whatever the outcome, and a destructive change is never replayed.
+ */
 export function updateDatabaseColumns(params: {
   databaseId: string;
   tableId: string;
   baseVersion: number;
   mutation: ColumnMutation;
 }): DatabaseSchemaChange {
-  const common = {
-    id: params.databaseId,
-    tableId: params.tableId,
-    baseVersion: params.baseVersion,
-  };
-  const applied = match(params.mutation)
-    .with({ kind: 'type' }, ({ columnId, change }) =>
-      storageServiceClient.databases.changeColumnType({
-        ...common,
-        columnId,
-        request: { ...change, baseVersion: params.baseVersion },
-      })
-    )
-    .with({ kind: 'delete' }, ({ columnId }) =>
-      storageServiceClient.databases.deleteColumn({ ...common, columnId })
-    )
-    .with({ kind: 'order' }, ({ columnIds }) =>
-      storageServiceClient.databases.reorderColumns({ ...common, columnIds })
-    )
+  const table = params.tableId;
+  const op = match(params.mutation)
+    .returnType<DatabaseOp>()
+    .with({ kind: 'type' }, ({ columnId, change }) => ({
+      kind: 'change_column_type',
+      table,
+      column: columnId,
+      to: opColumnKind(params.databaseId, change.to),
+      clearInvalid: change.clearInvalid ?? false,
+    }))
+    .with({ kind: 'delete' }, ({ columnId }) => ({
+      kind: 'delete_column',
+      table,
+      column: columnId,
+    }))
+    .with({ kind: 'order' }, ({ columnIds }) => ({
+      kind: 'reorder_columns',
+      table,
+      order: columnIds,
+    }))
     .exhaustive();
+  const applied = applyDatabaseOps(params.databaseId, [op], {
+    [table]: params.baseVersion,
+  });
   // Open reads rerun against the refreshed schema, whatever the outcome.
   const refreshed = async () => {
     const result = await applied;

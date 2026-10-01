@@ -17,9 +17,12 @@ mod schema_error;
 
 pub use schema_error::{ConversionRefusal, Misfit, MisfitGroup, SchemaError, SharingError};
 
+use models_databases::DatabaseOp;
 pub use models_databases::position::Position;
 pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
-pub use models_databases::{ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion};
+pub use models_databases::{
+    ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion, TakenId,
+};
 
 /// Identifier of a `models_properties` property definition bound as a column.
 pub type PropertyDefinitionId = Uuid;
@@ -63,7 +66,7 @@ pub struct Table {
 ///
 /// The definition carries name, [`DataType`], multi-select flag, and options;
 /// this carries only where it appears and column-kind configuration.
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Column {
     /// Identifier of the placement.
     #[schema(value_type = Uuid)]
@@ -108,59 +111,6 @@ impl Column {
     }
 }
 
-/// A renamed placement and its table's version after the atomic update.
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
-pub struct RenameColumnOutcome {
-    /// The placement with its new display label; IDs and binding are preserved.
-    pub column: Column,
-    /// Monotonic table version used to reconcile concurrent client refreshes.
-    pub table_version: TableVersion,
-}
-
-/// Explicit type selection for one column placement, guarded by its table version.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChangeColumnType {
-    /// Owning table.
-    pub table_id: TableId,
-    /// Placement to change; its identity and label remain stable.
-    pub column_id: ColumnId,
-    /// Requested property type.
-    pub data_type: DataType,
-    /// Whether select/entity/link values may contain multiple items.
-    pub is_multi_select: bool,
-    /// Entity category for a Macro entity reference.
-    pub specific_entity_type: Option<models_properties::EntityType>,
-    /// Optional database-row relationship target.
-    pub relation: Option<(DatabaseId, TableId)>,
-    /// Snapshot against which values are converted.
-    pub base_version: TableVersion,
-    /// Empty the cells whose value does not fit the new type, instead of
-    /// refusing the change. A cell with several values going to a
-    /// single-valued type keeps its first.
-    pub clear_invalid: bool,
-}
-
-impl ChangeColumnType {
-    /// Whether the target holds several values: as asked, and always for a
-    /// relation or a tag.
-    pub fn is_multi_valued(&self) -> bool {
-        self.is_multi_select || self.relation.is_some() || self.data_type == DataType::Tag
-    }
-}
-
-/// What a column type change did.
-#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ColumnTypeChangeOutcome {
-    /// The table's version after the change; unchanged when the column
-    /// already had the type.
-    #[schema(value_type = HashMap<String, TableVersion>)]
-    pub table_versions: HashMap<TableId, TableVersion>,
-    /// Cells emptied because their value did not fit the new type.
-    pub cleared_cells: usize,
-    /// Cells that held several values and kept only their first.
-    pub trimmed_cells: usize,
-}
-
 /// What changing a column to one type would do to its values: the dry run
 /// of a type change, for one target.
 #[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Serialize)]
@@ -202,7 +152,7 @@ pub enum CastVerdict {
 }
 
 /// Fully validated replacement values for an atomic column rebind.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColumnReplacement {
     /// Existing placement and binding, used as a compare-and-swap guard.
     pub column: Column,
@@ -214,16 +164,8 @@ pub struct ColumnReplacement {
     pub values: Vec<(RowId, PropertyValue)>,
 }
 
-/// Table versions changed by a placement deletion or reorder.
-#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct ColumnSchemaOutcome {
-    /// Includes the related table when a relation column goes.
-    #[schema(value_type = HashMap<String, TableVersion>)]
-    pub table_versions: HashMap<TableId, TableVersion>,
-}
-
 /// Column-kind specific configuration stored on the placement.
-#[derive(utoipa::ToSchema, Debug, Clone, Serialize, Deserialize)]
+#[derive(utoipa::ToSchema, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ColumnConfig {
     /// A relation column: its cells reference rows of another table.
@@ -268,73 +210,6 @@ pub struct CreateDatabase {
     pub acting_bot: Option<BotId>,
 }
 
-/// Command to create a table in a database.
-#[derive(Debug, Clone)]
-pub struct CreateTable {
-    /// Owning database.
-    pub database_id: DatabaseId,
-    /// Display name.
-    pub name: String,
-}
-
-/// Result of a table mutation checked atomically against its parent database.
-#[derive(Debug, Clone)]
-pub enum TableMutationOutcome {
-    /// The table was created or renamed and the transaction committed.
-    Applied(Table),
-    /// The database was missing or trashed at the write boundary.
-    NotFound,
-    /// The name was taken or the table's previous name no longer matched.
-    Conflict,
-}
-
-/// Result of rewriting a database's tab order, checked against the tables it
-/// holds when the write takes its lock.
-#[derive(Debug, Clone)]
-pub enum TableOrderOutcome {
-    /// Every table took its new position, in the order they now display.
-    Applied(Vec<Table>),
-    /// The database was missing or trashed at the write boundary.
-    NotFound,
-    /// The order no longer names exactly the database's tables.
-    Conflict,
-}
-
-/// How a new column obtains its property definition.
-#[derive(Debug, Clone)]
-pub enum ColumnBinding {
-    /// Create a fresh definition scoped to the database.
-    NewDefinition {
-        /// Column display name.
-        name: String,
-        /// Value type.
-        data_type: DataType,
-        /// Whether the column holds multiple values.
-        is_multi_select: bool,
-        /// Display labels of the select options the column accepts, for the
-        /// data types that take options ([`DataType::SelectString`],
-        /// [`DataType::SelectNumber`], [`DataType::Tag`]). Options are
-        /// explicit schema: the column's catalog entry accepts exactly these
-        /// labels, so a column created without any accepts no value at all. Empty for every other data type.
-        options: Vec<String>,
-    },
-    /// Bind an existing user/team/system definition.
-    ExistingDefinition(PropertyDefinitionId),
-}
-
-/// Command to add a column to a table.
-#[derive(Debug, Clone)]
-pub struct CreateColumn {
-    /// Allow first-value inference for a newly owned plain text column.
-    pub infer_type: bool,
-    /// Table receiving the column.
-    pub table_id: TableId,
-    /// Definition source.
-    pub binding: ColumnBinding,
-    /// Column-kind configuration (links).
-    pub config: Option<ColumnConfig>,
-}
-
 /// Settle a new empty column's type using its first value.
 #[derive(Debug, Clone)]
 pub struct InferColumnType {
@@ -357,21 +232,6 @@ pub struct InferColumnTypeOutcome {
     pub column: ColumnDetail,
     /// Version after settling the column.
     pub table_version: TableVersion,
-}
-
-/// Command to extend a select column's set of allowed options.
-///
-/// Add-only: an option is never renamed or removed here, because both would
-/// change what existing cells mean.
-#[derive(Debug, Clone)]
-pub struct AddColumnOptions {
-    /// Table the column belongs to.
-    pub table_id: TableId,
-    /// The column to extend.
-    pub column_id: ColumnId,
-    /// Display labels to add. Labels already on the column are ignored rather
-    /// than rejected, so re-sending a list is safe.
-    pub labels: Vec<String>,
 }
 
 /// The acting viewer: the user a listing, a read or a write is scoped to.
@@ -400,9 +260,134 @@ pub struct NewOption {
 /// Cells of one row to set, or with `None` to clear, by definition.
 pub type CellChanges = Vec<(PropertyDefinitionId, Option<PropertyValue>)>;
 
-/// One op's writes, every value already checked against its column.
+/// A property definition a write creates for the database, under ids the
+/// service minted (and, for a new column's options, the client).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewDefinition {
+    /// The definition's id.
+    pub id: PropertyDefinitionId,
+    /// Its name.
+    pub name: String,
+    /// Its type.
+    pub data_type: DataType,
+    /// Whether a cell holds several values.
+    pub is_multi_select: bool,
+    /// What a reference column points at.
+    pub specific_entity_type: Option<models_properties::EntityType>,
+    /// Its options, in order.
+    pub options: Vec<(OptionId, PropertyOptionValue)>,
+}
+
+/// One op's writes, every value already checked against its column as the
+/// ops before it leave the schema.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Write {
+    /// The op changes nothing: a rename to the name already there, a type
+    /// change to the type the column has, options it already has.
+    Unchanged {
+        /// The table the op named.
+        table_id: TableId,
+    },
+    /// Add a table after the database's others.
+    CreateTable {
+        /// Its id.
+        table_id: TableId,
+        /// Its name.
+        name: String,
+    },
+    /// Rename a table, provided it still goes by `from` and no other table
+    /// took `name` first.
+    RenameTable {
+        /// The table.
+        table_id: TableId,
+        /// The name the batch read it by.
+        from: String,
+        /// Its new name.
+        name: String,
+    },
+    /// Remove a table with its columns, rows and views, provided the
+    /// database has another.
+    DeleteTable {
+        /// The table.
+        table_id: TableId,
+        /// Its version when the batch read it, which its change event
+        /// carries.
+        version: TableVersion,
+    },
+    /// Give every table of the database a new position, provided they are
+    /// still exactly these.
+    OrderTables {
+        /// Every table, in its new order.
+        tables: Vec<TableId>,
+        /// Each table's new key, in the same order.
+        positions: Vec<Position>,
+    },
+    /// Add a column, creating its definition first when it is new.
+    CreateColumn {
+        /// The placement, its id and position minted.
+        column: Column,
+        /// The definition to create, for a new property.
+        definition: Option<NewDefinition>,
+    },
+    /// Relabel a column, provided its own label is still `from`.
+    RenameColumn {
+        /// The column's table.
+        table_id: TableId,
+        /// The column.
+        column_id: ColumnId,
+        /// Its own label when the batch read it.
+        from: Option<String>,
+        /// Its new label.
+        name: String,
+    },
+    /// Remove a column, provided it is still bound to its definition, and
+    /// store the table's views that named it, without it.
+    DeleteColumn {
+        /// The column's table.
+        table_id: TableId,
+        /// The column.
+        column_id: ColumnId,
+        /// The definition it was bound to.
+        definition_id: PropertyDefinitionId,
+        /// The views that named it, rewritten without it.
+        views: Vec<DatabaseView>,
+        /// The table a relation pointed at, which sees the relation go.
+        related: Option<(DatabaseId, TableId)>,
+    },
+    /// Give a table's columns new positions.
+    OrderColumns {
+        /// The table.
+        table_id: TableId,
+        /// Each column with its new key.
+        positions: Vec<(ColumnId, Position)>,
+    },
+    /// Swap a column onto a new definition with its converted cells,
+    /// provided the table is still at the version its cells were read at.
+    ReplaceColumn {
+        /// The column's table.
+        table_id: TableId,
+        /// The version its cells were read at; `None` for a column of a
+        /// table the batch created, which has no stored cells.
+        read_version: Option<TableVersion>,
+        /// The definition to create.
+        definition: NewDefinition,
+        /// The rebind and its converted cells.
+        replacement: ColumnReplacement,
+        /// The table's views whose filters tested the old values, without
+        /// those tests.
+        views: Vec<DatabaseView>,
+    },
+    /// Add options to a definition.
+    AddOptions {
+        /// The table the op named.
+        table_id: TableId,
+        /// Every table of the database binding the definition.
+        tables: Vec<TableId>,
+        /// The definition.
+        definition_id: PropertyDefinitionId,
+        /// The options, under their ids.
+        options: Vec<(OptionId, PropertyOptionValue)>,
+    },
     /// Append rows, in order, with the cells each starts with.
     InsertRows {
         /// The table.
@@ -501,51 +486,42 @@ pub enum Write {
 }
 
 impl Write {
-    /// The table the op named.
-    pub fn table_id(&self) -> TableId {
-        match self {
-            Write::InsertRows { table_id, .. }
-            | Write::UpdateRows { table_id, .. }
-            | Write::DeleteRows { table_id, .. }
-            | Write::UpdateOption { table_id, .. }
-            | Write::DeleteOption { table_id, .. }
-            | Write::DeleteView { table_id, .. }
-            | Write::OrderViews { table_id, .. }
-            | Write::MoveCard { table_id, .. } => *table_id,
-            Write::CreateView { view } | Write::UpdateView { view, .. } => view.table_id,
-        }
-    }
-
-    /// The tables whose versions the write bumps when it changes anything.
+    /// The tables whose versions the write bumps when it changes anything,
+    /// each of which must be live when the batch is applied. A table the
+    /// write creates is not among them, nor one it removes.
     pub fn versioned_tables(&self) -> &[TableId] {
         match self {
-            Write::InsertRows { table_id, .. }
+            Write::Unchanged { .. } | Write::CreateTable { .. } | Write::DeleteTable { .. } => &[],
+            Write::RenameTable { table_id, .. }
+            | Write::RenameColumn { table_id, .. }
+            | Write::DeleteColumn { table_id, .. }
+            | Write::OrderColumns { table_id, .. }
+            | Write::ReplaceColumn { table_id, .. }
+            | Write::InsertRows { table_id, .. }
             | Write::UpdateRows { table_id, .. }
             | Write::DeleteRows { table_id, .. }
             | Write::DeleteView { table_id, .. }
             | Write::OrderViews { table_id, .. }
             | Write::MoveCard { table_id, .. } => std::slice::from_ref(table_id),
+            Write::CreateColumn { column, .. } => std::slice::from_ref(&column.table_id),
             Write::CreateView { view } | Write::UpdateView { view, .. } => {
                 std::slice::from_ref(&view.table_id)
             }
-            Write::UpdateOption { tables, .. } | Write::DeleteOption { tables, .. } => tables,
+            Write::OrderTables { tables, .. } => tables,
+            Write::AddOptions { tables, .. }
+            | Write::UpdateOption { tables, .. }
+            | Write::DeleteOption { tables, .. } => tables,
         }
     }
 
     /// How many rows it inserts, updates or deletes; none for a change to
-    /// an option or a view.
+    /// the schema, an option or a view.
     pub fn affected(&self) -> usize {
         match self {
             Write::InsertRows { rows, .. } => rows.len(),
             Write::UpdateRows { rows, .. } => rows.len(),
             Write::DeleteRows { rows, .. } => rows.len(),
-            Write::UpdateOption { .. }
-            | Write::DeleteOption { .. }
-            | Write::CreateView { .. }
-            | Write::UpdateView { .. }
-            | Write::DeleteView { .. }
-            | Write::OrderViews { .. }
-            | Write::MoveCard { .. } => 0,
+            _ => 0,
         }
     }
 
@@ -553,16 +529,11 @@ impl Write {
     /// view's change bumps its table's too, so open clients pick it up.
     pub fn changes(&self) -> bool {
         match self {
+            Write::Unchanged { .. } => false,
             Write::InsertRows { .. } | Write::UpdateRows { .. } | Write::DeleteRows { .. } => {
                 self.affected() > 0
             }
-            Write::UpdateOption { .. }
-            | Write::DeleteOption { .. }
-            | Write::CreateView { .. }
-            | Write::UpdateView { .. }
-            | Write::DeleteView { .. }
-            | Write::OrderViews { .. }
-            | Write::MoveCard { .. } => true,
+            _ => true,
         }
     }
 }
@@ -571,6 +542,8 @@ impl Write {
 /// and version bump commits, or none does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Writes {
+    /// The database every write is in.
+    pub database_id: DatabaseId,
     /// Who the inserted rows are created by.
     pub created_by: MacroUserIdStr<'static>,
     /// Options to create before any cell names them.
@@ -579,6 +552,25 @@ pub struct Writes {
     pub writes: Vec<Write>,
     /// Rows relation cells point at, each with the table it must belong to.
     pub related_rows: Vec<(TableId, RowId)>,
+    /// The versions tables must still be at when the batch takes their
+    /// locks: the caller's base versions.
+    pub expected_versions: Vec<(TableId, TableVersion)>,
+}
+
+impl Writes {
+    /// Whether a write adds, renames, removes or reorders tables, which
+    /// takes the database's lock rather than a share of it.
+    pub fn changes_tables(&self) -> bool {
+        self.writes.iter().any(|write| {
+            matches!(
+                write,
+                Write::CreateTable { .. }
+                    | Write::RenameTable { .. }
+                    | Write::DeleteTable { .. }
+                    | Write::OrderTables { .. }
+            )
+        })
+    }
 }
 
 /// What applying [`Writes`] did. Anything but `Applied` wrote nothing.
@@ -586,13 +578,52 @@ pub struct Writes {
 pub enum WritesOutcome {
     /// Everything committed.
     Applied {
-        /// Per write, the rows it inserted; empty for updates and deletes.
+        /// Per write, the rows it inserted; empty for everything else.
         inserted: Vec<Vec<RowId>>,
         /// The new version of every table a write changed, bumped once.
         table_versions: HashMap<TableId, TableVersion>,
     },
-    /// A written table is gone, or its database is trashed.
+    /// The database is gone or trashed, or a written table is gone.
     TableNotFound(TableId),
+    /// A table is no longer at the version it was expected at.
+    VersionConflict(TableId),
+    /// A write created something under an id that already names something.
+    IdTaken {
+        /// The write's index.
+        write: usize,
+        /// The id.
+        id: TakenId,
+    },
+    /// Another table took a write's table name first.
+    TableNameTaken {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write renamed a table that was renamed meanwhile.
+    TableRenamedElsewhere {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write removed the database's last table.
+    LastTable {
+        /// The write's index.
+        write: usize,
+    },
+    /// The database's tables changed under a reorder.
+    TablesChanged {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write named a column that was removed or retyped meanwhile.
+    MissingColumn {
+        /// The write's index.
+        write: usize,
+    },
+    /// A write relabeled a column that was relabeled meanwhile.
+    ColumnRenamedElsewhere {
+        /// The write's index.
+        write: usize,
+    },
     /// A write named an option its definition no longer has.
     MissingOption {
         /// The write's index.
@@ -625,6 +656,25 @@ pub enum WritesOutcome {
     MissingRelatedRow(RowId),
 }
 
+/// A batch of ops for one database and the versions its tables must be at.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OpBatch {
+    /// The ops, in the order they apply.
+    pub ops: Vec<DatabaseOp>,
+    /// The version each named table must still be at; the batch is refused
+    /// as a conflict if one moved. Without one, ops are last-write-wins.
+    pub base_versions: HashMap<TableId, TableVersion>,
+}
+
+impl From<Vec<DatabaseOp>> for OpBatch {
+    fn from(ops: Vec<DatabaseOp>) -> Self {
+        Self {
+            ops,
+            base_versions: HashMap::new(),
+        }
+    }
+}
+
 /// Why an op of a batch was refused: which op, and where relevant which row
 /// and column. Nothing in the batch was written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -635,6 +685,8 @@ pub struct OpRefusal {
     pub row: Option<usize>,
     /// The column placement.
     pub column: Option<ColumnId>,
+    /// An id the op minted that already names something.
+    pub taken: Option<TakenId>,
     /// What is wrong.
     pub reason: String,
 }
@@ -753,17 +805,6 @@ pub struct SavedQuery {
     pub created_by: Option<String>,
     /// When it was saved.
     pub created_at: DateTime<Utc>,
-}
-
-/// Result of removing a table, checked atomically against its database.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TableDeletion {
-    /// The table, its columns, rows and cells are gone.
-    Deleted,
-    /// The table, or its live database, was not there.
-    NotFound,
-    /// It is the database's only table.
-    LastTable,
 }
 
 /// A database as listed for a viewer.

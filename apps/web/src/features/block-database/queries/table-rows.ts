@@ -1,6 +1,6 @@
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import type { DatabaseOp } from '@core/database-sql/generated/types';
-import { type ResultError, thrownResultErrorHasCode } from '@core/util/result';
+import { thrownResultErrorHasCode } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQuery,
@@ -13,10 +13,7 @@ import {
 import { databaseDetailQueryOptions } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
-import type {
-  DatabaseOpsError,
-  DatabaseSchemaErrorCode,
-} from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
@@ -147,7 +144,7 @@ export function createDatabaseRowsSource(props: {
   addOption: (
     columnId: string,
     label: string
-  ) => ResultAsync<void, ResultError<DatabaseSchemaErrorCode>[]>;
+  ) => ResultAsync<void, DatabaseOpsError>;
 }): DatabaseRowsSource {
   const queryClient = useQueryClient();
   const tableId = props.table().table.id;

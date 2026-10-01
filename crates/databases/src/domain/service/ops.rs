@@ -1,19 +1,28 @@
-//! Typed ops: every op is checked against the receipt's database before
-//! anything is written, and their writes commit in one transaction.
+//! Typed ops: every op is checked against the receipt's database, as the ops
+//! before it leave the schema, before anything is written, and their writes
+//! commit in one transaction.
 
 mod cells;
+mod columns;
+mod tables;
 mod views;
+
+use std::sync::Arc;
 
 use cells::column_kind_name;
 
-use models_databases::{CellWrite, ColumnKind, DatabaseOp, OpResult, RowChanges};
+use models_databases::{
+    CellWrite, ColumnKind, DatabaseOp, NewColumn, OpResult, PropertyId, RowChanges, TakenId,
+    VersionedTable,
+};
 use models_properties::api::is_valid_hex_color;
+use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
 
 use super::*;
-use crate::domain::catalog::{ColumnEntry, PropertyType};
+use crate::domain::catalog::ColumnEntry;
 use crate::domain::models::{
-    DatabaseView, NewOption, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write, Writes,
-    WritesOutcome,
+    DatabaseView, NewOption, OpBatch, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write,
+    Writes, WritesOutcome,
 };
 use chrono::DateTime;
 
@@ -34,42 +43,40 @@ where
         &self,
         receipt: EntityAccessReceipt<EditAccessLevel>,
         viewer: Viewer,
-        ops: Vec<DatabaseOp>,
+        batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
+        let OpBatch { ops, base_versions } = batch;
         let database_id = receipt_database_id(&receipt)?;
         let grant = receipt_grant(&receipt, AccessLevel::Edit);
         let entries = self
             .entries_for(&HashMap::from([(database_id, grant)]))
             .await?;
-        if entries.is_empty() {
+        let Some(database) = entries.first().map(|entry| entry.database.clone()) else {
             return Err(DatabaseError::NotFound);
-        }
+        };
         refuse_foreign_tables(&entries, &ops)?;
-        let attribution = receipt_attribution(&receipt);
-        if let [
-            DatabaseOp::ChangeColumnType {
-                table,
-                column,
-                to,
-                clear_invalid,
-            },
-        ] = ops.as_slice()
-        {
-            let change = change_column_type(&entries, *table, *column, *to, *clear_invalid)?;
-            return self
-                .apply_type_change_op(database_id, attribution, &viewer, change)
-                .await
-                .map(|result| vec![result]);
+        for (table, version) in &base_versions {
+            let entry = entries
+                .iter()
+                .find(|entry| entry.table.id == *table)
+                .ok_or(DatabaseError::NotFound)?;
+            if entry.table.version != *version {
+                return Err(DatabaseError::VersionConflict);
+            }
         }
+        let attribution = receipt_attribution(&receipt);
 
+        let found = self.found_for(&entries, &viewer, &ops).await?;
         let editable = self
-            .editable_shared_definitions(&entries, database_id, &viewer, &ops)
+            .editable_shared_definitions(&entries, &found, database_id, &viewer, &ops)
             .await?;
         let boards = self.boards_moved_by(&entries, &ops).await?;
         let mut planner = Planner {
-            entries: &entries,
-            database_id,
-            editable: &editable,
+            entries: entries.iter().cloned().map(Arc::new).collect(),
+            database,
+            grant,
+            editable,
+            found,
             options: Vec::new(),
             labels: HashMap::new(),
             views: HashMap::new(),
@@ -77,74 +84,159 @@ where
             now: models_databases::views::written_at(),
             related: Vec::new(),
             written_rows: 0,
+            written_tables: HashSet::new(),
+            created_tables: HashSet::new(),
+            changed_options: HashSet::new(),
+            retyped: HashMap::new(),
         };
         let writes = ops
             .iter()
             .enumerate()
             .map(|(index, op)| planner.write(index, op))
             .collect::<Result<Vec<_>, _>>()?;
-        let row_writes = Writes {
+        let writes = Writes {
+            database_id,
             created_by: viewer.user_id.clone(),
-            options: planner.options,
+            options: std::mem::take(&mut planner.options),
             writes,
             related_rows: planner
                 .related
                 .iter()
                 .map(|related| (related.table, related.row))
                 .collect(),
+            expected_versions: base_versions.into_iter().collect(),
         };
         let outcome = self
             .cells
-            .apply_writes(&row_writes)
+            .apply_writes(&writes)
             .await
             .map_err(repository_error)?;
         let committed = applied(outcome, &ops, &planner.related)?;
 
-        self.publish(
-            attribution,
-            &committed
-                .table_versions
-                .iter()
-                .map(|(table, version)| (database_id, *table, *version))
-                .collect::<Vec<_>>(),
-        )
-        .await;
-        op_results(&entries, &row_writes, committed)
+        let mut changes: Vec<(DatabaseId, TableId, TableVersion)> = committed
+            .table_versions
+            .iter()
+            .map(|(table, version)| {
+                let database = related_database(&writes, *table).unwrap_or(database_id);
+                (database, *table, *version)
+            })
+            .collect();
+        changes.extend(writes.writes.iter().filter_map(|write| match write {
+            Write::DeleteTable { table_id, version } => Some((database_id, *table_id, *version)),
+            _ => None,
+        }));
+        self.publish(attribution, &changes).await;
+        op_results(&entries, &ops, &writes, &planner, committed)
     }
 
-    /// A batch's only op, a column type change, applied as
-    /// `change_column_type` applies it.
-    async fn apply_type_change_op(
+    /// What the batch's ops need read before they are planned: the
+    /// properties its new columns bind, the relation targets outside the
+    /// database, and the cells of every column it retypes.
+    async fn found_for(
         &self,
-        database_id: DatabaseId,
-        attribution: Option<events::Attribution>,
+        entries: &[TableEntry],
         viewer: &Viewer,
-        change: ChangeColumnType,
-    ) -> Result<OpResult, DatabaseError> {
-        let (table, column) = (change.table_id, change.column_id);
-        let changed = self
-            .retype_column(database_id, attribution, viewer, change)
-            .await
-            .map_err(|error| match error {
-                DatabaseError::InvalidSchemaOperation(reason) => {
-                    refuse(0, None, Some(column), reason.to_string())
+        ops: &[DatabaseOp],
+    ) -> Result<Found, DatabaseError> {
+        let database_id = entries
+            .first()
+            .map(|entry| entry.database.id)
+            .ok_or(DatabaseError::NotFound)?;
+        let mut found = Found::default();
+        for op in ops {
+            let target_database = match op {
+                DatabaseOp::CreateColumn {
+                    definition:
+                        NewColumn::New {
+                            kind: ColumnKind::Relation { database, .. },
+                            ..
+                        },
+                    ..
                 }
-                DatabaseError::NotFound => {
-                    refuse(0, None, Some(column), "no such column in this table")
-                }
-                other => other,
-            })?;
-        let table_version = changed.table_versions.get(&table).copied().ok_or_else(|| {
-            DatabaseError::Repo(
-                rootcause::report!("a type change did not answer its table's version")
-                    .into_dynamic(),
-            )
-        })?;
-        Ok(OpResult::ColumnTyped {
-            table_version,
-            cleared_cells: count(changed.cleared_cells),
-            trimmed_cells: count(changed.trimmed_cells),
-        })
+                | DatabaseOp::ChangeColumnType {
+                    to: ColumnKind::Relation { database, .. },
+                    ..
+                } => Some(*database),
+                _ => None,
+            };
+            if let Some(database) = target_database
+                && database != database_id
+                && !found.relation_targets.contains_key(&database)
+            {
+                let tables = match self
+                    .live_database_grant(viewer, database)
+                    .await
+                    .map_err(DatabaseError::Repo)?
+                {
+                    Some(_) => Some(
+                        self.repository
+                            .tables_for_databases(&[database])
+                            .await
+                            .map_err(repository_error)?
+                            .into_iter()
+                            .map(|table| table.id)
+                            .collect(),
+                    ),
+                    None => None,
+                };
+                found.relation_targets.insert(database, tables);
+            }
+            if let DatabaseOp::CreateColumn {
+                definition: NewColumn::Existing { property },
+                ..
+            } = op
+                && !found.properties.contains_key(property)
+            {
+                let bindable = self
+                    .definitions
+                    .bindable_definition(database_id, viewer, property.into_uuid())
+                    .await
+                    .map_err(repository_error)?;
+                let definition = match bindable {
+                    Some(id) => self
+                        .definitions
+                        .definitions(&[id])
+                        .await
+                        .map_err(repository_error)?
+                        .into_iter()
+                        .next(),
+                    None => None,
+                };
+                found.properties.insert(*property, definition);
+            }
+            if let DatabaseOp::ChangeColumnType { table, column, .. } = op
+                && !found.cells.contains_key(column)
+                && let Some(definition) = entries
+                    .iter()
+                    .find(|entry| entry.table.id == *table)
+                    .and_then(|entry| {
+                        entry
+                            .columns
+                            .iter()
+                            .find(|entry| entry.column.id == *column)
+                    })
+                    .map(|entry| entry.definition.definition.id)
+            {
+                let rows: Vec<RowId> = self
+                    .repository
+                    .row_refs(*table)
+                    .await
+                    .map_err(repository_error)?
+                    .into_iter()
+                    .map(|row| row.id)
+                    .collect();
+                let cells = if rows.len() > MAX_CONVERTED_ROWS {
+                    HashMap::new()
+                } else {
+                    self.cells
+                        .column_cells(&rows, definition)
+                        .await
+                        .map_err(repository_error)?
+                };
+                found.cells.insert(*column, ColumnCells { rows, cells });
+            }
+        }
+        Ok(found)
     }
 
     /// Where the cards of every board a `MoveCard` of the batch names are
@@ -208,17 +300,18 @@ where
     }
 
     /// The definitions shared beyond the database whose options the batch
-    /// changes, and which of them the viewer may change: a shared property
-    /// changes wherever it is used, so the database's edit grant is not
-    /// enough on its own.
+    /// may change, and which of them the viewer may change: a shared
+    /// property changes wherever it is used, so the database's edit grant is
+    /// not enough on its own.
     async fn editable_shared_definitions(
         &self,
         entries: &[TableEntry],
+        found: &Found,
         database_id: DatabaseId,
         viewer: &Viewer,
         ops: &[DatabaseOp],
     ) -> Result<Vec<PropertyDefinitionId>, DatabaseError> {
-        let shared: Vec<PropertyDefinitionId> = ops
+        let mut shared: Vec<PropertyDefinitionId> = ops
             .iter()
             .filter_map(option_columns)
             .flat_map(|(table, columns)| {
@@ -234,6 +327,18 @@ where
                 })
             })
             .collect();
+        // A property bound by this batch may have its options changed by a
+        // later op of it.
+        shared.extend(
+            found
+                .properties
+                .values()
+                .flatten()
+                .filter(|definition| shared_beyond(definition, database_id))
+                .map(|definition| definition.definition.id),
+        );
+        shared.sort();
+        shared.dedup();
         if shared.is_empty() {
             return Ok(Vec::new());
         }
@@ -244,13 +349,35 @@ where
     }
 }
 
+/// Whether a definition belongs to something beyond `database_id`.
+fn shared_beyond(definition: &PropertyDefinitionWithOptions, database_id: DatabaseId) -> bool {
+    !matches!(
+        definition.definition.owner,
+        models_properties::shared::PropertyOwner::Database { database_id: owner }
+            if DatabaseId::from_uuid(owner) == database_id
+    )
+}
+
+/// The database a write's related table belongs to, when it is outside the
+/// batch's own.
+fn related_database(writes: &Writes, table: TableId) -> Option<DatabaseId> {
+    writes.writes.iter().find_map(|write| match write {
+        Write::DeleteColumn {
+            related: Some((database, related)),
+            ..
+        } if *related == table => Some(*database),
+        _ => None,
+    })
+}
+
 /// The table an op names and the columns whose options it may change: the
 /// option ops', and every column whose missing options a row op may create.
 fn option_columns(op: &DatabaseOp) -> Option<(TableId, Vec<ColumnId>)> {
     let cells = |cells: &[CellWrite]| cells.iter().map(|cell| cell.column).collect::<Vec<_>>();
     match op {
         DatabaseOp::UpdateOption { table, column, .. }
-        | DatabaseOp::DeleteOption { table, column, .. } => Some((*table, vec![*column])),
+        | DatabaseOp::DeleteOption { table, column, .. }
+        | DatabaseOp::AddOptions { table, column, .. } => Some((*table, vec![*column])),
         DatabaseOp::InsertRows {
             table,
             rows,
@@ -273,17 +400,28 @@ fn option_columns(op: &DatabaseOp) -> Option<(TableId, Vec<ColumnId>)> {
     }
 }
 
-/// Refuse a batch naming a table outside the receipt's database.
+/// Refuse a batch naming a table that is neither in the receipt's database
+/// nor created by an earlier op of the batch.
 fn refuse_foreign_tables(entries: &[TableEntry], ops: &[DatabaseOp]) -> Result<(), DatabaseError> {
+    let mut created: Vec<TableId> = Vec::new();
     for (index, op) in ops.iter().enumerate() {
-        let table = op.table();
-        if !entries.iter().any(|entry| entry.table.id == table) {
-            return Err(refuse(
-                index,
-                None,
-                None,
-                format!("table {table} is not in this database"),
-            ));
+        if let DatabaseOp::CreateTable { id, .. } = op {
+            created.push(*id);
+            continue;
+        }
+        let named: Vec<TableId> = match op {
+            DatabaseOp::ReorderTables { order } => order.clone(),
+            op => op.table().into_iter().collect(),
+        };
+        for table in named {
+            if !entries.iter().any(|entry| entry.table.id == table) && !created.contains(&table) {
+                return Err(refuse(
+                    index,
+                    None,
+                    None,
+                    format!("table {table} is not in this database"),
+                ));
+            }
         }
     }
     Ok(())
@@ -303,6 +441,7 @@ fn applied(
     ops: &[DatabaseOp],
     related: &[RelatedRow],
 ) -> Result<Committed, DatabaseError> {
+    let column_of = |write: usize| op_column(&ops[write]);
     match outcome {
         WritesOutcome::Applied {
             inserted,
@@ -312,16 +451,50 @@ fn applied(
             table_versions,
         }),
         WritesOutcome::TableNotFound(_) => Err(DatabaseError::NotFound),
+        WritesOutcome::VersionConflict(_) | WritesOutcome::TablesChanged { .. } => {
+            Err(DatabaseError::VersionConflict)
+        }
+        WritesOutcome::IdTaken { write, id } => Err(refuse_taken(write, id)),
+        WritesOutcome::TableNameTaken { write } => Err(refuse(
+            write,
+            None,
+            None,
+            "another table took that name first; refresh and try again",
+        )),
+        WritesOutcome::TableRenamedElsewhere { write } => Err(refuse(
+            write,
+            None,
+            None,
+            SchemaError::TableRenameConflict.to_string(),
+        )),
+        WritesOutcome::LastTable { write } => Err(refuse(
+            write,
+            None,
+            None,
+            SchemaError::LastTable.to_string(),
+        )),
+        WritesOutcome::MissingColumn { write } => Err(refuse(
+            write,
+            None,
+            column_of(write),
+            "the column was removed or changed by someone else; refresh and try again",
+        )),
+        WritesOutcome::ColumnRenamedElsewhere { write } => Err(refuse(
+            write,
+            None,
+            column_of(write),
+            SchemaError::ColumnRenamedElsewhere.to_string(),
+        )),
         WritesOutcome::MissingOption { write } => Err(refuse(
             write,
             None,
-            option_column(&ops[write]),
+            column_of(write),
             "the option was removed by someone else; refresh and try again",
         )),
         WritesOutcome::OptionLabelTaken { write } => Err(refuse(
             write,
             None,
-            option_column(&ops[write]),
+            column_of(write),
             "another option took that label first; refresh and try again",
         )),
         WritesOutcome::MissingView { write } => Err(refuse(
@@ -365,49 +538,134 @@ fn applied(
 /// One result per op, in order, from what its write committed.
 fn op_results(
     entries: &[TableEntry],
-    row_writes: &Writes,
+    ops: &[DatabaseOp],
+    writes: &Writes,
+    planner: &Planner,
     committed: Committed,
 ) -> Result<Vec<OpResult>, DatabaseError> {
     let table_versions = committed.table_versions;
-    row_writes
-        .writes
-        .iter()
+    // A write that changed nothing leaves its table where it was.
+    let version_of = |table: TableId| -> Result<TableVersion, DatabaseError> {
+        table_versions
+            .get(&table)
+            .copied()
+            .or_else(|| {
+                entries
+                    .iter()
+                    .find(|entry| entry.table.id == table)
+                    .map(|entry| entry.table.version)
+            })
+            .ok_or_else(|| {
+                DatabaseError::Repo(
+                    rootcause::report!("an op named a table the batch did not version")
+                        .into_dynamic(),
+                )
+            })
+    };
+    ops.iter()
+        .zip(&writes.writes)
         .zip(committed.inserted)
-        .map(|(write, inserted)| {
-            // A write that changed nothing leaves its table where it was.
-            let table_version = match table_versions.get(&write.table_id()) {
-                Some(version) => *version,
-                None => current_version(entries, write.table_id())?,
-            };
-            Ok(match write {
-                Write::InsertRows { .. } | Write::UpdateRows { .. } | Write::DeleteRows { .. } => {
-                    OpResult::RowsWritten {
-                        table_version,
-                        inserted,
-                        affected: count(write.affected()),
-                    }
-                }
-                Write::UpdateOption { .. } | Write::DeleteOption { .. } => {
-                    OpResult::OptionChanged { table_version }
-                }
-                Write::CreateView { view } | Write::UpdateView { view, .. } => {
-                    OpResult::ViewWritten {
-                        table_version,
-                        view: Box::new(view.clone()),
-                    }
-                }
-                Write::DeleteView { .. } => OpResult::ViewDeleted { table_version },
-                Write::OrderViews { positions, .. } => OpResult::ViewsReordered {
-                    table_version,
-                    positions: positions.clone(),
+        .enumerate()
+        .map(|(index, ((op, write), inserted))| {
+            let table_version = || version_of(op.table().ok_or_else(mismatched_write)?);
+            Ok(match op {
+                DatabaseOp::CreateTable { id, .. } => OpResult::TableCreated {
+                    table: *id,
+                    table_version: version_of(*id)?,
                 },
-                Write::MoveCard { positions, .. } => OpResult::CardMoved {
-                    table_version,
-                    positions: positions.clone(),
+                DatabaseOp::RenameTable { .. } => OpResult::TableRenamed {
+                    table_version: table_version()?,
+                },
+                DatabaseOp::DeleteTable { table } => OpResult::TableDeleted { table: *table },
+                DatabaseOp::ReorderTables { order } => OpResult::TablesReordered {
+                    tables: order
+                        .iter()
+                        .map(|table| {
+                            Ok(VersionedTable {
+                                table: *table,
+                                version: version_of(*table)?,
+                            })
+                        })
+                        .collect::<Result<_, DatabaseError>>()?,
+                },
+                DatabaseOp::CreateColumn { id, .. } => OpResult::ColumnCreated {
+                    column: *id,
+                    table_version: table_version()?,
+                },
+                DatabaseOp::RenameColumn { .. } => OpResult::ColumnRenamed {
+                    table_version: table_version()?,
+                },
+                DatabaseOp::DeleteColumn { .. } => OpResult::ColumnDeleted {
+                    table_version: table_version()?,
+                },
+                DatabaseOp::ReorderColumns { .. } => OpResult::ColumnsReordered {
+                    table_version: table_version()?,
+                },
+                DatabaseOp::AddOptions { .. } => OpResult::OptionsAdded {
+                    table_version: table_version()?,
+                    added: match write {
+                        Write::AddOptions { options, .. } => {
+                            options.iter().map(|(id, _)| *id).collect()
+                        }
+                        _ => Vec::new(),
+                    },
+                },
+                DatabaseOp::ChangeColumnType { .. } => {
+                    let (cleared, trimmed) =
+                        planner.retyped.get(&index).copied().unwrap_or_default();
+                    OpResult::ColumnTyped {
+                        table_version: table_version()?,
+                        cleared_cells: count(cleared),
+                        trimmed_cells: count(trimmed),
+                    }
+                }
+                DatabaseOp::InsertRows { .. }
+                | DatabaseOp::UpdateRows { .. }
+                | DatabaseOp::DeleteRows { .. } => OpResult::RowsWritten {
+                    table_version: table_version()?,
+                    inserted,
+                    affected: count(write.affected()),
+                },
+                DatabaseOp::UpdateOption { .. } | DatabaseOp::DeleteOption { .. } => {
+                    OpResult::OptionChanged {
+                        table_version: table_version()?,
+                    }
+                }
+                DatabaseOp::CreateView { .. } | DatabaseOp::UpdateView { .. } => match write {
+                    Write::CreateView { view } | Write::UpdateView { view, .. } => {
+                        OpResult::ViewWritten {
+                            table_version: table_version()?,
+                            view: Box::new(view.clone()),
+                        }
+                    }
+                    _ => return Err(mismatched_write()),
+                },
+                DatabaseOp::DeleteView { .. } => OpResult::ViewDeleted {
+                    table_version: table_version()?,
+                },
+                DatabaseOp::ReorderViews { .. } => match write {
+                    Write::OrderViews { positions, .. } => OpResult::ViewsReordered {
+                        table_version: table_version()?,
+                        positions: positions.clone(),
+                    },
+                    _ => return Err(mismatched_write()),
+                },
+                DatabaseOp::MoveCard { .. } => match write {
+                    Write::MoveCard { positions, .. } => OpResult::CardMoved {
+                        table_version: table_version()?,
+                        positions: positions.clone(),
+                    },
+                    _ => return Err(mismatched_write()),
                 },
             })
         })
         .collect()
+}
+
+fn mismatched_write() -> DatabaseError {
+    DatabaseError::Repo(
+        rootcause::report!("an op was planned as another op's write").into_dynamic(),
+    )
 }
 
 fn refuse(
@@ -420,32 +678,41 @@ fn refuse(
         op,
         row,
         column,
+        taken: None,
         reason: reason.into(),
     })
 }
 
-/// The column an option op names.
-fn option_column(op: &DatabaseOp) -> Option<ColumnId> {
-    match op {
-        DatabaseOp::UpdateOption { column, .. } | DatabaseOp::DeleteOption { column, .. } => {
-            Some(*column)
-        }
-        _ => None,
-    }
+/// Refuse an op minting an id that already names something.
+fn refuse_taken(op: usize, id: TakenId) -> DatabaseError {
+    let (named, what, column, uuid) = match id {
+        TakenId::Table(id) => ("a table", "table", None, id.into_uuid()),
+        TakenId::Column(id) => ("a column", "column", Some(id), id.into_uuid()),
+        TakenId::Option(id) => ("an option", "option", None, id.into_uuid()),
+    };
+    DatabaseError::InvalidOp(OpRefusal {
+        op,
+        row: None,
+        column,
+        taken: Some(id),
+        reason: format!(
+            "{uuid} already names {named}; mint a new id for each {what} a request creates"
+        ),
+    })
 }
 
-/// The version a table had when the batch read the catalog; every table an
-/// op names was checked to be there.
-fn current_version(entries: &[TableEntry], table: TableId) -> Result<TableVersion, DatabaseError> {
-    entries
-        .iter()
-        .find(|entry| entry.table.id == table)
-        .map(|entry| entry.table.version)
-        .ok_or_else(|| {
-            DatabaseError::Repo(
-                rootcause::report!("an op named a table the batch did not check").into_dynamic(),
-            )
-        })
+/// The column an op names, for a refusal to point at.
+fn op_column(op: &DatabaseOp) -> Option<ColumnId> {
+    match op {
+        DatabaseOp::UpdateOption { column, .. }
+        | DatabaseOp::DeleteOption { column, .. }
+        | DatabaseOp::AddOptions { column, .. }
+        | DatabaseOp::RenameColumn { column, .. }
+        | DatabaseOp::DeleteColumn { column, .. }
+        | DatabaseOp::ChangeColumnType { column, .. } => Some(*column),
+        DatabaseOp::CreateColumn { id, .. } => Some(*id),
+        _ => None,
+    }
 }
 
 fn count(value: usize) -> u32 {
@@ -453,7 +720,7 @@ fn count(value: usize) -> u32 {
 }
 
 /// Where a row an op names sits in it; `None` for an insert, whose rows are
-/// new.
+/// new, and for every op that names no rows.
 fn row_index(op: &DatabaseOp, row: RowId) -> Option<usize> {
     match op {
         DatabaseOp::UpdateRows {
@@ -465,41 +732,8 @@ fn row_index(op: &DatabaseOp, row: RowId) -> Option<usize> {
             changes: RowChanges::PerRow { rows },
             ..
         } => rows.iter().position(|change| change.row == row),
-        DatabaseOp::InsertRows { .. }
-        | DatabaseOp::ChangeColumnType { .. }
-        | DatabaseOp::UpdateOption { .. }
-        | DatabaseOp::DeleteOption { .. }
-        | DatabaseOp::CreateView { .. }
-        | DatabaseOp::UpdateView { .. }
-        | DatabaseOp::DeleteView { .. }
-        | DatabaseOp::ReorderViews { .. }
-        | DatabaseOp::MoveCard { .. } => None,
+        _ => None,
     }
-}
-
-/// The type change an op asks for, against the table's current version:
-/// ops are last-write-wins.
-fn change_column_type(
-    entries: &[TableEntry],
-    table: TableId,
-    column: ColumnId,
-    to: ColumnKind,
-    clear_invalid: bool,
-) -> Result<ChangeColumnType, DatabaseError> {
-    let target = PropertyType::from_column_kind(to);
-    Ok(ChangeColumnType {
-        table_id: table,
-        column_id: column,
-        data_type: target.data_type,
-        is_multi_select: target.is_multi_select,
-        specific_entity_type: target.specific_entity_type,
-        relation: match to {
-            ColumnKind::Relation { database, table } => Some((database, table)),
-            _ => None,
-        },
-        base_version: current_version(entries, table)?,
-        clear_invalid,
-    })
 }
 
 /// A row a relation cell points at, and where the op named it.
@@ -511,13 +745,39 @@ struct RelatedRow {
     column: ColumnId,
 }
 
-/// Turns ops into writes against one database's catalog, collecting the
-/// options they create and the rows their relation cells point at.
-struct Planner<'a> {
-    entries: &'a [TableEntry],
-    database_id: DatabaseId,
+/// One column's stored cells, read before the batch is planned.
+#[derive(Debug, Clone, Default)]
+struct ColumnCells {
+    /// Every row of the column's table, in position order.
+    rows: Vec<RowId>,
+    /// The column's value on each row holding one.
+    cells: HashMap<RowId, PropertyValue>,
+}
+
+/// What the batch's ops needed read before planning.
+#[derive(Debug, Default)]
+struct Found {
+    /// Each property a new column binds, as the properties system lets the
+    /// viewer bind it; `None` when it may not.
+    properties: HashMap<PropertyId, Option<PropertyDefinitionWithOptions>>,
+    /// Each database outside the batch's that a relation points into, with
+    /// its tables; `None` when the viewer cannot reach it.
+    relation_targets: HashMap<DatabaseId, Option<Vec<TableId>>>,
+    /// The stored cells of each column the batch retypes.
+    cells: HashMap<ColumnId, ColumnCells>,
+}
+
+/// Turns ops into writes against one database's catalog, as the ops before
+/// each leave it, collecting the options they create and the rows their
+/// relation cells point at.
+struct Planner {
+    /// The database's tables as the ops so far leave them, in tab order.
+    entries: Vec<Arc<TableEntry>>,
+    database: Database,
+    grant: AccessLevel,
     /// The shared definitions whose options the viewer may change.
-    editable: &'a [PropertyDefinitionId],
+    editable: Vec<PropertyDefinitionId>,
+    found: Found,
     options: Vec<NewOption>,
     /// The options of each definition an op has looked at, with their
     /// labels, as the ops planned so far leave them.
@@ -531,6 +791,14 @@ struct Planner<'a> {
     now: DateTime<Utc>,
     related: Vec<RelatedRow>,
     written_rows: usize,
+    /// The tables whose rows an op so far wrote.
+    written_tables: HashSet<TableId>,
+    /// The tables an op so far created.
+    created_tables: HashSet<TableId>,
+    /// The definitions whose options an op so far changed.
+    changed_options: HashSet<PropertyDefinitionId>,
+    /// Per type change op, the cells it emptied and the cells it trimmed.
+    retyped: HashMap<usize, (usize, usize)>,
 }
 
 /// Where in the batch a cell is: its op, the row's index within the op
@@ -548,14 +816,17 @@ impl Place {
     }
 }
 
-impl Planner<'_> {
+impl Planner {
     fn write(&mut self, index: usize, op: &DatabaseOp) -> Result<Write, DatabaseError> {
-        let table = op.table();
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| entry.table.id == table)
-            .ok_or_else(|| refuse(index, None, None, "table is not in this database"))?;
+        match op {
+            DatabaseOp::CreateTable { id, name } => return self.create_table(index, *id, name),
+            DatabaseOp::ReorderTables { order } => return self.order_tables(index, order),
+            _ => {}
+        }
+        let table = op
+            .table()
+            .ok_or_else(|| refuse(index, None, None, "the op names no table"))?;
+        let entry = self.entry(index, table)?;
         let rows = match op {
             DatabaseOp::InsertRows { rows, .. } => rows.len(),
             DatabaseOp::UpdateRows {
@@ -567,14 +838,7 @@ impl Planner<'_> {
                 changes: RowChanges::PerRow { rows },
                 ..
             } => rows.len(),
-            DatabaseOp::ChangeColumnType { .. }
-            | DatabaseOp::UpdateOption { .. }
-            | DatabaseOp::DeleteOption { .. }
-            | DatabaseOp::CreateView { .. }
-            | DatabaseOp::UpdateView { .. }
-            | DatabaseOp::DeleteView { .. }
-            | DatabaseOp::ReorderViews { .. }
-            | DatabaseOp::MoveCard { .. } => 0,
+            _ => 0,
         };
         self.written_rows += rows;
         if self.written_rows > MAX_WRITTEN_ROWS {
@@ -586,17 +850,50 @@ impl Planner<'_> {
             ));
         }
         match op {
+            DatabaseOp::CreateTable { .. } | DatabaseOp::ReorderTables { .. } => {
+                Err(refuse(index, None, None, "the op names no table"))
+            }
+            DatabaseOp::RenameTable {
+                name,
+                previous_name,
+                ..
+            } => self.rename_table(index, &entry, name, previous_name.as_deref()),
+            DatabaseOp::DeleteTable { .. } => self.delete_table(index, &entry),
+            DatabaseOp::CreateColumn {
+                id,
+                definition,
+                after,
+                ..
+            } => self.create_column(index, &entry, *id, definition, *after),
+            DatabaseOp::RenameColumn {
+                column,
+                name,
+                previous_name,
+                ..
+            } => self.rename_column(index, &entry, *column, name, previous_name.as_deref()),
+            DatabaseOp::DeleteColumn { column, .. } => self.delete_column(index, &entry, *column),
+            DatabaseOp::ReorderColumns { order, .. } => self.order_columns(index, &entry, order),
+            DatabaseOp::AddOptions {
+                column, options, ..
+            } => self.add_options(index, &entry, *column, options),
+            DatabaseOp::ChangeColumnType {
+                column,
+                to,
+                clear_invalid,
+                ..
+            } => self.change_type(index, &entry, *column, *to, *clear_invalid),
             DatabaseOp::InsertRows {
                 rows,
                 create_missing_options,
                 ..
             } => {
+                self.written_tables.insert(table);
                 let rows = rows
                     .iter()
                     .enumerate()
                     .map(|(row, cells)| {
                         let cells =
-                            self.cells(entry, index, Some(row), cells, *create_missing_options)?;
+                            self.cells(&entry, index, Some(row), cells, *create_missing_options)?;
                         Ok(cells
                             .into_iter()
                             .filter_map(|(definition, value)| {
@@ -615,7 +912,8 @@ impl Planner<'_> {
                 create_missing_options,
                 ..
             } => {
-                let cells = self.cells(entry, index, None, cells, *create_missing_options)?;
+                self.written_tables.insert(table);
+                let cells = self.cells(&entry, index, None, cells, *create_missing_options)?;
                 Ok(Write::UpdateRows {
                     table_id: table,
                     rows: rows.iter().map(|row| (*row, cells.clone())).collect(),
@@ -625,24 +923,28 @@ impl Planner<'_> {
                 changes: RowChanges::PerRow { rows },
                 create_missing_options,
                 ..
-            } => Ok(Write::UpdateRows {
-                table_id: table,
-                rows: rows
-                    .iter()
-                    .enumerate()
-                    .map(|(row, change)| {
-                        let cells = self.cells(
-                            entry,
-                            index,
-                            Some(row),
-                            &change.cells,
-                            *create_missing_options,
-                        )?;
-                        Ok((change.row, cells))
-                    })
-                    .collect::<Result<_, DatabaseError>>()?,
-            }),
+            } => {
+                self.written_tables.insert(table);
+                Ok(Write::UpdateRows {
+                    table_id: table,
+                    rows: rows
+                        .iter()
+                        .enumerate()
+                        .map(|(row, change)| {
+                            let cells = self.cells(
+                                &entry,
+                                index,
+                                Some(row),
+                                &change.cells,
+                                *create_missing_options,
+                            )?;
+                            Ok((change.row, cells))
+                        })
+                        .collect::<Result<_, DatabaseError>>()?,
+                })
+            }
             DatabaseOp::DeleteRows { rows, .. } => {
+                self.written_tables.insert(table);
                 for (row, id) in rows.iter().enumerate() {
                     if rows[..row].contains(id) {
                         return Err(refuse(
@@ -658,14 +960,6 @@ impl Planner<'_> {
                     rows: rows.clone(),
                 })
             }
-            // A batch of one type change never reaches the planner.
-            DatabaseOp::ChangeColumnType { column, .. } => Err(refuse(
-                index,
-                None,
-                Some(*column),
-                "a column type change is applied on its own; send it as the only op of its \
-                 request",
-            )),
             DatabaseOp::UpdateOption {
                 column,
                 option,
@@ -678,7 +972,7 @@ impl Planner<'_> {
                     row: None,
                     column: *column,
                 };
-                let column = self.option_column(entry, place)?;
+                let column = self.option_column(&entry, place)?;
                 self.known_option(place, column, *option)?;
                 let value = label
                     .as_deref()
@@ -698,10 +992,12 @@ impl Planner<'_> {
                     Some(color) => Some(color.clone()),
                     None => None,
                 };
+                let definition_id = column.definition.definition.id;
+                self.changed_options.insert(definition_id);
                 Ok(Write::UpdateOption {
                     table_id: table,
-                    tables: self.tables_binding(column),
-                    definition_id: column.definition.definition.id,
+                    tables: self.tables_binding(definition_id),
+                    definition_id,
                     option_id: *option,
                     value,
                     color,
@@ -713,12 +1009,13 @@ impl Planner<'_> {
                     row: None,
                     column: *column,
                 };
-                let column = self.option_column(entry, place)?;
+                let column = self.option_column(&entry, place)?;
                 self.known_option(place, column, *option)?;
                 self.labels_of(&column.definition)
                     .retain(|(id, _)| id != option);
                 let definition_id = column.definition.definition.id;
-                let tables = self.tables_binding(column);
+                self.changed_options.insert(definition_id);
+                let tables = self.tables_binding(definition_id);
                 let views = self.views_without_option(&tables, definition_id, *option);
                 Ok(Write::DeleteOption {
                     table_id: table,
@@ -732,8 +1029,25 @@ impl Planner<'_> {
             | DatabaseOp::UpdateView { .. }
             | DatabaseOp::DeleteView { .. }
             | DatabaseOp::ReorderViews { .. }
-            | DatabaseOp::MoveCard { .. } => self.view_write(index, entry, op),
+            | DatabaseOp::MoveCard { .. } => self.view_write(index, &entry, op),
         }
+    }
+
+    /// The table an op names, as the ops so far leave it.
+    fn entry(&self, index: usize, table: TableId) -> Result<Arc<TableEntry>, DatabaseError> {
+        self.entries
+            .iter()
+            .find(|entry| entry.table.id == table)
+            .cloned()
+            .ok_or_else(|| refuse(index, None, None, "table is not in this database"))
+    }
+
+    /// The table an op changes, to change it in place.
+    fn entry_mut(&mut self, table: TableId) -> Option<&mut TableEntry> {
+        self.entries
+            .iter_mut()
+            .find(|entry| entry.table.id == table)
+            .map(Arc::make_mut)
     }
 
     /// The column an option op names, which must hold options the viewer
@@ -763,7 +1077,7 @@ impl Planner<'_> {
     /// Refuse a change to the options of a property shared beyond the
     /// database unless the viewer may edit that property.
     fn may_change_options(&self, place: Place, column: &ColumnEntry) -> Result<(), DatabaseError> {
-        if column.shared_outside(self.database_id)
+        if column.shared_outside(self.database.id)
             && !self.editable.contains(&column.definition.definition.id)
         {
             return Err(place.refuse(
@@ -811,10 +1125,7 @@ impl Planner<'_> {
             .map(|(_, label)| label.clone())
             .collect();
         let value = validate_option_labels(data_type, &[label.to_string()], &others)
-            .map_err(|error| match error {
-                DatabaseError::InvalidSchemaOperation(reason) => place.refuse(reason.to_string()),
-                other => other,
-            })?
+            .map_err(|error| schema_refusal(place, error))?
             .into_iter()
             .next()
             .ok_or_else(|| {
@@ -830,14 +1141,20 @@ impl Planner<'_> {
         Ok(value)
     }
 
-    /// Every table of the database whose columns bind the column's
-    /// definition.
-    fn tables_binding(&self, column: &ColumnEntry) -> Vec<TableId> {
-        let definition = column.definition.definition.id;
+    /// Every table of the database whose columns bind the definition.
+    fn tables_binding(&self, definition: PropertyDefinitionId) -> Vec<TableId> {
         self.entries
             .iter()
             .filter(|entry| entry.column_for(definition).is_some())
             .map(|entry| entry.table.id)
             .collect()
+    }
+}
+
+/// A schema refusal as the refusal of the op at `place`.
+fn schema_refusal(place: Place, error: DatabaseError) -> DatabaseError {
+    match error {
+        DatabaseError::InvalidSchemaOperation(reason) => place.refuse(reason.to_string()),
+        other => other,
     }
 }

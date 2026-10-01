@@ -7221,10 +7221,14 @@ export const importDatabaseTableResponse = zod
   .describe('One table (tab) of a database.');
 
 /**
- * @summary Apply a batch of typed ops: insert, update and delete rows, or change a
-column's type. Row ops are last-write-wins. A refused op, named by its
-index (and row and column where relevant), leaves the whole batch
-unwritten.
+ * @summary Apply a batch of typed ops, the one write surface of a database: add,
+rename, remove and order tables and columns, change a column's type, add
+and change options, insert, update and delete rows, and write views and a
+board's card places. The ops apply in order in one transaction, so a
+later op may name a table, column or option an earlier one created under
+the id its client minted. Ops are last-write-wins unless the batch names
+base versions. A refused op, named by its index (and row and column where
+relevant), leaves the whole batch unwritten.
  */
 export const applyDatabaseOpsParams = zod.object({
   id: zod.uuid().describe('Database id'),
@@ -7236,10 +7240,308 @@ export const applyDatabaseOpsBodyOpsItemLayoutColumnsItemWidthMin = 0;
 
 export const applyDatabaseOpsBody = zod
   .object({
+    baseVersions: zod
+      .record(
+        zod.string(),
+        zod
+          .number()
+          .describe(
+            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+          )
+      )
+      .optional()
+      .describe(
+        "The version each named table must still be at, as the caller read\nit. A table that moved refuses the batch as a conflict, so a schema\nedit made against what the caller saw does not overwrite another's.\nLeft out, ops are last-write-wins."
+      ),
     ops: zod
       .array(
         zod
           .union([
+            zod
+              .object({
+                id: zod
+                  .uuid()
+                  .describe(
+                    "The new table's id, minted by the client; later ops of the\nrequest may name it."
+                  ),
+                kind: zod.enum(['create_table']),
+                name: zod
+                  .string()
+                  .describe(
+                    'Its name, unique within the database ignoring case.'
+                  ),
+              })
+              .describe(
+                "Add a table, after the database's other tables. It starts with no\ncolumns and no rows."
+              ),
+            zod
+              .object({
+                kind: zod.enum(['rename_table']),
+                name: zod
+                  .string()
+                  .describe(
+                    'Its new name, unique within the database ignoring case.'
+                  ),
+                previousName: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    'The name the caller saw. Given, the rename is refused if the\ntable goes by another one now, so a concurrent rename is not\noverwritten.'
+                  ),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe('Rename a table. Its id, columns and rows stay.'),
+            zod
+              .object({
+                kind: zod.enum(['delete_table']),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                "Remove a table with its columns, rows and views. A database keeps at\nleast one table, and a table another table's relation points at\nstays until that relation goes."
+              ),
+            zod
+              .object({
+                kind: zod.enum(['reorder_tables']),
+                order: zod
+                  .array(zod.uuid())
+                  .describe('Every table, in its new order.'),
+              })
+              .describe(
+                "Set the order of the database's tables: `order` names every one of\nthem once."
+              ),
+            zod
+              .object({
+                after: zod
+                  .uuid()
+                  .optional()
+                  .describe(
+                    "The column it goes right after; left out, it goes after the\ntable's last column."
+                  ),
+                definition: zod
+                  .union([
+                    zod
+                      .object({
+                        inferType: zod
+                          .boolean()
+                          .optional()
+                          .describe(
+                            "Let the column's first value settle its type: only for a plain\ntext column."
+                          ),
+                        name: zod
+                          .string()
+                          .describe(
+                            "The column's name, unique within the table ignoring case."
+                          ),
+                        options: zod
+                          .array(
+                            zod
+                              .object({
+                                id: zod
+                                  .uuid()
+                                  .describe(
+                                    'Its id, minted by the client; later ops of the request may name it.'
+                                  ),
+                                label: zod
+                                  .string()
+                                  .describe(
+                                    "Its label, unique within the column ignoring case. A numeric\nselect's labels are numbers."
+                                  ),
+                              })
+                              .describe('A select or tag option to create.')
+                          )
+                          .optional()
+                          .describe(
+                            'For a select or tag column, the options it starts with, in\norder, each under an id the client mints. A select column with\nnone accepts nothing until options are added.'
+                          ),
+                        source: zod.enum(['new']),
+                        type: zod
+                          .union([
+                            zod
+                              .object({
+                                type: zod.enum(['text']),
+                              })
+                              .describe('Free text.'),
+                            zod
+                              .object({
+                                type: zod.enum(['number']),
+                              })
+                              .describe('A number.'),
+                            zod
+                              .object({
+                                type: zod.enum(['boolean']),
+                              })
+                              .describe('A checkbox.'),
+                            zod
+                              .object({
+                                type: zod.enum(['date']),
+                              })
+                              .describe('A date-time.'),
+                            zod
+                              .object({
+                                type: zod.enum(['link']),
+                              })
+                              .describe('A URL.'),
+                            zod
+                              .object({
+                                multi: zod
+                                  .boolean()
+                                  .describe(
+                                    'Whether a cell holds several options.'
+                                  ),
+                                type: zod.enum(['select']),
+                              })
+                              .describe('Text options.'),
+                            zod
+                              .object({
+                                multi: zod
+                                  .boolean()
+                                  .describe(
+                                    'Whether a cell holds several options.'
+                                  ),
+                                type: zod.enum(['select_number']),
+                              })
+                              .describe('Numeric options.'),
+                            zod
+                              .object({
+                                type: zod.enum(['tag']),
+                              })
+                              .describe(
+                                'Colored labels; always several per cell.'
+                              ),
+                            zod
+                              .object({
+                                multi: zod
+                                  .boolean()
+                                  .describe(
+                                    'Whether a cell holds several references.'
+                                  ),
+                                target: zod
+                                  .enum([
+                                    'USER',
+                                    'DOCUMENT',
+                                    'TASK',
+                                    'COMPANY',
+                                    'CALL_RECORD',
+                                    'CHANNEL',
+                                    'CHAT',
+                                    'PROJECT',
+                                    'THREAD',
+                                    'CALENDAR_EVENT',
+                                    'INITIATIVE',
+                                  ])
+                                  .describe(
+                                    'A kind of Macro entity a reference column can point at.'
+                                  ),
+                                type: zod.enum(['entity']),
+                              })
+                              .describe('References to Macro entities.'),
+                            zod
+                              .object({
+                                database: zod
+                                  .uuid()
+                                  .describe(
+                                    'The database of the related table.'
+                                  ),
+                                table: zod
+                                  .uuid()
+                                  .describe('The related table.'),
+                                type: zod.enum(['relation']),
+                              })
+                              .describe('Rows of another table.'),
+                          ])
+                          .describe('A type a column can have.'),
+                      })
+                      .describe('A new property the database owns.'),
+                    zod
+                      .object({
+                        property: zod
+                          .uuid()
+                          .describe("The property's definition."),
+                        source: zod.enum(['existing']),
+                      })
+                      .describe(
+                        "An existing property, a person's, a team's or a system one, bound\ninto the table under its own name."
+                      ),
+                  ])
+                  .describe('What a new column holds.'),
+                id: zod
+                  .uuid()
+                  .describe(
+                    "The new column's id, minted by the client; later ops of the\nrequest may name it."
+                  ),
+                kind: zod.enum(['create_column']),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Add a column to a table: a new property the database owns, or an\nexisting one bound into the table.'
+              ),
+            zod
+              .object({
+                column: zod.uuid().describe('The column.'),
+                kind: zod.enum(['rename_column']),
+                name: zod
+                  .string()
+                  .describe(
+                    'Its new name, unique within the table ignoring case.'
+                  ),
+                previousName: zod
+                  .string()
+                  .optional()
+                  .describe(
+                    'The name the caller saw. Given, the rename is refused if the\ncolumn goes by another one now.'
+                  ),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Rename a column. Its id, type and cells stay; SQL names it by its new\nname.'
+              ),
+            zod
+              .object({
+                column: zod.uuid().describe('The column.'),
+                kind: zod.enum(['delete_column']),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Remove a column and its cells. The views naming it forget it; a\nboard grouped by it must go or regroup first. A property shared\nbeyond the database stays, unbound here.'
+              ),
+            zod
+              .object({
+                kind: zod.enum(['reorder_columns']),
+                order: zod
+                  .array(zod.uuid())
+                  .describe('Its columns, in their new order.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                "Set the order of a table's columns: `order` names every one of them\nonce."
+              ),
+            zod
+              .object({
+                column: zod.uuid().describe('The select or tag column.'),
+                kind: zod.enum(['add_options']),
+                options: zod
+                  .array(
+                    zod
+                      .object({
+                        id: zod
+                          .uuid()
+                          .describe(
+                            'Its id, minted by the client; later ops of the request may name it.'
+                          ),
+                        label: zod
+                          .string()
+                          .describe(
+                            "Its label, unique within the column ignoring case. A numeric\nselect's labels are numbers."
+                          ),
+                      })
+                      .describe('A select or tag option to create.')
+                  )
+                  .describe('The options, each under an id the client mints.'),
+                table: zod.uuid().describe('The table.'),
+              })
+              .describe(
+                'Add options to a select or tag column, after its others. An option\nwhose label the column already has, ignoring case, is left out, so\nre-sending a list adds only what is new. Like\n[`DatabaseOp::UpdateOption`], an option of a property shared beyond\nthe database goes everywhere it is used.'
+              ),
             zod
               .object({
                 createMissingOptions: zod
@@ -8569,14 +8871,16 @@ export const applyDatabaseOpsBody = zod
               ),
           ])
           .describe(
-            "One write to a database's data. A request's ops apply together or not at\nall, and every op names a table of the database the request is for."
+            "One write to a database: its tables, columns, options, rows or views. A\nrequest's ops apply in order and together, or not at all, and every op\nnames a table of the database the request is for (or, creating one, adds\nit there)."
           )
       )
       .describe(
-        'The ops, in the order they apply. Every one names a table of this\ndatabase; a column type change is sent on its own.'
+        'The ops, in the order they apply. Every one names a table of this\ndatabase, or one an earlier op of the batch creates: tables, columns\nand options carry ids the client mints (UUIDv7), so a later op can\nname them. An id that already names something refuses the batch.'
       ),
   })
-  .describe('A batch of ops for one database, applied together or not at all.');
+  .describe(
+    'A batch of ops for one database, applied in order, in one transaction,\ntogether or not at all.'
+  );
 
 export const applyDatabaseOpsResponseResultsItemAffectedMin = 0;
 
@@ -8592,6 +8896,110 @@ export const applyDatabaseOpsResponse = zod
       .array(
         zod
           .union([
+            zod
+              .object({
+                kind: zod.enum(['table_created']),
+                table: zod.uuid().describe('The new table.'),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('The table a creation added.'),
+            zod
+              .object({
+                kind: zod.enum(['table_renamed']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("A table's rename."),
+            zod
+              .object({
+                kind: zod.enum(['table_deleted']),
+                table: zod.uuid().describe('The table removed.'),
+              })
+              .describe("A table's removal."),
+            zod
+              .object({
+                kind: zod.enum(['tables_reordered']),
+                tables: zod
+                  .array(
+                    zod
+                      .object({
+                        table: zod.uuid().describe('The table.'),
+                        version: zod
+                          .number()
+                          .describe(
+                            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                          ),
+                      })
+                      .describe('A table and its version.')
+                  )
+                  .describe(
+                    'Every table, in its new order, with its version once the request\ncommitted.'
+                  ),
+              })
+              .describe("The database's tables in their new order."),
+            zod
+              .object({
+                column: zod.uuid().describe('The new column.'),
+                kind: zod.enum(['column_created']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('The column a creation added.'),
+            zod
+              .object({
+                kind: zod.enum(['column_renamed']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("A column's rename."),
+            zod
+              .object({
+                kind: zod.enum(['column_deleted']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("A column's removal."),
+            zod
+              .object({
+                kind: zod.enum(['columns_reordered']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe("A table's columns in their new order."),
+            zod
+              .object({
+                added: zod
+                  .array(zod.uuid())
+                  .describe(
+                    'The options created, in order: those sent, less any whose label\nthe column already had.'
+                  ),
+                kind: zod.enum(['options_added']),
+                tableVersion: zod
+                  .number()
+                  .describe(
+                    "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                  ),
+              })
+              .describe('The options an addition created.'),
             zod
               .object({
                 affected: zod
@@ -9186,306 +9594,6 @@ export const updateDatabasePermissionsResponse = zod.object({
 });
 
 /**
- * @summary Create a table in a database.
- */
-export const createDatabaseTableParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-});
-
-export const createDatabaseTableBody = zod
-  .object({
-    name: zod.string().describe('Display name.'),
-  })
-  .describe('Request body for creating a table.');
-
-/**
- * @summary Set the order of a database's tables (its tabs).
- */
-export const reorderDatabaseTablesParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-});
-
-export const reorderDatabaseTablesBody = zod
-  .object({
-    tableIds: zod
-      .array(zod.uuid())
-      .describe(
-        'Every table of the database, exactly once, in the new left-to-right order.'
-      ),
-  })
-  .describe('A complete tab order, identified by stable table IDs.');
-
-export const reorderDatabaseTablesResponseItem = zod
-  .object({
-    database_id: zod.uuid().describe('Owning database.'),
-    id: zod.uuid().describe('Identifier.'),
-    name: zod
-      .string()
-      .describe("Display name; also the basis of the table's SQL name."),
-    position: zod.string().describe('Fractional index for tab ordering.'),
-    version: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-  })
-  .describe('One table (tab) of a database.');
-export const reorderDatabaseTablesResponse = zod.array(
-  reorderDatabaseTablesResponseItem
-);
-
-/**
- * @summary Delete a table with its rows and columns. A database keeps at least one.
- */
-export const deleteDatabaseTableParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-  table_id: zod.uuid().describe('Table id'),
-});
-
-/**
- * @summary Rename a table in a database.
- */
-export const renameDatabaseTableParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-  table_id: zod.uuid().describe('Table id'),
-});
-
-export const renameDatabaseTableBody = zod
-  .object({
-    name: zod.string().describe('New display name.'),
-    previousName: zod
-      .string()
-      .describe('Name shown when the rename editor opened.'),
-  })
-  .describe(
-    'Request body for renaming a table without overwriting a concurrent rename.'
-  );
-
-export const renameDatabaseTableResponse = zod
-  .object({
-    database_id: zod.uuid().describe('Owning database.'),
-    id: zod.uuid().describe('Identifier.'),
-    name: zod
-      .string()
-      .describe("Display name; also the basis of the table's SQL name."),
-    position: zod.string().describe('Fractional index for tab ordering.'),
-    version: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-  })
-  .describe('One table (tab) of a database.');
-
-/**
- * @summary Add a column to a table.
- */
-export const createDatabaseColumnParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-  table_id: zod.uuid().describe('Table id'),
-});
-
-export const createDatabaseColumnBody = zod
-  .object({
-    binding: zod
-      .union([
-        zod
-          .object({
-            dataType: zod
-              .enum([
-                'BOOLEAN',
-                'DATE',
-                'NUMBER',
-                'STRING',
-                'SELECT_NUMBER',
-                'SELECT_STRING',
-                'TAG',
-                'ENTITY',
-                'LINK',
-              ])
-              .describe(
-                'Data type for property values, determining storage and validation.'
-              ),
-            isMultiSelect: zod
-              .boolean()
-              .optional()
-              .describe('Whether the column holds multiple values.'),
-            kind: zod.enum(['new']),
-            name: zod.string().describe('Column display name.'),
-            options: zod
-              .array(zod.string())
-              .optional()
-              .describe(
-                'For a select or tag column, the labels SQL will accept. A select\ncolumn created without any accepts nothing until options are added.'
-              ),
-          })
-          .describe('Create a fresh definition scoped to the database.'),
-        zod
-          .object({
-            kind: zod.enum(['existing']),
-            propertyDefinitionId: zod
-              .uuid()
-              .describe('The definition to bind.'),
-          })
-          .describe('Bind an existing user\/team\/system definition.'),
-      ])
-      .describe('How a new column obtains its definition.'),
-    inferType: zod
-      .boolean()
-      .optional()
-      .describe('Infer the first value type of a newly owned text column.'),
-    linkToDatabaseId: zod
-      .uuid()
-      .optional()
-      .describe('Database of the linked table (defaults to this database).'),
-    linkToTableId: zod
-      .uuid()
-      .optional()
-      .describe('Link this column to another table (many-to-many).'),
-  })
-  .describe('Request body for creating a column.');
-
-/**
- * @summary Persist the order of every column in a table.
- */
-export const reorderDatabaseColumnsParams = zod.object({
-  id: zod.uuid(),
-  table_id: zod.uuid(),
-});
-
-export const reorderDatabaseColumnsBody = zod
-  .object({
-    baseVersion: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-    columnIds: zod.array(zod.uuid()).describe('Every column, exactly once.'),
-  })
-  .describe('A complete placement order, identified by stable column IDs.');
-
-export const reorderDatabaseColumnsResponse = zod
-  .object({
-    table_versions: zod
-      .record(
-        zod.string(),
-        zod
-          .number()
-          .describe(
-            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-          )
-      )
-      .describe('Includes the related table when a relation column goes.'),
-  })
-  .describe('Table versions changed by a placement deletion or reorder.');
-
-/**
- * @summary Delete one placement and its cells, preserving shared definitions.
- */
-export const deleteDatabaseColumnParams = zod.object({
-  id: zod.uuid(),
-  table_id: zod.uuid(),
-  column_id: zod.uuid(),
-});
-
-export const deleteDatabaseColumnBody = zod
-  .object({
-    baseVersion: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-  })
-  .describe('Guard a column deletion against concurrent writes.');
-
-export const deleteDatabaseColumnResponse = zod
-  .object({
-    table_versions: zod
-      .record(
-        zod.string(),
-        zod
-          .number()
-          .describe(
-            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-          )
-      )
-      .describe('Includes the related table when a relation column goes.'),
-  })
-  .describe('Table versions changed by a placement deletion or reorder.');
-
-/**
- * @summary Rename a column's label in this table.
- */
-export const renameDatabaseColumnParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-  table_id: zod.uuid().describe('Table id'),
-  column_id: zod.uuid().describe('Column id'),
-});
-
-export const renameDatabaseColumnBody = zod
-  .object({
-    name: zod.string().describe('New display name.'),
-    previousName: zod
-      .string()
-      .describe('Label shown when the rename editor opened.'),
-  })
-  .describe(
-    "Rename one column placement without changing its property's SQL identifier."
-  );
-
-export const renameDatabaseColumnResponse = zod
-  .object({
-    column: zod
-      .object({
-        config: zod.union([
-          zod.null(),
-          zod
-            .object({
-              database_id: zod.uuid().describe('Target database.'),
-              kind: zod.enum(['link']),
-              table_id: zod.uuid().describe('Target table.'),
-            })
-            .describe(
-              'A relation column: its cells reference rows of another table.'
-            )
-            .describe(
-              'Column-kind specific configuration stored on the placement.'
-            ),
-        ]),
-        display_name: zod
-          .string()
-          .nullable()
-          .describe(
-            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
-          ),
-        id: zod.uuid().describe('Identifier of the placement.'),
-        infer_type: zod
-          .boolean()
-          .describe(
-            "Whether the first nonempty value may settle this new text column's type."
-          ),
-        position: zod
-          .string()
-          .describe('Fractional index for column ordering.'),
-        property_definition_id: zod
-          .uuid()
-          .describe('The bound property definition.'),
-        table_id: zod.uuid().describe('Table the column appears on.'),
-      })
-      .describe(
-        'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
-      ),
-    table_version: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-  })
-  .describe(
-    "A renamed placement and its table's version after the atomic update."
-  );
-
-/**
  * @summary What changing one column to each type of the type menu would do to its
 values: safe, checked (with how many values would not convert and a few
 of them), or never (with why). Changes nothing.
@@ -9827,320 +9935,6 @@ export const inferDatabaseColumnTypeResponse = zod
   .describe(
     'Settled schema and the version against which its first value can be written.'
   );
-
-/**
- * @summary Add options to a select column.
- */
-export const addDatabaseColumnOptionsParams = zod.object({
-  id: zod.uuid().describe('Database id'),
-  table_id: zod.uuid().describe('Table id'),
-  column_id: zod.uuid().describe('Column id'),
-});
-
-export const addDatabaseColumnOptionsBody = zod
-  .object({
-    labels: zod
-      .array(zod.string())
-      .describe(
-        'Display labels to add. Labels the column already has are ignored.'
-      ),
-  })
-  .describe('Request body for adding options to a select column.');
-
-export const addDatabaseColumnOptionsResponse = zod
-  .object({
-    column: zod
-      .object({
-        config: zod.union([
-          zod.null(),
-          zod
-            .object({
-              database_id: zod.uuid().describe('Target database.'),
-              kind: zod.enum(['link']),
-              table_id: zod.uuid().describe('Target table.'),
-            })
-            .describe(
-              'A relation column: its cells reference rows of another table.'
-            )
-            .describe(
-              'Column-kind specific configuration stored on the placement.'
-            ),
-        ]),
-        display_name: zod
-          .string()
-          .nullable()
-          .describe(
-            "The placement's own label, which also names it in SQL; `None` shows\nthe definition's name."
-          ),
-        id: zod.uuid().describe('Identifier of the placement.'),
-        infer_type: zod
-          .boolean()
-          .describe(
-            "Whether the first nonempty value may settle this new text column's type."
-          ),
-        position: zod
-          .string()
-          .describe('Fractional index for column ordering.'),
-        property_definition_id: zod
-          .uuid()
-          .describe('The bound property definition.'),
-        table_id: zod.uuid().describe('Table the column appears on.'),
-      })
-      .describe(
-        'A column: the placement of a property definition on a table.\n\nThe definition carries name, [`DataType`], multi-select flag, and options;\nthis carries only where it appears and column-kind configuration.'
-      ),
-    definition: zod
-      .object({
-        definition: zod
-          .object({
-            created_at: zod.iso.datetime({}),
-            data_type: zod
-              .enum([
-                'BOOLEAN',
-                'DATE',
-                'NUMBER',
-                'STRING',
-                'SELECT_NUMBER',
-                'SELECT_STRING',
-                'TAG',
-                'ENTITY',
-                'LINK',
-              ])
-              .describe(
-                'Data type for property values, determining storage and validation.'
-              ),
-            display_name: zod.string(),
-            id: zod.uuid(),
-            is_metadata: zod
-              .boolean()
-              .describe(
-                'Flag to indicate if this is a system-generated metadata property.\nNot stored in database - computed at service layer.'
-              ),
-            is_multi_select: zod.boolean(),
-            is_system: zod
-              .boolean()
-              .describe(
-                'Flag to indicate if this is a system property (stored in DB).'
-              ),
-            owner: zod
-              .union([
-                zod
-                  .object({
-                    scope: zod.enum(['user']),
-                    user_id: zod.string(),
-                  })
-                  .describe('User-scoped property.'),
-                zod
-                  .object({
-                    scope: zod.enum(['team']),
-                    team_id: zod.uuid(),
-                  })
-                  .describe('Team-scoped property.'),
-                zod
-                  .object({
-                    database_id: zod.uuid(),
-                    scope: zod.enum(['database']),
-                  })
-                  .describe(
-                    'Database-scoped property: the definition is a column of one Macro\ndatabase and is invisible to the shared user\/team property namespace.'
-                  ),
-                zod
-                  .object({
-                    scope: zod.enum(['system']),
-                  })
-                  .describe(
-                    'System-owned property (no user, team, or database owner).'
-                  ),
-              ])
-              .describe(
-                'Defines who owns a property - user-scoped, team-scoped, database-scoped, or system.'
-              ),
-            specific_entity_type: zod.union([
-              zod.null(),
-              zod
-                .enum([
-                  'CALENDAR_EVENT',
-                  'CALL_RECORD',
-                  'CHANNEL',
-                  'CHAT',
-                  'COMPANY',
-                  'DATABASE_ROW',
-                  'DOCUMENT',
-                  'INITIATIVE',
-                  'PROJECT',
-                  'TASK',
-                  'THREAD',
-                  'USER',
-                ])
-                .describe(
-                  'Type of entity that can be referenced by entity properties.'
-                ),
-            ]),
-            updated_at: zod.iso.datetime({}),
-          })
-          .describe('Property definition model (service representation).'),
-        property_options: zod.array(
-          zod
-            .object({
-              color: zod.string().nullable(),
-              created_at: zod.iso.datetime({}),
-              display_order: zod.number(),
-              id: zod.uuid(),
-              property_definition_id: zod.uuid(),
-              updated_at: zod.iso.datetime({}),
-              value: zod
-                .union([
-                  zod
-                    .object({
-                      type: zod.enum(['string']),
-                      value: zod
-                        .string()
-                        .describe('String value for SelectString properties'),
-                    })
-                    .describe('String value for SelectString properties'),
-                  zod
-                    .object({
-                      type: zod.enum(['number']),
-                      value: zod
-                        .number()
-                        .describe('Number value for SelectNumber properties'),
-                    })
-                    .describe('Number value for SelectNumber properties'),
-                ])
-                .describe(
-                  'The value of a property option - either a string or a number.'
-                ),
-            })
-            .describe(
-              'A selectable option for select-type properties (service representation).'
-            )
-        ),
-      })
-      .describe(
-        'Property definition with its associated options (service representation).'
-      ),
-    shared_outside_database: zod
-      .boolean()
-      .describe(
-        "Whether the definition belongs to something beyond this database (a\nperson's, a team's or a system property), so changing its options\nchanges them everywhere that property is used."
-      ),
-    sql_name: zod
-      .string()
-      .describe(
-        'The name SQL refers to the column by: its display name, quoted.'
-      ),
-    writable: zod.boolean().describe('Whether SQL may write this column.'),
-  })
-  .describe('One column placement with the definition behind it.');
-
-/**
- * @summary Change one column's type. A value that does not fit refuses the whole
-change, naming how many and quoting a few, unless `clearInvalid` is set.
- */
-export const changeDatabaseColumnTypeParams = zod.object({
-  id: zod.uuid(),
-  table_id: zod.uuid(),
-  column_id: zod.uuid(),
-});
-
-export const changeDatabaseColumnTypeBody = zod
-  .object({
-    baseVersion: zod
-      .number()
-      .describe(
-        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-      ),
-    clearInvalid: zod
-      .boolean()
-      .optional()
-      .describe(
-        'Empty the values that do not fit the new type instead of refusing the\nchange; a cell with several values keeps its first.'
-      ),
-    dataType: zod
-      .enum([
-        'BOOLEAN',
-        'DATE',
-        'NUMBER',
-        'STRING',
-        'SELECT_NUMBER',
-        'SELECT_STRING',
-        'TAG',
-        'ENTITY',
-        'LINK',
-      ])
-      .describe(
-        'Data type for property values, determining storage and validation.'
-      ),
-    isMultiSelect: zod
-      .boolean()
-      .optional()
-      .describe(
-        'Whether select, link or entity values may hold multiple items.'
-      ),
-    linkToDatabaseId: zod
-      .uuid()
-      .nullish()
-      .describe('Related database; defaults to the current database.'),
-    linkToTableId: zod
-      .uuid()
-      .nullish()
-      .describe('Related table, when choosing a database-row relationship.'),
-    specificEntityType: zod
-      .union([
-        zod.null(),
-        zod
-          .enum([
-            'CALENDAR_EVENT',
-            'CALL_RECORD',
-            'CHANNEL',
-            'CHAT',
-            'COMPANY',
-            'DATABASE_ROW',
-            'DOCUMENT',
-            'INITIATIVE',
-            'PROJECT',
-            'TASK',
-            'THREAD',
-            'USER',
-          ])
-          .describe(
-            'Type of entity that can be referenced by entity properties.'
-          ),
-      ])
-      .optional(),
-  })
-  .describe(
-    'Explicit column type configuration. Existing values must convert without\nloss, unless `clearInvalid` empties the ones that do not.'
-  );
-
-export const changeDatabaseColumnTypeResponseClearedCellsMin = 0;
-
-export const changeDatabaseColumnTypeResponseTrimmedCellsMin = 0;
-
-export const changeDatabaseColumnTypeResponse = zod
-  .object({
-    cleared_cells: zod
-      .number()
-      .min(changeDatabaseColumnTypeResponseClearedCellsMin)
-      .describe('Cells emptied because their value did not fit the new type.'),
-    table_versions: zod
-      .record(
-        zod.string(),
-        zod
-          .number()
-          .describe(
-            "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
-          )
-      )
-      .describe(
-        "The table's version after the change; unchanged when the column\nalready had the type."
-      ),
-    trimmed_cells: zod
-      .number()
-      .min(changeDatabaseColumnTypeResponseTrimmedCellsMin)
-      .describe('Cells that held several values and kept only their first.'),
-  })
-  .describe('What a column type change did.');
 
 /**
  * @summary Where a board's cards sit, for drawing it: the views come with the

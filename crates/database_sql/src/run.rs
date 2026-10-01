@@ -248,6 +248,33 @@ pub enum SentOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type, strum::Display)]
 #[serde(rename_all = "camelCase")]
 pub enum OpResultKind {
+    /// [`OpResult::TableCreated`].
+    #[strum(serialize = "a table created")]
+    TableCreated,
+    /// [`OpResult::TableRenamed`].
+    #[strum(serialize = "a table renamed")]
+    TableRenamed,
+    /// [`OpResult::TableDeleted`].
+    #[strum(serialize = "a table deleted")]
+    TableDeleted,
+    /// [`OpResult::TablesReordered`].
+    #[strum(serialize = "tables reordered")]
+    TablesReordered,
+    /// [`OpResult::ColumnCreated`].
+    #[strum(serialize = "a column created")]
+    ColumnCreated,
+    /// [`OpResult::ColumnRenamed`].
+    #[strum(serialize = "a column renamed")]
+    ColumnRenamed,
+    /// [`OpResult::ColumnDeleted`].
+    #[strum(serialize = "a column deleted")]
+    ColumnDeleted,
+    /// [`OpResult::ColumnsReordered`].
+    #[strum(serialize = "columns reordered")]
+    ColumnsReordered,
+    /// [`OpResult::OptionsAdded`].
+    #[strum(serialize = "options added")]
+    OptionsAdded,
     /// [`OpResult::RowsWritten`].
     #[strum(serialize = "rows written")]
     RowsWritten,
@@ -274,6 +301,15 @@ pub enum OpResultKind {
 impl From<&OpResult> for OpResultKind {
     fn from(result: &OpResult) -> Self {
         match result {
+            OpResult::TableCreated { .. } => OpResultKind::TableCreated,
+            OpResult::TableRenamed { .. } => OpResultKind::TableRenamed,
+            OpResult::TableDeleted { .. } => OpResultKind::TableDeleted,
+            OpResult::TablesReordered { .. } => OpResultKind::TablesReordered,
+            OpResult::ColumnCreated { .. } => OpResultKind::ColumnCreated,
+            OpResult::ColumnRenamed { .. } => OpResultKind::ColumnRenamed,
+            OpResult::ColumnDeleted { .. } => OpResultKind::ColumnDeleted,
+            OpResult::ColumnsReordered { .. } => OpResultKind::ColumnsReordered,
+            OpResult::OptionsAdded { .. } => OpResultKind::OptionsAdded,
             OpResult::RowsWritten { .. } => OpResultKind::RowsWritten,
             OpResult::ColumnTyped { .. } => OpResultKind::ColumnTyped,
             OpResult::OptionChanged { .. } => OpResultKind::OptionChanged,

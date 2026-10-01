@@ -12,26 +12,31 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
         seeded.plus_ones_column,
     );
     let old = plus_ones.property_definition_id;
-    let outcome = svc
-        .change_column_type(
-            receipt(db, OWNER, AccessLevel::Edit),
+    let seeded_version = table_version(&world, table_id);
+    let results = svc
+        .apply_ops(
+            edit(db),
             viewer(OWNER),
-            ChangeColumnType {
-                table_id,
-                column_id: plus_ones.id,
-                data_type: DataType::String,
-                is_multi_select: false,
-                specific_entity_type: None,
-                relation: None,
-                base_version: TableVersion(1),
-                clear_invalid: false,
+            OpBatch {
+                ops: vec![DatabaseOp::ChangeColumnType {
+                    table: table_id,
+                    column: plus_ones.id,
+                    to: ColumnKind::Text,
+                    clear_invalid: false,
+                }],
+                base_versions: HashMap::from([(table_id, seeded_version)]),
             },
         )
         .await
         .unwrap();
+    let as_text_version = TableVersion(seeded_version.0 + 1);
     assert_eq!(
-        outcome.table_versions,
-        HashMap::from([(table_id, TableVersion(2))])
+        results,
+        vec![OpResult::ColumnTyped {
+            table_version: as_text_version,
+            cleared_cells: 0,
+            trimmed_cells: 0,
+        }]
     );
     let as_text = {
         let w = world.lock().unwrap();
@@ -55,26 +60,24 @@ async fn number_text_conversion_writes_converted_cells_through_the_cell_store() 
             w.cells[&row_id][&column.property_definition_id],
             PropertyValue::Str("2".into())
         );
-        assert_eq!(
-            w.cells[&row_id][&old],
-            PropertyValue::Num(2.0),
-            "the old definition's cell is left behind; no column reads it"
+        assert!(
+            !w.cells[&row_id].contains_key(&old),
+            "rebinding the column clears the old definition's cells"
         );
-        assert_eq!(w.published.last(), Some(&(table_id, TableVersion(2))));
+        assert_eq!(w.published.last(), Some(&(table_id, as_text_version)));
         column.property_definition_id
     };
-    svc.change_column_type(
-        receipt(db, OWNER, AccessLevel::Edit),
+    svc.apply_ops(
+        edit(db),
         viewer(OWNER),
-        ChangeColumnType {
-            table_id,
-            column_id: plus_ones.id,
-            data_type: DataType::Number,
-            is_multi_select: false,
-            specific_entity_type: None,
-            relation: None,
-            base_version: TableVersion(2),
-            clear_invalid: false,
+        OpBatch {
+            ops: vec![DatabaseOp::ChangeColumnType {
+                table: table_id,
+                column: plus_ones.id,
+                to: ColumnKind::Number,
+                clear_invalid: false,
+            }],
+            base_versions: HashMap::from([(table_id, as_text_version)]),
         },
     )
     .await
@@ -102,6 +105,7 @@ async fn invalid_or_lossy_conversions_do_not_modify_the_column() {
             seeded.name_column,
         );
         let old = name.property_definition_id;
+        let before = table_version(&world, table_id);
         world
             .lock()
             .unwrap()
@@ -110,28 +114,24 @@ async fn invalid_or_lossy_conversions_do_not_modify_the_column() {
             .unwrap()
             .insert(old, PropertyValue::Str(value.into()));
         let result = svc
-            .change_column_type(
-                receipt(db, OWNER, AccessLevel::Edit),
+            .apply_ops(
+                edit(db),
                 viewer(OWNER),
-                ChangeColumnType {
-                    table_id,
-                    column_id: name.id,
-                    data_type: DataType::Number,
-                    is_multi_select: false,
-                    specific_entity_type: None,
-                    relation: None,
-                    base_version: TableVersion(1),
+                OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+                    table: table_id,
+                    column: name.id,
+                    to: ColumnKind::Number,
                     clear_invalid: false,
-                },
+                }]),
             )
             .await;
         assert!(
-            matches!(result, Err(DatabaseError::InvalidSchemaOperation(_))),
+            matches!(result, Err(DatabaseError::InvalidOp(_))),
             "{value}: {result:?}"
         );
         let w = world.lock().unwrap();
         assert_eq!(w.definitions.len(), 3);
-        assert_eq!(w.tables[0].version, TableVersion(1));
+        assert_eq!(w.tables[0].version, before);
         assert_eq!(
             w.columns
                 .iter()
@@ -155,19 +155,15 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
         seeded.row_id,
         seeded.status_column,
     );
-    svc.change_column_type(
-        receipt(db, OWNER, AccessLevel::Edit),
+    svc.apply_ops(
+        edit(db),
         viewer(OWNER),
-        ChangeColumnType {
-            table_id,
-            column_id: status.id,
-            data_type: DataType::SelectString,
-            is_multi_select: true,
-            specific_entity_type: None,
-            relation: None,
-            base_version: TableVersion(1),
+        OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+            table: table_id,
+            column: status.id,
+            to: ColumnKind::Select { multi: true },
             clear_invalid: false,
-        },
+        }]),
     )
     .await
     .unwrap();
@@ -189,19 +185,15 @@ async fn selecting_text_preserves_option_labels_and_select_preserves_unused_opti
             PropertyValue::SelectOption(vec![going])
         );
     }
-    svc.change_column_type(
-        receipt(db, OWNER, AccessLevel::Edit),
+    svc.apply_ops(
+        edit(db),
         viewer(OWNER),
-        ChangeColumnType {
-            table_id,
-            column_id: status.id,
-            data_type: DataType::String,
-            is_multi_select: false,
-            specific_entity_type: None,
-            relation: None,
-            base_version: TableVersion(2),
+        OpBatch::from(vec![DatabaseOp::ChangeColumnType {
+            table: table_id,
+            column: status.id,
+            to: ColumnKind::Text,
             clear_invalid: false,
-        },
+        }]),
     )
     .await
     .unwrap();
@@ -227,35 +219,55 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
         seeded.status_column.id,
         seeded.plus_ones_column.id,
     ];
+    let seeded_version = table_version(&world, table_id);
     for invalid in [
         vec![],
         vec![ids[0]; 3],
         vec![ColumnId::new(); 3],
         vec![ids[0], ids[1]],
     ] {
-        assert!(matches!(
-            svc.reorder_columns(
-                receipt(db, OWNER, AccessLevel::Edit),
-                table_id,
-                invalid,
-                TableVersion(1)
+        let error = svc
+            .apply_ops(
+                edit(db),
+                viewer(OWNER),
+                OpBatch {
+                    ops: vec![DatabaseOp::ReorderColumns {
+                        table: table_id,
+                        order: invalid,
+                    }],
+                    base_versions: HashMap::from([(table_id, seeded_version)]),
+                },
             )
-            .await,
-            Err(DatabaseError::InvalidSchemaOperation(_))
-        ));
+            .await
+            .unwrap_err();
+        let DatabaseError::InvalidOp(refusal) = error else {
+            panic!("expected a refused op, got {error:?}");
+        };
+        assert_eq!(
+            refusal.reason,
+            SchemaError::IncompleteColumnOrder.to_string()
+        );
     }
     let reordered = svc
-        .reorder_columns(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            vec![ids[2], ids[1], ids[0]],
-            TableVersion(1),
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch {
+                ops: vec![DatabaseOp::ReorderColumns {
+                    table: table_id,
+                    order: vec![ids[2], ids[1], ids[0]],
+                }],
+                base_versions: HashMap::from([(table_id, seeded_version)]),
+            },
         )
         .await
         .unwrap();
+    let reordered_version = TableVersion(seeded_version.0 + 1);
     assert_eq!(
-        reordered.table_versions,
-        HashMap::from([(table_id, TableVersion(2))])
+        reordered,
+        vec![OpResult::ColumnsReordered {
+            table_version: reordered_version,
+        }]
     );
     let detail = svc
         .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
@@ -271,23 +283,31 @@ async fn reorder_validates_complete_ids_and_delete_preserves_definitions() {
     );
 
     let deleted = svc
-        .delete_column(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            ids[0],
-            TableVersion(2),
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch {
+                ops: vec![DatabaseOp::DeleteColumn {
+                    table: table_id,
+                    column: ids[0],
+                }],
+                base_versions: HashMap::from([(table_id, reordered_version)]),
+            },
         )
         .await
         .unwrap();
+    let deleted_version = TableVersion(reordered_version.0 + 1);
     assert_eq!(
-        deleted.table_versions,
-        HashMap::from([(table_id, TableVersion(3))])
+        deleted,
+        vec![OpResult::ColumnDeleted {
+            table_version: deleted_version,
+        }]
     );
     {
         let w = world.lock().unwrap();
         assert!(!w.columns.iter().any(|c| c.id == ids[0]));
         assert_eq!(w.definitions.len(), 3);
-        assert_eq!(w.published.last(), Some(&(table_id, TableVersion(3))));
+        assert_eq!(w.published.last(), Some(&(table_id, deleted_version)));
     }
     let detail = svc
         .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
@@ -317,111 +337,56 @@ async fn schema_mutations_reject_wrong_database_stale_and_trashed_database() {
         seeded.status_column.id,
         seeded.plus_ones_column.id,
     ];
-    let change = |base_version: TableVersion| ChangeColumnType {
-        table_id,
-        column_id: seeded.name_column.id,
-        data_type: DataType::String,
-        is_multi_select: false,
-        specific_entity_type: None,
-        relation: None,
-        base_version,
-        clear_invalid: false,
+    let seeded_version = table_version(&world, table_id);
+    let ops = [
+        DatabaseOp::ChangeColumnType {
+            table: table_id,
+            column: seeded.name_column.id,
+            to: ColumnKind::Text,
+            clear_invalid: false,
+        },
+        DatabaseOp::DeleteColumn {
+            table: table_id,
+            column: seeded.name_column.id,
+        },
+        DatabaseOp::ReorderColumns {
+            table: table_id,
+            order: ids,
+        },
+    ];
+    let at = |op: &DatabaseOp, version: TableVersion| OpBatch {
+        ops: vec![op.clone()],
+        base_versions: HashMap::from([(table_id, version)]),
     };
 
-    let elsewhere = Uuid::new_v4();
-    assert!(matches!(
-        svc.change_column_type(
-            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            change(TableVersion(1))
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
-    assert!(matches!(
-        svc.delete_column(
-            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
-            table_id,
-            seeded.name_column.id,
-            TableVersion(1)
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
-    assert!(matches!(
-        svc.reorder_columns(
-            receipt(DatabaseId::from_uuid(elsewhere), OWNER, AccessLevel::Edit),
-            table_id,
-            ids.clone(),
-            TableVersion(1)
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
+    let elsewhere = DatabaseId::new();
+    for op in &ops {
+        let result = svc
+            .apply_ops(edit(elsewhere), viewer(OWNER), at(op, seeded_version))
+            .await;
+        assert!(matches!(result, Err(DatabaseError::NotFound)), "{result:?}");
+    }
 
-    assert!(matches!(
-        svc.change_column_type(
-            receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            change(TableVersion(0))
-        )
-        .await,
-        Err(DatabaseError::VersionConflict)
-    ));
-    assert!(matches!(
-        svc.delete_column(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            seeded.name_column.id,
-            TableVersion(0)
-        )
-        .await,
-        Err(DatabaseError::VersionConflict)
-    ));
-    assert!(matches!(
-        svc.reorder_columns(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            ids.clone(),
-            TableVersion(0)
-        )
-        .await,
-        Err(DatabaseError::VersionConflict)
-    ));
+    for op in &ops {
+        let result = svc
+            .apply_ops(edit(db), viewer(OWNER), at(op, TableVersion(0)))
+            .await;
+        assert!(
+            matches!(result, Err(DatabaseError::VersionConflict)),
+            "{result:?}"
+        );
+    }
 
     world.lock().unwrap().databases[0].trashed_at = Some(Utc::now());
-    assert!(matches!(
-        svc.change_column_type(
-            receipt(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            change(TableVersion(1))
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
-    assert!(matches!(
-        svc.delete_column(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            seeded.name_column.id,
-            TableVersion(1)
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
-    assert!(matches!(
-        svc.reorder_columns(
-            receipt(db, OWNER, AccessLevel::Edit),
-            table_id,
-            ids,
-            TableVersion(1)
-        )
-        .await,
-        Err(DatabaseError::NotFound)
-    ));
+    for op in &ops {
+        let result = svc
+            .apply_ops(edit(db), viewer(OWNER), at(op, seeded_version))
+            .await;
+        assert!(matches!(result, Err(DatabaseError::NotFound)), "{result:?}");
+    }
 
     let w = world.lock().unwrap();
-    assert_eq!(w.tables[0].version, TableVersion(1));
+    assert_eq!(w.tables[0].version, seeded_version);
     assert_eq!(w.columns.len(), 3);
     assert_eq!(w.definitions.len(), 3);
 }

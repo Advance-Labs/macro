@@ -600,6 +600,7 @@ describe('database rows SQL names', () => {
         op: 0,
         row: null,
         column: null,
+        taken: null,
       },
     };
     transport.get.mockImplementation(() => okAsync(detail()));
@@ -632,6 +633,7 @@ describe('database rows SQL names', () => {
         op: 0,
         row: 0,
         column: 'name',
+        taken: null,
       },
     };
     const refreshed = detail('"Personal Guests"');
@@ -674,6 +676,7 @@ describe('database rows SQL names', () => {
         op: 0,
         row: 0,
         column: 'name',
+        taken: null,
       },
     };
     transport.get.mockImplementation(() =>
@@ -718,6 +721,7 @@ describe('database rows SQL names', () => {
         op: 0,
         row: 0,
         column: 'name',
+        taken: null,
       },
     };
     transport.get.mockImplementation(() =>

@@ -12,43 +12,39 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         seeded.table_id,
         seeded.row_id,
     );
-    let sessions = svc
-        .create_table(
-            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id,
+    let (sessions, title) = (TableId::new(), ColumnId::new());
+    svc.apply_ops(
+        edit(database_id),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::CreateTable {
+                id: sessions,
                 name: "Sessions".into(),
             },
-        )
-        .await
-        .unwrap();
-    let title = svc
-        .create_column(
-            receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id: sessions.id,
-                binding: ColumnBinding::NewDefinition {
+            DatabaseOp::CreateColumn {
+                table: sessions,
+                id: title,
+                definition: NewColumn::New {
                     name: "Title".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
+                    kind: ColumnKind::Text,
                     options: vec![],
+                    infer_type: false,
                 },
-                config: None,
+                after: None,
             },
-        )
-        .await
-        .unwrap();
+        ]),
+    )
+    .await
+    .unwrap();
     let cells_before = world.lock().unwrap().cells.clone();
-    let sessions_version = table_version(&world, sessions.id);
+    let sessions_version = table_version(&world, sessions);
 
     let error = svc
         .apply_ops(
             receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            vec![DatabaseOp::UpdateRows {
-                table: sessions.id,
+            OpBatch::from(vec![DatabaseOp::UpdateRows {
+                table: sessions,
                 changes: RowChanges::Uniform {
                     rows: vec![row_id],
                     cells: vec![CellWrite {
@@ -57,7 +53,7 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
                     }],
                 },
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -70,6 +66,7 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
             op: 0,
             row: Some(0),
             column: None,
+            taken: None,
             reason: format!("no row {row_id} in this table"),
         }
     );
@@ -77,10 +74,10 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
         .apply_ops(
             receipt::<EditAccessLevel>(database_id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteRows {
-                table: sessions.id,
+            OpBatch::from(vec![DatabaseOp::DeleteRows {
+                table: sessions,
                 rows: vec![row_id],
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -93,13 +90,14 @@ async fn a_write_to_a_row_of_another_table_is_refused() {
             op: 0,
             row: Some(0),
             column: None,
+            taken: None,
             reason: format!("no row {row_id} in this table"),
         }
     );
 
     assert_eq!(world.lock().unwrap().cells, cells_before);
     assert_eq!(row_ids(&world, table_id), vec![row_id]);
-    assert_eq!(table_version(&world, sessions.id), sessions_version);
+    assert_eq!(table_version(&world, sessions), sessions_version);
 }
 
 #[tokio::test]
@@ -172,14 +170,14 @@ async fn grants_scope_writes_per_database() {
         .apply_ops(
             receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: rooms,
                 rows: vec![vec![CellWrite {
                     column: room_name,
                     value: CellValue::Text("Main Hall".into()),
                 }]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -197,11 +195,11 @@ async fn grants_scope_writes_per_database() {
         .apply_ops(
             receipt::<EditAccessLevel>(venue.id, VIEWER, AccessLevel::Owner),
             viewer(VIEWER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: vec![vec![]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap_err();

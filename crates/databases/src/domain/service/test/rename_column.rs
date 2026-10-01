@@ -11,26 +11,29 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
         seeded.row_id,
         seeded.name_column,
     );
-    let result = svc
-        .rename_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            column.id,
-            "  Task  ".into(),
-            "Name".into(),
-        )
+    let before = table_version(&world, table_id);
+    let rename = |name: &str| {
+        OpBatch::from(vec![DatabaseOp::RenameColumn {
+            table: table_id,
+            column: column.id,
+            name: name.into(),
+            previous_name: Some("Name".into()),
+        }])
+    };
+    let results = svc
+        .apply_ops(edit(db), viewer(OWNER), rename("  Task  "))
         .await
         .unwrap();
-    assert_eq!(result.column.id, column.id);
+    let renamed_version = TableVersion(before.0 + 1);
     assert_eq!(
-        result.column.property_definition_id,
-        column.property_definition_id
+        results,
+        vec![OpResult::ColumnRenamed {
+            table_version: renamed_version,
+        }]
     );
-    assert_eq!(result.column.display_name.as_deref(), Some("Task"));
-    assert_eq!(result.table_version, TableVersion(2));
     assert_eq!(
         world.lock().unwrap().published.last(),
-        Some(&(table_id, TableVersion(2)))
+        Some(&(table_id, renamed_version))
     );
 
     // The cell stays where it was: the label moved, the binding did not.
@@ -47,32 +50,35 @@ async fn label_rename_preserves_the_binding_moves_the_sql_name_and_retries_idemp
         .iter()
         .find(|entry| entry.column.id == column.id)
         .unwrap();
+    assert_eq!(
+        renamed.column.property_definition_id,
+        column.property_definition_id
+    );
     assert_eq!(renamed.sql_name, "\"Task\"");
     assert_eq!(renamed.definition.definition.display_name, "Name");
     assert_eq!(renamed.column.display_name.as_deref(), Some("Task"));
 
     let retried = svc
-        .rename_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            column.id,
-            "Task".into(),
-            "Name".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("Task"))
         .await
         .unwrap();
-    assert_eq!(retried.table_version, result.table_version);
+    assert_eq!(
+        retried,
+        vec![OpResult::ColumnRenamed {
+            table_version: renamed_version,
+        }]
+    );
     let error = svc
-        .rename_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            column.id,
-            "Work item".into(),
-            "Name".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("Work item"))
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        SchemaError::ColumnRenamedElsewhere.to_string()
+    );
     assert_eq!(
         world
             .lock()
@@ -97,61 +103,92 @@ async fn rename_checks_effective_labels_and_creation_respects_renamed_labels() {
         seeded.name_column,
         seeded.status_column,
     );
-    for invalid in [" ", " status ", &"x".repeat(201)] {
+    for (invalid, reason) in [
+        (" ".to_string(), SchemaError::EmptyName.to_string()),
+        (
+            " status ".to_string(),
+            SchemaError::ColumnLabelTaken.to_string(),
+        ),
+        (
+            "x".repeat(201),
+            SchemaError::NameTooLong { max: 200 }.to_string(),
+        ),
+    ] {
         let error = svc
-            .rename_column(
-                receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-                table_id,
-                name_column.id,
-                invalid.into(),
-                "Name".into(),
+            .apply_ops(
+                edit(db),
+                viewer(OWNER),
+                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                    table: table_id,
+                    column: name_column.id,
+                    name: invalid.clone(),
+                    previous_name: Some("Name".into()),
+                }]),
             )
             .await
             .unwrap_err();
-        assert!(
-            matches!(error, DatabaseError::InvalidSchemaOperation(_)),
-            "{invalid}"
-        );
+        let DatabaseError::InvalidOp(refusal) = error else {
+            panic!("{invalid}: expected a refused op, got {error:?}");
+        };
+        assert_eq!(refusal.reason, reason, "{invalid}");
     }
-    svc.rename_column(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-        table_id,
-        name_column.id,
-        "Task".into(),
-        "Name".into(),
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::RenameColumn {
+            table: table_id,
+            column: name_column.id,
+            name: "Task".into(),
+            previous_name: Some("Name".into()),
+        }]),
     )
     .await
     .unwrap();
     let error = svc
-        .rename_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            status_column.id,
-            " task ".into(),
-            "Status".into(),
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
-    let error = svc
-        .create_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
+        .apply_ops(
+            edit(db),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: " TASK ".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
-            },
+            OpBatch::from(vec![DatabaseOp::RenameColumn {
+                table: table_id,
+                column: status_column.id,
+                name: " task ".into(),
+                previous_name: Some("Status".into()),
+            }]),
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(refusal.reason, SchemaError::ColumnLabelTaken.to_string());
+    let error = svc
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: table_id,
+                id: ColumnId::new(),
+                definition: NewColumn::New {
+                    name: " TASK ".into(),
+                    kind: ColumnKind::Text,
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
+            }]),
+        )
+        .await
+        .unwrap_err();
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        SchemaError::ColumnNameTaken {
+            name: "TASK".into()
+        }
+        .to_string()
+    );
 }
 
 #[tokio::test]
@@ -172,37 +209,63 @@ async fn rename_refuses_foreign_columns_tables_and_trashed_database() {
         })
         .await
         .unwrap();
-    for (receipt_db, target_table, target_column) in [
-        (other.id, table_id, column.id),
-        (db, TableId::new(), column.id),
-        (db, table_id, ColumnId::new()),
+    let elsewhere = TableId::new();
+    let missing = ColumnId::new();
+    for (receipt_db, target_table, target_column, reason) in [
+        (
+            other.id,
+            table_id,
+            column.id,
+            format!("table {table_id} is not in this database"),
+        ),
+        (
+            db,
+            elsewhere,
+            column.id,
+            format!("table {elsewhere} is not in this database"),
+        ),
+        (
+            db,
+            table_id,
+            missing,
+            "no such column in this table".to_string(),
+        ),
     ] {
         let error = svc
-            .rename_column(
-                receipt::<EditAccessLevel>(receipt_db, OWNER, AccessLevel::Edit),
-                target_table,
-                target_column,
-                "Task".into(),
-                "Name".into(),
+            .apply_ops(
+                edit(receipt_db),
+                viewer(OWNER),
+                OpBatch::from(vec![DatabaseOp::RenameColumn {
+                    table: target_table,
+                    column: target_column,
+                    name: "Task".into(),
+                    previous_name: Some("Name".into()),
+                }]),
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, DatabaseError::NotFound));
+        let DatabaseError::InvalidOp(refusal) = error else {
+            panic!("expected a refused op, got {error:?}");
+        };
+        assert_eq!(refusal.reason, reason);
     }
     svc.trash_database(receipt::<OwnerAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     let error = svc
-        .rename_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            table_id,
-            column.id,
-            "Task".into(),
-            "Name".into(),
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::RenameColumn {
+                table: table_id,
+                column: column.id,
+                name: "Task".into(),
+                previous_name: Some("Name".into()),
+            }]),
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::NotFound));
+    assert!(matches!(error, DatabaseError::NotFound), "{error:?}");
     assert!(
         world
             .lock()
@@ -227,33 +290,32 @@ async fn reusing_a_previous_label_keeps_the_renamed_columns_values_intact() {
         seeded.row_id,
         seeded.name_column,
     );
-    svc.rename_column(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-        table_id,
-        column.id,
-        "Task".into(),
-        "Name".into(),
+    let added_id = ColumnId::new();
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::RenameColumn {
+                table: table_id,
+                column: column.id,
+                name: "Task".into(),
+                previous_name: Some("Name".into()),
+            },
+            DatabaseOp::CreateColumn {
+                table: table_id,
+                id: added_id,
+                definition: NewColumn::New {
+                    name: "Name".into(),
+                    kind: ColumnKind::Text,
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
+            },
+        ]),
     )
     .await
     .unwrap();
-    let added_id = svc
-        .create_column(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Name".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
-                    options: vec![],
-                },
-                config: None,
-            },
-        )
-        .await
-        .unwrap();
     let detail = svc
         .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::View))
         .await

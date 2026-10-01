@@ -1,5 +1,4 @@
-import type { ResultError } from '@core/util/result';
-import type { DatabaseSchemaErrorCode } from '@service-storage/databases';
+import type { DatabaseOpsError } from '@service-storage/databases';
 import { err, ok, type Result } from 'neverthrow';
 import { batch, createMemo, createSignal, onCleanup } from 'solid-js';
 import type {
@@ -53,9 +52,10 @@ const UNMOUNTED = { kind: 'unmounted' } as const;
 
 const TABLE_WRITES = 'table';
 
-const GROUP_UNMOUNTED: ResultError<DatabaseSchemaErrorCode> = {
+const GROUP_UNMOUNTED: DatabaseOpsError = {
   code: 'UNKNOWN_ERROR',
   message: 'The table was closed before the group was added.',
+  refusal: null,
 };
 
 /** The same edit: one object, or a later value for the same cell. */
@@ -252,7 +252,7 @@ export function createTableController(
   async function addGroup(
     columnId: string,
     label: string
-  ): Promise<Result<void, ResultError<DatabaseSchemaErrorCode>[]>> {
+  ): Promise<Result<void, DatabaseOpsError>> {
     setSchemaPending((count) => count + 1);
     try {
       return await writes.run(TABLE_WRITES, async () => {
@@ -330,7 +330,7 @@ export function createTableController(
     addGroup: (
       ...request: Parameters<typeof addGroup>
     ): ReturnType<typeof addGroup> =>
-      disposed ? Promise.resolve(err([GROUP_UNMOUNTED])) : addGroup(...request),
+      disposed ? Promise.resolve(err(GROUP_UNMOUNTED)) : addGroup(...request),
     dismissFailure: () => setFailures((failed) => failed.slice(1)),
   };
 }

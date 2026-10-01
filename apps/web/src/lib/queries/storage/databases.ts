@@ -1,4 +1,4 @@
-/** Database schemas and typed row ops; row reads run in `@queries/database-sql`. */
+/** Database schemas and the typed ops that change them and their rows; row reads run in `@queries/database-sql`. */
 import { analytics } from '@app/lib/analytics';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { enableDatabases } from '@core/constant/featureFlags';
@@ -9,8 +9,6 @@ import type {
   DatabaseOpsError,
   DatabaseSchemaErrorCode,
 } from '@service-storage/databases';
-import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
-import type { CreateColumnRequest } from '@service-storage/generated/schemas/createColumnRequest';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { ListedDatabase } from '@service-storage/generated/schemas/listedDatabase';
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
@@ -106,14 +104,22 @@ export function fetchViewerDatabases(): ResultAsync<
   );
 }
 
-/** Apply ops to one database's rows as the current viewer, together or not at all. */
+/**
+ * Apply ops to one database as the current viewer, together or not at all.
+ * Each table `baseVersions` names must still be at that version, or the batch
+ * is refused as a `CONFLICT`.
+ */
 export function applyDatabaseOps(
   databaseId: string,
-  ops: DatabaseOp[]
+  ops: DatabaseOp[],
+  baseVersions?: Record<string, number>
 ): ResultAsync<OpResult[], DatabaseOpsError> {
   return (
     storageServiceClient.databases
-      .applyOps({ id: databaseId, request: { ops } })
+      .applyOps({
+        id: databaseId,
+        request: baseVersions ? { ops, baseVersions } : { ops },
+      })
       .map((response) => response.results)
       // A refused batch is one error: the first op the service could not apply.
       .mapErr(([refusal]) => refusal)
@@ -153,60 +159,6 @@ export function applyDatabaseTableVersions(
       };
     }
   );
-}
-
-/** Add a column to a table and return its id. */
-export function createDatabaseColumn(params: {
-  databaseId: string;
-  tableId: string;
-  request: CreateColumnRequest;
-}): ResultAsync<string, ResultError<DatabaseSchemaErrorCode>[]> {
-  return storageServiceClient.databases
-    .createColumn({
-      id: params.databaseId,
-      tableId: params.tableId,
-      request: params.request,
-    })
-    .map(async ({ columnId }) => {
-      await invalidateDatabase(params.databaseId);
-      return columnId;
-    });
-}
-
-/** Add select option labels to a column, folding the updated column into the cached schema. */
-export function addDatabaseColumnOptions(params: {
-  databaseId: string;
-  tableId: string;
-  columnId: string;
-  labels: string[];
-}): ResultAsync<ColumnDetail, ResultError<DatabaseSchemaErrorCode>[]> {
-  return storageServiceClient.databases
-    .addColumnOptions({
-      id: params.databaseId,
-      tableId: params.tableId,
-      columnId: params.columnId,
-      request: { labels: params.labels },
-    })
-    .map((updated) => {
-      queryClient.setQueryData(
-        databasesKeys.detail(params.databaseId).queryKey,
-        (previous: DatabaseDetail | undefined): DatabaseDetail | undefined =>
-          previous && {
-            ...previous,
-            tables: previous.tables.map((table) =>
-              table.table.id === params.tableId
-                ? {
-                    ...table,
-                    columns: table.columns.map((column) =>
-                      column.column.id === params.columnId ? updated : column
-                    ),
-                  }
-                : table
-            ),
-          }
-      );
-      return updated;
-    });
 }
 
 /** Create a database; the service gives it a first table with a Name column. */

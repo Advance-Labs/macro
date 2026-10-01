@@ -13,7 +13,7 @@ use properties::domain::database_definition_writer::{
 use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::domain::models::{DatabaseId, PropertyDefinitionId, Viewer};
+use crate::domain::models::{DatabaseId, OptionId, PropertyDefinitionId, Viewer};
 use crate::domain::ports::ColumnDefinitionStore;
 
 /// Errors from the column-definition store.
@@ -77,18 +77,23 @@ where
         specific_entity_type: Option<EntityType>,
         options: &[PropertyOptionValue],
     ) -> Result<PropertyDefinitionWithOptions, Self::Error> {
+        let options: Vec<(uuid::Uuid, PropertyOptionValue)> = options
+            .iter()
+            .map(|value| (OptionId::new().into_uuid(), value.clone()))
+            .collect();
         let mut transaction = self.pool.begin().await?;
         let definition = self
             .properties
             .create_database_definition_in(
                 &mut transaction,
                 NewDatabaseDefinition {
+                    id: macro_uuid::generate_uuid_v7(),
                     database_id: database_id.into_uuid(),
                     name,
                     data_type,
                     is_multi_select,
                     specific_entity_type,
-                    options,
+                    options: &options,
                 },
             )
             .await

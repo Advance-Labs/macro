@@ -10,16 +10,17 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         seeded.table_id,
         seeded.row_id,
     );
-    let tickets = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
-                name: "Tickets".into(),
-            },
-        )
-        .await
-        .unwrap();
+    let tickets = TableId::new();
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateTable {
+            id: tickets,
+            name: "Tickets".into(),
+        }]),
+    )
+    .await
+    .unwrap();
     let guests_version = {
         let mut w = world.lock().unwrap();
         w.published.clear();
@@ -27,18 +28,21 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
         w.tables.iter().find(|t| t.id == guests).unwrap().version
     };
 
-    svc.delete_table(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        guests,
-    )
-    .await
-    .unwrap();
+    let results = svc
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(results, vec![OpResult::TableDeleted { table: guests }]);
 
     {
         let w = world.lock().unwrap();
         assert_eq!(
             w.tables.iter().map(|t| t.id).collect::<Vec<_>>(),
-            vec![tickets.id]
+            vec![tickets]
         );
         assert!(!w.columns.iter().any(|c| c.table_id == guests));
         assert!(!w.rows.contains_key(&guests));
@@ -53,29 +57,34 @@ async fn deleting_a_table_removes_its_rows_cells_and_columns() {
     }
 
     let last = svc
-        .delete_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            tickets.id,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::DeleteTable { table: tickets }]),
         )
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            &last,
-            DatabaseError::InvalidSchemaOperation(SchemaError::LastTable)
-        ),
-        "{last:?}"
-    );
+    let DatabaseError::InvalidOp(refusal) = last else {
+        panic!("expected a refused op, got {last:?}");
+    };
+    assert_eq!(refusal.reason, SchemaError::LastTable.to_string());
     assert_eq!(world.lock().unwrap().tables.len(), 1);
 
     let gone = svc
-        .delete_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            guests,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
         )
         .await
         .unwrap_err();
-    assert!(matches!(gone, DatabaseError::NotFound), "{gone:?}");
+    let DatabaseError::InvalidOp(refusal) = gone else {
+        panic!("expected a refused op, got {gone:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        format!("table {guests} is not in this database")
+    );
 }
 
 #[tokio::test]
@@ -87,51 +96,53 @@ async fn a_table_another_table_relates_to_is_not_deleted() {
         seeded.database_id,
         seeded.table_id,
     );
-    let invites = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+    let invites = TableId::new();
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::CreateTable {
+                id: invites,
                 name: "Invites".into(),
             },
-        )
-        .await
-        .unwrap();
-    svc.create_column(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        viewer(OWNER),
-        CreateColumn {
-            infer_type: false,
-            table_id: invites.id,
-            binding: ColumnBinding::NewDefinition {
-                name: "Guest".into(),
-                data_type: DataType::Entity,
-                is_multi_select: true,
-                options: vec![],
+            DatabaseOp::CreateColumn {
+                table: invites,
+                id: ColumnId::new(),
+                definition: NewColumn::New {
+                    name: "Guest".into(),
+                    kind: ColumnKind::Relation {
+                        database: db,
+                        table: guests,
+                    },
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
             },
-            config: Some(ColumnConfig::Link {
-                database_id: db,
-                table_id: guests,
-            }),
-        },
+        ]),
     )
     .await
     .unwrap();
 
     let error = svc
-        .delete_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            guests,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::DeleteTable { table: guests }]),
         )
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            DatabaseError::InvalidSchemaOperation(SchemaError::TableIsRelated { column, source_table, table })
-                if column == "Guest" && source_table == "Invites" && table == "Guests"
-        ),
-        "{error:?}"
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        SchemaError::TableIsRelated {
+            column: "Guest".into(),
+            source_table: "Invites".into(),
+            table: "Guests".into(),
+        }
+        .to_string()
     );
     let w = world.lock().unwrap();
     assert!(w.tables.iter().any(|t| t.id == guests));

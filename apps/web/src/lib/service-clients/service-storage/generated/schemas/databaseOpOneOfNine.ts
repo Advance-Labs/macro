@@ -4,27 +4,24 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-import type { DatabaseOpOneOfNineColor } from './databaseOpOneOfNineColor';
+
 import type { DatabaseOpOneOfNineKind } from './databaseOpOneOfNineKind';
+import type { NewColumn } from './newColumn';
 
 /**
- * Relabel or recolour one option of a select or tag column. Every cell
-holding it keeps it. A column bound to a property shared outside the
-database changes wherever that property is used, so it takes the
-right to edit that property.
+ * Add a column to a table: a new property the database owns, or an
+existing one bound into the table.
  */
 export type DatabaseOpOneOfNine = {
-  /** Its new colour, a hex string like `#RRGGBB`, or `null` to clear
-it; left out, it keeps its own. A tag option always has one. */
-  color?: DatabaseOpOneOfNineColor;
-  /** The select or tag column. */
-  column: string;
+  /** The column it goes right after; left out, it goes after the
+table's last column. */
+  after?: string;
+  /** What the column holds. */
+  definition: NewColumn;
+  /** The new column's id, minted by the client; later ops of the
+request may name it. */
+  id: string;
   kind: DatabaseOpOneOfNineKind;
-  /** Its new label; left out, it keeps its own. Labels are unique
-within a column, ignoring case. */
-  label?: string;
-  /** The option. */
-  option: string;
   /** The table. */
   table: string;
 };

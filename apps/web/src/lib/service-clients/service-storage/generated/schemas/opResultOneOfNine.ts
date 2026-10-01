@@ -8,10 +8,12 @@ import type { OpResultOneOfNineKind } from './opResultOneOfNineKind';
 import type { TableVersion } from './tableVersion';
 
 /**
- * A view's removal.
+ * The column a creation added.
  */
 export type OpResultOneOfNine = {
+  /** The new column. */
+  column: string;
   kind: OpResultOneOfNineKind;
-  /** The table's version after the change. */
+  /** The table's version once the request committed. */
   tableVersion: TableVersion;
 };

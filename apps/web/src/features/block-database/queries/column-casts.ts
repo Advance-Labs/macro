@@ -18,28 +18,34 @@ export function createColumnCasts(params: {
   version: Accessor<number>;
 }): DatabaseColumnCastsSource {
   return (columnId, open) => {
-    const query = useQuery(() => ({
-      queryKey: databaseColumnKeys.casts(
-        params.databaseId,
-        params.tableId,
-        columnId,
-        params.version()
-      ).queryKey,
-      queryFn: () =>
-        throwOnErr(() =>
-          storageServiceClient.databases.columnCasts({
-            id: params.databaseId,
-            tableId: params.tableId,
-            columnId,
-          })
-        ),
-      enabled: open(),
-      select: (casts: ServerColumnCast[]) => casts.map(toMenuCast),
-    }));
+    const query = useQuery(() => {
+      const version = params.version();
+      return {
+        queryKey: databaseColumnKeys.casts(
+          params.databaseId,
+          params.tableId,
+          columnId,
+          version
+        ).queryKey,
+        queryFn: () =>
+          throwOnErr(() =>
+            storageServiceClient.databases.columnCasts({
+              id: params.databaseId,
+              tableId: params.tableId,
+              columnId,
+            })
+          ),
+        enabled: open(),
+        select: (casts: ServerColumnCast[]) => ({
+          version,
+          casts: casts.map(toMenuCast),
+        }),
+      };
+    });
     // Gated on status: an unopened menu's query is pending and must not suspend.
     return (): DatabaseColumnCasts =>
       query.isSuccess
-        ? { status: 'ready', casts: query.data }
+        ? { status: 'ready', ...query.data }
         : query.isError
           ? { status: 'error' }
           : { status: 'loading' };

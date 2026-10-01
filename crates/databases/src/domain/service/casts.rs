@@ -2,6 +2,7 @@
 //! type menu would do to its values, read in one pass over its cells.
 
 use super::column_types::{Converter, is_empty};
+use super::views::views_without_tests_of;
 use super::*;
 use crate::domain::catalog::PropertyType;
 use crate::domain::models::CastVerdict;
@@ -17,6 +18,26 @@ where
     Access: AccessDirectory,
     Broker: MacroEventBroker,
 {
+    /// Why a column's type cannot change at all, whatever it holds: a board
+    /// groups by it.
+    async fn retype_blocker(
+        &self,
+        table_id: TableId,
+        detail: &ColumnDetail,
+    ) -> Result<Option<SchemaError>, DatabaseError> {
+        let views = self
+            .repository
+            .views_for_tables(&[table_id])
+            .await
+            .map_err(repository_error)?;
+        Ok(views_without_tests_of(
+            &views,
+            detail.column.id,
+            models_databases::views::written_at(),
+        )
+        .err())
+    }
+
     pub(super) async fn preview_casts(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,

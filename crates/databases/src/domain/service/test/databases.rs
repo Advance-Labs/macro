@@ -59,19 +59,19 @@ async fn create_database_grants_owner_and_starter_table() {
 async fn database_details_answer_every_live_database_the_viewer_holds_a_grant_on() {
     let seeded = seeded().await;
     let (svc, offsite, guests) = (seeded.service, seeded.database_id, seeded.table_id);
-    let sessions = svc
-        .create_table(
-            receipt::<EditAccessLevel>(offsite, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: offsite,
+    let sessions = TableId::new();
+    svc.apply_ops(
+        edit(offsite),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::CreateTable {
+                id: sessions,
                 name: "Sessions".into(),
             },
-        )
-        .await
-        .unwrap();
-    svc.reorder_tables(
-        receipt::<EditAccessLevel>(offsite, OWNER, AccessLevel::Owner),
-        vec![sessions.id, guests],
+            DatabaseOp::ReorderTables {
+                order: vec![sessions, guests],
+            },
+        ]),
     )
     .await
     .unwrap();
@@ -141,7 +141,7 @@ async fn database_details_answer_every_live_database_the_viewer_holds_a_grant_on
             .iter()
             .map(|table| table.table.id)
             .collect::<Vec<_>>(),
-        vec![sessions.id, guests]
+        vec![sessions, guests]
     );
 
     assert!(
@@ -195,48 +195,50 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
         seeded.database_id,
         seeded.table_id,
     );
+    let before = table_version(&world, table_id);
+    let rename = |name: &str| {
+        OpBatch::from(vec![DatabaseOp::RenameTable {
+            table: table_id,
+            name: name.into(),
+            previous_name: Some("Guests".into()),
+        }])
+    };
     let renamed = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            "  Attendees  ".into(),
-            "Guests".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("  Attendees  "))
         .await
         .unwrap();
-    assert_eq!(renamed.name, "Attendees");
-    assert_eq!(renamed.version, TableVersion(2));
+    let renamed_version = TableVersion(before.0 + 1);
+    assert_eq!(
+        renamed,
+        vec![OpResult::TableRenamed {
+            table_version: renamed_version,
+        }]
+    );
     assert_eq!(
         world.lock().unwrap().published.last(),
-        Some(&(table_id, TableVersion(2)))
+        Some(&(table_id, renamed_version))
     );
 
     let detail = svc
         .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
+    assert_eq!(detail.tables[0].table.name, "Attendees");
     assert_eq!(detail.tables[0].sql_name, "\"Offsite\".\"Attendees\"");
 
     let retried = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            "Attendees".into(),
-            "Guests".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("Attendees"))
         .await
         .unwrap();
-    assert_eq!(retried.version, renamed.version);
+    assert_eq!(retried, renamed);
     let error = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Edit),
-            table_id,
-            "People".into(),
-            "Guests".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("People"))
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(refusal.reason, SchemaError::TableRenameConflict.to_string());
     assert_eq!(
         world
             .lock()
@@ -254,26 +256,41 @@ async fn table_rename_moves_the_sql_name_and_retries_without_overwriting_a_new_n
 async fn table_rename_rejects_invalid_names_foreign_tables_and_trashed_databases() {
     let seeded = seeded().await;
     let (svc, db, table_id) = (seeded.service, seeded.database_id, seeded.table_id);
-    svc.create_table(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        CreateTable {
-            database_id: db,
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateTable {
+            id: TableId::new(),
             name: "People".into(),
-        },
+        }]),
     )
     .await
     .unwrap();
-    for name in [" ", " people "] {
+    let rename = |name: &str| {
+        OpBatch::from(vec![DatabaseOp::RenameTable {
+            table: table_id,
+            name: name.into(),
+            previous_name: Some("Guests".into()),
+        }])
+    };
+    for (name, reason) in [
+        (" ", SchemaError::EmptyName.to_string()),
+        (
+            " people ",
+            SchemaError::TableNameTaken {
+                name: "people".into(),
+            }
+            .to_string(),
+        ),
+    ] {
         let error = svc
-            .rename_table(
-                receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-                table_id,
-                name.into(),
-                "Guests".into(),
-            )
+            .apply_ops(edit(db), viewer(OWNER), rename(name))
             .await
             .unwrap_err();
-        assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+        let DatabaseError::InvalidOp(refusal) = error else {
+            panic!("{name}: expected a refused op, got {error:?}");
+        };
+        assert_eq!(refusal.reason, reason, "{name}");
     }
     let other = svc
         .create_database(CreateDatabase {
@@ -284,28 +301,24 @@ async fn table_rename_rejects_invalid_names_foreign_tables_and_trashed_databases
         .await
         .unwrap();
     let error = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(other.id, OWNER, AccessLevel::Owner),
-            table_id,
-            "People".into(),
-            "Guests".into(),
-        )
+        .apply_ops(edit(other.id), viewer(OWNER), rename("People"))
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::NotFound));
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        format!("table {table_id} is not in this database")
+    );
     svc.trash_database(receipt::<OwnerAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
     let error = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            table_id,
-            "People".into(),
-            "Guests".into(),
-        )
+        .apply_ops(edit(db), viewer(OWNER), rename("People"))
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::NotFound));
+    assert!(matches!(error, DatabaseError::NotFound), "{error:?}");
 }
 
 #[tokio::test]
@@ -330,10 +343,10 @@ async fn trash_hides_the_database_and_restore_brings_it_back() {
         .apply_ops(
             receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            vec![DatabaseOp::DeleteRows {
+            OpBatch::from(vec![DatabaseOp::DeleteRows {
                 table: seeded.table_id,
                 rows: vec![seeded.row_id],
-            }],
+            }]),
         )
         .await
         .unwrap_err();
@@ -415,34 +428,21 @@ async fn lifecycle_operations_act_on_trashed_databases() {
 async fn schema_operations_respect_receipts() {
     let seeded = seeded().await;
     let (svc, db, table_id) = (seeded.service, seeded.database_id, seeded.table_id);
-    let other = Uuid::new_v4();
     let err = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: DatabaseId::from_uuid(other),
-                name: "Nope".into(),
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(err, DatabaseError::Unauthorized));
-
-    let err = svc
-        .create_column(
-            receipt::<EditAccessLevel>(DatabaseId::from_uuid(other), OWNER, AccessLevel::Owner),
+        .apply_ops(
+            edit(DatabaseId::new()),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
+            OpBatch::from(vec![DatabaseOp::CreateColumn {
+                table: table_id,
+                id: ColumnId::new(),
+                definition: NewColumn::New {
                     name: "X".into(),
-                    data_type: DataType::String,
-                    is_multi_select: false,
+                    kind: ColumnKind::Text,
                     options: vec![],
+                    infer_type: false,
                 },
-                config: None,
-            },
+                after: None,
+            }]),
         )
         .await
         .unwrap_err();

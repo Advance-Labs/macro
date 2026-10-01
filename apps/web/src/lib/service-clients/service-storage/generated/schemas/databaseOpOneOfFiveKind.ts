@@ -10,5 +10,5 @@ export type DatabaseOpOneOfFiveKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const DatabaseOpOneOfFiveKind = {
-  delete_rows: 'delete_rows',
+  delete_table: 'delete_table',
 } as const;

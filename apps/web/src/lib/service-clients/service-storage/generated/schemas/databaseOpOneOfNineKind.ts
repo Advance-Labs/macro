@@ -10,5 +10,5 @@ export type DatabaseOpOneOfNineKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const DatabaseOpOneOfNineKind = {
-  update_option: 'update_option',
+  create_column: 'create_column',
 } as const;

@@ -90,12 +90,7 @@ use databases::inbound::axum_router::ops::{
 };
 use databases::inbound::axum_router::views::ViewPositionsResponse as DatabaseViewPositionsResponse;
 use databases::inbound::axum_router::{
-    AddColumnOptionsRequest as DatabaseAddColumnOptionsRequest,
-    ColumnBindingRequest as DatabaseColumnBindingRequest,
-    CreateColumnRequest as DatabaseCreateColumnRequest,
-    CreateColumnResponse as DatabaseCreateColumnResponse, CreateDatabaseRequest,
-    CreateTableRequest as DatabaseCreateTableRequest,
-    saved_queries::SaveQueryRequest as DatabaseSaveQueryRequest,
+    CreateDatabaseRequest, saved_queries::SaveQueryRequest as DatabaseSaveQueryRequest,
 };
 use databases::outbound::gateway_event_publisher::{
     AwarenessRelay as DatabaseAwarenessRelay, TableChanged as DatabaseTableChanged,
@@ -161,8 +156,10 @@ use models_databases::views::{
 use models_databases::{
     CellValue as DatabaseCellValue, CellWrite as DatabaseCellWrite,
     ColumnKind as DatabaseColumnKind, DatabaseOp, EntityKind as DatabaseEntityKind,
-    EntityRef as DatabaseEntityRef, OpResult as DatabaseOpResult, OptionRef as DatabaseOptionRef,
-    RowChange as DatabaseRowChange, RowChanges as DatabaseRowChanges,
+    EntityRef as DatabaseEntityRef, NewColumn as DatabaseNewColumn, NewOption as DatabaseNewOption,
+    OpResult as DatabaseOpResult, OptionRef as DatabaseOptionRef, RowChange as DatabaseRowChange,
+    RowChanges as DatabaseRowChanges, TakenId as DatabaseTakenId,
+    VersionedTable as DatabaseVersionedTable,
 };
 use models_permissions::share_permission::channel_share_permission::UpdateOperation;
 use models_soup::call_record::{SoupCallRecord, SoupCallRecordParticipant};
@@ -451,20 +448,10 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
-        databases::inbound::axum_router::create_table_handler,
-        databases::inbound::axum_router::rename_table_handler,
-        databases::inbound::axum_router::reorder_tables_handler,
-        databases::inbound::axum_router::delete_table_handler,
         databases::inbound::axum_router::saved_queries::save_query_handler,
         databases::inbound::axum_router::saved_queries::get_query_handler,
-        databases::inbound::axum_router::create_column_handler,
-        databases::inbound::axum_router::rename_column_handler,
-        databases::inbound::axum_router::column_mutations::change_column_type_handler,
-        databases::inbound::axum_router::column_mutations::column_casts_handler,
-        databases::inbound::axum_router::column_mutations::delete_column_handler,
-        databases::inbound::axum_router::column_mutations::reorder_columns_handler,
+        databases::inbound::axum_router::casts::column_casts_handler,
         databases::inbound::axum_router::infer_column_type_handler,
-        databases::inbound::axum_router::add_column_options_handler,
         // collab surfaces
         collab_surface::inbound::axum_router::ensure_surface_handler,
         collab_surface::inbound::axum_router::get_surface_handler,
@@ -639,11 +626,6 @@ use utoipa::OpenApi;
             DatabaseTableDetail,
             DatabaseColumnDetail,
             CreateDatabaseRequest,
-            DatabaseCreateTableRequest,
-            DatabaseColumnBindingRequest,
-            DatabaseCreateColumnRequest,
-            DatabaseCreateColumnResponse,
-            DatabaseAddColumnOptionsRequest,
             DatabaseAwareness,
             DatabaseAwarenessRelay,
             DatabaseTableChanged,
@@ -659,7 +641,11 @@ use utoipa::OpenApi;
             DatabaseEntityRef,
             DatabaseEntityKind,
             DatabaseColumnKind,
+            DatabaseNewColumn,
+            DatabaseNewOption,
             DatabaseOpResult,
+            DatabaseTakenId,
+            DatabaseVersionedTable,
             DatabaseView,
             DatabaseNewView,
             DatabaseViewQuery,

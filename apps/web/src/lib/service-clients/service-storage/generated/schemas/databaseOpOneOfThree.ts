@@ -4,21 +4,19 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { DatabaseOpOneOfThreeKind } from './databaseOpOneOfThreeKind';
-import type { RowChanges } from './rowChanges';
 
 /**
- * Write cells of existing rows. Last write wins: there is no version
-check.
+ * Rename a table. Its id, columns and rows stay.
  */
 export type DatabaseOpOneOfThree = {
-  /** Which rows get which cells. */
-  changes: RowChanges;
-  /** Create a select option for a label the column does not have yet,
-instead of refusing the op. */
-  createMissingOptions?: boolean;
   kind: DatabaseOpOneOfThreeKind;
-  /** The table the rows belong to. */
+  /** Its new name, unique within the database ignoring case. */
+  name: string;
+  /** The name the caller saw. Given, the rename is refused if the
+table goes by another one now, so a concurrent rename is not
+overwritten. */
+  previousName?: string;
+  /** The table. */
   table: string;
 };

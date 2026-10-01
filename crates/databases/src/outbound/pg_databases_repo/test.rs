@@ -7,19 +7,25 @@ use sqlx::PgPool;
 use super::*;
 use uuid::Uuid;
 
-use crate::domain::models::Viewer;
-use crate::domain::models::{ColumnBinding, RowId};
-use crate::domain::ports::ColumnDefinitionStore;
+use crate::domain::models::{RowId, Viewer, Write, Writes, WritesOutcome};
+use crate::domain::ports::{CellStore, ColumnDefinitionStore};
+use crate::outbound::pg_cell_store::PgCellStore;
 
 #[cfg(feature = "gateway")]
 mod apply_ops;
 mod cell_triggers;
+#[cfg(feature = "gateway")]
 mod rename_column;
+#[cfg(feature = "gateway")]
 mod reorder_tables;
 mod saved_queries;
+#[cfg(feature = "gateway")]
+mod schema_ops;
 mod sharing;
+#[cfg(feature = "gateway")]
 mod tables;
 mod transfer;
+#[cfg(feature = "gateway")]
 mod views;
 
 const USER: &str = "macro|databases-a@macro.com";
@@ -58,13 +64,6 @@ impl<Properties> PgDatabasesRepo<Properties> {
         .await?
         .map(TableId::from_uuid))
     }
-}
-
-fn applied_table(outcome: TableMutationOutcome) -> Table {
-    let TableMutationOutcome::Applied(table) = outcome else {
-        panic!("expected a committed table mutation, got {outcome:?}");
-    };
-    table
 }
 
 fn user() -> MacroUserIdStr<'static> {
@@ -120,6 +119,46 @@ async fn insert_definition(pool: &PgPool, display_name: &str) -> Uuid {
     id
 }
 
+/// Commit `writes` to `database_id` through the cell store, as the service
+/// would send them in one batch, answering the versions it bumped.
+async fn commit(
+    pool: &PgPool,
+    database_id: DatabaseId,
+    writes: Vec<Write>,
+) -> HashMap<TableId, TableVersion> {
+    let outcome = PgCellStore::new(pool.clone(), PropertiesPgRepo::new(pool.clone()))
+        .apply_writes(&Writes {
+            database_id,
+            created_by: user(),
+            options: Vec::new(),
+            writes,
+            related_rows: Vec::new(),
+            expected_versions: Vec::new(),
+        })
+        .await
+        .expect("the batch should run");
+    let WritesOutcome::Applied { table_versions, .. } = outcome else {
+        panic!("expected the batch to commit, got {outcome:?}");
+    };
+    table_versions
+}
+
+/// Place an existing definition on a table, at `position`.
+fn bind(table_id: TableId, definition_id: Uuid, position: &str) -> Write {
+    Write::CreateColumn {
+        column: Column {
+            id: ColumnId::new(),
+            table_id,
+            property_definition_id: definition_id,
+            position: position.parse().expect("a fractional key"),
+            config: None,
+            display_name: None,
+            infer_type: false,
+        },
+        definition: None,
+    }
+}
+
 /// Database → table → one bound string column, the fixture every test starts from.
 async fn fixture(pool: &PgPool) -> (PgDatabasesRepo<PropertiesPgRepo>, Table, Uuid) {
     insert_user(pool).await;
@@ -140,28 +179,29 @@ async fn fixture(pool: &PgPool) -> (PgDatabasesRepo<PropertiesPgRepo>, Table, Uu
         .await
         .expect("database should insert");
 
-    let table = applied_table(
-        repo.create_table(&CreateTable {
-            database_id: database.id,
-            name: "Guests".to_string(),
-        })
-        .await
-        .expect("table insert should succeed"),
-    );
-
+    let table_id = TableId::new();
     let definition_id = insert_definition(pool, "Name").await;
-    repo.create_column(
-        table.id,
-        definition_id,
-        &CreateColumn {
-            infer_type: false,
-            table_id: table.id,
-            binding: ColumnBinding::ExistingDefinition(definition_id),
-            config: None,
-        },
+    commit(
+        pool,
+        database.id,
+        vec![
+            Write::CreateTable {
+                table_id,
+                name: "Guests".to_string(),
+            },
+            bind(table_id, definition_id, "80"),
+        ],
     )
-    .await
-    .expect("column should insert");
+    .await;
+    let (_, tables) = repo
+        .get_database(database.id)
+        .await
+        .expect("get should succeed")
+        .expect("database should exist");
+    let table = tables
+        .into_iter()
+        .find(|table| table.id == table_id)
+        .expect("the table should be stored");
 
     (repo, table, definition_id)
 }
@@ -232,8 +272,7 @@ async fn database_table_and_column_round_trip(pool: PgPool) {
     assert_eq!(tables.len(), 2);
     assert_eq!(tables[0].name, "Table 1");
     assert_eq!(tables[1].id, table.id);
-    // A table is created at version 0, then bumped once by the column.
-    assert_eq!(table.version, TableVersion(0));
+    // Created with its column in one batch, the table is versioned once.
     assert_eq!(tables[1].version, TableVersion(1));
     assert_eq!(tables[0].version, TableVersion(0));
 }
@@ -310,63 +349,6 @@ async fn renaming_trashing_or_restoring_a_missing_database_says_it_is_gone(pool:
             .await
             .unwrap()
     );
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn table_rename_checks_previous_name_and_collision_atomically(pool: PgPool) {
-    let (repo, table, _) = fixture(&pool).await;
-    assert!(matches!(
-        repo.rename_table(&table, "table 1", "Guests")
-            .await
-            .unwrap(),
-        TableMutationOutcome::Conflict
-    ));
-    let renamed = applied_table(
-        repo.rename_table(&table, "Attendees", "Guests")
-            .await
-            .unwrap(),
-    );
-    assert_eq!(renamed.id, table.id);
-    assert_eq!(renamed.position, table.position);
-    assert_eq!(renamed.version, TableVersion(2));
-    assert!(matches!(
-        repo.rename_table(&table, "People", "Guests").await.unwrap(),
-        TableMutationOutcome::Conflict
-    ));
-    let (_, tables) = repo.get_database(table.database_id).await.unwrap().unwrap();
-    assert_eq!(
-        tables.iter().find(|t| t.id == table.id).unwrap().name,
-        "Attendees"
-    );
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn concurrent_table_create_and_rename_cannot_reserve_the_same_name(pool: PgPool) {
-    let (repo, table, _) = fixture(&pool).await;
-    let command = CreateTable {
-        database_id: table.database_id,
-        name: "people".into(),
-    };
-    let (renamed, created) = tokio::join!(
-        repo.rename_table(&table, "People", "Guests"),
-        repo.create_table(&command),
-    );
-    assert_ne!(
-        matches!(renamed.unwrap(), TableMutationOutcome::Applied(_)),
-        matches!(created.unwrap(), TableMutationOutcome::Applied(_))
-    );
-    let (_, tables) = repo.get_database(table.database_id).await.unwrap().unwrap();
-    assert_eq!(
-        tables
-            .iter()
-            .filter(|table| table.name.eq_ignore_ascii_case("people"))
-            .count(),
-        1
-    );
-    assert!(matches!(
-        repo.create_table(&command).await.unwrap(),
-        TableMutationOutcome::Conflict
-    ));
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

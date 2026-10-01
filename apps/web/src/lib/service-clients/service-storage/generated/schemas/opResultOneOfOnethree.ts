@@ -4,18 +4,14 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-
-import type { CardPosition } from './cardPosition';
 import type { OpResultOneOfOnethreeKind } from './opResultOneOfOnethreeKind';
 import type { TableVersion } from './tableVersion';
 
 /**
- * Where a moved card, and any card it needed placed first, now sit.
+ * A column's removal.
  */
 export type OpResultOneOfOnethree = {
   kind: OpResultOneOfOnethreeKind;
-  /** The positions written, the moved card's last. */
-  positions: CardPosition[];
-  /** The table's version after the change. */
+  /** The table's version once the request committed. */
   tableVersion: TableVersion;
 };

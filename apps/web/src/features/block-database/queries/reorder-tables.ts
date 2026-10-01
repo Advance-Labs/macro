@@ -1,12 +1,15 @@
 import { queryClient } from '@queries/client';
-import { invalidateDatabase } from '@queries/storage/databases';
+import {
+  applyDatabaseOps,
+  invalidateDatabase,
+} from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
-import { storageServiceClient } from '@service-storage/client';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
-import type { Table } from '@service-storage/generated/schemas/table';
+import type { VersionedTable } from '@service-storage/generated/schemas/versionedTable';
 import { ResultAsync } from 'neverthrow';
 import type { DatabaseSchemaChange } from '../core/column-schema';
 import { createKeyedSerializer } from '../core/keyed-serializer';
+import { isResult } from './detail-cache';
 
 function withTableOrder(
   detail: DatabaseDetail,
@@ -67,10 +70,9 @@ export function reorderDatabaseTables(params: {
     const result = await writes.run(
       params.databaseId,
       async () =>
-        await storageServiceClient.databases.reorderTables({
-          id: params.databaseId,
-          tableIds: params.tableIds,
-        })
+        await applyDatabaseOps(params.databaseId, [
+          { kind: 'reorder_tables', order: params.tableIds },
+        ])
     );
     if (result.isErr()) {
       queryClient.setQueryData(key, (current: DatabaseDetail | undefined) =>
@@ -83,22 +85,26 @@ export function reorderDatabaseTables(params: {
       void invalidateDatabase(params.databaseId);
       return result.map(() => undefined);
     }
-    commit(key, result.value);
+    const [reordered] = result.value;
+    if (isResult(reordered, 'tables_reordered')) commit(key, reordered.tables);
     return result.map(() => undefined);
   };
   return new ResultAsync(reorder());
 }
 
-function commit(key: readonly unknown[], tables: Table[]) {
-  const committed = new Map(tables.map((table) => [table.id, table]));
+/** Each table's committed version; a cached table already past it keeps its own. */
+function commit(key: readonly unknown[], tables: VersionedTable[]) {
+  const committed = new Map(
+    tables.map(({ table, version }) => [table, version])
+  );
   queryClient.setQueryData(key, (current: DatabaseDetail | undefined) =>
     current
       ? {
           ...current,
           tables: current.tables.map((entry) => {
-            const table = committed.get(entry.table.id);
-            return table && entry.table.version <= table.version
-              ? { ...entry, table }
+            const version = committed.get(entry.table.id);
+            return version !== undefined && entry.table.version <= version
+              ? { ...entry, table: { ...entry.table, version } }
               : entry;
           }),
         }

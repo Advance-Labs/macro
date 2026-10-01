@@ -4,18 +4,15 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-
-import type { DatabaseView } from './databaseView';
 import type { OpResultOneOfSevenKind } from './opResultOneOfSevenKind';
-import type { TableVersion } from './tableVersion';
+import type { VersionedTable } from './versionedTable';
 
 /**
- * The view a creation or change left.
+ * The database's tables in their new order.
  */
 export type OpResultOneOfSeven = {
   kind: OpResultOneOfSevenKind;
-  /** The table's version after the change. */
-  tableVersion: TableVersion;
-  /** The view as stored. */
-  view: DatabaseView;
+  /** Every table, in its new order, with its version once the request
+committed. */
+  tables: VersionedTable[];
 };

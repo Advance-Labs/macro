@@ -1,5 +1,6 @@
 import { queryClient } from '@queries/client';
 import { databasesKeys } from '@queries/storage/keys';
+import type { ApplyOpsResponse } from '@service-storage/generated/schemas/applyOpsResponse';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { Table } from '@service-storage/generated/schemas/table';
 import { QueryObserver } from '@tanstack/solid-query';
@@ -8,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tableRenameMessage } from '../core/column-schema';
 import { renameDatabaseTable } from './rename-table';
 
-const transport = vi.hoisted(() => ({ renameTable: vi.fn() }));
+const transport = vi.hoisted(() => ({ applyOps: vi.fn() }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
 }));
@@ -29,6 +30,9 @@ const original: Table = {
   version: 5,
 };
 const renamed: Table = { ...original, name: 'Attendees', version: 6 };
+const answer: ApplyOpsResponse = {
+  results: [{ kind: 'table_renamed', tableVersion: 6 }],
+};
 const detail: DatabaseDetail = {
   database: {
     id: 'db',
@@ -64,7 +68,7 @@ const key = databasesKeys.detail('db').queryKey;
 beforeEach(() => {
   vi.resetAllMocks();
   queryClient.setQueryData(key, detail);
-  transport.renameTable.mockImplementation(() => okAsync(renamed));
+  transport.applyOps.mockImplementation(() => okAsync(answer));
 });
 afterEach(() => queryClient.clear());
 
@@ -76,11 +80,18 @@ describe('table rename cache', () => {
       database: { ...detail.database, id: 'other-db' },
     });
     expect(await renameDatabaseTable(parameters)).toEqual(ok(undefined));
-    expect(transport.renameTable).toHaveBeenCalledExactlyOnceWith({
+    expect(transport.applyOps).toHaveBeenCalledExactlyOnceWith({
       id: 'db',
-      tableId: 'guests',
-      name: 'Attendees',
-      previousName: 'Guests',
+      request: {
+        ops: [
+          {
+            kind: 'rename_table',
+            table: 'guests',
+            name: 'Attendees',
+            previousName: 'Guests',
+          },
+        ],
+      },
     });
     const updated = queryClient.getQueryData<DatabaseDetail>(key)!;
     expect(updated.tables[0]).toEqual({ ...detail.tables[0], table: renamed });
@@ -92,8 +103,8 @@ describe('table rename cache', () => {
   it('preserves the cache after a rejected rename and refreshes its database for recovery', async () => {
     const otherKey = databasesKeys.detail('other-db').queryKey;
     queryClient.setQueryData(otherKey, detail);
-    transport.renameTable.mockImplementation(() =>
-      errAsync([{ code: 'HTTP_ERROR', message: 'Name changed' }])
+    transport.applyOps.mockImplementation(() =>
+      errAsync([{ code: 'HTTP_ERROR', message: 'Name changed', refusal: null }])
     );
     const result = await renameDatabaseTable(parameters);
     expect(result.isErr() && tableRenameMessage(result.error)).toContain(
@@ -128,11 +139,11 @@ describe('table rename cache', () => {
   });
 
   it('does not replace a newer cached table with a delayed rename acknowledgment', async () => {
-    let complete!: (value: Result<Table, never>) => void;
-    transport.renameTable.mockImplementation(
+    let complete!: (value: Result<ApplyOpsResponse, never>) => void;
+    transport.applyOps.mockImplementation(
       () =>
         new ResultAsync(
-          new Promise<Result<Table, never>>((resolve) => {
+          new Promise<Result<ApplyOpsResponse, never>>((resolve) => {
             complete = resolve;
           })
         )
@@ -143,7 +154,7 @@ describe('table rename cache', () => {
       ...detail,
       tables: [{ ...detail.tables[0], table: newer }, detail.tables[1]],
     });
-    complete(ok(renamed));
+    complete(ok(answer));
     await pending;
     expect(
       queryClient.getQueryData<DatabaseDetail>(key)?.tables[0].table

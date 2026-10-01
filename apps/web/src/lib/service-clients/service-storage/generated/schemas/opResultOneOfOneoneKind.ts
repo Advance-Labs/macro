@@ -10,5 +10,5 @@ export type OpResultOneOfOneoneKind =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const OpResultOneOfOneoneKind = {
-  views_reordered: 'views_reordered',
+  column_renamed: 'column_renamed',
 } as const;

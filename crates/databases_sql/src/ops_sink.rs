@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
 use database_sql::run::OpsSink;
-use databases::domain::models::{DatabaseError, DatabaseId, TableId, TableVersion, Viewer};
+use databases::domain::models::{
+    DatabaseError, DatabaseId, OpBatch, TableId, TableVersion, Viewer,
+};
 use databases::domain::ports::DatabasesService;
 use entity_access::domain::models::{EditAccessLevel, EntityAccessReceipt};
 use models_databases::{DatabaseOp, OpResult};
@@ -50,15 +52,17 @@ where
             Some((authorized, receipt)) if *authorized == database => receipt.clone(),
             _ => return Err(ReceiptWriteError::UnauthorizedDatabase { database }),
         };
-        let tables: Vec<TableId> = ops.iter().map(DatabaseOp::table).collect();
+        let tables: Vec<Option<TableId>> = ops.iter().map(DatabaseOp::table).collect();
         let results = self
             .databases
-            .apply_ops(receipt, self.viewer.clone(), ops)
+            .apply_ops(receipt, self.viewer.clone(), OpBatch::from(ops))
             .await?;
         // The lock only guards single inserts, so a poisoned map is still whole.
         let mut versions = self.versions.lock().unwrap_or_else(PoisonError::into_inner);
         for (table, result) in tables.into_iter().zip(&results) {
-            versions.insert(table, result.table_version());
+            if let (Some(table), Some(version)) = (table, result.table_version()) {
+                versions.insert(table, version);
+            }
         }
         Ok(results)
     }

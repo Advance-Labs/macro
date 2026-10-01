@@ -9,21 +9,30 @@ async fn create_table_announces_only_the_committed_table() {
         world.published.clear();
         world.broker_events.clear();
     }
-    let table = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+    let tickets = TableId::new();
+    let results = svc
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateTable {
+                id: tickets,
                 name: "Tickets".into(),
-            },
+            }]),
         )
         .await
         .unwrap();
-    assert_eq!(table.name, "Tickets");
-    assert_eq!(table.version, TableVersion(0));
+    assert_eq!(
+        results,
+        vec![OpResult::TableCreated {
+            table: tickets,
+            table_version: TableVersion(1),
+        }]
+    );
     {
         let w = world.lock().unwrap();
-        assert_eq!(w.published, [(table.id, TableVersion(0))]);
+        let table = w.tables.iter().find(|table| table.id == tickets).unwrap();
+        assert_eq!(table.name, "Tickets");
+        assert_eq!(w.published, [(tickets, TableVersion(1))]);
         assert_eq!(w.broker_events.len(), 1);
         let event = &w.broker_events[0];
         assert_eq!(event["event_type"], "database.tables_changed");
@@ -31,26 +40,27 @@ async fn create_table_announces_only_the_committed_table() {
         assert_eq!(event["metadata"]["attribution"]["actor"], OWNER);
         assert_eq!(
             event["metadata"]["tables"],
-            serde_json::json!([{ "table_id": table.id, "version": 0 }])
+            serde_json::json!([{ "table_id": tickets, "version": 1 }])
         );
     }
 
     let error = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateTable {
+                id: TableId::new(),
                 name: "tickets".into(),
-            },
+            }]),
         )
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            DatabaseError::InvalidSchemaOperation(SchemaError::TableNameTaken { name }) if name == "tickets"
-        ),
-        "{error:?}"
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "a table named `tickets` already exists in this database"
     );
     let w = world.lock().unwrap();
     assert_eq!(w.published.len(), 1);
@@ -63,32 +73,34 @@ async fn create_table_announces_only_the_committed_table() {
 async fn a_table_name_differing_only_in_non_ascii_case_is_taken() {
     let seeded = seeded().await;
     let (svc, db) = (seeded.service, seeded.database_id);
-    svc.create_table(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        CreateTable {
-            database_id: db,
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateTable {
+            id: TableId::new(),
             name: "Ärger".into(),
-        },
+        }]),
     )
     .await
     .unwrap();
 
     let error = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateTable {
+                id: TableId::new(),
                 name: "ärger".into(),
-            },
+            }]),
         )
         .await
         .unwrap_err();
-    assert!(
-        matches!(
-            &error,
-            DatabaseError::InvalidSchemaOperation(SchemaError::TableNameTaken { name }) if name == "ärger"
-        ),
-        "{error:?}"
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        "a table named `ärger` already exists in this database"
     );
 }
 
@@ -108,24 +120,28 @@ async fn parent_disappearing_at_table_write_stays_not_found_and_publishes_nothin
         world.table_write_not_found = true;
     }
     let create = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateTable {
+                id: TableId::new(),
                 name: "Unavailable".into(),
-            },
+            }]),
         )
         .await;
     let rename = svc
-        .rename_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            table_id,
-            "Unavailable".into(),
-            "Guests".into(),
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::RenameTable {
+                table: table_id,
+                name: "Unavailable".into(),
+                previous_name: Some("Guests".into()),
+            }]),
         )
         .await;
-    assert!(matches!(create, Err(DatabaseError::NotFound)));
-    assert!(matches!(rename, Err(DatabaseError::NotFound)));
+    assert!(matches!(create, Err(DatabaseError::NotFound)), "{create:?}");
+    assert!(matches!(rename, Err(DatabaseError::NotFound)), "{rename:?}");
     let world = world.lock().unwrap();
     assert!(world.published.is_empty());
     assert!(world.broker_events.is_empty());
@@ -136,22 +152,24 @@ async fn parent_disappearing_at_table_write_stays_not_found_and_publishes_nothin
 async fn a_new_table_is_empty_and_named_by_its_quoted_sql_name() {
     let seeded = seeded().await;
     let (world, svc, db) = (seeded.world, seeded.service, seeded.database_id);
-    let table = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
-                name: "  Ticket sales ".into(),
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(table.name, "Ticket sales");
+    let sales = TableId::new();
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateTable {
+            id: sales,
+            name: "  Ticket sales ".into(),
+        }]),
+    )
+    .await
+    .unwrap();
 
     let detail = svc
         .get_database(receipt::<ViewAccessLevel>(db, OWNER, AccessLevel::Owner))
         .await
         .unwrap();
+    assert_eq!(detail.tables[1].table.id, sales);
+    assert_eq!(detail.tables[1].table.name, "Ticket sales");
     assert_eq!(
         detail
             .tables
@@ -167,7 +185,7 @@ async fn a_new_table_is_empty_and_named_by_its_quoted_sql_name() {
             .lock()
             .unwrap()
             .rows
-            .get(&table.id)
+            .get(&sales)
             .is_none_or(Vec::is_empty)
     );
 }
@@ -181,45 +199,45 @@ async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
         seeded.database_id,
         seeded.table_id,
     );
-    let budget = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+    let (budget, venues) = (TableId::new(), TableId::new());
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![
+            DatabaseOp::CreateTable {
+                id: budget,
                 name: "Budget".into(),
             },
-        )
-        .await
-        .unwrap();
-    let venues = svc
-        .create_table(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id: db,
+            DatabaseOp::CreateTable {
+                id: venues,
                 name: "Venues".into(),
             },
-        )
-        .await
-        .unwrap();
+        ]),
+    )
+    .await
+    .unwrap();
     {
         let mut world = world.lock().unwrap();
         world.published.clear();
         world.broker_events.clear();
     }
 
-    let reordered = svc
-        .reorder_tables(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            vec![venues.id, guests, budget.id],
+    let results = svc
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::ReorderTables {
+                order: vec![venues, guests, budget],
+            }]),
         )
         .await
         .unwrap();
+    let [OpResult::TablesReordered { tables }] = results.as_slice() else {
+        panic!("expected one reorder, got {results:?}");
+    };
     assert_eq!(
-        reordered
-            .iter()
-            .map(|t| t.name.as_str())
-            .collect::<Vec<_>>(),
-        vec!["Venues", "Guests", "Budget"]
+        tables.iter().map(|table| table.table).collect::<Vec<_>>(),
+        vec![venues, guests, budget]
     );
 
     let detail = svc
@@ -238,9 +256,9 @@ async fn reordering_three_tables_answers_and_lists_them_in_the_new_order() {
     let world = world.lock().unwrap();
     let mut published = world.published.clone();
     published.sort();
-    let mut expected: Vec<(TableId, TableVersion)> = reordered
+    let mut expected: Vec<(TableId, TableVersion)> = tables
         .iter()
-        .map(|table| (table.id, table.version))
+        .map(|table| (table.table, table.version))
         .collect();
     expected.sort();
     assert_eq!(published, expected);
@@ -267,12 +285,13 @@ async fn an_order_missing_a_table_is_rejected_without_publishing() {
         seeded.database_id,
         seeded.table_id,
     );
-    svc.create_table(
-        receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-        CreateTable {
-            database_id: db,
+    svc.apply_ops(
+        edit(db),
+        viewer(OWNER),
+        OpBatch::from(vec![DatabaseOp::CreateTable {
+            id: TableId::new(),
             name: "Budget".into(),
-        },
+        }]),
     )
     .await
     .unwrap();
@@ -282,25 +301,23 @@ async fn an_order_missing_a_table_is_rejected_without_publishing() {
         world.broker_events.clear();
     }
 
-    let error = svc
-        .reorder_tables(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            vec![guests],
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
-    let duplicate = svc
-        .reorder_tables(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            vec![guests, guests],
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        duplicate,
-        DatabaseError::InvalidSchemaOperation(_)
-    ));
+    for order in [vec![guests], vec![guests, guests]] {
+        let error = svc
+            .apply_ops(
+                edit(db),
+                viewer(OWNER),
+                OpBatch::from(vec![DatabaseOp::ReorderTables { order }]),
+            )
+            .await
+            .unwrap_err();
+        let DatabaseError::InvalidOp(refusal) = error else {
+            panic!("expected a refused op, got {error:?}");
+        };
+        assert_eq!(
+            refusal.reason,
+            "The table order must include every table of this database exactly once."
+        );
+    }
 
     let world = world.lock().unwrap();
     assert!(world.published.is_empty());
@@ -339,13 +356,22 @@ async fn an_order_containing_another_databases_table_is_rejected() {
     }
 
     let error = svc
-        .reorder_tables(
-            receipt::<EditAccessLevel>(db, OWNER, AccessLevel::Owner),
-            vec![candidates, guests],
+        .apply_ops(
+            edit(db),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::ReorderTables {
+                order: vec![candidates, guests],
+            }]),
         )
         .await
         .unwrap_err();
-    assert!(matches!(error, DatabaseError::InvalidSchemaOperation(_)));
+    let DatabaseError::InvalidOp(refusal) = error else {
+        panic!("expected a refused op, got {error:?}");
+    };
+    assert_eq!(
+        refusal.reason,
+        format!("table {candidates} is not in this database")
+    );
 
     let world = world.lock().unwrap();
     assert!(world.published.is_empty());

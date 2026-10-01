@@ -16,11 +16,6 @@ pub enum WriteWarning {
         /// Why the read failed, as the model was told.
         cause: String,
     },
-    /// A column's type changed but the extra options were not added.
-    OptionsNotAdded {
-        /// Why adding them failed, as the model was told.
-        cause: String,
-    },
 }
 
 impl fmt::Display for WriteWarning {
@@ -29,10 +24,6 @@ impl fmt::Display for WriteWarning {
             Self::SchemaNotRefreshed { database_id, cause } => write!(
                 formatter,
                 "The change was saved, but its schema could not be refreshed: {cause} Call DescribeDatabase with databaseId {database_id} before continuing; do not repeat this successful mutation."
-            ),
-            Self::OptionsNotAdded { cause } => write!(
-                formatter,
-                "The type changed, but the extra options were not added: {cause} Retry them with AddColumnOptions."
             ),
         }
     }

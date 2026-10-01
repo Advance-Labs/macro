@@ -6,6 +6,7 @@
  */
 import type { OpRefusalResponseColumn } from './opRefusalResponseColumn';
 import type { OpRefusalResponseRow } from './opRefusalResponseRow';
+import type { OpRefusalResponseTaken } from './opRefusalResponseTaken';
 
 /**
  * Why an op of a batch was refused. Nothing in the batch was written.
@@ -25,4 +26,5 @@ export interface OpRefusalResponse {
    * @minimum 0
    */
   row: OpRefusalResponseRow;
+  taken: OpRefusalResponseTaken;
 }

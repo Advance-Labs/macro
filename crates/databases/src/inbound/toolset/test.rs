@@ -32,9 +32,7 @@ mod schema_changes;
 mod schemas;
 mod views;
 mod write_warning;
-use crate::domain::models::{
-    Column, ColumnDetail, Database, RenameColumnOutcome, Table, TableDetail, TableVersion,
-};
+use crate::domain::models::{Column, ColumnDetail, Database, Table, TableDetail, TableVersion};
 
 const USER: &str = "macro|wolf@macro.com";
 
@@ -53,25 +51,11 @@ struct Calls {
     listed: usize,
     described: usize,
     created_databases: Vec<String>,
-    created_tables: Vec<String>,
-    renamed_tables: Vec<(TableId, String, String)>,
-    created_columns: Vec<(TableId, DataType, bool, Vec<String>)>,
-    added_options: Vec<(ColumnId, Vec<String>)>,
     renamed_databases: Vec<String>,
-    deleted_tables: Vec<TableId>,
-    /// `(table, column, name, previous name)`.
-    renamed_columns: Vec<(TableId, ColumnId, String, String)>,
-    changed_column_types: Vec<crate::domain::models::ChangeColumnType>,
-    /// `(table, column, base version)`.
-    deleted_columns: Vec<(TableId, ColumnId, TableVersion)>,
-    /// `(table, order, base version)`.
-    reordered_columns: Vec<(TableId, Vec<ColumnId>, TableVersion)>,
-    /// Every table order the service was asked for.
-    reordered_tables: Vec<Vec<TableId>>,
     /// The agent each attributed write reached the service as.
     acting_bots: Vec<Option<BotId>>,
     /// Every batch of ops the service was asked to apply.
-    applied: Vec<Vec<models_databases::DatabaseOp>>,
+    applied: Vec<OpBatch>,
 }
 
 #[derive(Clone, Default)]
@@ -217,21 +201,61 @@ impl DatabasesService for FakeService {
         unimplemented!("the toolset does not read card places")
     }
 
-    /// Answers a view op with the view it would leave, as of a fixed time.
+    /// Answers each op as the service would, every touched table moving to
+    /// version 4; a view op answers the view it would leave, as of a fixed
+    /// time, and a type change that clears clears two cells.
     async fn apply_ops(
         &self,
         _receipt: EntityAccessReceipt<EditAccessLevel>,
-        _viewer: Viewer,
-        ops: Vec<models_databases::DatabaseOp>,
-    ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
-        use models_databases::{DatabaseOp, OpResult};
-        self.calls.lock().unwrap().applied.push(ops.clone());
+        viewer: Viewer,
+        batch: OpBatch,
+    ) -> Result<Vec<OpResult>, DatabaseError> {
+        use models_databases::{DatabaseOp, VersionedTable};
+        {
+            let mut calls = self.calls.lock().unwrap();
+            calls.applied.push(batch.clone());
+            calls.acting_bots.push(viewer.acting_bot);
+        }
         let at = chrono::DateTime::UNIX_EPOCH;
-        Ok(ops
+        let table_version = TableVersion(4);
+        Ok(batch
+            .ops
             .into_iter()
-            .map(|op| {
-                let view = match op {
-                    DatabaseOp::CreateView { table, view } => crate::domain::models::DatabaseView {
+            .map(|op| match op {
+                DatabaseOp::CreateTable { id, .. } => OpResult::TableCreated {
+                    table: id,
+                    table_version: TableVersion(1),
+                },
+                DatabaseOp::RenameTable { .. } => OpResult::TableRenamed { table_version },
+                DatabaseOp::DeleteTable { table } => OpResult::TableDeleted { table },
+                DatabaseOp::ReorderTables { order } => OpResult::TablesReordered {
+                    tables: order
+                        .into_iter()
+                        .map(|table| VersionedTable {
+                            table,
+                            version: table_version,
+                        })
+                        .collect(),
+                },
+                DatabaseOp::CreateColumn { id, .. } => OpResult::ColumnCreated {
+                    column: id,
+                    table_version,
+                },
+                DatabaseOp::RenameColumn { .. } => OpResult::ColumnRenamed { table_version },
+                DatabaseOp::DeleteColumn { .. } => OpResult::ColumnDeleted { table_version },
+                DatabaseOp::ReorderColumns { .. } => OpResult::ColumnsReordered { table_version },
+                DatabaseOp::AddOptions { options, .. } => OpResult::OptionsAdded {
+                    table_version,
+                    added: options.into_iter().map(|option| option.id).collect(),
+                },
+                DatabaseOp::ChangeColumnType { clear_invalid, .. } => OpResult::ColumnTyped {
+                    table_version,
+                    cleared_cells: if clear_invalid { 2 } else { 0 },
+                    trimmed_cells: 0,
+                },
+                DatabaseOp::CreateView { table, view } => OpResult::ViewWritten {
+                    table_version,
+                    view: Box::new(crate::domain::models::DatabaseView {
                         id: VIEW_ID,
                         database_id: DATABASE_ID,
                         table_id: table,
@@ -241,42 +265,44 @@ impl DatabasesService for FakeService {
                         layout: view.layout,
                         created_at: at,
                         updated_at: at,
-                    },
-                    DatabaseOp::UpdateView {
-                        view,
-                        name,
-                        query,
-                        layout,
-                        ..
-                    } => {
-                        let current = self
-                            .views
-                            .iter()
-                            .find(|stored| stored.id == view)
-                            .expect("the view the tool found")
-                            .clone();
-                        crate::domain::models::DatabaseView {
+                    }),
+                },
+                DatabaseOp::UpdateView {
+                    view,
+                    name,
+                    query,
+                    layout,
+                    ..
+                } => {
+                    let current = self
+                        .views
+                        .iter()
+                        .find(|stored| stored.id == view)
+                        .expect("the view the tool found")
+                        .clone();
+                    OpResult::ViewWritten {
+                        table_version,
+                        view: Box::new(crate::domain::models::DatabaseView {
                             name: name.unwrap_or(current.name),
                             query: query.unwrap_or(current.query),
                             layout: layout.unwrap_or(current.layout),
                             ..current
-                        }
+                        }),
                     }
-                    other => unimplemented!("the toolset sends no {other:?}"),
-                };
-                OpResult::ViewWritten {
-                    table_version: TableVersion(4),
-                    view: Box::new(view),
                 }
+                other => unimplemented!("the toolset sends no {other:?}"),
             })
             .collect())
     }
 
+    /// The fixed database, its Status column holding the options every
+    /// applied batch added to it.
     async fn get_database(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,
     ) -> Result<DatabaseDetail, DatabaseError> {
-        self.calls.lock().unwrap().described += 1;
+        let mut calls = self.calls.lock().unwrap();
+        calls.described += 1;
         if self.schema_error {
             return Err(DatabaseError::Repo(
                 rootcause::Report::new(std::io::Error::other("schema connection lost"))
@@ -284,10 +310,24 @@ impl DatabasesService for FakeService {
             ));
         }
         let mut database = detail(AccessLevel::Owner);
-        database.tables[0].columns[0]
-            .definition
-            .definition
-            .is_multi_select = self.multi_select_group;
+        let status = &mut database.tables[0].columns[0].definition;
+        status.definition.is_multi_select = self.multi_select_group;
+        let added = calls
+            .applied
+            .iter()
+            .flat_map(|batch| &batch.ops)
+            .filter_map(|op| match op {
+                models_databases::DatabaseOp::AddOptions {
+                    column, options, ..
+                } if *column == COLUMN_ID => Some(options),
+                _ => None,
+            })
+            .flatten();
+        for (offset, added) in added.enumerate() {
+            status
+                .property_options
+                .push(option(&added.label, 2 + offset as i32));
+        }
         database.tables[0].views = self.views.clone();
         Ok(database)
     }
@@ -306,46 +346,6 @@ impl DatabasesService for FakeService {
         Ok(Database { name, ..database() })
     }
 
-    async fn delete_table(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: crate::domain::models::TableId,
-    ) -> Result<(), DatabaseError> {
-        self.calls.lock().unwrap().deleted_tables.push(table_id);
-        Ok(())
-    }
-
-    async fn rename_table(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: crate::domain::models::TableId,
-        name: String,
-        previous_name: String,
-    ) -> Result<Table, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .renamed_tables
-            .push((table_id, name.clone(), previous_name));
-        Ok(Table { name, ..table() })
-    }
-
-    async fn reorder_tables(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_ids: Vec<crate::domain::models::TableId>,
-    ) -> Result<Vec<Table>, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .reordered_tables
-            .push(table_ids.clone());
-        Ok(table_ids
-            .into_iter()
-            .map(|id| Table { id, ..table() })
-            .collect())
-    }
-
     async fn infer_column_type(
         &self,
         _: EntityAccessReceipt<EditAccessLevel>,
@@ -353,25 +353,7 @@ impl DatabasesService for FakeService {
     ) -> Result<crate::domain::models::InferColumnTypeOutcome, DatabaseError> {
         unimplemented!("tool tests do not infer column types")
     }
-    async fn change_column_type(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        _: Viewer,
-        command: crate::domain::models::ChangeColumnType,
-    ) -> Result<crate::domain::models::ColumnTypeChangeOutcome, DatabaseError> {
-        let table_id = command.table_id;
-        let cleared_cells = if command.clear_invalid { 2 } else { 0 };
-        self.calls
-            .lock()
-            .unwrap()
-            .changed_column_types
-            .push(command);
-        Ok(crate::domain::models::ColumnTypeChangeOutcome {
-            table_versions: HashMap::from([(table_id, TableVersion(4))]),
-            cleared_cells,
-            trimmed_cells: 0,
-        })
-    }
+
     async fn column_casts(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,
@@ -379,59 +361,6 @@ impl DatabasesService for FakeService {
         _: ColumnId,
     ) -> Result<Vec<crate::domain::models::ColumnCast>, DatabaseError> {
         unimplemented!("tool tests do not preview type changes")
-    }
-    async fn delete_column(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_id: ColumnId,
-        base_version: TableVersion,
-    ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .deleted_columns
-            .push((table_id, column_id, base_version));
-        Ok(crate::domain::models::ColumnSchemaOutcome {
-            table_versions: HashMap::from([(table_id, TableVersion(4))]),
-        })
-    }
-    async fn reorder_columns(
-        &self,
-        _: EntityAccessReceipt<EditAccessLevel>,
-        table_id: TableId,
-        column_ids: Vec<ColumnId>,
-        base_version: TableVersion,
-    ) -> Result<crate::domain::models::ColumnSchemaOutcome, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .reordered_columns
-            .push((table_id, column_ids, base_version));
-        Ok(crate::domain::models::ColumnSchemaOutcome {
-            table_versions: HashMap::from([(table_id, TableVersion(4))]),
-        })
-    }
-    async fn rename_column(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        table_id: crate::domain::models::TableId,
-        column_id: crate::domain::models::ColumnId,
-        name: String,
-        previous_name: String,
-    ) -> Result<RenameColumnOutcome, DatabaseError> {
-        self.calls.lock().unwrap().renamed_columns.push((
-            table_id,
-            column_id,
-            name.clone(),
-            previous_name,
-        ));
-        let mut column = status_column().column;
-        column.display_name = Some(name.trim().to_string());
-        Ok(RenameColumnOutcome {
-            column,
-            table_version: TableVersion(4),
-        })
     }
 
     async fn trash_database(
@@ -453,60 +382,6 @@ impl DatabasesService for FakeService {
         _receipt: EntityAccessReceipt<OwnerAccessLevel>,
     ) -> Result<(), DatabaseError> {
         unimplemented!("the toolset does not delete databases")
-    }
-
-    async fn create_table(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        command: crate::domain::models::CreateTable,
-    ) -> Result<Table, DatabaseError> {
-        self.calls.lock().unwrap().created_tables.push(command.name);
-        Ok(table())
-    }
-
-    async fn create_column(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        _viewer: Viewer,
-        command: crate::domain::models::CreateColumn,
-    ) -> Result<crate::domain::models::ColumnId, DatabaseError> {
-        let crate::domain::models::ColumnBinding::NewDefinition {
-            data_type,
-            is_multi_select,
-            options,
-            ..
-        } = command.binding
-        else {
-            panic!("the tool only ever creates fresh definitions");
-        };
-        self.calls.lock().unwrap().created_columns.push((
-            command.table_id,
-            data_type,
-            is_multi_select,
-            options,
-        ));
-        Ok(COLUMN_ID)
-    }
-
-    async fn add_column_options(
-        &self,
-        _receipt: EntityAccessReceipt<EditAccessLevel>,
-        _viewer: Viewer,
-        command: crate::domain::models::AddColumnOptions,
-    ) -> Result<ColumnDetail, DatabaseError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .added_options
-            .push((command.column_id, command.labels.clone()));
-        let mut column = status_column();
-        for (offset, label) in command.labels.iter().enumerate() {
-            column
-                .definition
-                .property_options
-                .push(option(label, 2 + offset as i32));
-        }
-        Ok(column)
     }
 
     async fn save_query(

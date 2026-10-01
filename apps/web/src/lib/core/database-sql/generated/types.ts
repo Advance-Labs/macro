@@ -219,10 +219,137 @@ export type DataType =
 export type DatabaseId = string;
 
 /**
- *  One write to a database's data. A request's ops apply together or not at
- *  all, and every op names a table of the database the request is for.
+ *  One write to a database: its tables, columns, options, rows or views. A
+ *  request's ops apply in order and together, or not at all, and every op
+ *  names a table of the database the request is for (or, creating one, adds
+ *  it there).
  */
 export type DatabaseOp =
+  /**
+   *  Add a table, after the database's other tables. It starts with no
+   *  columns and no rows.
+   */
+  | {
+      kind: 'create_table';
+      /**
+       *  The new table's id, minted by the client; later ops of the
+       *  request may name it.
+       */
+      id: TableId;
+      /**  Its name, unique within the database ignoring case. */
+      name: string;
+    }
+  /**  Rename a table. Its id, columns and rows stay. */
+  | {
+      kind: 'rename_table';
+      /**  The table. */
+      table: TableId;
+      /**  Its new name, unique within the database ignoring case. */
+      name: string;
+      /**
+       *  The name the caller saw. Given, the rename is refused if the
+       *  table goes by another one now, so a concurrent rename is not
+       *  overwritten.
+       */
+      previousName?: string | null;
+    }
+  /**
+   *  Remove a table with its columns, rows and views. A database keeps at
+   *  least one table, and a table another table's relation points at
+   *  stays until that relation goes.
+   */
+  | {
+      kind: 'delete_table';
+      /**  The table. */
+      table: TableId;
+    }
+  /**
+   *  Set the order of the database's tables: `order` names every one of
+   *  them once.
+   */
+  | {
+      kind: 'reorder_tables';
+      /**  Every table, in its new order. */
+      order: TableId[];
+    }
+  /**
+   *  Add a column to a table: a new property the database owns, or an
+   *  existing one bound into the table.
+   */
+  | {
+      kind: 'create_column';
+      /**  The table. */
+      table: TableId;
+      /**
+       *  The new column's id, minted by the client; later ops of the
+       *  request may name it.
+       */
+      id: ColumnId;
+      /**  What the column holds. */
+      definition: NewColumn;
+      /**
+       *  The column it goes right after; left out, it goes after the
+       *  table's last column.
+       */
+      after?: ColumnId | null;
+    }
+  /**
+   *  Rename a column. Its id, type and cells stay; SQL names it by its new
+   *  name.
+   */
+  | {
+      kind: 'rename_column';
+      /**  The table. */
+      table: TableId;
+      /**  The column. */
+      column: ColumnId;
+      /**  Its new name, unique within the table ignoring case. */
+      name: string;
+      /**
+       *  The name the caller saw. Given, the rename is refused if the
+       *  column goes by another one now.
+       */
+      previousName?: string | null;
+    }
+  /**
+   *  Remove a column and its cells. The views naming it forget it; a
+   *  board grouped by it must go or regroup first. A property shared
+   *  beyond the database stays, unbound here.
+   */
+  | {
+      kind: 'delete_column';
+      /**  The table. */
+      table: TableId;
+      /**  The column. */
+      column: ColumnId;
+    }
+  /**
+   *  Set the order of a table's columns: `order` names every one of them
+   *  once.
+   */
+  | {
+      kind: 'reorder_columns';
+      /**  The table. */
+      table: TableId;
+      /**  Its columns, in their new order. */
+      order: ColumnId[];
+    }
+  /**
+   *  Add options to a select or tag column, after its others. An option
+   *  whose label the column already has, ignoring case, is left out, so
+   *  re-sending a list adds only what is new. Like
+   *  [`DatabaseOp::UpdateOption`], an option of a property shared beyond
+   *  the database goes everywhere it is used.
+   */
+  | {
+      kind: 'add_options';
+      /**  The table. */
+      table: TableId;
+      /**  The select or tag column. */
+      column: ColumnId;
+      /**  The options, each under an id the client mints. */
+      options: NewOption[];
+    }
   /**  Append rows to a table, in order, each with the cells it starts with. */
   | {
       kind: 'insert_rows';
@@ -664,6 +791,51 @@ export type Lane = {
   hidden?: boolean;
 };
 
+/**  What a new column holds. */
+export type NewColumn =
+  /**  A new property the database owns. */
+  | {
+      source: 'new';
+      /**  The column's name, unique within the table ignoring case. */
+      name: string;
+      /**
+       *  Its type. A relation names the table whose rows it holds, one the
+       *  caller can see.
+       */
+      type: OpColumnKind;
+      /**
+       *  For a select or tag column, the options it starts with, in
+       *  order, each under an id the client mints. A select column with
+       *  none accepts nothing until options are added.
+       */
+      options?: NewOption[];
+      /**
+       *  Let the column's first value settle its type: only for a plain
+       *  text column.
+       */
+      inferType?: boolean;
+    }
+  /**
+   *  An existing property, a person's, a team's or a system one, bound
+   *  into the table under its own name.
+   */
+  | {
+      source: 'existing';
+      /**  The property's definition. */
+      property: PropertyId;
+    };
+
+/**  A select or tag option to create. */
+export type NewOption = {
+  /**  Its id, minted by the client; later ops of the request may name it. */
+  id: OptionId;
+  /**
+   *  Its label, unique within the column ignoring case. A numeric
+   *  select's labels are numbers.
+   */
+  label: string;
+};
+
 /**
  *  A view's contents as an op creates it; the server gives it its id,
  *  position and times.
@@ -762,6 +934,72 @@ export type OpEntityKind =
 
 /**  What one op did, in the order the ops were sent. */
 export type OpResult =
+  /**  The table a creation added. */
+  | {
+      kind: 'table_created';
+      /**  The new table. */
+      table: TableId;
+      /**  Its version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  A table's rename. */
+  | {
+      kind: 'table_renamed';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  A table's removal. */
+  | {
+      kind: 'table_deleted';
+      /**  The table removed. */
+      table: TableId;
+    }
+  /**  The database's tables in their new order. */
+  | {
+      kind: 'tables_reordered';
+      /**
+       *  Every table, in its new order, with its version once the request
+       *  committed.
+       */
+      tables: VersionedTable[];
+    }
+  /**  The column a creation added. */
+  | {
+      kind: 'column_created';
+      /**  The new column. */
+      column: ColumnId;
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  A column's rename. */
+  | {
+      kind: 'column_renamed';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  A column's removal. */
+  | {
+      kind: 'column_deleted';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  A table's columns in their new order. */
+  | {
+      kind: 'columns_reordered';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+    }
+  /**  The options an addition created. */
+  | {
+      kind: 'options_added';
+      /**  The table's version once the request committed. */
+      tableVersion: TableVersion;
+      /**
+       *  The options created, in order: those sent, less any whose label
+       *  the column already had.
+       */
+      added: OptionId[];
+    }
   /**  What an insert, update or delete did. */
   | {
       kind: 'rows_written';
@@ -824,6 +1062,24 @@ export type OpResult =
 
 /**  The kind of an [`OpResult`]. */
 export type OpResultKind =
+  /**  [`OpResult::TableCreated`]. */
+  | 'tableCreated'
+  /**  [`OpResult::TableRenamed`]. */
+  | 'tableRenamed'
+  /**  [`OpResult::TableDeleted`]. */
+  | 'tableDeleted'
+  /**  [`OpResult::TablesReordered`]. */
+  | 'tablesReordered'
+  /**  [`OpResult::ColumnCreated`]. */
+  | 'columnCreated'
+  /**  [`OpResult::ColumnRenamed`]. */
+  | 'columnRenamed'
+  /**  [`OpResult::ColumnDeleted`]. */
+  | 'columnDeleted'
+  /**  [`OpResult::ColumnsReordered`]. */
+  | 'columnsReordered'
+  /**  [`OpResult::OptionsAdded`]. */
+  | 'optionsAdded'
   /**  [`OpResult::RowsWritten`]. */
   | 'rowsWritten'
   /**  [`OpResult::ColumnTyped`]. */
@@ -954,6 +1210,12 @@ export type PresenceOperator =
   | 'isEmpty'
   /**  The cell holds something. */
   | 'isNotEmpty';
+
+/**
+ *  Identifier of a property definition, the type and options behind a
+ *  column. The properties system mints and owns it.
+ */
+export type PropertyId = string;
 
 /**  A column's type as the properties system stores it. */
 export type PropertyType = {
@@ -1669,6 +1931,14 @@ export type ValueKind =
   | 'options'
   /**  References to entities, or to related rows. */
   | 'entities';
+
+/**  A table and its version. */
+export type VersionedTable = {
+  /**  The table. */
+  table: TableId;
+  /**  Its version. */
+  version: TableVersion;
+};
 
 /**  How one column shows in a table layout. */
 export type ViewColumn = {

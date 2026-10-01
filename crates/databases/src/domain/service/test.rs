@@ -14,7 +14,8 @@ use macro_event_broker::{EventBrokerError, MacroEvent, MacroEventBroker};
 use macro_user_id::user_id::MacroUserIdStr;
 use models_databases::position::Position;
 use models_databases::{
-    CellValue, CellWrite, DatabaseOp, OpResult, OptionId, OptionRef, RowChanges,
+    CellValue, CellWrite, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult, OptionId,
+    OptionRef, PropertyId, RowChanges,
 };
 use models_properties::service::property_definition::PropertyDefinition;
 use models_properties::service::property_definition_with_options::PropertyDefinitionWithOptions;
@@ -25,9 +26,8 @@ use uuid::Uuid;
 
 use super::*;
 use crate::domain::models::{
-    CardPosition, Column, ColumnBinding, ColumnConfig, DatabaseView, NewOption, OpRefusal,
-    PropertyDefinitionId, RowId, RowRef, TableDeletion, TableOrderOutcome, TableVersion, ViewId,
-    Write, Writes, WritesOutcome,
+    CardPosition, Column, DatabaseView, NewDefinition, OpBatch, OpRefusal, PropertyDefinitionId,
+    RowId, RowRef, TableVersion, TakenId, ViewId, Write, Writes, WritesOutcome,
 };
 
 mod awareness;
@@ -46,6 +46,7 @@ mod relations;
 mod rename_column;
 mod row_writes;
 mod saved_queries;
+mod schema_ops;
 mod sharing;
 mod tables;
 mod views;
@@ -177,7 +178,7 @@ async fn insert_names(seeded: &Seeded, names: &[&str]) -> Vec<RowId> {
         .apply_ops(
             edit(seeded.database_id),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: seeded.table_id,
                 rows: names
                     .iter()
@@ -189,7 +190,7 @@ async fn insert_names(seeded: &Seeded, names: &[&str]) -> Vec<RowId> {
                     })
                     .collect(),
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();
@@ -239,39 +240,44 @@ async fn seeded() -> Seeded {
             .id;
         (table_id, name_column)
     };
-    let status_column = service
-        .create_column(
+    let (status_column, plus_ones_column) = (ColumnId::new(), ColumnId::new());
+    service
+        .apply_ops(
             receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Status".into(),
-                    data_type: DataType::SelectString,
-                    is_multi_select: false,
-                    options: vec!["Going".into(), "Declined".into()],
+            OpBatch::from(vec![
+                DatabaseOp::CreateColumn {
+                    table: table_id,
+                    id: status_column,
+                    definition: NewColumn::New {
+                        name: "Status".into(),
+                        kind: ColumnKind::Select { multi: false },
+                        options: vec![
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "Going".into(),
+                            },
+                            NewOption {
+                                id: OptionId::new(),
+                                label: "Declined".into(),
+                            },
+                        ],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                config: None,
-            },
-        )
-        .await
-        .unwrap();
-    let plus_ones_column = service
-        .create_column(
-            receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
-            viewer(OWNER),
-            CreateColumn {
-                infer_type: false,
-                table_id,
-                binding: ColumnBinding::NewDefinition {
-                    name: "Plus ones".into(),
-                    data_type: DataType::Number,
-                    is_multi_select: false,
-                    options: vec![],
+                DatabaseOp::CreateColumn {
+                    table: table_id,
+                    id: plus_ones_column,
+                    definition: NewColumn::New {
+                        name: "Plus ones".into(),
+                        kind: ColumnKind::Number,
+                        options: vec![],
+                        infer_type: false,
+                    },
+                    after: None,
                 },
-                config: None,
-            },
+            ]),
         )
         .await
         .unwrap();
@@ -286,7 +292,7 @@ async fn seeded() -> Seeded {
         .apply_ops(
             receipt::<EditAccessLevel>(database.id, OWNER, AccessLevel::Owner),
             viewer(OWNER),
-            vec![DatabaseOp::InsertRows {
+            OpBatch::from(vec![DatabaseOp::InsertRows {
                 table: table_id,
                 rows: vec![vec![
                     CellWrite {
@@ -303,7 +309,7 @@ async fn seeded() -> Seeded {
                     },
                 ]],
                 create_missing_options: false,
-            }],
+            }]),
         )
         .await
         .unwrap();

@@ -4,13 +4,15 @@ use super::*;
 async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashed_data() {
     let seeded = seeded().await;
     let (world, service, database_id) = (seeded.world, seeded.service, seeded.database_id);
-    let tickets = service
-        .create_table(
-            receipt(database_id, OWNER, AccessLevel::Owner),
-            CreateTable {
-                database_id,
+    let tickets = TableId::new();
+    service
+        .apply_ops(
+            edit(database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::CreateTable {
+                id: tickets,
                 name: "Tickets".into(),
-            },
+            }]),
         )
         .await
         .unwrap();
@@ -48,7 +50,7 @@ async fn discovery_includes_nested_tables_in_tab_order_but_not_private_or_trashe
                 .collect::<Vec<_>>(),
             vec!["Guests", "Tickets"]
         );
-        assert_eq!(listed[0].tables[1].id, tickets.id);
+        assert_eq!(listed[0].tables[1].id, tickets);
         assert!(
             listed[0]
                 .tables
