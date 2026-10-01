@@ -6,7 +6,6 @@ import { GithubReauthenticationPrompt } from '@app/features/auth/GithubReauthent
 import { GmailReauthenticationPrompt } from '@app/features/auth/GmailReauthenticationPrompt';
 import { SidebarActiveCallWidget } from '@app/features/block-call/sidebar/active-call-widget';
 import { useIncomingCallWidgetVisible } from '@app/features/block-call/sidebar/incoming-calls';
-import { StarterDatabase } from '@app/features/block-database/views/starter-database';
 import { CommandMenu } from '@app/features/command';
 import { FavoritesCommands } from '@app/features/command/FavoritesCommands';
 import {
@@ -54,7 +53,11 @@ import {
 import { useIsAuthenticated } from '@core/auth';
 import { UserCardDrawer } from '@core/component/UserCardDrawer';
 import { useAiUsageLimitState } from '@core/constant/AiUsageLimitState';
-import { DEV_MODE_ENV, enableReminders } from '@core/constant/featureFlags';
+import {
+  DEV_MODE_ENV,
+  enableDatabases,
+  enableReminders,
+} from '@core/constant/featureFlags';
 import { usePaywallState } from '@core/constant/PaywallState';
 import { isSoloSettings } from '@core/constant/SettingsState';
 import { attachGlobalDOMScope } from '@core/hotkey/hotkeys';
@@ -77,6 +80,7 @@ import {
   createMemo,
   createSignal,
   type JSX,
+  lazy,
   onCleanup,
   onMount,
   Show,
@@ -93,6 +97,13 @@ import { MobileDockRow } from './mobile/MobileDockRow';
 import { MobileViewsRow } from './mobile/MobileViewsRow';
 import { SwipeDownDismissKeyboard } from './mobile/SwipeDownDismissKeyboard';
 import { useAppSquishHandlers } from './useAppSquishHandlers';
+
+const StarterDatabase = lazy(async () => {
+  const module = await import(
+    '@app/features/block-database/views/starter-database'
+  );
+  return { default: module.StarterDatabase };
+});
 
 const AUTH_URLS = [
   `${ROUTER_BASE_CONCAT}login`,
@@ -138,7 +149,11 @@ export function Layout(props: RouteSectionProps) {
       >
         <MobileSettingsProvider>
           <Show when={isAuthenticated() === true}>
-            <StarterDatabase />
+            <ShowFeatureFlag flag={enableDatabases}>
+              <Suspense>
+                <StarterDatabase />
+              </Suspense>
+            </ShowFeatureFlag>
           </Show>
           <LayoutInner {...props} />
         </MobileSettingsProvider>

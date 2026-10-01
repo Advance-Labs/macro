@@ -34,24 +34,10 @@ import { createProjectHandler } from './CreateProject';
 import { createTagHandler } from './CreateTag';
 import { getCompanyHandler, listCompaniesHandler } from './Crm';
 import {
-  addColumnHandler,
-  addColumnOptionsHandler,
-  changeColumnTypeHandler,
-  createDatabaseHandler,
-  createTableHandler,
-  deleteColumnHandler,
-  deleteTableHandler,
-  describeDatabaseHandler,
-  listDatabasesHandler,
-  queryDatabaseHandler,
-  renameColumnHandler,
-  renameDatabaseHandler,
-  renameTableHandler,
-  reorderColumnsHandler,
-  reorderTablesHandler,
-  saveDatabaseQueryHandler,
-  saveDatabaseViewHandler,
-} from './DatabaseTools';
+  DatabaseToolPlaceholder,
+  isToolShown,
+  lazyDatabaseToolHandlers,
+} from './DatabaseToolHandlers';
 import { deleteTagHandler } from './DeleteTag';
 import { displayResultsHandler } from './DisplayResults';
 import {
@@ -157,23 +143,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   GetEntityProperties: getEntityPropertiesHandler,
   ListCompanies: listCompaniesHandler,
   ListImportEntities: listImportEntitiesHandler,
-  ListDatabases: listDatabasesHandler,
-  DescribeDatabase: describeDatabaseHandler,
-  QueryDatabase: queryDatabaseHandler,
-  CreateDatabase: createDatabaseHandler,
-  CreateTable: createTableHandler,
-  RenameTable: renameTableHandler,
-  ReorderTables: reorderTablesHandler,
-  AddColumn: addColumnHandler,
-  AddColumnOptions: addColumnOptionsHandler,
-  SaveDatabaseView: saveDatabaseViewHandler,
-  RenameDatabase: renameDatabaseHandler,
-  DeleteTable: deleteTableHandler,
-  RenameColumn: renameColumnHandler,
-  ChangeColumnType: changeColumnTypeHandler,
-  DeleteColumn: deleteColumnHandler,
-  ReorderColumns: reorderColumnsHandler,
-  SaveDatabaseQuery: saveDatabaseQueryHandler,
+  ...lazyDatabaseToolHandlers,
   ListEntities: listEntitiesHandler,
   ListInboxes: listInboxesHandler,
   ListLabels: listLabelsHandler,
@@ -270,25 +240,6 @@ export function RenderTool(props: ToolProps) {
   if (maybeTool.isErr()) return null;
 
   const tool = maybeTool.value;
-  const databaseTool = [
-    'ListDatabases',
-    'DescribeDatabase',
-    'QueryDatabase',
-    'CreateDatabase',
-    'CreateTable',
-    'RenameTable',
-    'ReorderTables',
-    'AddColumn',
-    'AddColumnOptions',
-    'SaveDatabaseView',
-    'RenameDatabase',
-    'DeleteTable',
-    'RenameColumn',
-    'ChangeColumnType',
-    'DeleteColumn',
-    'ReorderColumns',
-    'SaveDatabaseQuery',
-  ].includes(tool.name);
   const handler = toolHandlers[tool.name] as ToolHandler<
     ToolName,
     RenderContext
@@ -348,8 +299,8 @@ export function RenderTool(props: ToolProps) {
       value={() => (props.isComplete && !response() ? 'failed' : undefined)}
     >
       <Show
-        when={!databaseTool || databasesEnabled().enabled}
-        fallback={<span class="text-xs text-ink-muted">Database tool</span>}
+        when={isToolShown(tool.name, databasesEnabled().enabled)}
+        fallback={<DatabaseToolPlaceholder />}
       >
         <Dynamic
           component={handler.render}

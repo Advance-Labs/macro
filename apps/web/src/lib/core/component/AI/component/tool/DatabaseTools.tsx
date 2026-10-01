@@ -22,6 +22,7 @@ import type { NamedTool } from '@service-cognition/generated/tools/tool';
 import { createSignal, For, Show } from 'solid-js';
 import { match } from 'ts-pattern';
 import { BaseTool } from './BaseTool';
+import type { DatabaseToolHandlerMap } from './DatabaseToolHandlers';
 import { Tool } from './Tool';
 import { createToolRenderer } from './ToolRenderer';
 
@@ -574,3 +575,23 @@ export const saveDatabaseQueryHandler = createToolRenderer({
     );
   },
 });
+
+export const databaseToolHandlers: DatabaseToolHandlerMap = {
+  ListDatabases: listDatabasesHandler,
+  DescribeDatabase: describeDatabaseHandler,
+  QueryDatabase: queryDatabaseHandler,
+  CreateDatabase: createDatabaseHandler,
+  CreateTable: createTableHandler,
+  RenameTable: renameTableHandler,
+  ReorderTables: reorderTablesHandler,
+  AddColumn: addColumnHandler,
+  AddColumnOptions: addColumnOptionsHandler,
+  SaveDatabaseView: saveDatabaseViewHandler,
+  RenameDatabase: renameDatabaseHandler,
+  DeleteTable: deleteTableHandler,
+  RenameColumn: renameColumnHandler,
+  ChangeColumnType: changeColumnTypeHandler,
+  DeleteColumn: deleteColumnHandler,
+  ReorderColumns: reorderColumnsHandler,
+  SaveDatabaseQuery: saveDatabaseQueryHandler,
+};
