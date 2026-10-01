@@ -35,6 +35,7 @@ members = [
   "crates/claude_cloud_agents",
   "crates/database_sql",
   "crates/databases",
+  "crates/databases_sql",
   "crates/embedding",
   "crates/dictation",
   "crates/email_api_client",
