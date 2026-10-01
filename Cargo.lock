@@ -5866,6 +5866,7 @@ dependencies = [
  "cookie",
  "crm",
  "databases",
+ "databases_sql",
  "document_storage_service_client",
  "documents",
  "doppleganger",

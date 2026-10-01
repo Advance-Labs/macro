@@ -1,5 +1,5 @@
 use crate::api::context::{ApiContext, DcsAuthorizationService, DcsChatModelAccess};
-use crate::api::tool_selection::select_tools;
+use crate::api::tool_selection::{choose_tools_prompt, service_tools};
 use crate::model::stream::ToolSet;
 use agent::structured_output::DynamicSchema;
 use agent::types::{ChatMessage, ChatMessageContent, Role};
@@ -19,7 +19,8 @@ use utoipa::ToSchema;
 mod activity;
 #[cfg(test)]
 mod test;
-use activity::{StructuredToolActivity, has_database_changes, tool_activity};
+pub use activity::{DatabaseChange, StructuredToolActivity, ToolOutcome};
+use activity::{has_database_changes, tool_activity};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StructuredCompletionRequest {
@@ -33,11 +34,21 @@ pub struct StructuredCompletionRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct StructuredCompletionResponse {
-    pub result: serde_json::Value,
+    pub outcome: StructuredCompletionOutcome,
     /// Actual completed tools, independent of the model's claims.
-    #[serde(rename = "toolActivity")]
     pub tool_activity: Vec<StructuredToolActivity>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum StructuredCompletionOutcome {
+    /// The answer, shaped by the request's `output_schema`.
+    Completed { result: serde_json::Value },
+    /// The model failed after committing database changes, so there is no
+    /// answer but `tool_activity` says what was saved.
+    Interrupted { reason: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -71,6 +82,7 @@ impl IntoResponse for StructuredCompletionError {
         (status = 400, description = "Bad request", body = StructuredCompletionError),
         (status = 401, description = "Unauthorized"),
         (status = 402, description = "Payment required"),
+        (status = 403, description = "No access to the requested model", body = StructuredCompletionError),
         (status = 500, description = "Internal error", body = StructuredCompletionError),
     )
 )]
@@ -82,12 +94,14 @@ pub async fn structured_completion(
     Json(request): Json<StructuredCompletionRequest>,
 ) -> Result<Json<StructuredCompletionResponse>, StructuredCompletionError> {
     let ctx = Arc::new(state);
-    // Fall back to the plan's best model when the requested one is not included.
-    let model = if model_access.has_access(&request.model) {
-        request.model.clone()
-    } else {
-        model_access.best_model().to_string()
-    };
+    if !model_access.has_access(&request.model) {
+        return Err(StructuredCompletionError {
+            error: format!("No access to model {}", request.model),
+            status: StatusCode::FORBIDDEN,
+            code: None,
+        });
+    }
+    let model = request.model.clone();
 
     let user_id = user.authorization.user.macro_user_id.clone();
 
@@ -109,11 +123,7 @@ pub async fn structured_completion(
         }
     }
 
-    let tools_prompt: &(dyn std::fmt::Display + Sync) = match request.toolset {
-        ToolSet::All => &ctx.all_tools_prompt,
-        ToolSet::None | ToolSet::DatabasesReadOnly => &prompt::BASE_PROMPT,
-        ToolSet::Databases => &prompt::DATABASE_TOOL_USE_PROMPT,
-    };
+    let tools_prompt = choose_tools_prompt(&request.toolset, &*ctx.all_tools_prompt);
 
     let system_prompt = match &request.additional_instructions {
         Some(instructions) => format!("{}\n{}", tools_prompt, instructions),
@@ -123,26 +133,11 @@ pub async fn structured_completion(
     // Tool-free completions (for example, query proposals) must not discover
     // connectors or execute built-in tools. Omitting the tool prompt alone
     // does not remove the agent's capabilities.
-    let toolset = select_tools(
+    let toolset = service_tools(
         &request.toolset,
-        async {
-            let tools: Arc<dyn ai_toolset::ToolSet<_> + Send + Sync> =
-                Arc::new(ai_tools::database_tools());
-            tools
-        },
-        async {
-            let tools: Arc<dyn ai_toolset::ToolSet<_> + Send + Sync> =
-                Arc::new(ai_tools::database_read_only_tools());
-            tools
-        },
-        async {
-            use mcp_select::ConnectorSelect;
-            let mcp_tools = ctx.mcp_selector.user_toolset(&user_id).await;
-            let tools: Arc<dyn ai_toolset::ToolSet<_> + Send + Sync> = Arc::new(
-                mcp_select::CombinedToolSet::new(ctx.all_tools.clone(), mcp_tools),
-            );
-            tools
-        },
+        ctx.all_tools.clone(),
+        &ctx.mcp_selector,
+        &user_id,
     )
     .await;
 
@@ -194,11 +189,7 @@ pub async fn structured_completion(
     let yielded_parts = accumulator.into_parts();
     let activity = tool_activity(&yielded_parts);
     if let Some(error) = stream_error {
-        return partial_completion_or_error(
-            activity,
-            error,
-            matches!(request.toolset, ToolSet::Databases),
-        );
+        return partial_completion_or_error(activity, error);
     }
 
     // Phase 2: Structured completion with the gathered context
@@ -234,7 +225,7 @@ pub async fn structured_completion(
     .await;
     match result {
         Ok(result) => Ok(Json(StructuredCompletionResponse {
-            result,
+            outcome: StructuredCompletionOutcome::Completed { result },
             tool_activity: activity,
         })),
         Err(error) => partial_completion_or_error(
@@ -244,7 +235,6 @@ pub async fn structured_completion(
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 code: None,
             },
-            matches!(request.toolset, ToolSet::Databases),
         ),
     }
 }
@@ -253,18 +243,15 @@ pub async fn structured_completion(
 fn partial_completion_or_error(
     tool_activity: Vec<StructuredToolActivity>,
     error: StructuredCompletionError,
-    database_answer: bool,
 ) -> Result<Json<StructuredCompletionResponse>, StructuredCompletionError> {
-    if !database_answer || !has_database_changes(&tool_activity) {
+    if !has_database_changes(&tool_activity) {
         return Err(error);
     }
     tracing::warn!(error = %error, "Completion interrupted after database changes");
     Ok(Json(StructuredCompletionResponse {
-        result: serde_json::json!({
-            "answerable": false,
-            "sql": "",
-            "explanation": "Some changes were saved, but the assistant could not finish. Review the updated table before requesting further changes."
-        }),
+        outcome: StructuredCompletionOutcome::Interrupted {
+            reason: error.error,
+        },
         tool_activity,
     }))
 }
