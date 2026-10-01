@@ -26,14 +26,24 @@ pub enum PlacementError {
     /// A neighbour named is not a card of the lane.
     #[error("row {0} is not a card of that lane")]
     NotInLane(RowId),
+    /// Both neighbours were named but `after` is not the card right after
+    /// `before`, so there is no place between them.
+    #[error("row {after} is not the card right after row {before}")]
+    NotAdjacent {
+        /// The card named to precede the moved one.
+        before: RowId,
+        /// The card named to follow it.
+        after: RowId,
+    },
     /// The lane's positions could not be extended.
     #[error(transparent)]
     Position(#[from] PositionError),
 }
 
-/// The positions to store so `card` lands right after `before`, or with no
-/// `before` right before `after`, or with neither at the end of `lane`. The
-/// lane is in board order without the card. Only a card with a position can
+/// The positions to store so `card` lands right after `before` and right
+/// before `after`; either may be left out, and with neither it goes to the
+/// end of `lane`. Both named must be adjacent. The lane is in board order
+/// without the card. Only a card with a position can
 /// sit before one without, so landing after cards that have none gives them
 /// positions too, in their current order, before the card's own; the card's
 /// is always last.
@@ -49,7 +59,14 @@ pub fn place_card(
             .ok_or(PlacementError::NotInLane(row))
     };
     let index = match (before, after) {
-        (Some(before), _) => index_of(before)? + 1,
+        (Some(before), Some(after)) => {
+            let index = index_of(before)? + 1;
+            if index_of(after)? != index {
+                return Err(PlacementError::NotAdjacent { before, after });
+            }
+            index
+        }
+        (Some(before), None) => index_of(before)? + 1,
         (None, Some(after)) => index_of(after)?,
         (None, None) => lane.len(),
     };

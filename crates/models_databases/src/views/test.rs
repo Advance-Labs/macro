@@ -706,3 +706,26 @@ fn a_stored_view_crosses_the_wire_in_camel_case() {
         })
     );
 }
+
+#[test]
+fn neighbours_that_are_not_adjacent_are_refused() {
+    let lane = vec![
+        (FIRST, Some("80".to_string())),
+        (SECOND, Some("8180".to_string())),
+        (THIRD, Some("8280".to_string())),
+    ];
+    assert_eq!(
+        place_card(&lane, MOVED, Some(FIRST), Some(THIRD)),
+        Err(PlacementError::NotAdjacent {
+            before: FIRST,
+            after: THIRD
+        })
+    );
+    assert_eq!(
+        place_card(&lane, MOVED, Some(SECOND), Some(FIRST)),
+        Err(PlacementError::NotAdjacent {
+            before: SECOND,
+            after: FIRST
+        })
+    );
+}
