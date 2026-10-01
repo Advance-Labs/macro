@@ -437,14 +437,13 @@ export function createDatabaseRowsSource(props: {
             'The database answered the edit with something else.'
           );
         props.applyVersions({ [tableId]: written.tableVersion });
-        // New options live in the schema; read it so they show as options.
-        if (createOptions) {
-          try {
-            await refreshSchema();
-          } catch {
-            // The edit is saved; the next schema read shows the options.
-          }
-        }
+        // New options live in the schema; read it again in the background
+        // so they show as options without suspending the grid.
+        if (createOptions)
+          void queryClient.invalidateQueries({
+            queryKey: detailKey,
+            exact: true,
+          });
         return {
           insertedRowIds: written.inserted,
           version: written.tableVersion,
