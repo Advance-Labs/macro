@@ -11,7 +11,8 @@ choice scopes the question to the entire database; no table selection is
 required. Document questions can only read data. Choose **Insert answer** to save the result in the document.
 The question box shows no SQL: there is no SQL toggle, editor, or **Run SQL**
 (see [Showing SQL](databases.md#showing-sql)). A single value becomes an inline answer and multiple records become a
-result table. Ask for a bar, line, or pie chart to visualize a summary. The display
+result table. Ask for a bar, line, area, scatter, or pie chart to visualize a summary;
+hover a mark for its value. The display
 menu offers formats supported by the result; **View data** reveals a chart's
 underlying table. Chart settings are saved with the query, and charts refresh
 from each reader's permitted data just like other live answers.

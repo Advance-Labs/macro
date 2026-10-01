@@ -240,7 +240,7 @@ and checks actual results before reporting success.
 Query tool rows say what the query did in words (**Read Invites**, **Updated 3
 rows in Guests**, **Changed Price to number**, or **Queried Party Planner**) and
 never show the statement. Query tool results render inline. Their display menu switches between a table,
-a scalar answer, or compatible bar, line, and pie charts. A saved-view tool result
+a scalar answer, or compatible bar, line, area, scatter, and pie charts. A saved-view tool result
 offers **Open view**, which opens that database/table and selects the created view.
 The same tools are exposed to agent sessions through the Macro MCP server.
 
@@ -255,10 +255,15 @@ ambiguous, the assistant asks for clarification. Type to search the
 source menu, use the arrow keys and Enter to choose, or Escape to return without
 changing it. The displayed source is checked against the query's actual table
 dependencies. Single values default to an inline answer; multiple records become a
-result table. Asking for a chart can produce a **Bar chart**, **Line chart**, or
-**Pie chart**. The answer's display menu offers the formats supported by its data;
-**View data** opens the underlying result table. Missing values remain empty, and
-an unavailable chart falls back to the table with an explanation. Charts copied
+result table. Asking for a chart can produce a **Bar chart**, **Line chart**,
+**Area chart**, **Scatter chart**, or **Pie chart**; the AI can also split one
+series into colored groups by a column, or stack bars and areas into a total. The
+answer's display menu offers the formats supported by its data; **View data** opens
+the underlying result table. Hovering a bar, point, or slice shows a tip with its
+label and value. Categories draw as horizontal bars, and dates draw on a time axis;
+rows without a date are left off that axis with a note saying how many. Missing
+values remain empty, and an unavailable chart falls back to the table with an
+explanation. Charts copied
 into documents stay live: only their query and chart settings are saved, never a
 copy of the reader's results. **Insert answer** saves a new answer; **Save changes** updates an
 existing one. Existing answers retain their resolved source and preview their
