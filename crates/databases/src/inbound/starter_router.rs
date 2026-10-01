@@ -12,19 +12,23 @@ use macro_authorization::{
 };
 
 use crate::domain::{
-    models::{DatabaseError, Viewer},
+    models::DatabaseError,
     starter::{DatabaseStarterService, StarterDatabase},
 };
+use crate::inbound::axum_router::viewer_of;
 
 /// Starter service and authenticated identity extraction.
-pub struct DatabaseStarterRouterState<S, Auth> {
-    service: Arc<S>,
-    authorization_state: MacroAuthorizationState<Auth>,
+pub struct DatabaseStarterRouterState<Service, Authorization> {
+    service: Arc<Service>,
+    authorization_state: MacroAuthorizationState<Authorization>,
 }
 
-impl<S, Auth> DatabaseStarterRouterState<S, Auth> {
+impl<Service, Authorization> DatabaseStarterRouterState<Service, Authorization> {
     /// Compose the route at the service entry point.
-    pub fn new(service: Arc<S>, authorization_state: MacroAuthorizationState<Auth>) -> Self {
+    pub fn new(
+        service: Arc<Service>,
+        authorization_state: MacroAuthorizationState<Authorization>,
+    ) -> Self {
         Self {
             service,
             authorization_state,
@@ -32,7 +36,7 @@ impl<S, Auth> DatabaseStarterRouterState<S, Auth> {
     }
 }
 
-impl<S, Auth> Clone for DatabaseStarterRouterState<S, Auth> {
+impl<Service, Authorization> Clone for DatabaseStarterRouterState<Service, Authorization> {
     fn clone(&self) -> Self {
         Self {
             service: self.service.clone(),
@@ -41,21 +45,28 @@ impl<S, Auth> Clone for DatabaseStarterRouterState<S, Auth> {
     }
 }
 
-impl<S, Auth> FromRef<DatabaseStarterRouterState<S, Auth>> for MacroAuthorizationState<Auth> {
-    fn from_ref(state: &DatabaseStarterRouterState<S, Auth>) -> Self {
+impl<Service, Authorization> FromRef<DatabaseStarterRouterState<Service, Authorization>>
+    for MacroAuthorizationState<Authorization>
+{
+    fn from_ref(state: &DatabaseStarterRouterState<Service, Authorization>) -> Self {
         state.authorization_state.clone()
     }
 }
 
 /// Mount alongside the other database routes.
-pub fn starter_router<S, Auth, T>(state: DatabaseStarterRouterState<S, Auth>) -> Router<T>
+pub fn starter_router<Service, Authorization, RouterState>(
+    state: DatabaseStarterRouterState<Service, Authorization>,
+) -> Router<RouterState>
 where
-    S: DatabaseStarterService,
-    Auth: MacroAuthorizationService,
-    T: Send + Sync + 'static,
+    Service: DatabaseStarterService,
+    Authorization: MacroAuthorizationService,
+    RouterState: Send + Sync + 'static,
 {
     Router::new()
-        .route("/starter", post(ensure_starter_handler::<S, Auth>))
+        .route(
+            "/starter",
+            post(ensure_starter_handler::<Service, Authorization>),
+        )
         .with_state(state)
 }
 
@@ -66,20 +77,17 @@ where
     (status = 500, description = "Provisioning failed; safe to retry")
 ))]
 #[tracing::instrument(err, skip_all)]
-pub async fn ensure_starter_handler<S, Auth>(
-    State(state): State<DatabaseStarterRouterState<S, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn ensure_starter_handler<Service, Authorization>(
+    State(state): State<DatabaseStarterRouterState<Service, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
 ) -> Result<Json<StarterDatabase>, DatabaseError>
 where
-    S: DatabaseStarterService,
-    Auth: MacroAuthorizationService,
+    Service: DatabaseStarterService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
-        .ensure_starter(Viewer {
-            user_id: user.authorization.user.macro_user_id.clone(),
-            acting_bot: None,
-        })
+        .ensure_starter(viewer_of(&user))
         .await
         .map(Json)
 }

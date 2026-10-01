@@ -71,13 +71,15 @@ use ops::OpRefusalResponse;
 const MAX_IMPORT_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// Router state for databases endpoints.
-pub struct DatabasesRouterState<S, Eas, Auth> {
-    service: Arc<S>,
-    entity_access_service: Arc<Eas>,
-    authorization_state: MacroAuthorizationState<Auth>,
+pub struct DatabasesRouterState<Service, EntityAccess, Authorization> {
+    service: Arc<Service>,
+    entity_access_service: Arc<EntityAccess>,
+    authorization_state: MacroAuthorizationState<Authorization>,
 }
 
-impl<S, Eas, Auth> Clone for DatabasesRouterState<S, Eas, Auth> {
+impl<Service, EntityAccess, Authorization> Clone
+    for DatabasesRouterState<Service, EntityAccess, Authorization>
+{
     fn clone(&self) -> Self {
         Self {
             service: self.service.clone(),
@@ -87,16 +89,17 @@ impl<S, Eas, Auth> Clone for DatabasesRouterState<S, Eas, Auth> {
     }
 }
 
-impl<S, Eas, Auth> DatabasesRouterState<S, Eas, Auth>
+impl<Service, EntityAccess, Authorization>
+    DatabasesRouterState<Service, EntityAccess, Authorization>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
 {
     /// Create router state from shared service references and authorization state.
     pub fn new(
-        service: Arc<S>,
-        entity_access_service: Arc<Eas>,
-        authorization_state: MacroAuthorizationState<Auth>,
+        service: Arc<Service>,
+        entity_access_service: Arc<EntityAccess>,
+        authorization_state: MacroAuthorizationState<Authorization>,
     ) -> Self {
         Self {
             service,
@@ -106,99 +109,126 @@ where
     }
 }
 
-impl<S, Eas, Auth> FromRef<DatabasesRouterState<S, Eas, Auth>> for Arc<Eas> {
-    fn from_ref(state: &DatabasesRouterState<S, Eas, Auth>) -> Self {
+impl<Service, EntityAccess, Authorization>
+    FromRef<DatabasesRouterState<Service, EntityAccess, Authorization>> for Arc<EntityAccess>
+{
+    fn from_ref(state: &DatabasesRouterState<Service, EntityAccess, Authorization>) -> Self {
         state.entity_access_service.clone()
     }
 }
 
-impl<S, Eas, Auth> FromRef<DatabasesRouterState<S, Eas, Auth>> for MacroAuthorizationState<Auth> {
-    fn from_ref(state: &DatabasesRouterState<S, Eas, Auth>) -> Self {
+impl<Service, EntityAccess, Authorization>
+    FromRef<DatabasesRouterState<Service, EntityAccess, Authorization>>
+    for MacroAuthorizationState<Authorization>
+{
+    fn from_ref(state: &DatabasesRouterState<Service, EntityAccess, Authorization>) -> Self {
         state.authorization_state.clone()
     }
 }
 
 /// Build the databases router.
-pub fn databases_router<S, Eas, Auth, T>(state: DatabasesRouterState<S, Eas, Auth>) -> Router<T>
+pub fn databases_router<Service, EntityAccess, Authorization, RouterState>(
+    state: DatabasesRouterState<Service, EntityAccess, Authorization>,
+) -> Router<RouterState>
 where
-    S: DatabasesService + DatabaseSharingService + DatabaseTransferService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
-    T: Send + Sync + 'static,
+    Service: DatabasesService + DatabaseSharingService + DatabaseTransferService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
+    RouterState: Send + Sync + 'static,
 {
     Router::new()
-        .route("/", get(list_databases_handler::<S, Eas, Auth>))
+        .route(
+            "/",
+            get(list_databases_handler::<Service, EntityAccess, Authorization>),
+        )
         .route(
             "/{id}/import",
-            post(transfer::import_table_handler::<S, Eas, Auth>)
+            post(transfer::import_table_handler::<Service, EntityAccess, Authorization>)
                 .layer(axum::extract::DefaultBodyLimit::max(MAX_IMPORT_BODY_BYTES)),
         )
-        .route("/", post(create_database_handler::<S, Eas, Auth>))
+        .route(
+            "/",
+            post(create_database_handler::<Service, EntityAccess, Authorization>),
+        )
         // Static segments win over `/{id}`, so these never read as a database.
         .route(
             "/queries",
-            post(saved_queries::save_query_handler::<S, Eas, Auth>),
+            post(saved_queries::save_query_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/queries/{query_id}",
-            get(saved_queries::get_query_handler::<S, Eas, Auth>),
+            get(saved_queries::get_query_handler::<Service, EntityAccess, Authorization>),
         )
-        .route("/{id}", get(get_database_handler::<S, Eas, Auth>))
-        .route("/{id}/awareness", put(awareness_handler::<S, Eas, Auth>))
-        .route("/{id}/ops", post(ops::apply_ops_handler::<S, Eas, Auth>))
+        .route(
+            "/{id}",
+            get(get_database_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/awareness",
+            put(awareness_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/ops",
+            post(ops::apply_ops_handler::<Service, EntityAccess, Authorization>),
+        )
         .route(
             "/{id}/views/{view_id}/positions",
-            get(views::view_positions_handler::<S, Eas, Auth>),
+            get(views::view_positions_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/permissions",
-            get(sharing::get_permissions_handler::<S, Eas, Auth>)
-                .patch(sharing::update_permissions_handler::<S, Eas, Auth>),
+            get(sharing::get_permissions_handler::<Service, EntityAccess, Authorization>)
+                .patch(sharing::update_permissions_handler::<Service, EntityAccess, Authorization>),
         )
-        .route("/{id}/tables", post(create_table_handler::<S, Eas, Auth>))
+        .route(
+            "/{id}/tables",
+            post(create_table_handler::<Service, EntityAccess, Authorization>),
+        )
         // Static, so it never reads as a table id.
         .route(
             "/{id}/tables/order",
-            put(reorder_tables_handler::<S, Eas, Auth>),
+            put(reorder_tables_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}",
-            patch(rename_table_handler::<S, Eas, Auth>)
-                .delete(delete_table_handler::<S, Eas, Auth>),
+            patch(rename_table_handler::<Service, EntityAccess, Authorization>)
+                .delete(delete_table_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns",
-            post(create_column_handler::<S, Eas, Auth>),
+            post(create_column_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}",
-            patch(rename_column_handler::<S, Eas, Auth>)
-                .delete(delete_column_handler::<S, Eas, Auth>),
+            patch(rename_column_handler::<Service, EntityAccess, Authorization>)
+                .delete(delete_column_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/type",
-            patch(change_column_type_handler::<S, Eas, Auth>),
+            patch(change_column_type_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/casts",
-            get(column_casts_handler::<S, Eas, Auth>),
+            get(column_casts_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/order",
-            patch(reorder_columns_handler::<S, Eas, Auth>),
+            patch(reorder_columns_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/infer-type",
-            post(infer_column_type_handler::<S, Eas, Auth>),
+            post(infer_column_type_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/tables/{table_id}/columns/{column_id}/options",
-            post(add_column_options_handler::<S, Eas, Auth>),
+            post(add_column_options_handler::<Service, EntityAccess, Authorization>),
         )
         .with_state(state)
 }
 
-fn viewer_of<Auth>(user: &MacroAuthorizationExtractor<Auth, UserOrInternal>) -> Viewer {
+pub(crate) fn viewer_of<Authorization>(
+    user: &MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+) -> Viewer {
     Viewer {
         user_id: user.authorization.user.macro_user_id.clone(),
         acting_bot: None,
@@ -279,9 +309,8 @@ pub enum ColumnBindingRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateColumnRequest {
-    /// Infer the first value type of a newly owned text column. `infer_type`
-    /// is still accepted from clients that predate the camelCase name.
-    #[serde(default, alias = "infer_type")]
+    /// Infer the first value type of a newly owned text column.
+    #[serde(default)]
     pub infer_type: bool,
     /// Definition source.
     pub binding: ColumnBindingRequest,
@@ -300,18 +329,18 @@ pub struct DatabasePath {
     pub id: Uuid,
 }
 
-/// Path params for the column route.
+/// Path params for the table routes.
 #[derive(Debug, Deserialize)]
-pub struct ColumnPath {
+pub struct TablePath {
     /// Database id.
     pub id: Uuid,
     /// Table id.
     pub table_id: Uuid,
 }
 
-/// Path params for the column-options route.
+/// Path params for the column routes.
 #[derive(Debug, Deserialize)]
-pub struct ColumnOptionsPath {
+pub struct ColumnPath {
     /// Database id.
     pub id: Uuid,
     /// Table id.
@@ -341,14 +370,14 @@ pub struct AddColumnOptionsRequest {
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn list_databases_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn list_databases_handler<Service, EntityAccess, Authorization>(
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
 ) -> Result<Json<Vec<ListedDatabase>>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let databases = state.service.list_databases(viewer_of(&user)).await?;
     Ok(Json(databases))
@@ -369,22 +398,21 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn create_database_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Json(req): Json<CreateDatabaseRequest>,
+pub async fn create_database_handler<Service, EntityAccess, Authorization>(
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Json(request): Json<CreateDatabaseRequest>,
 ) -> Result<(StatusCode, Json<Database>), DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
-    let owner_id = user.authorization.user.macro_user_id.clone();
     let database = state
         .service
         .create_database(CreateDatabase {
-            name: req.name,
-            owner_id,
+            name: request.name,
+            owner_id: viewer_of(&user).user_id,
             acting_bot: None,
         })
         .await?;
@@ -407,15 +435,15 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn get_database_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn get_database_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
 ) -> Result<Json<DatabaseDetail>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let detail = state
         .service
@@ -440,16 +468,16 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn awareness_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn awareness_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
     Json(awareness): Json<Awareness>,
 ) -> Result<StatusCode, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -475,16 +503,16 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn create_table_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+pub async fn create_table_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
     Path(DatabasePath { id }): Path<DatabasePath>,
-    Json(req): Json<CreateTableRequest>,
+    Json(request): Json<CreateTableRequest>,
 ) -> Result<(StatusCode, Json<Table>), DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let table = state
         .service
@@ -492,7 +520,7 @@ where
             access.entity_access_receipt,
             CreateTable {
                 database_id: id,
-                name: req.name,
+                name: request.name,
             },
         )
         .await?;
@@ -518,24 +546,24 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn rename_table_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Path(ColumnPath { table_id, .. }): Path<ColumnPath>,
-    Json(req): Json<RenameTableRequest>,
+pub async fn rename_table_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(TablePath { table_id, .. }): Path<TablePath>,
+    Json(request): Json<RenameTableRequest>,
 ) -> Result<Json<Table>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
         .rename_table(
             access.entity_access_receipt,
             table_id,
-            req.name,
-            req.previous_name,
+            request.name,
+            request.previous_name,
         )
         .await
         .map(Json)
@@ -560,19 +588,19 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn reorder_tables_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Json(req): Json<ReorderTablesRequest>,
+pub async fn reorder_tables_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Json(request): Json<ReorderTablesRequest>,
 ) -> Result<Json<Vec<Table>>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
-        .reorder_tables(access.entity_access_receipt, req.table_ids)
+        .reorder_tables(access.entity_access_receipt, request.table_ids)
         .await
         .map(Json)
 }
@@ -595,15 +623,15 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn delete_table_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Path(ColumnPath { table_id, .. }): Path<ColumnPath>,
+pub async fn delete_table_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(TablePath { table_id, .. }): Path<TablePath>,
 ) -> Result<StatusCode, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -642,19 +670,19 @@ pub struct CreateColumnResponse {
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn create_column_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(ColumnPath { id, table_id }): Path<ColumnPath>,
-    Json(req): Json<CreateColumnRequest>,
+pub async fn create_column_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(TablePath { id, table_id }): Path<TablePath>,
+    Json(request): Json<CreateColumnRequest>,
 ) -> Result<(StatusCode, Json<CreateColumnResponse>), DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
-    let binding = match req.binding {
+    let binding = match request.binding {
         ColumnBindingRequest::New {
             name,
             data_type,
@@ -670,8 +698,8 @@ where
             property_definition_id,
         } => ColumnBinding::ExistingDefinition(property_definition_id),
     };
-    let config = req.link_to_table_id.map(|target| ColumnConfig::Link {
-        database_id: req.link_to_database_id.unwrap_or(id),
+    let config = request.link_to_table_id.map(|target| ColumnConfig::Link {
+        database_id: request.link_to_database_id.unwrap_or(id),
         table_id: target,
     });
     let column_id = state
@@ -680,7 +708,7 @@ where
             access.entity_access_receipt,
             viewer_of(&user),
             CreateColumn {
-                infer_type: req.infer_type,
+                infer_type: request.infer_type,
                 table_id,
                 binding,
                 config,
@@ -713,20 +741,20 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn rename_column_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Path(ColumnOptionsPath {
+pub async fn rename_column_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(ColumnPath {
         table_id,
         column_id,
         ..
-    }): Path<ColumnOptionsPath>,
-    Json(req): Json<RenameColumnRequest>,
+    }): Path<ColumnPath>,
+    Json(request): Json<RenameColumnRequest>,
 ) -> Result<Json<RenameColumnOutcome>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -734,8 +762,8 @@ where
             access.entity_access_receipt,
             table_id,
             column_id,
-            req.name,
-            req.previous_name,
+            request.name,
+            request.previous_name,
         )
         .await
         .map(Json)
@@ -769,21 +797,21 @@ pub struct InferColumnTypeRequest {
               (status = 500, body = ErrorResponse))
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn infer_column_type_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(ColumnOptionsPath {
+pub async fn infer_column_type_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(ColumnPath {
         table_id,
         column_id,
         ..
-    }): Path<ColumnOptionsPath>,
-    Json(req): Json<InferColumnTypeRequest>,
+    }): Path<ColumnPath>,
+    Json(request): Json<InferColumnTypeRequest>,
 ) -> Result<Json<InferColumnTypeOutcome>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -793,9 +821,9 @@ where
             InferColumnType {
                 table_id,
                 column_id,
-                data_type: req.data_type,
-                specific_entity_type: req.specific_entity_type,
-                base_version: req.base_version,
+                data_type: request.data_type,
+                specific_entity_type: request.specific_entity_type,
+                base_version: request.base_version,
             },
         )
         .await
@@ -824,21 +852,21 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn add_column_options_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(ColumnOptionsPath {
+pub async fn add_column_options_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(ColumnPath {
         id: _,
         table_id,
         column_id,
-    }): Path<ColumnOptionsPath>,
-    Json(req): Json<AddColumnOptionsRequest>,
+    }): Path<ColumnPath>,
+    Json(request): Json<AddColumnOptionsRequest>,
 ) -> Result<Json<ColumnDetail>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let column = state
         .service
@@ -848,7 +876,7 @@ where
             AddColumnOptions {
                 table_id,
                 column_id,
-                labels: req.labels,
+                labels: request.labels,
             },
         )
         .await?;

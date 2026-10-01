@@ -71,16 +71,16 @@ impl From<OpRefusal> for OpRefusalResponse {
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn apply_ops_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn apply_ops_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
     Json(request): Json<ApplyOpsRequest>,
 ) -> Result<Json<ApplyOpsResponse>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let results = state
         .service

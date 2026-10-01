@@ -37,19 +37,19 @@ pub struct QueryPath {
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn save_query_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Json(req): Json<SaveQueryRequest>,
+pub async fn save_query_handler<Service, EntityAccess, Authorization>(
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Json(request): Json<SaveQueryRequest>,
 ) -> Result<(StatusCode, Json<SavedQuery>), SavedQueryError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let saved = state
         .service
-        .save_query(viewer_of(&user), req.database_id, req.definition)
+        .save_query(viewer_of(&user), request.database_id, request.definition)
         .await?;
     Ok((StatusCode::CREATED, Json(saved)))
 }
@@ -69,15 +69,15 @@ where
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn get_query_handler<S, Eas, Auth>(
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+pub async fn get_query_handler<Service, EntityAccess, Authorization>(
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
     Path(QueryPath { query_id }): Path<QueryPath>,
 ) -> Result<Json<SavedQuery>, SavedQueryError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service

@@ -12,14 +12,14 @@ use models_permissions::share_permission::{SharePermissionV2, UpdateSharePermiss
     responses((status = 200, body = SharePermissionV2), (status = 401, body = ErrorResponse),
         (status = 403, body = ErrorResponse), (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn get_permissions_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<OwnerAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+pub async fn get_permissions_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<OwnerAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
 ) -> Result<Json<SharePermissionV2>, DatabaseError>
 where
-    S: DatabasesService + DatabaseSharingService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService + DatabaseSharingService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -37,15 +37,15 @@ where
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn update_permissions_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<OwnerAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+pub async fn update_permissions_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<OwnerAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
     Json(request): Json<UpdateSharePermissionRequestV2>,
 ) -> Result<Json<SharePermissionV2>, DatabaseError>
 where
-    S: DatabasesService + DatabaseSharingService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService + DatabaseSharingService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service

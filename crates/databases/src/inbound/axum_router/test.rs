@@ -4,20 +4,13 @@ use crate::domain::models::SchemaError;
 mod fakes;
 
 #[test]
-fn a_column_request_takes_infer_type_in_camel_case_and_its_old_spelling() {
+fn a_column_request_takes_infer_type_in_camel_case() {
     let camel: CreateColumnRequest = serde_json::from_value(serde_json::json!({
         "inferType": true,
         "binding": {"kind": "existing", "property_definition_id": Uuid::nil()},
     }))
     .unwrap();
     assert!(camel.infer_type);
-
-    let snake: CreateColumnRequest = serde_json::from_value(serde_json::json!({
-        "infer_type": true,
-        "binding": {"kind": "existing", "property_definition_id": Uuid::nil()},
-    }))
-    .unwrap();
-    assert!(snake.infer_type);
 
     let omitted: CreateColumnRequest = serde_json::from_value(serde_json::json!({
         "binding": {"kind": "existing", "property_definition_id": Uuid::nil()},
@@ -197,16 +190,25 @@ async fn view_access_cannot_apply_ops() {
     assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
-/// Every op kind is refused to a caller who may only view the database, and
-/// reaches the service for one who may edit it.
-async fn only_editors_may_send(op: serde_json::Value) {
+#[tokio::test]
+async fn view_access_cannot_change_an_option() {
     use axum::body::Body;
     use axum::http::{Request, header};
     use entity_access::domain::models::AccessLevel;
     use tower::ServiceExt;
 
     let database = Uuid::from_u128(0x0dbb);
-    let body = serde_json::json!({ "ops": [op] }).to_string();
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "update_option",
+            "table": Uuid::from_u128(0x7ab1),
+            "column": Uuid::from_u128(0xc01a),
+            "option": Uuid::from_u128(0x0b7),
+            "label": "Maybe",
+            "color": "teal",
+        }],
+    })
+    .to_string();
     let request = || {
         Request::post(format!("/{database}/ops"))
             .header(header::AUTHORIZATION, "Bearer valid")
@@ -227,82 +229,219 @@ async fn only_editors_may_send(op: serde_json::Value) {
 }
 
 #[tokio::test]
-async fn view_access_cannot_change_an_option() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "update_option",
-        "table": Uuid::from_u128(0x7ab1),
-        "column": Uuid::from_u128(0xc01a),
-        "option": Uuid::from_u128(0x0b7),
-        "label": "Maybe",
-        "color": "teal",
-    }))
-    .await;
-}
-
-#[tokio::test]
 async fn view_access_cannot_remove_an_option() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "delete_option",
-        "table": Uuid::from_u128(0x7ab1),
-        "column": Uuid::from_u128(0xc01a),
-        "option": Uuid::from_u128(0x0b7),
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "delete_option",
+            "table": Uuid::from_u128(0x7ab1),
+            "column": Uuid::from_u128(0xc01a),
+            "option": Uuid::from_u128(0x0b7),
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn view_access_cannot_create_a_view() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "create_view",
-        "table": Uuid::from_u128(0x7ab1),
-        "view": {"name": "Everyone", "layout": {"kind": "table", "columns": []}},
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "create_view",
+            "table": Uuid::from_u128(0x7ab1),
+            "view": {"name": "Everyone", "layout": {"kind": "table", "columns": []}},
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn view_access_cannot_change_a_view() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "update_view",
-        "table": Uuid::from_u128(0x7ab1),
-        "view": Uuid::from_u128(0x71e),
-        "name": "Everyone",
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "update_view",
+            "table": Uuid::from_u128(0x7ab1),
+            "view": Uuid::from_u128(0x71e),
+            "name": "Everyone",
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn view_access_cannot_remove_a_view() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "delete_view",
-        "table": Uuid::from_u128(0x7ab1),
-        "view": Uuid::from_u128(0x71e),
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "delete_view",
+            "table": Uuid::from_u128(0x7ab1),
+            "view": Uuid::from_u128(0x71e),
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn view_access_cannot_reorder_views() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "reorder_views",
-        "table": Uuid::from_u128(0x7ab1),
-        "order": [Uuid::from_u128(0x71e)],
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "reorder_views",
+            "table": Uuid::from_u128(0x7ab1),
+            "order": [Uuid::from_u128(0x71e)],
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn view_access_cannot_move_a_card() {
-    only_editors_may_send(serde_json::json!({
-        "kind": "move_card",
-        "table": Uuid::from_u128(0x7ab1),
-        "view": Uuid::from_u128(0x71e),
-        "row": Uuid::from_u128(0x5a11),
-        "lane": null,
-        "before": null,
-        "after": null,
-    }))
-    .await;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use entity_access::domain::models::AccessLevel;
+    use tower::ServiceExt;
+
+    let database = Uuid::from_u128(0x0dbb);
+    let body = serde_json::json!({
+        "ops": [{
+            "kind": "move_card",
+            "table": Uuid::from_u128(0x7ab1),
+            "view": Uuid::from_u128(0x71e),
+            "row": Uuid::from_u128(0x5a11),
+            "lane": null,
+            "before": null,
+            "after": null,
+        }],
+    })
+    .to_string();
+    let request = || {
+        Request::post(format!("/{database}/ops"))
+            .header(header::AUTHORIZATION, "Bearer valid")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+            .unwrap()
+    };
+
+    let (viewing, service) = fakes::ops_router(AccessLevel::View);
+    let response = viewing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(*service.applied.lock().unwrap(), 0);
+
+    let (editing, service) = fakes::ops_router(AccessLevel::Edit);
+    let response = editing.oneshot(request()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(*service.applied.lock().unwrap(), 1);
 }
 
 async fn error_body(error: DatabaseError) -> (StatusCode, serde_json::Value) {

@@ -55,17 +55,17 @@ pub struct ReorderColumnsRequest {
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn change_column_type_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(path): Path<ColumnOptionsPath>,
-    Json(req): Json<ChangeColumnTypeRequest>,
+pub async fn change_column_type_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(path): Path<ColumnPath>,
+    Json(request): Json<ChangeColumnTypeRequest>,
 ) -> Result<Json<ColumnTypeChangeOutcome>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -75,14 +75,14 @@ where
             ChangeColumnType {
                 table_id: path.table_id,
                 column_id: path.column_id,
-                data_type: req.data_type,
-                is_multi_select: req.is_multi_select,
-                specific_entity_type: req.specific_entity_type,
-                relation: req
+                data_type: request.data_type,
+                is_multi_select: request.is_multi_select,
+                specific_entity_type: request.specific_entity_type,
+                relation: request
                     .link_to_table_id
-                    .map(|table_id| (req.link_to_database_id.unwrap_or(path.id), table_id)),
-                base_version: req.base_version,
-                clear_invalid: req.clear_invalid,
+                    .map(|table_id| (request.link_to_database_id.unwrap_or(path.id), table_id)),
+                base_version: request.base_version,
+                clear_invalid: request.clear_invalid,
             },
         )
         .await
@@ -99,16 +99,16 @@ where
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn column_casts_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
-    Path(path): Path<ColumnOptionsPath>,
+pub async fn column_casts_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(path): Path<ColumnPath>,
 ) -> Result<Json<Vec<ColumnCast>>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -131,16 +131,16 @@ where
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn delete_column_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Path(path): Path<ColumnOptionsPath>,
-    Json(req): Json<DeleteColumnRequest>,
+pub async fn delete_column_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(path): Path<ColumnPath>,
+    Json(request): Json<DeleteColumnRequest>,
 ) -> Result<Json<ColumnSchemaOutcome>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
@@ -148,7 +148,7 @@ where
             access.entity_access_receipt,
             path.table_id,
             path.column_id,
-            req.base_version,
+            request.base_version,
         )
         .await
         .map(Json)
@@ -162,24 +162,24 @@ where
         (status = 401, body = ErrorResponse), (status = 403, body = ErrorResponse),
         (status = 404, body = ErrorResponse), (status = 409, body = ErrorResponse), (status = 500, body = ErrorResponse)))]
 #[tracing::instrument(err, skip_all)]
-pub async fn reorder_columns_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<EditAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
-    Path(path): Path<ColumnPath>,
-    Json(req): Json<ReorderColumnsRequest>,
+pub async fn reorder_columns_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(path): Path<TablePath>,
+    Json(request): Json<ReorderColumnsRequest>,
 ) -> Result<Json<ColumnSchemaOutcome>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     state
         .service
         .reorder_columns(
             access.entity_access_receipt,
             path.table_id,
-            req.column_ids,
-            req.base_version,
+            request.column_ids,
+            request.base_version,
         )
         .await
         .map(Json)

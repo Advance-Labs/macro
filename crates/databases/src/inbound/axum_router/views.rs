@@ -29,15 +29,15 @@ pub struct ViewPositionsResponse {
     )
 )]
 #[tracing::instrument(err, skip_all)]
-pub async fn view_positions_handler<S, Eas, Auth>(
-    access: DatabaseAccessLevelExtractor<ViewAccessLevel, Eas, Auth>,
-    State(state): State<DatabasesRouterState<S, Eas, Auth>>,
+pub async fn view_positions_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
     Path((_database, view_id)): Path<(Uuid, ViewId)>,
 ) -> Result<Json<ViewPositionsResponse>, DatabaseError>
 where
-    S: DatabasesService,
-    Eas: EntityAccessService,
-    Auth: MacroAuthorizationService,
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
 {
     let positions = state
         .service
