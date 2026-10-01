@@ -587,6 +587,8 @@ pub struct ToolTable {
     pub columns: Vec<ToolColumn>,
     /// The table's saved views, in their order. SaveDatabaseView under one
     /// of these names replaces that view.
+    // Opaque: the filter tree is recursive, which the web's tool-type generator cannot follow.
+    #[schemars(with = "Vec<serde_json::Value>")]
     pub views: Vec<DatabaseView>,
 }
 

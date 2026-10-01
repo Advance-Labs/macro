@@ -76,6 +76,8 @@ impl SaveDatabaseView {
 #[serde(rename_all = "camelCase")]
 pub struct SavedDatabaseView {
     /// The view, with its id.
+    // Opaque: the filter tree is recursive, which the web's tool-type generator cannot follow.
+    #[schemars(with = "serde_json::Value")]
     pub view: DatabaseView,
     /// Whether this created the view; `false` when it replaced the one of
     /// the same name.
