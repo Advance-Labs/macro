@@ -286,11 +286,11 @@ impl DatabasesRepo for PgDatabasesRepo {
         Ok(())
     }
 
-    /// Tables, columns, rows, link edges, and database-owned property
-    /// definitions go with the database through the `ON DELETE CASCADE` chain
-    /// declared in the migrations that added them; `entity_access`
-    /// rows are a generic side table with no foreign key to `databases`, so
-    /// they are purged explicitly in the same transaction.
+    /// Tables, columns, rows, views and database-owned property definitions
+    /// go with the database through `ON DELETE CASCADE`, and the rows' cells
+    /// by trigger; `entity_access` rows are a generic side table with no
+    /// foreign key to `databases`, so they are purged explicitly in the same
+    /// transaction.
     #[tracing::instrument(err, skip(self))]
     async fn delete_database(&self, id: DatabaseId) -> Result<(), Self::Err> {
         let mut transaction = self.pool.begin().await?;
@@ -463,8 +463,7 @@ impl DatabasesRepo for PgDatabasesRepo {
         .execute(&mut *transaction)
         .await?;
 
-        // A new column changes the table's shape, so materializations keyed on
-        // the version have to be rebuilt.
+        // A new column changes the table's shape.
         sqlx::query!(
             r#"UPDATE database_tables SET version = version + 1 WHERE id = $1"#,
             table_id

@@ -140,17 +140,17 @@ Rows are read in the browser: the grid runs its view, and relation pickers, CSV
 export and live answers run their SQL, in the database engine over Soup GraphQL
 (`/items/soup/graphql`), while every edit (a cell, a new or deleted record, a
 card move, an option change, a view change) is one typed op sent to
-`POST /databases/{id}/ops`. The web app never calls
-`/databases/exec`; agents and MCP still write SQL there.
+`POST /databases/{id}/ops`. Agents and MCP write SQL, which the same engine
+turns into those ops on the server.
 Rows keep the table's order unless the view sorts them. After each of your own
 edits the grid reads its rows again, and another viewer's edit reaches an open
 grid or answer within a moment through the gateway's table-changed message; a
 changed search or filter keeps the current rows on screen until the new ones
 arrive.
 
-Edits save automatically. A failed save appears as an actionable error above the grid.
-A concurrent edit can cause a version conflict: the latest values load and
-**Retry** reapplies the rejected change. A failed refresh after a successful save
+Edits save automatically, and the last write to a cell wins. A failed save
+appears as an actionable error above the grid; **Retry** reapplies the rejected
+change. A failed refresh after a successful save
 offers a refresh action; creating the record again would create a duplicate.
 If a row's create response is lost, its draft remains and the notice says it may
 already be saved. **Refresh** only reads the latest rows. Compare them with the

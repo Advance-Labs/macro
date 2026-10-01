@@ -1114,7 +1114,7 @@ where
                 .await
                 .map_err(repo_err)?;
             // Options are part of the column's catalog entry, so the table's
-            // shape moved and cached materializations are stale.
+            // shape moved.
             let version = self
                 .repo
                 .bump_table_version(cmd.table_id)
