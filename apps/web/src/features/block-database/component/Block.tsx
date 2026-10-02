@@ -3,7 +3,6 @@ import { toQuerySchema } from '@app/features/database-query/queries/query-source
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { makePersistedState } from '@app/lib/persistence';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
-import { SidePanel } from '@components/app/side-panel';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   returnSplitToRecentListView,
@@ -69,6 +68,7 @@ import {
   type ViewChange,
 } from '../queries/views';
 import { DatabaseGrid } from './DatabaseGrid';
+import { DatabasePageShell } from './DatabasePageShell';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
 import { TopBar } from './TopBar';
 
@@ -327,7 +327,7 @@ const Block: Component = () => {
 
   return (
     <DocumentBlockContainer>
-      <SidePanel.Layout defaultOpen={false}>
+      <DatabasePageShell>
         <DatabaseSidePanelSections
           databaseId={databaseId}
           database={detail()?.database}
@@ -511,7 +511,7 @@ const Block: Component = () => {
             </Show>
           </ErrorBoundary>
         </div>
-      </SidePanel.Layout>
+      </DatabasePageShell>
     </DocumentBlockContainer>
   );
 };
