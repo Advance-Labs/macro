@@ -1,5 +1,4 @@
-import type { MutationInspection } from '../protocol';
-import type { IdentityBindingWire } from '../protocol';
+import type { IdentityBindingWire, MutationInspection } from '../protocol';
 /**
  * Typed surface of the generated wasm package (`cache-wasm`), loaded
  * dynamically so the repo type-checks without the generated artifacts.

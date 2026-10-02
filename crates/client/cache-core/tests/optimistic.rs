@@ -412,6 +412,86 @@ async fn durable_value(engine: &Engine<InMemoryStorage>) -> Option<String> {
 }
 
 #[test]
+fn mutation_inspection_preserves_metadata_without_claiming_or_changing_leases() {
+    block_on(async {
+        let mut engine = Engine::new(InMemoryStorage::new());
+        let variables = mutation_vars("local edit");
+        let data = mutation_response("Status", "local edit");
+        let metadata = json!({"kind": "email-draft", "revision": 10});
+        let (id, _) = engine
+            .begin_optimistic_write(
+                None,
+                BeginOptimisticWrite {
+                    uuid: "00000000-0000-4000-8000-000000000030",
+                    query: MUTATION,
+                    operation_name: Some("SetEntityProperty"),
+                    variables: &variables,
+                    data: &data,
+                    link_patches: &[],
+                    revalidations: &[],
+                    identity_bindings: &[],
+                    created_at_ms: 1,
+                    client_metadata: Some(&metadata),
+                },
+            )
+            .await
+            .unwrap();
+        let before = engine.storage().load_mutation_queue().await.unwrap();
+        let inspected = engine.inspect_mutations().await.unwrap();
+        assert_eq!(inspected.len(), 1);
+        assert_eq!(inspected[0].transaction_id, id.to_string());
+        assert_eq!(inspected[0].client_metadata, Some(metadata.clone()));
+        assert_eq!(inspected[0].optimistic_data, data);
+        assert_eq!(
+            inspected[0].variables,
+            serde_json::to_value(&variables).unwrap()
+        );
+        assert!(
+            !inspected[0]
+                .variables
+                .to_string()
+                .contains("clientMetadata")
+        );
+        assert_eq!(
+            engine.storage().load_mutation_queue().await.unwrap(),
+            before
+        );
+
+        let claimed = engine
+            .claim_next_mutation(MutationClaimRequest {
+                owner: "runner".into(),
+                now_ms: 10,
+                lease_expires_at_ms: 100,
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let before = engine.storage().load_mutation_queue().await.unwrap();
+        let inspected = engine.inspect_mutations().await.unwrap();
+        assert_eq!(inspected[0].client_metadata, Some(metadata));
+        assert_eq!(
+            engine.storage().load_mutation_queue().await.unwrap(),
+            before
+        );
+        assert_eq!(claimed.queued.mutation.attempt_count, 1);
+        assert!(
+            engine
+                .claim_next_mutation(MutationClaimRequest {
+                    owner: "another-runner".into(),
+                    now_ms: 20,
+                    lease_expires_at_ms: 200,
+                })
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let wire = serde_json::to_value(&inspected[0]).unwrap();
+        assert!(wire.get("leaseGeneration").is_none());
+        assert!(wire.get("leaseOwner").is_none());
+    });
+}
+
+#[test]
 fn begin_persists_mutation_and_optimistic_layer() {
     block_on(async {
         let mut engine = engine_with_base("Status", "todo").await;

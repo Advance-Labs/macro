@@ -525,8 +525,10 @@ writer. Email mutations and their uncached reply reloads use the primary; ordina
 GraphQL/REST lists, direct Soup lookups, and realtime Soup hydration use the replica.
 A mutation reply is fresh, but subsequent list refetches are eventually consistent
 and can still return replica-stale read/archive state. Test that boundary separately
-from mutation reply correctness. A post-commit reply-load failure is retryable;
-it must not discard the queued intent. Deploy
+from mutation reply correctness. GraphQL application errors, including a failed
+post-commit reply load, release the queued mutation rather than retrying forever.
+Transport failures retain the existing retry policy. Draft recovery preserves local
+content and offers explicit Retry using the original handle. Deploy
 the backend schema containing `setEmailThreadArchived` before this client.
 Browser WASM and native cache builds must include the regenerated schema metadata;
 native offline archive support therefore requires a full app build, not just OTA.
@@ -663,6 +665,36 @@ When checking draft autosave, edit the body of a draft with uploaded or forwarde
 attachments, wait for the save, and reopen it; the attachments should remain visible.
 AI email tool drafts persist body-only edits; changing recipients or the subject
 is not required to save the body.
+
+With GraphQL draft queuing enabled, working copies and pending attachment bytes
+are saved on this device independently of the mutation queue. A failed server
+save must leave the draft discoverable in **Drafts** (including grouped views)
+and in its reply thread. **Not synced** offers **Retry**; editing while failed
+continues saving locally without repeatedly submitting the rejected request.
+Retry preserves the original draft handle. An already-sent rejection drops the
+local copy rather than recreating the sent message. The REST compose path keeps
+its existing behavior.
+
+Native draft recovery requires a full app update containing queue inspection and
+durable mutation metadata support. An older app receiving an OTA bundle shows
+**Macro update required** and uses the existing uncached fallback. Its old queue
+must remain intact, with no new claims or queued writes, until the native update.
+
+For recovery verification, reject a draft save with a GraphQL error (including
+legacy `retryable: true` metadata), then perform an unrelated queued action: the
+failed save must release the queue. Reload and reopen the draft; verify subject,
+recipients, body, and pending file contents. Retry and check that exactly one
+server draft exists. Repeat with two tabs, a save response arriving after a newer
+edit, an attachment upload completing during another local save, and Discard
+while an attachment snapshot is still being saved. Latest committed local edits
+win across tabs; a completed discard must not resurrect on reload. A clean,
+fully synchronized local copy must not hide newer server edits or sent state.
+
+Explicit sign-out warns before removing unsynchronized local drafts and files.
+Cancel must retain them; confirm must clear them and fence in-flight work so the
+next account cannot see them. If local storage cannot be inspected, sign-out must
+still offer a warning and a way to continue. Do not verify this by deleting real
+user drafts; use disposable drafts in an isolated test session.
 The three-dot button beneath a body reveals quoted content and a trimmed
 signature. Plaintext and Macro Markdown use the existing Markdown renderer;
 Macro Markdown messages retain document mentions. Ordinary HTML bodies use an

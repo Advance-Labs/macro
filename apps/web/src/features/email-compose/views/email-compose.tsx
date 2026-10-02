@@ -1,4 +1,3 @@
-import { DraftSyncStatus } from '../components/draft-sync-status';
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
 import {
@@ -7,15 +6,15 @@ import {
 } from '@components/app/split-layout/components/SplitLabel';
 import { EmailPermissionsBanner } from '@core/component/EmailPermissionsBanner';
 import { WrapUnlessMobile } from '@core/mobile/WrapUnlessMobile';
-
 import { ComposerSurface } from '@ui';
-
 import { createResource, createSignal, Show } from 'solid-js';
+import { DraftSyncStatus } from '../components/draft-sync-status';
 import { EmailScheduleBar } from '../components/email-schedule-summary';
 import { SignaturePreview } from '../components/signature-preview';
 import type { EmailComposeContext } from '../context/compose-capabilities';
 import { ComposeProvider } from '../context/compose-context';
 import type { ComposeContextValue } from '../primitives/compose-view-state';
+import { createDraftSyncStatus } from '../primitives/draft-sync-status';
 import {
   createEmailComposer,
   type EmailComposerOptions,
@@ -75,7 +74,11 @@ export function EmailComposeView(props: EmailComposeViewProps) {
 }
 
 function LoadedEmailComposeView(
-  props: EmailComposeViewProps & Pick<EmailComposerOptions, 'draftPersistence' | 'localDraft' | 'localAttachments'>
+  props: EmailComposeViewProps &
+    Pick<
+      EmailComposerOptions,
+      'draftPersistence' | 'localDraft' | 'localAttachments'
+    >
 ) {
   const composeContext = props.context;
   const state = createEmailComposer({
@@ -100,6 +103,13 @@ function LoadedEmailComposeView(
     onRecipientsChange: props.onRecipientsChange,
     initialTo: props.initialTo,
     initialInboxId: props.initialInboxId,
+  });
+  const sync = createDraftSyncStatus({
+    drafts: composeContext.drafts,
+    draftId: state.draftId,
+    localSaveState: state.localSaveState,
+    retry: state.retryDraft,
+    discard: state.deleteDraftAndReset,
   });
   const {
     editor,
@@ -180,7 +190,14 @@ function LoadedEmailComposeView(
 
   return (
     <ComposeProvider value={ctxValue}>
-      <DraftSyncStatus drafts={composeContext.drafts} draftId={state.draftId()} retry={state.retryDraft} discard={deleteDraftAndReset} />
+      <DraftSyncStatus
+        state={sync.state()}
+        busy={sync.busy()}
+        error={sync.error()}
+        onRetry={sync.retry}
+        onDiscard={sync.discard}
+        onKeepEditing={sync.keepEditing}
+      />
       <Show when={!composeContext.presentation.isMobile()}>
         <SplitHeaderLeft>
           <StaticSplitLabel

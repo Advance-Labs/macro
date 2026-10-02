@@ -599,7 +599,10 @@ export class CacheWorkerCore {
           request.variableFilters ?? []
         );
       })
-      .with({ kind: 'inspect-mutations' }, async () => await this.requireEngine().inspectMutations())
+      .with(
+        { kind: 'inspect-mutations' },
+        async () => await this.requireEngine().inspectMutations()
+      )
       .with({ kind: 'claim-next-mutation' }, async (request) => {
         const engine = this.requireEngine();
         return await engine.claimNextMutation(

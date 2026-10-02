@@ -37,6 +37,7 @@
 import {
   type Client,
   CombinedError,
+  createRequest,
   type Exchange,
   makeOperation,
   type Operation,
@@ -107,6 +108,24 @@ const HYDRATION_DOCUMENT_CONTEXT_KEY = 'normalizedCacheHydrationDocument';
 const QUEUE_REQUEST_TIMEOUT_MS = 60_000;
 const QUEUE_LEASE_MS = 5 * 60_000;
 const EMPTY_QUEUE_POLL_MS = 30_000;
+const MUTATION_LIFECYCLE_TIMEOUT_MS = 2_000;
+
+async function boundedMutationLifecycle<T>(work: () => Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Mutation recovery timed out')),
+          MUTATION_LIFECYCLE_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 const NORMALIZED_CACHE_RESULT_METADATA_KEY = '__macroNormalizedCache';
 
@@ -438,12 +457,18 @@ function mutationErrorCode(
 }
 
 export interface NormalizedCacheExchangeOptions {
-  /** Complete durable client migrations before any queued request is sent. */
+  /** Best-effort startup recovery; per-mutation admission protects legacy intent. */
   prepareMutationQueue?: () => Promise<void>;
   /** False discards obsolete client intent without sending it to the server. */
   beforeMutationAttempt?: (mutation: ClaimedMutation) => Promise<boolean>;
+  /** Whether admission failure can release this entry without losing its only durable copy. */
+  hasDurableMutationRecovery?: (mutation: ClaimedMutation) => boolean;
   /** Persist domain recovery state for a replayed result, including when its UI is closed. */
-  onMutationAttemptResult?: (mutation: ClaimedMutation, result: OperationResult, retry: boolean) => Promise<void>;
+  onMutationAttemptResult?: (
+    mutation: ClaimedMutation,
+    result: OperationResult,
+    retry: boolean
+  ) => Promise<void>;
   /** Domain-specific deletions inferred from a successful server response. */
   deletedRecordKeys?: (result: OperationResult) => string[];
   /** Return true to transfer a committed query refresh to an active reader's queue.
@@ -802,6 +827,7 @@ export function normalizedCacheExchange(
       // is immediately resubscribed after a back/forward-cache restore.
       const subscriptionGenerations = new Map<number, object>();
       let attemptInFlight = false;
+      let queuePreparation: Promise<void> | undefined;
       let drainRunning = false;
       let drainRequested = false;
       let deferredUntil: number | undefined;
@@ -838,15 +864,104 @@ export function normalizedCacheExchange(
       async function routeClaimedMutation(
         claimed: ClaimedMutation
       ): Promise<void> {
-        if (options.prepareMutationQueue) {
-          attemptInFlight = true;
-          try { await options.prepareMutationQueue(); }
-          finally { attemptInFlight = false; }
-        }
-        if (options.beforeMutationAttempt && !(await options.beforeMutationAttempt(claimed))) {
-          await host.rollbackOptimisticWrite(claimed.transactionId, { owner: queueOwner, generation: claimed.leaseGeneration }, 'Obsolete local intent', 'LOCAL_SUPERSEDED');
-          resolveLiveOperationsAsQueued();
-          scheduleDrain();
+        attemptInFlight = true;
+        try {
+          if (options.prepareMutationQueue) await prepareQueueRecovery();
+          if (
+            options.beforeMutationAttempt &&
+            !(await boundedMutationLifecycle(() =>
+              options.beforeMutationAttempt!(claimed)
+            ))
+          ) {
+            await host.rollbackOptimisticWrite(
+              claimed.transactionId,
+              { owner: queueOwner, generation: claimed.leaseGeneration },
+              'Obsolete local intent',
+              'LOCAL_SUPERSEDED'
+            );
+            attemptInFlight = false;
+            resolveLiveOperationsAsQueued();
+            scheduleDrain();
+            return;
+          }
+        } catch (error) {
+          queuePreparation = undefined;
+          let recoverable = false;
+          try {
+            recoverable =
+              options.hasDurableMutationRecovery?.(claimed) === true;
+          } catch {
+            /* Unknown recovery must preserve the queued copy. */
+          }
+          try {
+            if (recoverable) {
+              const live = liveQueuedOps.get(claimed.transactionId);
+              const operation =
+                live?.operation ??
+                makeOperation(
+                  'mutation',
+                  createRequest(
+                    replayDocument(claimed.query, claimed.operationName),
+                    claimed.variables
+                  ),
+                  { url: '', requestPolicy: 'network-only' }
+                );
+              const failure = new CombinedError({
+                graphQLErrors: [
+                  {
+                    message: 'Unable to prepare the saved mutation for replay',
+                    extensions: { code: 'LOCAL_RECOVERY_FAILED' },
+                  },
+                ],
+              });
+              const result: OperationResult = {
+                operation,
+                data: undefined,
+                error: failure,
+                stale: false,
+                hasNext: false,
+              };
+              await recordAttemptResult(
+                {
+                  mutation: claimed,
+                  transactionId: claimed.transactionId,
+                  leaseOwner: queueOwner,
+                  leaseGeneration: claimed.leaseGeneration,
+                  attemptCount: claimed.attemptCount,
+                },
+                result,
+                false
+              );
+              await host.rollbackOptimisticWrite(
+                claimed.transactionId,
+                { owner: queueOwner, generation: claimed.leaseGeneration },
+                failure.message,
+                'LOCAL_RECOVERY_FAILED'
+              );
+              liveQueuedOps.delete(claimed.transactionId);
+              live?.resolveRoute(
+                withOptimisticMutationDisposition(result, {
+                  kind: 'permanently-failed',
+                  transactionId: claimed.transactionId,
+                })
+              );
+              deferredUntil = undefined;
+            } else {
+              // Legacy entries may be the only durable copy. Keep them until
+              // recovery storage is available instead of losing user content.
+              deferredUntil = Date.now() + EMPTY_QUEUE_POLL_MS;
+              await host.deferOptimisticWrite(
+                claimed.transactionId,
+                { owner: queueOwner, generation: claimed.leaseGeneration },
+                deferredUntil,
+                error instanceof Error ? error.message : String(error)
+              );
+            }
+          } finally {
+            attemptInFlight = false;
+            resolveLiveOperationsAsQueued();
+            scheduleDrain(recoverable ? 0 : EMPTY_QUEUE_POLL_MS);
+          }
           return;
         }
         deferredUntil = undefined;
@@ -855,6 +970,7 @@ export function normalizedCacheExchange(
         // Older hosts omit this flag: conservatively replay rather than loop
         // forever asking the engine to discard a write it must retain.
         if (claimed.superseded && claimed.requiresConfirmation === false) {
+          attemptInFlight = false;
           const discarded = await host.deferOptimisticWrite(
             claimed.transactionId,
             { owner: queueOwner, generation: claimed.leaseGeneration },
@@ -954,7 +1070,7 @@ export function normalizedCacheExchange(
         drainRunning = true;
         drainRequested = false;
         try {
-          if (options.prepareMutationQueue) await options.prepareMutationQueue();
+          if (options.prepareMutationQueue) await prepareQueueRecovery();
           const now = Date.now();
           // A wakeup probes immediately, but must retain a future retry
           // deadline if the durable head is not eligible yet. Consume expired
@@ -994,19 +1110,38 @@ export function normalizedCacheExchange(
         }
       }
 
-      async function recordAttemptResult(attempt: QueueAttemptContext, result: OperationResult, retry: boolean): Promise<void> {
-        if (!attempt.mutation || !options.onMutationAttemptResult) return;
-        let timer: ReturnType<typeof setTimeout> | undefined;
+      async function prepareQueueRecovery(): Promise<void> {
         try {
-          await Promise.race([
-            options.onMutationAttemptResult(attempt.mutation, result, retry),
-            new Promise<never>((_, reject) => {
-              timer = setTimeout(() => reject(new Error('Mutation bookkeeping timed out')), 2_000);
-            }),
-          ]);
+          queuePreparation ??= boundedMutationLifecycle(() =>
+            options.prepareMutationQueue!()
+          );
+          await queuePreparation;
         } catch (error) {
-          try { options.onCacheError?.(error, result.operation); } catch { /* Diagnostics cannot retain a failed queue head. */ }
-        } finally { if (timer !== undefined) clearTimeout(timer); }
+          queuePreparation = undefined;
+          console.warn(
+            '[graphql-cache] Unable to prepare mutation recovery',
+            error
+          );
+        }
+      }
+
+      async function recordAttemptResult(
+        attempt: QueueAttemptContext,
+        result: OperationResult,
+        retry: boolean
+      ): Promise<void> {
+        if (!attempt.mutation || !options.onMutationAttemptResult) return;
+        try {
+          await boundedMutationLifecycle(() =>
+            options.onMutationAttemptResult!(attempt.mutation!, result, retry)
+          );
+        } catch (error) {
+          try {
+            options.onCacheError?.(error, result.operation);
+          } catch {
+            /* Diagnostics cannot retain a failed queue head. */
+          }
+        }
       }
 
       function revalidateAfterSettlement(

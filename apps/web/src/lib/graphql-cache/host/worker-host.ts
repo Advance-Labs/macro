@@ -1300,7 +1300,9 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
     },
 
     async inspectMutations() {
-      return await initializedRequest({ kind: 'inspect-mutations' }) as MutationInspection[];
+      return (await initializedRequest({
+        kind: 'inspect-mutations',
+      })) as MutationInspection[];
     },
     async claimNextMutation(
       owner: string,

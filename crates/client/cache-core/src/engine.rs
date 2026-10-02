@@ -1887,9 +1887,16 @@ impl<S: Storage> Engine<S> {
     }
 
     /// Reads durable queue entries without acquiring or changing their leases.
-    pub async fn inspect_mutations(&self) -> Result<Vec<crate::queue::MutationInspection>, EngineError<S::Error>> {
-        self.storage.load_mutation_queue().await.map_err(EngineError::Storage)?
-            .into_iter().map(crate::queue::MutationInspection::try_from).collect::<Result<_, _>>()
+    pub async fn inspect_mutations(
+        &self,
+    ) -> Result<Vec<crate::queue::MutationInspection>, EngineError<S::Error>> {
+        self.storage
+            .load_mutation_queue()
+            .await
+            .map_err(EngineError::Storage)?
+            .into_iter()
+            .map(crate::queue::MutationInspection::try_from)
+            .collect::<Result<_, _>>()
             .map_err(EngineError::InvalidOptimisticProjection)
     }
 

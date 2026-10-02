@@ -404,7 +404,16 @@ export type MutationUpsertKind =
   | { kind: 'appended-after-active'; activeTransactionId: string };
 
 /** Read-only request snapshot; never contains a settlement lease token. */
-export type MutationInspection = Pick<ClaimedMutation, 'transactionId' | 'uuid' | 'superseded' | 'query' | 'operationName' | 'variables' | 'clientMetadata'> & { optimisticData: unknown };
+export type MutationInspection = Pick<
+  ClaimedMutation,
+  | 'transactionId'
+  | 'uuid'
+  | 'superseded'
+  | 'query'
+  | 'operationName'
+  | 'variables'
+  | 'clientMetadata'
+> & { optimisticData: unknown };
 
 /** Claimed strict queue head, ready to be forwarded through urql. */
 export type ClaimedMutation = {

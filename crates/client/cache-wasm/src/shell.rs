@@ -254,7 +254,11 @@ impl TryFrom<ClaimedMutation> for JsClaimedMutation {
 
     fn try_from(claimed: ClaimedMutation) -> Result<Self, Self::Error> {
         let requires_confirmation = claimed.queued.requires_confirmation();
-        let client_metadata = cache_core::queue::decode_optimistic_source(&claimed.queued.optimistic.optimistic_data_json).map_err(err_js)?.client_metadata;
+        let client_metadata = cache_core::queue::decode_optimistic_source(
+            &claimed.queued.optimistic.optimistic_data_json,
+        )
+        .map_err(err_js)?
+        .client_metadata;
         let request = claimed.queued.mutation.request;
         Ok(Self {
             client_metadata,
@@ -1675,7 +1679,8 @@ impl CacheEngine {
             let mut state = state.lock().await;
             state.ensure_callable()?;
             let vars = parse_variables(variables)?;
-            let client_metadata: Option<serde_json::Value> = serde_wasm_bindgen::from_value(client_metadata).map_err(err_js)?;
+            let client_metadata: Option<serde_json::Value> =
+                serde_wasm_bindgen::from_value(client_metadata).map_err(err_js)?;
             let data: serde_json::Value = serde_wasm_bindgen::from_value(data).map_err(err_js)?;
             let link_patches: Vec<OptimisticLinkPatch> = parse_vec(link_patches)?;
             let revalidations: Vec<QueryRevalidation> = parse_vec(revalidations)?;

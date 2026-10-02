@@ -747,13 +747,13 @@ impl EngineHandle {
         })
     }
 
-    /// Claims the strict mutation queue head when it is runnable.
     /// Reads queued operations without acquiring their leases.
     pub async fn inspect_mutations(&self) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
         let state = self.inner.lock().await;
         state.engine.inspect_mutations().await.map_err(|error| error.to_string())
     }
 
+    /// Claims the strict mutation queue head when it is runnable.
     pub async fn claim_next_mutation(
         &self,
         owner: String,

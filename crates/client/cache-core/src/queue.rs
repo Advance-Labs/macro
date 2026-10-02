@@ -76,7 +76,8 @@ const OPTIMISTIC_SOURCE_ENVELOPE_PREFIX: &str = "@macro-cache/optimistic-source:
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OptimisticSource {
-    /// Opaque durable client correlation, never sent to the server.
+    /// Client recovery context, such as the local draft revision being saved.
+    /// Stored with the mutation for replay; never included in server requests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_metadata: Option<Json>,
     /// Explicit bindings for resolving locally created entities at settlement.
@@ -332,7 +333,8 @@ impl TryFrom<QueuedMutation> for MutationInspection {
             superseded: queued.superseded,
             query: request.query,
             operation_name: request.operation_name,
-            variables: serde_json::from_str(&request.variables_json).map_err(|error| error.to_string())?,
+            variables: serde_json::from_str(&request.variables_json)
+                .map_err(|error| error.to_string())?,
             client_metadata: source.client_metadata,
             optimistic_data: source.mutation_data,
         })

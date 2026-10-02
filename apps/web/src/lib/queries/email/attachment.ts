@@ -21,8 +21,14 @@ type UploadDraftAttachmentsParams = {
    * the content upload can take a long time, and a debounced draft save that
    * still sees the file without an id would add it to the draft a second time.
    */
-  onAttachmentAdded?: (file: File, attachmentID: string) => void | Promise<void>;
-  onAttachmentUploaded?: (file: File, attachmentID: string) => void | Promise<void>;
+  onAttachmentAdded?: (
+    file: File,
+    attachmentID: string
+  ) => void | Promise<void>;
+  onAttachmentUploaded?: (
+    file: File,
+    attachmentID: string
+  ) => void | Promise<void>;
   /**
    * Called when the content upload fails, once its attachment record has been
    * confirmed removed from the draft, so the file becomes eligible for a
@@ -65,8 +71,6 @@ export const useUploadDraftAttachmentsMutation = (
             )
         );
 
-        await params.onAttachmentAdded?.(attachment, result.attachment_id);
-
         // Any content-upload failure must become an UploadDraftAttachmentError
         // so onError removes the record and clears the id -- a plain throw from
         // the fetch (network drop, abort) would otherwise leave the id in
@@ -76,6 +80,7 @@ export const useUploadDraftAttachmentsMutation = (
           file: attachment,
         };
         try {
+          await params.onAttachmentAdded?.(attachment, result.attachment_id);
           if (source.kind === 'staged') {
             await uploadNativeStagedFileToPresignedUrl(
               { ...source.staged, mimeType: result.content_type },
@@ -101,7 +106,6 @@ export const useUploadDraftAttachmentsMutation = (
               );
             }
           }
-          await params.onAttachmentUploaded?.(attachment, result.attachment_id);
         } catch (cause) {
           if (cause instanceof UploadDraftAttachmentError) throw cause;
           throw new UploadDraftAttachmentError(
@@ -110,6 +114,8 @@ export const useUploadDraftAttachmentsMutation = (
             context
           );
         }
+        // Upload succeeded. A failed local receipt must not delete server data.
+        await params.onAttachmentUploaded?.(attachment, result.attachment_id);
       }
     },
     ...withCallbacks<void, Error, UploadDraftAttachmentsParams>(

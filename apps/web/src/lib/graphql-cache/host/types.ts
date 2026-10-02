@@ -1,5 +1,4 @@
-import type { MutationInspection } from '../protocol';
-import type { IdentityBindingWire } from '../protocol';
+import type { IdentityBindingWire, MutationInspection } from '../protocol';
 /**
  * Transport-agnostic cache host interface consumed by the urql exchange and
  * imperative writers (websocket handlers). Implementations:

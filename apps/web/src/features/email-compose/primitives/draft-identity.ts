@@ -58,7 +58,7 @@ function observeAvailableDraftIdentity(
     const epoch = session.epoch();
     const request = ++generation;
     try {
-      const result = await read(draftId);
+      const result = await read(draftId, { attachments: false });
       if (
         !result ||
         disposed ||
@@ -68,7 +68,10 @@ function observeAvailableDraftIdentity(
       )
         return;
       mutationUuid = result.mutationUuid ?? mutationUuid;
-      if (result.local && ['failed', 'unconfirmed', 'delete-failed'].includes(result.local.status)) {
+      if (
+        result.local &&
+        ['failed', 'unconfirmed', 'delete-failed'].includes(result.local.status)
+      ) {
         session.dispatch({ type: 'rejected', epoch, code: 'INTERNAL' });
       }
       if (!result.draft) return;
@@ -132,8 +135,9 @@ function observeAvailableDraftIdentity(
           new Error('The server rejected the queued draft save')
         );
         rejectionNotice = notices.feedback.failure('Draft could not be saved', {
-          subtext:
-            durableRecovery ? 'Your edits are saved on this device. Retry to save them to the server.' : 'Your edits are still in this editor. Save them as a new draft before closing.',
+          subtext: durableRecovery
+            ? 'Your edits are saved on this device. Retry to save them to the server.'
+            : 'Your edits are still in this editor. Save them as a new draft before closing.',
           persistent: true,
           actions: [
             {

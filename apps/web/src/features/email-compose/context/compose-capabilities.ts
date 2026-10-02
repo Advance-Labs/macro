@@ -72,7 +72,6 @@ export interface SaveEmailDraft {
   previousThreadId?: string;
   inboxId?: string;
   completingThread?: boolean;
-  localRevision?: number;
 }
 export interface DeleteEmailDraft {
   draftId: string;
@@ -90,6 +89,7 @@ export interface UploadEmailAttachments {
   attachments: File[];
   inboxId?: string;
   onAttachmentAdded?: (file: File, id: string) => void;
+  onAttachmentUploaded?: (file: File, id: string) => void;
   onAttachmentUploadFailed?: (file: File) => void;
 }
 export interface EmailAttachmentChange {
@@ -100,11 +100,15 @@ export interface EmailAttachmentChange {
 
 export interface EmailDraftStorage {
   /** Local acceptance is separate from remote autosave and continues after rejection. */
-  saveLocalDraft?(input: SaveEmailDraft & { attachments: readonly DraftFormAttachment[] }): Promise<LocalDraft>;
+  saveLocalDraft?(
+    input: SaveEmailDraft & { attachments: readonly DraftFormAttachment[] }
+  ): Promise<LocalDraft>;
   retryDraft?(draftId: string): Promise<void>;
-  forgetDraft?(draftId: string): Promise<void>;
   /** Resolve durable local drafts before mounting an editor. */
-  readDraft?(draftId: string): Promise<
+  readDraft?(
+    draftId: string,
+    options?: { attachments?: boolean }
+  ): Promise<
     | {
         /** Sent records retain mutation identity but never editable content. */
         draft?: EmailMessage;

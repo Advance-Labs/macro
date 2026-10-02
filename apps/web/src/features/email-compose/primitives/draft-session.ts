@@ -172,7 +172,10 @@ export function reduceDraftSession(
       }
       return { ...state, policy: { kind: 'latched', code: event.code } };
     })
-    .with({ type: 'retry' }, () => ({ ...state, policy: { kind: 'autosaving' as const } }))
+    .with({ type: 'retry' }, () => ({
+      ...state,
+      policy: { kind: 'autosaving' as const },
+    }))
     .with({ type: 'schedule-cancelled' }, () => {
       if (state.policy.kind !== 'latched' || state.policy.code !== 'INVALID')
         return state;
