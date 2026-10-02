@@ -37,13 +37,20 @@ no longer writes `"Comment"` or `"Thread"`. The remaining job of the importer is
 to move whatever those tables still hold before the schema-drop migration
 removes them.
 
-1. Deploy the contract release. From then on the legacy tables are frozen by
+1. Deploy the contract release that freezes legacy writes (#6732). Keep the
+   PDF attachment prerequisite (#7358) out of this initial deployment. From
+   then on the legacy tables are frozen by
    construction; the new document discussion UI is the only writer and it
    writes the message store.
 2. Run the importer. Repeat until a run prints `Nothing to import`; the second
    consecutive run must do so.
 3. Run `--check` and confirm zero unmapped comments and threads.
-4. Ship the schema-drop migration. The mapping tables
+4. Deploy the service-only PDF attachment prerequisite (#7358) after import
+   completion has been verified. Do not run an importer again after this step:
+   it could overwrite a highlight root created by the shared message store.
+5. Ship the schema-drop migration only after the prerequisite is deployed to
+   every production consumer, a snapshot is verified, and external SQL readers
+   have been checked. The mapping tables
    (`migrated_comment_id`, `migrated_comment_thread_id`) stay for auditing.
 
 An edit made through the new API is never reverted by a stale legacy row
