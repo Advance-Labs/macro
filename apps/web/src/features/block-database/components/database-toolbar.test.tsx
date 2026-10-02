@@ -85,6 +85,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -152,6 +153,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={rename}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -228,6 +230,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={rename}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -306,6 +309,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={rename}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -372,6 +376,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={remove}
         onReorderViews={vi.fn()}
       />
@@ -412,6 +417,66 @@ describe('database toolbar views', () => {
     );
   });
 
+  it('turns a view into a board grouped by a new Status column from its tab menu', async () => {
+    const showAs = vi.fn(() => okAsync(undefined));
+    const grid: DatabaseView = {
+      id: 'work',
+      databaseId: 'database',
+      tableId: 'table',
+      name: 'My work',
+      position: 'a0',
+      query: { filter: null, sort: [] },
+      layout: { kind: 'table', columns: [] },
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    };
+    render(() => (
+      <DatabaseToolbar
+        columns={[
+          {
+            id: 'name',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            writable: true,
+            options: [],
+          },
+        ]}
+        views={[grid]}
+        view={grid}
+        selectedViewId="work"
+        canEdit
+        onSelectView={vi.fn()}
+        onChangeView={vi.fn()}
+        onCreateView={vi.fn(() => okAsync(undefined))}
+        onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={showAs}
+        onDeleteView={vi.fn(() => okAsync(undefined))}
+        onReorderViews={vi.fn()}
+      />
+    ));
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'My work' }), {
+      clientX: 100,
+      clientY: 40,
+    });
+    const board = await screen.findByRole('menuitem', {
+      name: 'Show as board',
+    });
+    board.focus();
+    fireEvent.keyDown(board, { key: 'ArrowRight' });
+    fireEvent(
+      await screen.findByRole('menuitem', { name: 'Create a Status column' }),
+      new MouseEvent('pointerup', { button: 0, bubbles: true })
+    );
+
+    await waitFor(() =>
+      expect(showAs).toHaveBeenCalledExactlyOnceWith(grid, {
+        kind: 'board',
+        groupBy: { kind: 'new-status' },
+      })
+    );
+  });
+
   it('creates a view from the New view dialog', async () => {
     const create = vi.fn(() => okAsync(undefined));
     render(() => (
@@ -443,6 +508,7 @@ describe('database toolbar views', () => {
         onChangeView={vi.fn()}
         onCreateView={create}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -519,6 +585,7 @@ describe('database toolbar view controls', () => {
         onChangeView={change}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -611,6 +678,7 @@ describe('database toolbar view controls', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
       />
@@ -686,6 +754,7 @@ describe('database toolbar view controls', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
         onCreateRecord={createRecord}
@@ -726,6 +795,7 @@ describe('database toolbar view controls', () => {
         onChangeView={vi.fn()}
         onCreateView={vi.fn(() => okAsync(undefined))}
         onRenameView={vi.fn(() => okAsync(undefined))}
+        onShowViewAs={vi.fn()}
         onDeleteView={vi.fn(() => okAsync(undefined))}
         onReorderViews={vi.fn()}
         onCreateRecord={vi.fn()}

@@ -32,6 +32,7 @@ import {
 } from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
 import { Button } from '@ui';
 import {
@@ -46,6 +47,7 @@ import {
 } from 'solid-js';
 import { match } from 'ts-pattern';
 import { DatabaseSearch } from '../components/database-search';
+import type { ShownLayout } from '../components/database-toolbar';
 import { DatabaseToolbar } from '../components/database-toolbar';
 import type { NewView } from '../components/new-view-dialog';
 import { databaseChatContext } from '../core/chat-context';
@@ -62,9 +64,11 @@ import { searchDatabase } from '../queries/database-search';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
 import {
+  createBoardWithStatusColumn,
   createDatabaseView,
   deleteDatabaseView,
   reorderDatabaseViews,
+  showAsBoardWithStatusColumn,
   updateDatabaseView,
   type ViewChange,
 } from '../queries/views';
@@ -308,20 +312,51 @@ const Block: Component = () => {
     }));
   }
   function createView(current: DatabaseView, created: NewView) {
-    return createDatabaseView(databaseId, current.tableId, {
-      name: created.name,
-      query: current.query,
-      layout: match(created)
-        .with({ layout: 'board' }, ({ groupBy }) =>
-          boardLayout(groupBy, columns())
-        )
-        .with({ layout: 'table' }, () =>
+    const create = (layout: ViewLayout) =>
+      createDatabaseView(databaseId, current.tableId, {
+        name: created.name,
+        query: current.query,
+        layout,
+      });
+    return match(created)
+      .with({ layout: 'board', groupBy: { kind: 'new-status' } }, () =>
+        createBoardWithStatusColumn({
+          databaseId,
+          tableId: current.tableId,
+          name: created.name,
+          query: current.query,
+          columns: columns(),
+        })
+      )
+      .with({ layout: 'board', groupBy: { kind: 'column' } }, ({ groupBy }) =>
+        create(boardLayout(groupBy.columnId, columns()))
+      )
+      .with({ layout: 'table' }, () =>
+        create(
           current.layout.kind === 'table'
             ? current.layout
-            : { kind: 'table' as const, columns: [] }
+            : { kind: 'table', columns: [] }
         )
-        .exhaustive(),
-    }).map((view) => selectView(view.id));
+      )
+      .exhaustive()
+      .map((view) => selectView(view.id));
+  }
+  /** Lay a stored view out as a table, or as a board grouped as asked. */
+  function showViewAs(target: DatabaseView, shown: ShownLayout) {
+    return match(shown)
+      .with({ kind: 'table' }, () =>
+        updateDatabaseView(target, { layout: { kind: 'table', columns: [] } })
+      )
+      .with({ kind: 'board', groupBy: { kind: 'column' } }, ({ groupBy }) =>
+        updateDatabaseView(target, {
+          layout: boardLayout(groupBy.columnId, columns()),
+        })
+      )
+      .with({ kind: 'board', groupBy: { kind: 'new-status' } }, () =>
+        showAsBoardWithStatusColumn(target, columns())
+      )
+      .exhaustive()
+      .map(() => undefined);
   }
 
   return (
@@ -476,6 +511,7 @@ const Block: Component = () => {
                                   () => undefined
                                 )
                               }
+                              onShowViewAs={showViewAs}
                               onDeleteView={(target) => {
                                 if (selectedView()?.id === target.id)
                                   selectView();

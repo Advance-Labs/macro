@@ -6,6 +6,7 @@ import { Panel } from '@ui/components/Panel';
 import { TextField } from '@ui/components/TextField';
 import type { ResultAsync } from 'neverthrow';
 import { createSignal, Show } from 'solid-js';
+import { type BoardGrouping, STATUS_OPTIONS } from '../core/board-grouping';
 import type { DatabaseViewColumn } from '../core/database-view';
 import { boardGroupColumns } from '../core/views';
 import {
@@ -16,11 +17,14 @@ import { ViewSelect } from './view-select';
 
 type NewViewLayout = 'table' | 'board';
 
-/** A view to create: a table, or a board grouped by a single select. */
+/** A view to create: a table, or a board and what it groups by. */
 export type NewView = { name: string } & (
   | { layout: 'table' }
-  | { layout: 'board'; groupBy: string }
+  | { layout: 'board'; groupBy: BoardGrouping }
 );
+
+/** The grouping choice that creates a Status column; column ids are UUIDs, so it names none. */
+const NEW_STATUS_COLUMN = 'new-status-column';
 
 /** Creates a table or board view of the current table, named and, for a board, grouped. */
 export function NewViewDialog(props: {
@@ -38,14 +42,26 @@ export function NewViewDialog(props: {
     props.initialLayout ?? 'table'
   );
   const groups = () => boardGroupColumns(props.columns);
-  const [groupBy, setGroupBy] = createSignal(groups()[0]?.id);
+  /** The columns a board can group by, or, when there are none, a Status column to create. */
+  const groupChoices = () =>
+    groups().length
+      ? groups().map((column) => ({ value: column.id, label: column.name }))
+      : [{ value: NEW_STATUS_COLUMN, label: 'Create a Status column' }];
+  const [groupBy, setGroupBy] = createSignal(groupChoices()[0]?.value);
+  const grouping = (): BoardGrouping | undefined => {
+    const chosen = groupBy();
+    if (chosen === NEW_STATUS_COLUMN) return { kind: 'new-status' };
+    return groups().some((column) => column.id === chosen) && chosen
+      ? { kind: 'column', columnId: chosen }
+      : undefined;
+  };
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal('');
   const request = (): NewView | undefined => {
     const trimmed = name().trim();
     if (!trimmed) return undefined;
     if (layout() === 'table') return { name: trimmed, layout: 'table' };
-    const group = groupBy();
+    const group = grouping();
     return group
       ? { name: trimmed, layout: 'board', groupBy: group }
       : undefined;
@@ -149,17 +165,15 @@ export function NewViewDialog(props: {
                 <ViewSelect
                   label="Group board by"
                   value={groupBy()}
-                  options={groups().map((column) => ({
-                    value: column.id,
-                    label: column.name,
-                  }))}
+                  options={groupChoices()}
                   onChange={setGroupBy}
                   placeholder="Choose a column"
                 />
               </div>
-              <Show when={!groups().length}>
+              <Show when={groupBy() === NEW_STATUS_COLUMN}>
                 <p class="text-xs text-ink-muted">
-                  Add a Select column to group cards.
+                  No Select or Person column groups cards yet. A new Status
+                  column starts with {STATUS_OPTIONS.join(', ')}.
                 </p>
               </Show>
             </Show>
