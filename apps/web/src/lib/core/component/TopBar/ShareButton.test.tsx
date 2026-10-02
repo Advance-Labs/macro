@@ -272,6 +272,8 @@ vi.mock('@ui', async () => {
       </button>
     ),
     Panel: Object.assign(Container, { Header: Container, Body: Container }),
+    // The owner row draws an unknown owner's avatar.
+    Avatar: Object.assign(Container, { Fallback: Container }),
     Tooltip: Container,
     Dropdown: Object.assign(Container, {
       Trigger: Container,
