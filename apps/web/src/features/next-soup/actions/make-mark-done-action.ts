@@ -73,6 +73,7 @@ type MarkDoneVariables = {
   emailIds: string[];
   /** Locally known IDs used only for the immediate optimistic cache patch. */
   optimisticNotificationIds: string[];
+  scopeChannelThreads: boolean;
   /** Exact IDs used by undo/redo; entity mutation results are appended here. */
   exactNotificationIds: { current: string[] };
   /** Entity-wide targets used only by the initial committed mark-done. */
@@ -129,6 +130,7 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
         emailIds: variables.emailIds,
         notificationIds: variables.optimisticNotificationIds,
         reminderIds: variables.reminderIds,
+        scopeChannelThreads: variables.scopeChannelThreads,
       }),
     mutationFn: async (variables) => {
       const authoritativeNotificationIds = await executeMarkEntitiesDone({
@@ -144,6 +146,9 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
         ]),
       ];
     },
+    onSuccess: (_data, variables, context) => {
+      context?.settle(variables.exactNotificationIds.current);
+    },
     onError: (_err, _variables, context) => {
       context?.rollback();
       toast.failure('Failed to mark as done');
@@ -156,8 +161,10 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
           notificationIds: variables.exactNotificationIds.current,
           reminderIds: variables.reminderIds,
         });
+        context?.settle(variables.exactNotificationIds.current);
       } catch (err) {
         context?.reapply();
+        context?.releaseGraphql();
         throw err;
       }
     },
@@ -169,8 +176,10 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
           notificationIds: variables.exactNotificationIds.current,
           reminderIds: variables.reminderIds,
         });
+        context?.settle(variables.exactNotificationIds.current);
       } catch (err) {
         context?.applyUndone();
+        context?.releaseGraphql();
         throw err;
       }
     },
@@ -302,6 +311,7 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
       entities: targets,
       emailIds: resolved.emailIds,
       optimisticNotificationIds: resolved.notificationIds,
+      scopeChannelThreads: scopeChannelNotifications,
       exactNotificationIds: { current: exactNotificationIds },
       notificationEntities,
       reminderIds: resolved.reminderIds,
