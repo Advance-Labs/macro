@@ -537,7 +537,7 @@ export function DatabaseTable(props: {
                         aria-rowindex={index() + 2}
                         // Off-screen rows skip style, layout and paint; they stay
                         // in the DOM, the accessibility tree and find-in-page.
-                        class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
+                        class="group grid min-h-10 border-b border-edge-muted/60 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
                         classList={{ 'bg-accent/15': highlighted() }}
                         style={{ 'grid-template-columns': template() }}
                       >
@@ -547,7 +547,7 @@ export function DatabaseTable(props: {
                           tabindex={-1}
                           // Opaque so cells scrolled beneath it stay hidden; the
                           // overlay repeats the row's hover and highlight tint.
-                          class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 before:transition-colors before:duration-700 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                          class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
                           data-grid-cell
                           data-grid-row={index()}
                           data-grid-column={0}

@@ -4,6 +4,7 @@ import CaretDownIcon from '@phosphor/caret-down.svg';
 import { PropertyDateSelector } from '@property/editors/selectors/PropertyDateSelector';
 import { Dropdown } from '@ui/components/Dropdown';
 import {
+  createMemo,
   createSignal,
   For,
   type JSX,
@@ -126,7 +127,7 @@ export function GridCell(props: GridCellProps) {
     startsEditing && props.value !== null ? String(props.value) : ''
   );
   const [selectAll, setSelectAll] = createSignal(true);
-  const cellKind = (): GridCellKind =>
+  const cellKind = createMemo<GridCellKind>(() =>
     match({
       editing: editing(),
       boolean: isBoolean(),
@@ -140,7 +141,8 @@ export function GridCell(props: GridCellProps) {
       .with({ option: true, editable: true }, () => 'select' as const)
       .with({ option: true, editable: false }, () => 'readonly-select' as const)
       .with({ option: false }, () => 'text' as const)
-      .exhaustive();
+      .exhaustive()
+  );
   let trigger: HTMLElement | undefined;
   let booleanWrapper: HTMLDivElement | undefined;
   let focusEditor: (() => void) | undefined;
@@ -728,10 +730,11 @@ function SelectCell(props: GridCellProps) {
   const [error, setError] = createSignal('');
   const editing = useOptionEditing();
   let searchInput: HTMLInputElement | undefined;
-  const selected = () =>
+  const selected = createMemo(() =>
     databaseCellValues(props.value, props.column)
       .filter((value) => value !== null)
-      .map(String);
+      .map(String)
+  );
   const label = () => selected().join(', ');
   const withOption = (option: string, checked = true) => {
     if (!props.column.isMultiSelect) return option;
