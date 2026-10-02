@@ -40,7 +40,7 @@ contacts = { path = "../contacts", default-features = false, features = [
 ] }
 crm = { path = "../crm" }
 documents = { path = "../documents", features = ["ai_tools", "attachment", "purge"] }
-email = { path = "../email", features = ["ai_schema", "ai_tools", "axum", "outbound"] }
+email = { path = "../email", features = ["ai_schema", "ai_tools", "axum", "outbound", "s3"] }
 email_service_client = { path = "../email_service_client" }
 entity_access = { path = "../entity_access" }
 entity_access_management = { path = "../entity_access_management" }
