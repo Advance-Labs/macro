@@ -32,7 +32,7 @@ const VALID_MARK_DONE_LIST_VIEWS: `${ListView}-${string}`[] = [
   'home-signal',
   'home-noise',
   // Marking a pending reminder done cancels it before it fires — same as the
-  // standalone Reminders view's Scheduled tab below.
+  // standalone Reminders collection below.
   'home-reminders',
   'mail-important',
   'mail-all',
@@ -42,23 +42,18 @@ const VALID_MARK_DONE_LIST_VIEWS: `${ListView}-${string}`[] = [
   // stay in place and flip to the done state exactly like mail "All".
   'mail-calendar',
   'mail-shared',
-  // Completing a reminder is the whole point of the Reminders view: without
-  // it the only way to clear one is to delete it. Done is listed too so a
-  // reminder marked by mistake can be reopened from where it landed.
-  'reminders-active',
-  'reminders-scheduled',
-  'reminders-done',
+  'reminders-all',
 ];
 
 export const canExecuteMarkDoneOnView = (view: ListView, tabId: string) => {
   return VALID_MARK_DONE_LIST_VIEWS.includes(`${view}-${tabId}`);
 };
 
-/** Already-done emails are skipped by mark-done (they appear alongside
- *  not-done rows in views that show done content, e.g. mail "All"). done
- *  state is email-specific; other entity types are never filtered. */
+/** Already-done emails and reminders coexist with actionable rows in unified
+ * collections, so mark-done skips them rather than acknowledging twice. */
 const isMarkDoneTarget = (e: EntityData) =>
-  !(e.type === 'email' && e.done === true);
+  !(e.type === 'email' && e.done === true) &&
+  !(e.type === 'reminder' && e.completedAt != null);
 
 type MakeMarkDoneOptions = {
   userId?: () => string | undefined;
@@ -185,6 +180,20 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
     },
     undoLabel: 'Mark Done',
     onPushed: (handle, variables) => {
+      // Email follow-up mirrors deliberately reject completed:false. Reopening
+      // requires a new time through their owning composer, not generic Undo.
+      if (
+        variables.entities.some(
+          (entity) => entity.type === 'reminder' && entity.emailFollowup
+        )
+      ) {
+        handle.dispose();
+        if (!variables.silent)
+          toast.success(
+            'Marked as done. Use Remind me to schedule the email again.'
+          );
+        return;
+      }
       variables.onUndoHandle?.(handle);
       const firstEntityId = variables.entities[0]?.id;
       const count = variables.entities.length;
@@ -261,11 +270,40 @@ export const makeMarkDoneAction = (options: MakeMarkDoneOptions) => {
     entities: EntityData[],
     restoreFocus?: () => void,
     opts?: MarkDoneExecuteOpts
-  ) => {
+  ): Promise<void> => {
     // Skip already-done emails so a mixed selection (e.g. done + not-done rows
     // in mail "All") doesn't re-archive the done ones or overcount the toast.
     const targets = entities.filter(isMarkDoneTarget);
     if (targets.length === 0) return;
+
+    // Only workflow mirrors lack generic undo. Keep reversible selections in
+    // their own transaction so a mixed selection retains its normal Undo.
+    const mirrors = targets.filter(
+      (entity) => entity.type === 'reminder' && entity.emailFollowup
+    );
+    if (mirrors.length > 0 && mirrors.length < targets.length) {
+      let failure: { reason: unknown } | undefined;
+      // Settle mirrors first so their non-undoable entry cannot overwrite the
+      // ordinary group's Undo toast or clear its Redo stack after completion.
+      // A failed group must not prevent the remaining writes from being tried.
+      for (const attempt of [
+        () => execute(mirrors, undefined, { silent: opts?.silent }),
+        () =>
+          execute(
+            targets.filter((entity) => !mirrors.includes(entity)),
+            restoreFocus,
+            opts
+          ),
+      ]) {
+        try {
+          await attempt();
+        } catch (reason) {
+          failure ??= { reason };
+        }
+      }
+      if (failure) throw failure.reason;
+      return;
+    }
 
     const source = notificationSource();
     const scopeChannelNotifications = scopeChannelNotificationsToEntity();
