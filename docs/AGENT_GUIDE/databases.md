@@ -25,6 +25,14 @@ starts with a mention of the database; the schema and table guidance go to the
 agent privately as session instructions, so the sent bubble shows only what you
 typed. Plans that include the database model run the chat on it.
 
+Database agents discover with `ListDatabases` and `DescribeDatabase`, then use
+`QueryDatabase` for rows and schema commands (`CREATE DATABASE`, `CREATE TABLE`,
+`ALTER`, and `DROP TABLE`). `DescribeDatabase` omits saved-view definitions and
+conversion lists by default; request `includeEditingMetadata: true` when those
+are needed. `SaveDatabaseView` / `DeleteDatabaseView` manage table and kanban
+presentation; `SaveDatabaseQuery` saves a live answer. Document live-answer agents
+remain read-only, including schema commands and database creation.
+
 ## Feature flag
 
 Databases is behind the `enable-databases` PostHog flag. A deployed app reads it
@@ -355,13 +363,11 @@ Its bottom composer contains a database mention and private context identifying
 this database, its current table, and all its tables. Nothing sends automatically.
 Type a question or requested change and send it using the normal chat controls.
 Any chat, not only one opened from a database, can build databases: the assistant
-has `ListDatabases`, `DescribeDatabase`, `QueryDatabase`, `SaveDatabaseQuery`,
-`CreateDatabase`, `RenameDatabase`, `CreateTable`, `RenameTable`, `ReorderTables`,
-`DeleteTable`, `AddColumn` (relation columns via `linkToTableId`, entity
-columns via `specificEntityType`),
-`AddColumnOptions`, `RenameColumn`, `ChangeColumnType`, `DeleteColumn`,
-`ReorderColumns`, and `SaveDatabaseView`. It reads current schema before editing
-and checks actual results before reporting success.
+has six database tools: `ListDatabases`, `DescribeDatabase`, `QueryDatabase`,
+`SaveDatabaseQuery`, `SaveDatabaseView`, and `DeleteDatabaseView`.
+`QueryDatabase` reads and changes rows and handles schema changes through SQL
+(`CREATE`, `ALTER`, and `DROP`). The assistant reads the current schema before
+editing and checks actual results before reporting success.
 
 Query tool rows say what the query did in words (**Read Invites**, **Updated 3
 rows in Guests**, **Changed Price to number**, or **Queried Party Planner**) and
