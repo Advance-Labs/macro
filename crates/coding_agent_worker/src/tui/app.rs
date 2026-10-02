@@ -534,7 +534,7 @@ impl App {
             KeyCode::Enter => match agent_catalog::custom(buffer.value()) {
                 Ok(agent) => {
                     self.mode = Mode::Normal;
-                    self.apply_agent(&agent).await;
+                    self.select_agent(agent).await;
                 }
                 Err(error) => self.fail(error),
             },

@@ -182,9 +182,8 @@ async fn run_loop(
 
         tokio::select! {
             event = read_event() => {
-                match event.context("failed to read terminal input")? {
-                    TermEvent::Key(key) => app.on_key(key).await,
-                    _ => {}
+                if let TermEvent::Key(key) = event.context("failed to read terminal input")? {
+                    app.on_key(key).await;
                 }
                 apply_pending_browser(app);
             }
