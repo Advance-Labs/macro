@@ -10,6 +10,7 @@ import type { Chapter } from './chapter';
 import type { Comparison } from './comparison';
 import type { FileEntry } from './fileEntry';
 import type { FileGroup } from './fileGroup';
+import type { RevisionGraph } from './revisionGraph';
 import type { Symbol } from './symbol';
 
 /**
@@ -33,6 +34,7 @@ export interface Revision {
   annotations?: Annotation[];
   /** Agent-selected file groups for this revision. */
   fileGroups?: FileGroup[];
+  graph?: RevisionGraph;
   /** Definitions indexed by diffd across the snapshot. */
   symbols: Symbol[];
 }

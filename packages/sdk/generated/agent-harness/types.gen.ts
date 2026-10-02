@@ -1209,6 +1209,68 @@ export type GitRefDto = {
     sha?: string | null;
 };
 
+/**
+ * Optional agent preference for the diagram's reading direction.
+ */
+export type GraphDirection = 'leftToRight' | 'topToBottom';
+
+/**
+ * A relationship, optionally linked to the call site that implements it.
+ */
+export type GraphEdge = {
+    /**
+     * Source component ID.
+     */
+    from: string;
+    /**
+     * Destination component ID.
+     */
+    to: string;
+    /**
+     * Short verb describing the relationship.
+     */
+    label: string;
+    location?: null | Location;
+};
+
+/**
+ * A component linked to its implementation in this revision.
+ */
+export type GraphNode = {
+    /**
+     * Unique component identity within the map.
+     */
+    id: string;
+    /**
+     * Short component name.
+     */
+    title: string;
+    /**
+     * Optional concise explanation of this component's role or change (180 characters).
+     */
+    description?: string | null;
+    /**
+     * Optional agent-chosen category, such as UI, Runtime, or Storage (32 characters).
+     */
+    kind?: string | null;
+    /**
+     * Optional containing component ID. Zooming reveals children inside their
+     * parent. Use up to four levels, from broad components to specific code areas.
+     * Parent references must exist and cannot form cycles.
+     */
+    parent?: string | null;
+    /**
+     * Changed paths, directories, or globs belonging to this component.
+     * Omitted or empty uses the linked file. Reads expand patterns to exact paths;
+     * the reader derives actual change counts rather than trusting authored totals.
+     */
+    files?: Array<string>;
+    /**
+     * Implementation to reveal when clicked.
+     */
+    location: Location;
+};
+
 export type LinkBody = {
     revision: number;
     location: Location;
@@ -1546,6 +1608,7 @@ export type Review = {
      * Current agent-selected file groups.
      */
     fileGroups?: Array<FileGroup>;
+    graph?: null | ReviewGraph;
     /**
      * Durable selections.
      */
@@ -1554,6 +1617,25 @@ export type Review = {
      * Durable discussion.
      */
     threads: Array<Thread>;
+};
+
+/**
+ * A compact component or data-flow diagram authored by the agent.
+ */
+export type ReviewGraph = {
+    /**
+     * Short description of what the map explains.
+     */
+    title: string;
+    direction?: null | GraphDirection;
+    /**
+     * Components in reading order (up to 64). An empty list clears the map.
+     */
+    nodes: Array<GraphNode>;
+    /**
+     * Directed relationships between components.
+     */
+    edges: Array<GraphEdge>;
 };
 
 /**
@@ -1618,6 +1700,7 @@ export type Revision = {
      * Agent-selected file groups for this revision.
      */
     fileGroups?: Array<FileGroup>;
+    graph?: null | ReviewGraph;
     /**
      * Definitions indexed by diffd across the snapshot.
      */
