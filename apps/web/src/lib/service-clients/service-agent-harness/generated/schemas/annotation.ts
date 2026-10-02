@@ -10,10 +10,10 @@ import type { Location } from './location';
  * An explanation pinned next to code.
  */
 export interface Annotation {
+  /** Markdown explanation. */
+  body: string;
   /** Stable key, reused to update the explanation. */
   key: string;
   /** Where this explanation belongs. */
   location: Location;
-  /** Markdown explanation. */
-  body: string;
 }

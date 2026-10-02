@@ -9,13 +9,13 @@
  * A named set of files the reviewer can hide and reveal together.
  */
 export interface FileGroup {
-  /** Stable agent-supplied key. */
-  key: string;
-  /** Short label, such as Generated or Tests. */
-  title: string;
   /** Paths, directories, or globs when publishing (e.g. .sqlx/**, **\/*.test.ts).
 Reads expand these to exact paths in the requested revision. */
   files: string[];
   /** Whether these files start hidden. The reader can always reveal them. */
   hidden?: boolean;
+  /** Stable agent-supplied key. */
+  key: string;
+  /** Short label, such as Generated or Tests. */
+  title: string;
 }

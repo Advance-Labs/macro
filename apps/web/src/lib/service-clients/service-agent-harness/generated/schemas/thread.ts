@@ -10,12 +10,12 @@ import type { Message } from './message';
  * A discussion whose identity survives revisions.
  */
 export interface Thread {
-  /** Stable thread identity. */
-  id: string;
   /** Anchor in `Review.anchors`. */
   anchor: string;
-  /** Human-controlled resolution. */
-  resolved: boolean;
+  /** Stable thread identity. */
+  id: string;
   /** Ordered, idempotent messages. */
   messages: Message[];
+  /** Human-controlled resolution. */
+  resolved: boolean;
 }

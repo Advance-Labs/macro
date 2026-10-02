@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { CommentLocation } from './commentLocation';
 import type { CommentThread } from './commentThread';
 
@@ -12,16 +11,16 @@ import type { CommentThread } from './commentThread';
  * A user comment or reply request.
  */
 export interface Comment {
+  /** Markdown comment text. */
+  body: string;
   /** UUID reused for retries. */
   id: string;
-  /** Existing thread for a reply; absent creates a new thread. */
-  thread?: CommentThread;
+  location?: CommentLocation;
   /**
    * Revision the user saw.
    * @minimum 0
    */
   revision: number;
-  location?: CommentLocation;
-  /** Markdown comment text. */
-  body: string;
+  /** Existing thread for a reply; absent creates a new thread. */
+  thread?: CommentThread;
 }

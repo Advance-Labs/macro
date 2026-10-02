@@ -16,36 +16,36 @@ import type { GitRefDto } from './gitRefDto';
 Clients deserialize this, so both derives are used.
  */
 export interface ChangesetDto {
-  /** The capture's id; changes with every capture. */
-  id: string;
-  /** Where the diff was read from. */
-  source: ChangesetSourceDto;
-  /** `https://github.com/owner/name`, when known. */
-  repository?: ChangesetDtoRepository;
-  /** The side the work started from. */
-  base: GitRefDto;
-  /** The side carrying the work. */
-  head: GitRefDto;
-  /** Every changed file, in patch order. */
-  files: ChangedFileDto[];
   /**
    * Lines added across all files.
    * @minimum 0
    */
   additions: number;
+  /** The side the work started from. */
+  base: GitRefDto;
+  /** When the diff was taken. */
+  capturedAt: string;
   /**
    * Lines removed across all files.
    * @minimum 0
    */
   deletions: number;
+  /** Every changed file, in patch order. */
+  files: ChangedFileDto[];
+  /** The side carrying the work. */
+  head: GitRefDto;
+  /** The capture's id; changes with every capture. */
+  id: string;
   /**
    * Size of the patch `GET .../changes/patch` serves; zero when nothing
 changed.
    * @minimum 0
    */
   patchBytes: number;
+  /** `https://github.com/owner/name`, when known. */
+  repository?: ChangesetDtoRepository;
+  /** Where the diff was read from. */
+  source: ChangesetSourceDto;
   /** Some files' hunks were left out of the patch. */
   truncated: boolean;
-  /** When the diff was taken. */
-  capturedAt: string;
 }

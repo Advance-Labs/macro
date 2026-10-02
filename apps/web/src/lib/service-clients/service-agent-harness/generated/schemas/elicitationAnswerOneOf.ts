@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { ElicitationAnswerOneOfAction } from './elicitationAnswerOneOfAction';
 import type { ElicitationAnswerOneOfContent } from './elicitationAnswerOneOfContent';
 
@@ -12,7 +11,7 @@ import type { ElicitationAnswerOneOfContent } from './elicitationAnswerOneOfCont
  * The user submitted the form, or consented to open the URL.
  */
 export type ElicitationAnswerOneOf = {
+  action: ElicitationAnswerOneOfAction;
   /** Form: the submitted values keyed by property. URL: omitted. */
   content?: ElicitationAnswerOneOfContent;
-  action: ElicitationAnswerOneOfAction;
 };

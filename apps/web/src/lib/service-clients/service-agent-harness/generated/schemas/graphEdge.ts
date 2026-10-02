@@ -12,9 +12,9 @@ import type { GraphEdgeLocation } from './graphEdgeLocation';
 export interface GraphEdge {
   /** Source component ID. */
   from: string;
-  /** Destination component ID. */
-  to: string;
   /** Short verb describing the relationship. */
   label: string;
   location?: GraphEdgeLocation;
+  /** Destination component ID. */
+  to: string;
 }

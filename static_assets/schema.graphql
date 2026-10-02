@@ -219,6 +219,10 @@ input CreateInitiativeInput {
 	Whether to share with the owner's team, defaulting to true.
 	"""
 	shareWithTeam: Boolean
+	"""
+	Initial property values, set in the same create; a rejected value fails it.
+	"""
+	propertyValues: [InitialPropertyValueInput!]
 }
 
 """
@@ -1876,6 +1880,14 @@ input GraphqlDocumentLiteral @oneOf {
 	The updated at option.
 	"""
 	updatedAt: GraphqlDateLiteral
+	"""
+	An entity-property condition on the document or task.
+	"""
+	property: GraphqlFilterPropertiesLiteral
+	"""
+	Uploaded from an email attachment sent by, or to, a matching address.
+	"""
+	emailAttachmentParticipant: GraphqlEmailValue
 }
 
 """
@@ -4115,6 +4127,10 @@ enum GraphqlPropertyEntityType {
 	Company entity.
 	"""
 	COMPANY
+	"""
+	CRM contact entity.
+	"""
+	CONTACT
 	"""
 	Document entity.
 	"""
@@ -6895,6 +6911,20 @@ input GroupedSoupInput @oneOf {
 	Continue one bin from a cursor returned by a previous grouped query.
 	"""
 	continuation: GroupedSoupContinuationInput
+}
+
+"""
+One property value set when an initiative is created.
+"""
+input InitialPropertyValueInput {
+	"""
+	Property definition to set.
+	"""
+	propertyDefinitionId: ID!
+	"""
+	Value, in the same shape `setEntityProperty` accepts.
+	"""
+	value: GraphqlSetPropertyValue!
 }
 
 """

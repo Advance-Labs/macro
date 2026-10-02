@@ -11,12 +11,12 @@ import type { AgentModelDtoGroup } from './agentModelDtoGroup';
  * One model picker option.
  */
 export interface AgentModelDto {
-  /** Provider model id. */
-  id: string;
-  /** Display name. */
-  name: string;
   /** Optional provider description. */
   description?: AgentModelDtoDescription;
   /** Optional group heading supplied by the provider. */
   group?: AgentModelDtoGroup;
+  /** Provider model id. */
+  id: string;
+  /** Display name. */
+  name: string;
 }

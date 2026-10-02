@@ -10,25 +10,25 @@ import type { Side } from './side';
  * A definition found by the tags queries: what `gd` jumps to.
  */
 export interface Symbol {
-  name: string;
-  /** e.g. "function", "class", "method", "module". */
-  kind: string;
+  /** @minimum 0 */
+  end: number;
   /**
    * Index into [`Snapshot::files`].
    * @minimum 0
    */
   file: number;
-  side: Side;
+  /** e.g. "function", "class", "method", "module". */
+  kind: string;
   /** @minimum 0 */
   line: number;
-  /** @minimum 0 */
-  start: number;
-  /** @minimum 0 */
-  end: number;
   /**
    * The whole definition's first and last line (1-based), e.g. a function with its body.
    * @minItems 2
    * @maxItems 2
    */
   lines: number[];
+  name: string;
+  side: Side;
+  /** @minimum 0 */
+  start: number;
 }

@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { AgentSessionResponseAcpSessionId } from './agentSessionResponseAcpSessionId';
 import type { AgentSessionResponseExternal } from './agentSessionResponseExternal';
 import type { AgentSessionResponseInstructions } from './agentSessionResponseInstructions';
@@ -23,50 +22,50 @@ import type { SessionStatusDto } from './sessionStatusDto';
 Clients deserialize this, so both derives are used.
  */
 export interface AgentSessionResponse {
-  /** The session id. */
-  id: string;
-  /** User-facing session name. */
-  name: string;
-  /** Whether the session is archived and read-only. */
-  isArchived: boolean;
-  /** The user who created and owns the session. */
-  ownerId: string;
+  /** The ACP session id, if one exists. */
+  acpSessionId?: AgentSessionResponseAcpSessionId;
+  /** The bot running the agent. */
+  botId: string;
   /** Whether the caller may drive the session - prompt it, answer its
 questions, stop it - rather than only watch. Edit access; the
 creator owns the session, so a create response always says so. */
   canEdit: boolean;
-  /** The root message of the thread the session was created from, if any. */
-  threadId?: AgentSessionResponseThreadId;
-  threadParent?: AgentSessionResponseThreadParent;
-  /** The channel `thread_id` lives in, when the session was spawned from a
-channel thread. Derived from `thread_parent`. */
-  threadChannelId?: AgentSessionResponseThreadChannelId;
-  /** The exact message that invoked the bot, if any. */
-  originatingMessageId?: AgentSessionResponseOriginatingMessageId;
-  /** The bot running the agent. */
-  botId: string;
-  /** Model slug. */
-  model: string;
+  /** When the session was created. */
+  createdAt: string;
+  external?: AgentSessionResponseExternal;
   /** Harness slug. */
   harness: string;
-  /** The repository the session works with, when one was stated. */
-  repoUrl?: AgentSessionResponseRepoUrl;
-  /** The session's linked pull request. */
-  pullRequestUrl?: AgentSessionResponsePullRequestUrl;
-  /** The directory the session's harness runs in on its runtime. */
-  workspace: string;
-  /** Compute tier of the managed sandbox. */
-  sandboxSize: SandboxSize;
+  /** The session id. */
+  id: string;
   /** Instructions the session's runtime works under, when any were stated
 at creation. Absent otherwise, so existing payloads are unchanged. */
   instructions?: AgentSessionResponseInstructions;
-  /** The ACP session id, if one exists. */
-  acpSessionId?: AgentSessionResponseAcpSessionId;
-  /** The session's status. */
-  status: SessionStatusDto;
-  external?: AgentSessionResponseExternal;
-  /** When the session was created. */
-  createdAt: string;
+  /** Whether the session is archived and read-only. */
+  isArchived: boolean;
+  /** Model slug. */
+  model: string;
   /** When the session was last modified. */
   modifiedAt: string;
+  /** User-facing session name. */
+  name: string;
+  /** The exact message that invoked the bot, if any. */
+  originatingMessageId?: AgentSessionResponseOriginatingMessageId;
+  /** The user who created and owns the session. */
+  ownerId: string;
+  /** The session's linked pull request. */
+  pullRequestUrl?: AgentSessionResponsePullRequestUrl;
+  /** The repository the session works with, when one was stated. */
+  repoUrl?: AgentSessionResponseRepoUrl;
+  /** Compute tier of the managed sandbox. */
+  sandboxSize: SandboxSize;
+  /** The session's status. */
+  status: SessionStatusDto;
+  /** The channel `thread_id` lives in, when the session was spawned from a
+channel thread. Derived from `thread_parent`. */
+  threadChannelId?: AgentSessionResponseThreadChannelId;
+  /** The root message of the thread the session was created from, if any. */
+  threadId?: AgentSessionResponseThreadId;
+  threadParent?: AgentSessionResponseThreadParent;
+  /** The directory the session's harness runs in on its runtime. */
+  workspace: string;
 }

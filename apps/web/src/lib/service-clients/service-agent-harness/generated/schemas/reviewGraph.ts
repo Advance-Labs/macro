@@ -13,11 +13,11 @@ import type { ReviewGraphDirection } from './reviewGraphDirection';
  * A compact component or data-flow diagram authored by the agent.
  */
 export interface ReviewGraph {
-  /** Short description of what the map explains. */
-  title: string;
   direction?: ReviewGraphDirection;
-  /** Components in reading order (up to 64). An empty list clears the map. */
-  nodes: GraphNode[];
   /** Directed relationships between components. */
   edges: GraphEdge[];
+  /** Components in reading order (up to 64). An empty list clears the map. */
+  nodes: GraphNode[];
+  /** Short description of what the map explains. */
+  title: string;
 }

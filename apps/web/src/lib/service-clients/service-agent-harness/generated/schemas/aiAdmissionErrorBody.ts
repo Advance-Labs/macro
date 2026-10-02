@@ -10,8 +10,8 @@
 domain error's code and message and [`admission_status`].
  */
 export interface AiAdmissionErrorBody {
-  /** Human-readable explanation, without internal billing diagnostics. */
-  error: string;
   /** Stable denial or unavailability code. */
   code: string;
+  /** Human-readable explanation, without internal billing diagnostics. */
+  error: string;
 }

@@ -69,6 +69,14 @@ export type AgentConfigKindDto = {
  */
 export type AgentConfigOptionDto = AgentConfigKindDto & {
     /**
+     * ACP semantic category, such as `model` or `thought_level`.
+     */
+    category?: string | null;
+    /**
+     * Optional explanatory copy.
+     */
+    description?: string | null;
+    /**
      * Opaque id used to change this setting.
      */
     id: string;
@@ -76,28 +84,12 @@ export type AgentConfigOptionDto = AgentConfigKindDto & {
      * Display label supplied by the agent.
      */
     name: string;
-    /**
-     * Optional explanatory copy.
-     */
-    description?: string | null;
-    /**
-     * ACP semantic category, such as `model` or `thought_level`.
-     */
-    category?: string | null;
 };
 
 /**
  * One value in an agent-advertised select.
  */
 export type AgentConfigSelectOptionDto = {
-    /**
-     * Opaque value returned to the agent when selected.
-     */
-    value: string;
-    /**
-     * Display label.
-     */
-    name: string;
     /**
      * Optional provider description of this value.
      */
@@ -106,20 +98,20 @@ export type AgentConfigSelectOptionDto = {
      * Optional group heading supplied by the provider.
      */
     group?: string | null;
+    /**
+     * Display label.
+     */
+    name: string;
+    /**
+     * Opaque value returned to the agent when selected.
+     */
+    value: string;
 };
 
 /**
  * One model picker option.
  */
 export type AgentModelDto = {
-    /**
-     * Provider model id.
-     */
-    id: string;
-    /**
-     * Display name.
-     */
-    name: string;
     /**
      * Optional provider description.
      */
@@ -128,6 +120,14 @@ export type AgentModelDto = {
      * Optional group heading supplied by the provider.
      */
     group?: string | null;
+    /**
+     * Provider model id.
+     */
+    id: string;
+    /**
+     * Display name.
+     */
+    name: string;
 };
 
 /**
@@ -144,15 +144,15 @@ export type AgentModelsStatusDto = 'available' | 'unsupported';
  */
 export type AgentPermissionAction = {
     /**
+     * What the user decided.
+     */
+    answer: PermissionAnswer;
+    /**
      * The agent's JSON-RPC request id, echoed verbatim from the folded
      * permission part. A string or a number on the wire; agents mint both,
      * and `7` does not answer `"7"`.
      */
     requestId: unknown;
-    /**
-     * What the user decided.
-     */
-    answer: PermissionAnswer;
 };
 
 /**
@@ -160,14 +160,14 @@ export type AgentPermissionAction = {
  */
 export type AgentPromptAction = {
     /**
-     * What to tell the agent.
-     */
-    prompt: string;
-    /**
      * Files the prompt refers to, in the order the user attached them.
      * Delivered after the text as one `resource_link` block each.
      */
     attachments?: Array<PromptAttachment>;
+    /**
+     * What to tell the agent.
+     */
+    prompt: string;
 };
 
 /**
@@ -198,16 +198,16 @@ export type AgentRepositoryBranchesResponse = {
  */
 export type AgentRepositoryDto = {
     /**
-     * The canonical `https://github.com/owner/name` url, in the form
-     * `POST /agent-sessions` accepts as `repoUrl`.
-     */
-    url: string;
-    /**
      * The branch a clone checks out, and where a session starts when its
      * request selects this repository without a `repoBranch`. Absent for a
      * repository with no commits.
      */
     defaultBranch?: string | null;
+    /**
+     * The canonical `https://github.com/owner/name` url, in the form
+     * `POST /agent-sessions` accepts as `repoUrl`.
+     */
+    url: string;
 };
 
 /**
@@ -239,12 +239,12 @@ export type AgentSessionChangesPatchResponse = {
  * Clients deserialize this, so both derives are used.
  */
 export type AgentSessionChangesResponse = {
-    changeset?: null | ChangesetDto;
     attempt?: null | CaptureAttemptDto;
     /**
      * A capture is running right now.
      */
     capturing: boolean;
+    changeset?: null | ChangesetDto;
 };
 
 /**
@@ -264,10 +264,6 @@ export type AgentSessionChangesResponse = {
  */
 export type AgentSessionLogEntryDto = LogFrameDto & {
     /**
-     * Durable transport row identity; together with `createdAt`, its order cursor.
-     */
-    id: string;
-    /**
      * When the log recorded the frame.
      *
      * The frame itself carries no time, so this comes from the log row. It is
@@ -276,6 +272,10 @@ export type AgentSessionLogEntryDto = LogFrameDto & {
      * session and nothing more.
      */
     createdAt: string;
+    /**
+     * Durable transport row identity; together with `createdAt`, its order cursor.
+     */
+    id: string;
     /**
      * The user whose action produced the frame, absent when no user did.
      *
@@ -316,10 +316,23 @@ export type AgentSessionLogResponse = {
  * Clients deserialize this, so both derives are used.
  */
 export type AgentSessionPreviewData = {
+    bot?: null | SessionBot;
+    /**
+     * The bot running the agent.
+     */
+    botId: string;
+    /**
+     * When the session was created.
+     */
+    createdAt: string;
     /**
      * The session id.
      */
     id: string;
+    /**
+     * When the session was last modified.
+     */
+    modifiedAt: string;
     /**
      * User-facing session name.
      */
@@ -329,22 +342,9 @@ export type AgentSessionPreviewData = {
      */
     ownerId: string;
     /**
-     * The bot running the agent.
-     */
-    botId: string;
-    bot?: null | SessionBot;
-    /**
      * The session's last known status.
      */
     status: SessionStatusDto;
-    /**
-     * When the session was created.
-     */
-    createdAt: string;
-    /**
-     * When the session was last modified.
-     */
-    modifiedAt: string;
 };
 
 /**
@@ -385,21 +385,13 @@ export type AgentSessionQueueResponse = {
  */
 export type AgentSessionResponse = {
     /**
-     * The session id.
+     * The ACP session id, if one exists.
      */
-    id: string;
+    acpSessionId?: string | null;
     /**
-     * User-facing session name.
+     * The bot running the agent.
      */
-    name: string;
-    /**
-     * Whether the session is archived and read-only.
-     */
-    isArchived: boolean;
-    /**
-     * The user who created and owns the session.
-     */
-    ownerId: string;
+    botId: string;
     /**
      * Whether the caller may drive the session - prompt it, answer its
      * questions, stop it - rather than only watch. Edit access; the
@@ -407,69 +399,77 @@ export type AgentSessionResponse = {
      */
     canEdit: boolean;
     /**
-     * The root message of the thread the session was created from, if any.
+     * When the session was created.
      */
-    threadId?: string | null;
-    threadParent?: null | MessageParent;
-    /**
-     * The channel `thread_id` lives in, when the session was spawned from a
-     * channel thread. Derived from `thread_parent`.
-     */
-    threadChannelId?: string | null;
-    /**
-     * The exact message that invoked the bot, if any.
-     */
-    originatingMessageId?: string | null;
-    /**
-     * The bot running the agent.
-     */
-    botId: string;
-    /**
-     * Model slug.
-     */
-    model: string;
+    createdAt: string;
+    external?: null | ExternalSessionResponse;
     /**
      * Harness slug.
      */
     harness: string;
     /**
-     * The repository the session works with, when one was stated.
+     * The session id.
      */
-    repoUrl?: string | null;
-    /**
-     * The session's linked pull request.
-     */
-    pullRequestUrl?: string | null;
-    /**
-     * The directory the session's harness runs in on its runtime.
-     */
-    workspace: string;
-    /**
-     * Compute tier of the managed sandbox.
-     */
-    sandboxSize: SandboxSize;
+    id: string;
     /**
      * Instructions the session's runtime works under, when any were stated
      * at creation. Absent otherwise, so existing payloads are unchanged.
      */
     instructions?: string | null;
     /**
-     * The ACP session id, if one exists.
+     * Whether the session is archived and read-only.
      */
-    acpSessionId?: string | null;
+    isArchived: boolean;
     /**
-     * The session's status.
+     * Model slug.
      */
-    status: SessionStatusDto;
-    external?: null | ExternalSessionResponse;
-    /**
-     * When the session was created.
-     */
-    createdAt: string;
+    model: string;
     /**
      * When the session was last modified.
      */
     modifiedAt: string;
+    /**
+     * User-facing session name.
+     */
+    name: string;
+    /**
+     * The exact message that invoked the bot, if any.
+     */
+    originatingMessageId?: string | null;
+    /**
+     * The user who created and owns the session.
+     */
+    ownerId: string;
+    /**
+     * The session's linked pull request.
+     */
+    pullRequestUrl?: string | null;
+    /**
+     * The repository the session works with, when one was stated.
+     */
+    repoUrl?: string | null;
+    /**
+     * Compute tier of the managed sandbox.
+     */
+    sandboxSize: SandboxSize;
+    /**
+     * The session's status.
+     */
+    status: SessionStatusDto;
+    /**
+     * The channel `thread_id` lives in, when the session was spawned from a
+     * channel thread. Derived from `thread_parent`.
+     */
+    threadChannelId?: string | null;
+    /**
+     * The root message of the thread the session was created from, if any.
+     */
+    threadId?: string | null;
+    threadParent?: null | MessageParent;
+    /**
+     * The directory the session's harness runs in on its runtime.
+     */
+    workspace: string;
 };
 
 /**
@@ -502,13 +502,13 @@ export type AgentSetModelAction = {
  */
 export type AiAdmissionErrorBody = {
     /**
-     * Human-readable explanation, without internal billing diagnostics.
-     */
-    error: string;
-    /**
      * Stable denial or unavailability code.
      */
     code: string;
+    /**
+     * Human-readable explanation, without internal billing diagnostics.
+     */
+    error: string;
 };
 
 /**
@@ -516,25 +516,25 @@ export type AiAdmissionErrorBody = {
  */
 export type Anchor = {
     /**
-     * Stable identity used in URLs.
+     * Latest resolved selection.
      */
-    id: string;
-    /**
-     * Revision the author was viewing.
-     */
-    revision: number;
-    /**
-     * Original selection.
-     */
-    original: Location;
+    current: Location;
     /**
      * Exact selected lines, never replaced by a later capture.
      */
     excerpt: Array<string>;
     /**
-     * Latest resolved selection.
+     * Stable identity used in URLs.
      */
-    current: Location;
+    id: string;
+    /**
+     * Original selection.
+     */
+    original: Location;
+    /**
+     * Revision the author was viewing.
+     */
+    revision: number;
     /**
      * How the current selection relates to the original.
      */
@@ -551,6 +551,10 @@ export type AnchorStatus = 'current' | 'moved' | 'outdated';
  */
 export type Annotation = {
     /**
+     * Markdown explanation.
+     */
+    body: string;
+    /**
      * Stable key, reused to update the explanation.
      */
     key: string;
@@ -558,10 +562,6 @@ export type Annotation = {
      * Where this explanation belongs.
      */
     location: Location;
-    /**
-     * Markdown explanation.
-     */
-    body: string;
 };
 
 /**
@@ -591,18 +591,18 @@ export type CapabilityHarnessDto = 'in-memory' | 'cursor' | 'macrod';
  */
 export type CaptureAttemptDto = {
     /**
-     * When it started.
+     * Why it did not capture, in a sentence the user can read.
      */
-    startedAt: string;
+    error?: string | null;
     /**
      * When it ended; absent while it runs.
      */
     finishedAt?: string | null;
     outcome?: null | CaptureOutcomeDto;
     /**
-     * Why it did not capture, in a sentence the user can read.
+     * When it started.
      */
-    error?: string | null;
+    startedAt: string;
 };
 
 /**
@@ -617,6 +617,26 @@ export type CaptureOutcomeDto = 'captured' | 'not_ready' | 'failed';
  */
 export type ChangedFileDto = {
     /**
+     * Lines added.
+     */
+    additions: number;
+    /**
+     * The diff carries no text for this file.
+     */
+    binary: boolean;
+    /**
+     * Lines removed.
+     */
+    deletions: number;
+    /**
+     * What happened to the file.
+     */
+    kind: FileChangeKindDto;
+    /**
+     * The file's hunks were left out of the patch to fit the size budget.
+     */
+    patchOmitted: boolean;
+    /**
      * The file's path after the change, or before it for a deletion.
      */
     path: string;
@@ -624,26 +644,6 @@ export type ChangedFileDto = {
      * Where a renamed file came from.
      */
     previousPath?: string | null;
-    /**
-     * What happened to the file.
-     */
-    kind: FileChangeKindDto;
-    /**
-     * Lines added.
-     */
-    additions: number;
-    /**
-     * Lines removed.
-     */
-    deletions: number;
-    /**
-     * The diff carries no text for this file.
-     */
-    binary: boolean;
-    /**
-     * The file's hunks were left out of the patch to fit the size budget.
-     */
-    patchOmitted: boolean;
 };
 
 /**
@@ -653,50 +653,50 @@ export type ChangedFileDto = {
  */
 export type ChangesetDto = {
     /**
-     * The capture's id; changes with every capture.
+     * Lines added across all files.
      */
-    id: string;
-    /**
-     * Where the diff was read from.
-     */
-    source: ChangesetSourceDto;
-    /**
-     * `https://github.com/owner/name`, when known.
-     */
-    repository?: string | null;
+    additions: number;
     /**
      * The side the work started from.
      */
     base: GitRefDto;
     /**
-     * The side carrying the work.
+     * When the diff was taken.
      */
-    head: GitRefDto;
+    capturedAt: string;
+    /**
+     * Lines removed across all files.
+     */
+    deletions: number;
     /**
      * Every changed file, in patch order.
      */
     files: Array<ChangedFileDto>;
     /**
-     * Lines added across all files.
+     * The side carrying the work.
      */
-    additions: number;
+    head: GitRefDto;
     /**
-     * Lines removed across all files.
+     * The capture's id; changes with every capture.
      */
-    deletions: number;
+    id: string;
     /**
      * Size of the patch `GET .../changes/patch` serves; zero when nothing
      * changed.
      */
     patchBytes: number;
     /**
+     * `https://github.com/owner/name`, when known.
+     */
+    repository?: string | null;
+    /**
+     * Where the diff was read from.
+     */
+    source: ChangesetSourceDto;
+    /**
      * Some files' hunks were left out of the patch.
      */
     truncated: boolean;
-    /**
-     * When the diff was taken.
-     */
-    capturedAt: string;
 };
 
 /**
@@ -709,13 +709,13 @@ export type ChangesetSourceDto = 'github_pull_request';
  */
 export type ChannelSharePermission = {
     /**
-     * The channel id
-     */
-    channel_id: string;
-    /**
      * The access level for the channel
      */
     access_level: AccessLevel;
+    /**
+     * The channel id
+     */
+    channel_id: string;
 };
 
 /**
@@ -723,25 +723,25 @@ export type ChannelSharePermission = {
  */
 export type Chapter = {
     /**
-     * Stable agent-supplied key.
-     */
-    key: string;
-    /**
-     * Short title describing intent.
-     */
-    title: string;
-    /**
      * Markdown explanation of why these changes belong together.
      */
     description: string;
+    /**
+     * Initial code selection, validated against the published revision.
+     */
+    focus: Location;
+    /**
+     * Stable agent-supplied key.
+     */
+    key: string;
     /**
      * Reading order of repository-relative files.
      */
     paths: Array<string>;
     /**
-     * Initial code selection, validated against the published revision.
+     * Short title describing intent.
      */
-    focus: Location;
+    title: string;
 };
 
 /**
@@ -749,22 +749,22 @@ export type Chapter = {
  */
 export type Comment = {
     /**
+     * Markdown comment text.
+     */
+    body: string;
+    /**
      * UUID reused for retries.
      */
     id: string;
-    /**
-     * Existing thread for a reply; absent creates a new thread.
-     */
-    thread?: string | null;
+    location?: null | Location;
     /**
      * Revision the user saw.
      */
     revision: number;
-    location?: null | Location;
     /**
-     * Markdown comment text.
+     * Existing thread for a reply; absent creates a new thread.
      */
-    body: string;
+    thread?: string | null;
 };
 
 /**
@@ -776,13 +776,13 @@ export type Comparison = {
      */
     base?: string | null;
     /**
-     * Explicitly switch a fixed-head workspace comparison back to the live worktree.
-     */
-    worktree?: boolean;
-    /**
      * Optional tip commit; absent keeps the previous workspace tip or follows the PR.
      */
     head?: string | null;
+    /**
+     * Explicitly switch a fixed-head workspace comparison back to the live worktree.
+     */
+    worktree?: boolean;
 };
 
 /**
@@ -852,16 +852,6 @@ export type ControlStatusDto = 'sent' | 'queued';
  */
 export type CreateAgentSessionRequest = {
     /**
-     * Id to create the session under, minted by the caller. Lets a surface
-     * open on the session's final id - URL, history row, references - the
-     * moment the user acts, rather than after this request answers (which
-     * for a managed sandbox can take a while). Omitted, the service mints
-     * one. Answers 409 if a session already holds the id. On an external
-     * request it is how a runtime answering a composer request names the
-     * id it was handed, so the requester waiting on that id finds the session.
-     */
-    id?: string | null;
-    /**
      * Bot the session runs for. On a managed request this optionally selects
      * a persisted persona the user owns, may use through team membership, or
      * can `@` mention in a shared channel; omitting it uses the deployment's
@@ -871,40 +861,15 @@ export type CreateAgentSessionRequest = {
      */
     botId?: string | null;
     /**
-     * Absolute directory the bot's harness runs in on its runtime. Present
-     * for an external session, absent for a managed one, which runs in the
-     * path baked into its image.
+     * Id to create the session under, minted by the caller. Lets a surface
+     * open on the session's final id - URL, history row, references - the
+     * moment the user acts, rather than after this request answers (which
+     * for a managed sandbox can take a while). Omitted, the service mints
+     * one. Answers 409 if a session already holds the id. On an external
+     * request it is how a runtime answering a composer request names the
+     * id it was handed, so the requester waiting on that id finds the session.
      */
-    workspace?: string | null;
-    /**
-     * First prompt to deliver once the session is running. Managed sessions
-     * only - an external runtime sends its own first prompt through the
-     * control endpoint. Omitted, the session opens idle.
-     */
-    prompt?: string | null;
-    /**
-     * Explicit GitHub repository for a managed Cursor session, as one of the
-     * urls `GET /agent-repositories` lists for the caller. Access is checked
-     * for the session owner. For external sessions this is informational:
-     * cloning it is the runtime operator's job.
-     */
-    repoUrl?: string | null;
-    /**
-     * Starting branch for a managed coding session's selected repository.
-     * Omitted, the session starts on the repository's default branch.
-     */
-    repoBranch?: string | null;
-    /**
-     * The user who owns the session. Ignored for user callers, who always
-     * own their own sessions, for harness callers, whose verified acting
-     * user owns the session, and for bots that already act for a verified
-     * user. A bot without one may name a user here. That claim is trusted
-     * for the bot's own sessions. With no claim, a team bot owns the session
-     * itself only while non-user owners are enabled. Every other bot still
-     * needs an owner.
-     */
-    owner?: string | null;
-    thread?: null | CreateSessionThread;
+    id?: string | null;
     /**
      * Instructions the session's runtime works under, for its whole life.
      *
@@ -923,6 +888,41 @@ export type CreateAgentSessionRequest = {
      * transcript.
      */
     model?: string | null;
+    /**
+     * The user who owns the session. Ignored for user callers, who always
+     * own their own sessions, for harness callers, whose verified acting
+     * user owns the session, and for bots that already act for a verified
+     * user. A bot without one may name a user here. That claim is trusted
+     * for the bot's own sessions. With no claim, a team bot owns the session
+     * itself only while non-user owners are enabled. Every other bot still
+     * needs an owner.
+     */
+    owner?: string | null;
+    /**
+     * First prompt to deliver once the session is running. Managed sessions
+     * only - an external runtime sends its own first prompt through the
+     * control endpoint. Omitted, the session opens idle.
+     */
+    prompt?: string | null;
+    /**
+     * Starting branch for a managed coding session's selected repository.
+     * Omitted, the session starts on the repository's default branch.
+     */
+    repoBranch?: string | null;
+    /**
+     * Explicit GitHub repository for a managed Cursor session, as one of the
+     * urls `GET /agent-repositories` lists for the caller. Access is checked
+     * for the session owner. For external sessions this is informational:
+     * cloning it is the runtime operator's job.
+     */
+    repoUrl?: string | null;
+    thread?: null | CreateSessionThread;
+    /**
+     * Absolute directory the bot's harness runs in on its runtime. Present
+     * for an external session, absent for a managed one, which runs in the
+     * path baked into its image.
+     */
+    workspace?: string | null;
 };
 
 /**
@@ -944,28 +944,28 @@ export type CreateAgentSessionResponse = {
  */
 export type CreateSessionThread = {
     /**
-     * Update the existing bot response reserved by a task assignment.
-     */
-    reuseOriginMessage?: boolean;
-    parent?: null | MessageParent;
-    /**
      * Channel the mentioning message was posted in. Runtimes built before
      * message parents send this instead of `parent`.
      */
     channelId?: string | null;
     /**
-     * Thread the session belongs to; defaults to the message itself, which
-     * is how a top-level mention roots its own thread.
+     * The mention's text, quoted in the session's announcement.
      */
-    threadId?: string | null;
+    content?: string;
     /**
      * The mentioning message.
      */
     messageId: string;
+    parent?: null | MessageParent;
     /**
-     * The mention's text, quoted in the session's announcement.
+     * Update the existing bot response reserved by a task assignment.
      */
-    content?: string;
+    reuseOriginMessage?: boolean;
+    /**
+     * Thread the session belongs to; defaults to the message itself, which
+     * is how a top-level mention roots its own thread.
+     */
+    threadId?: string | null;
 };
 
 /**
@@ -1023,13 +1023,13 @@ export type EditQueuedActionRequest = {
  * there is no `Other` because we never originate an action we do not know.
  */
 export type ElicitationAnswer = {
+    action: 'accept';
     /**
      * Form: the submitted values keyed by property. URL: omitted.
      */
     content?: {
         [key: string]: ElicitationContentValue;
     } | null;
-    action: 'accept';
 } | {
     action: 'decline';
 } | {
@@ -1070,13 +1070,13 @@ export type EmptyRequest = {
  */
 export type ExternalSessionResponse = {
     /**
-     * Which provider serves the session, e.g. `cursor`.
-     */
-    provider: string;
-    /**
      * The provider's display name for the agent, when it reported one.
      */
     name?: string | null;
+    /**
+     * Which provider serves the session, e.g. `cursor`.
+     */
+    provider: string;
     /**
      * The agent's page on the provider's site, for a client to link out to.
      */
@@ -1092,31 +1092,30 @@ export type FileChangeKindDto = 'added' | 'modified' | 'deleted' | 'renamed';
  * One file's diff: both sides in full, aligned line by line.
  */
 export type FileDiff = {
-    path: string;
-    oldPath?: string | null;
-    status: FileStatus;
+    added: number;
     /**
-     * Display name of the language, when we recognise it.
+     * Why the file starts collapsed (set by the agent, e.g. "generated by ts-rs").
      */
-    language?: string | null;
-    omitted?: null | Omitted;
+    collapsed?: string | null;
     /**
      * Changes the rows can't show: the file mode, line endings, the final
      * newline, a submodule's commit. Short phrases, e.g. "mode 100644 → 100755".
      */
     details?: Array<string>;
     /**
-     * Why the file starts collapsed (set by the agent, e.g. "generated by ts-rs").
-     */
-    collapsed?: string | null;
-    /**
      * What kind of file it is, as diffd can tell by itself: `test`, `generated`.
      */
     labels?: Array<string>;
-    added: number;
-    removed: number;
-    old?: null | SideText;
+    /**
+     * Display name of the language, when we recognise it.
+     */
+    language?: string | null;
     new?: null | SideText;
+    old?: null | SideText;
+    oldPath?: string | null;
+    omitted?: null | Omitted;
+    path: string;
+    removed: number;
     /**
      * The whole file, aligned: (old line index, new line index), 0-based.
      */
@@ -1125,6 +1124,7 @@ export type FileDiff = {
      * New-side lines (1-based) that changed since the previous revision.
      */
     since: Array<number>;
+    status: FileStatus;
 };
 
 /**
@@ -1132,56 +1132,48 @@ export type FileDiff = {
  */
 export type FileEntry = {
     /**
-     * Repository-relative path, including deletions.
-     */
-    path: string;
-    /**
-     * Original path of a rename.
-     */
-    oldPath?: string | null;
-    /**
-     * Session-scoped immutable body identifier.
-     */
-    content: string;
-    /**
-     * Engine file status.
-     */
-    status: FileStatus;
-    /**
-     * Language when recognized.
-     */
-    language?: string | null;
-    /**
      * Changed lines on the new side.
      */
     added: number;
-    /**
-     * Changed lines on the old side.
-     */
-    removed: number;
     /**
      * Explanation for a collapsed generated file.
      */
     collapsed?: string | null;
     /**
+     * Session-scoped immutable body identifier.
+     */
+    content: string;
+    /**
      * Semantic labels from diffd or the agent.
      */
     labels: Array<string>;
+    /**
+     * Language when recognized.
+     */
+    language?: string | null;
+    /**
+     * Original path of a rename.
+     */
+    oldPath?: string | null;
     omitted?: null | Omitted;
+    /**
+     * Repository-relative path, including deletions.
+     */
+    path: string;
+    /**
+     * Changed lines on the old side.
+     */
+    removed: number;
+    /**
+     * Engine file status.
+     */
+    status: FileStatus;
 };
 
 /**
  * A named set of files the reviewer can hide and reveal together.
  */
 export type FileGroup = {
-    /**
-     * Stable agent-supplied key.
-     */
-    key: string;
-    /**
-     * Short label, such as Generated or Tests.
-     */
-    title: string;
     /**
      * Paths, directories, or globs when publishing (e.g. .sqlx**, ***.test.ts).
      * Reads expand these to exact paths in the requested revision.
@@ -1191,6 +1183,14 @@ export type FileGroup = {
      * Whether these files start hidden. The reader can always reveal them.
      */
     hidden?: boolean;
+    /**
+     * Stable agent-supplied key.
+     */
+    key: string;
+    /**
+     * Short label, such as Generated or Tests.
+     */
+    title: string;
 };
 
 export type FileStatus = 'added' | 'deleted' | 'modified' | 'renamed' | 'unchanged';
@@ -1223,14 +1223,14 @@ export type GraphEdge = {
      */
     from: string;
     /**
-     * Destination component ID.
-     */
-    to: string;
-    /**
      * Short verb describing the relationship.
      */
     label: string;
     location?: null | Location;
+    /**
+     * Destination component ID.
+     */
+    to: string;
 };
 
 /**
@@ -1238,27 +1238,9 @@ export type GraphEdge = {
  */
 export type GraphNode = {
     /**
-     * Unique component identity within the map.
-     */
-    id: string;
-    /**
-     * Short component name.
-     */
-    title: string;
-    /**
      * Optional concise explanation of this component's role or change (180 characters).
      */
     description?: string | null;
-    /**
-     * Optional agent-chosen category, such as UI, Runtime, or Storage (32 characters).
-     */
-    kind?: string | null;
-    /**
-     * Optional containing component ID. Zooming reveals children inside their
-     * parent. Use up to four levels, from broad components to specific code areas.
-     * Parent references must exist and cannot form cycles.
-     */
-    parent?: string | null;
     /**
      * Changed paths, directories, or globs belonging to this component.
      * Omitted or empty uses the linked file. Reads expand patterns to exact paths;
@@ -1266,14 +1248,32 @@ export type GraphNode = {
      */
     files?: Array<string>;
     /**
+     * Unique component identity within the map.
+     */
+    id: string;
+    /**
+     * Optional agent-chosen category, such as UI, Runtime, or Storage (32 characters).
+     */
+    kind?: string | null;
+    /**
      * Implementation to reveal when clicked.
      */
     location: Location;
+    /**
+     * Optional containing component ID. Zooming reveals children inside their
+     * parent. Use up to four levels, from broad components to specific code areas.
+     * Parent references must exist and cannot form cycles.
+     */
+    parent?: string | null;
+    /**
+     * Short component name.
+     */
+    title: string;
 };
 
 export type LinkBody = {
-    revision: number;
     location: Location;
+    revision: number;
 };
 
 /**
@@ -1300,10 +1300,6 @@ export type LoadAgentModelsRequest = {
  */
 export type LoadAgentModelsResponse = {
     /**
-     * Model-selection availability.
-     */
-    status: AgentModelsStatusDto;
-    /**
      * Current provider model, if model selection is available.
      */
     currentModel?: string | null;
@@ -1311,12 +1307,24 @@ export type LoadAgentModelsResponse = {
      * Ordered model catalog.
      */
     models: Array<AgentModelDto>;
+    /**
+     * Model-selection availability.
+     */
+    status: AgentModelsStatusDto;
 };
 
 /**
  * A code reference supplied by a user or agent; lines are one-based, inclusive.
  */
 export type Location = {
+    /**
+     * Last selected line; omitted for a single line.
+     */
+    endLine?: number | null;
+    /**
+     * First selected line.
+     */
+    line: number;
     /**
      * Repository-relative path.
      */
@@ -1325,14 +1333,6 @@ export type Location = {
      * Before or after side.
      */
     side: Side;
-    /**
-     * First selected line.
-     */
-    line: number;
-    /**
-     * Last selected line; omitted for a single line.
-     */
-    endLine?: number | null;
 };
 
 /**
@@ -1351,26 +1351,22 @@ export type LogDirectionDto = 'to_server' | 'to_runtime';
  */
 export type LogFrameDto = {
     /**
-     * Which way the frame travelled.
-     */
-    direction: LogDirectionDto;
-    /**
      * The protocol envelope, verbatim. Opaque here: it is Agent Runtime
      * Protocol, whose shape belongs to the fold rather than this endpoint.
      */
     content: {
         [key: string]: unknown;
     };
+    /**
+     * Which way the frame travelled.
+     */
+    direction: LogDirectionDto;
 };
 
 /**
  * An immutable thread message. Its ID is also its retry key.
  */
 export type Message = {
-    /**
-     * Caller-minted UUID reused for network retries.
-     */
-    id: string;
     /**
      * Server-assigned author.
      */
@@ -1384,6 +1380,10 @@ export type Message = {
      */
     createdAt: string;
     delivery?: null | Delivery;
+    /**
+     * Caller-minted UUID reused for network retries.
+     */
+    id: string;
 };
 
 /**
@@ -1419,6 +1419,12 @@ export type MessageParent = {
      */
     id: string;
     type: 'crm_contact';
+} | {
+    /**
+     * A video call and its persistent chat thread.
+     */
+    id: string;
+    type: 'call';
 };
 
 /**
@@ -1435,11 +1441,11 @@ export type Omitted = 'binary' | 'tooLarge' | 'submodule';
  * The decision carried by an [`AgentPermissionAction`].
  */
 export type PermissionAnswer = {
+    kind: 'selected';
     /**
      * The chosen option's id, as the agent listed it.
      */
     optionId: string;
-    kind: 'selected';
 } | {
     kind: 'cancelled';
 };
@@ -1483,21 +1489,21 @@ export type PreviewAgentSessionsResponse = {
  */
 export type PromptAttachment = {
     /**
-     * Where the agent can fetch the file.
+     * The file's media type, when known.
      */
-    uri: string;
+    mimeType?: string | null;
     /**
      * Display name, typically the original file name.
      */
     name: string;
     /**
-     * The file's media type, when known.
-     */
-    mimeType?: string | null;
-    /**
      * Size in bytes, when known.
      */
     size?: number | null;
+    /**
+     * Where the agent can fetch the file.
+     */
+    uri: string;
 };
 
 /**
@@ -1511,6 +1517,19 @@ export type QueuedActionDto = {
      */
     actionId: AgentActionId;
     /**
+     * The user who queued it, absent when a bot acted on nobody's behalf.
+     */
+    actorUserId?: string | null;
+    /**
+     * Files the prompt refers to, for prompts only. Kept through an edit,
+     * which replaces the text alone.
+     */
+    attachments?: Array<PromptAttachment>;
+    /**
+     * When it was accepted.
+     */
+    createdAt: string;
+    /**
      * What kind of action waits - `prompt` or `compact`; only
      * turn-occupying actions are ever queued.
      */
@@ -1520,19 +1539,6 @@ export type QueuedActionDto = {
      * replaces.
      */
     prompt?: string | null;
-    /**
-     * Files the prompt refers to, for prompts only. Kept through an edit,
-     * which replaces the text alone.
-     */
-    attachments?: Array<PromptAttachment>;
-    /**
-     * The user who queued it, absent when a bot acted on nobody's behalf.
-     */
-    actorUserId?: string | null;
-    /**
-     * When it was accepted.
-     */
-    createdAt: string;
 };
 
 /**
@@ -1546,8 +1552,8 @@ export type RenameAgentSessionRequest = {
 };
 
 export type ResolveBody = {
-    thread: string;
     resolved: boolean;
+    thread: string;
 };
 
 /**
@@ -1565,41 +1571,9 @@ export type ResolveResponse = {
  */
 export type Review = {
     /**
-     * Stable review ID.
+     * Durable selections.
      */
-    id: ReviewId;
-    /**
-     * Owning session; never supplied by an MCP tool argument.
-     */
-    sessionId: string;
-    /**
-     * Metadata/activity version, independent of code revisions.
-     */
-    version: number;
-    /**
-     * Display title.
-     */
-    title: string;
-    /**
-     * Agent summary.
-     */
-    summary: string;
-    /**
-     * Repository name or URL.
-     */
-    repository: string;
-    /**
-     * Availability of uncommitted changes.
-     */
-    source: SourceKind;
-    /**
-     * Immutable revision history.
-     */
-    revisions: Array<Revision>;
-    /**
-     * Current reading tour.
-     */
-    tour: Array<Chapter>;
+    anchors: Array<Anchor>;
     /**
      * Current inline explanations.
      */
@@ -1610,32 +1584,64 @@ export type Review = {
     fileGroups?: Array<FileGroup>;
     graph?: null | ReviewGraph;
     /**
-     * Durable selections.
+     * Stable review ID.
      */
-    anchors: Array<Anchor>;
+    id: ReviewId;
+    /**
+     * Repository name or URL.
+     */
+    repository: string;
+    /**
+     * Immutable revision history.
+     */
+    revisions: Array<Revision>;
+    /**
+     * Owning session; never supplied by an MCP tool argument.
+     */
+    sessionId: string;
+    /**
+     * Availability of uncommitted changes.
+     */
+    source: SourceKind;
+    /**
+     * Agent summary.
+     */
+    summary: string;
     /**
      * Durable discussion.
      */
     threads: Array<Thread>;
+    /**
+     * Display title.
+     */
+    title: string;
+    /**
+     * Current reading tour.
+     */
+    tour: Array<Chapter>;
+    /**
+     * Metadata/activity version, independent of code revisions.
+     */
+    version: number;
 };
 
 /**
  * A compact component or data-flow diagram authored by the agent.
  */
 export type ReviewGraph = {
-    /**
-     * Short description of what the map explains.
-     */
-    title: string;
     direction?: null | GraphDirection;
+    /**
+     * Directed relationships between components.
+     */
+    edges: Array<GraphEdge>;
     /**
      * Components in reading order (up to 64). An empty list clears the map.
      */
     nodes: Array<GraphNode>;
     /**
-     * Directed relationships between components.
+     * Short description of what the map explains.
      */
-    edges: Array<GraphEdge>;
+    title: string;
 };
 
 /**
@@ -1673,38 +1679,38 @@ export type ReviewResponse = {
  */
 export type Revision = {
     /**
-     * Monotonic, one-based revision number.
+     * Inline explanations belonging to this revision.
      */
-    number: number;
-    /**
-     * Time this revision was published.
-     */
-    createdAt: string;
+    annotations?: Array<Annotation>;
     /**
      * The comparison that produced the snapshot.
      */
     comparison: Comparison;
     /**
-     * Lazy body references.
+     * Time this revision was published.
      */
-    files: Array<FileEntry>;
-    /**
-     * Tour as it was explained for this revision.
-     */
-    tour?: Array<Chapter>;
-    /**
-     * Inline explanations belonging to this revision.
-     */
-    annotations?: Array<Annotation>;
+    createdAt: string;
     /**
      * Agent-selected file groups for this revision.
      */
     fileGroups?: Array<FileGroup>;
+    /**
+     * Lazy body references.
+     */
+    files: Array<FileEntry>;
     graph?: null | ReviewGraph;
+    /**
+     * Monotonic, one-based revision number.
+     */
+    number: number;
     /**
      * Definitions indexed by diffd across the snapshot.
      */
     symbols: Array<Symbol>;
+    /**
+     * Tour as it was explained for this revision.
+     */
+    tour?: Array<Chapter>;
 };
 
 /**
@@ -1738,6 +1744,14 @@ export type SandboxSizeBody = {
  */
 export type SessionBot = {
     /**
+     * Avatar, when it has one.
+     */
+    avatarUrl?: string | null;
+    /**
+     * Stable `@` handle, without a leading `@`.
+     */
+    handle: string;
+    /**
      * The bot's id. A message it sent has `"bot|{id}"` as its sender.
      */
     id: BotId;
@@ -1745,14 +1759,6 @@ export type SessionBot = {
      * Display name.
      */
     name: string;
-    /**
-     * Stable `@` handle, without a leading `@`.
-     */
-    handle: string;
-    /**
-     * Avatar, when it has one.
-     */
-    avatarUrl?: string | null;
 };
 
 /**
@@ -1783,20 +1789,20 @@ export type SetAgentSessionArchivedRequest = {
 
 export type SharePermissionV2 = {
     /**
+     * The channel share permissions for the item
+     */
+    channelSharePermissions?: Array<ChannelSharePermission> | null;
+    /**
      * The share permission id
      */
     id: string;
     linkShare?: null | LinkShare;
     linkShareAccessLevel?: null | AccessLevel;
-    teamShareAccessLevel?: null | AccessLevel;
     /**
      * The owner of the item
      */
     owner: string;
-    /**
-     * The channel share permissions for the item
-     */
-    channelSharePermissions?: Array<ChannelSharePermission> | null;
+    teamShareAccessLevel?: null | AccessLevel;
 };
 
 export type Side = 'old' | 'new';
@@ -1807,14 +1813,14 @@ export type Side = 'old' | 'new';
 export type SideText = {
     lines: Array<string>;
     /**
+     * Per line, flattened `[start, end, …]`: tokens difftastic marks as novel.
+     */
+    novel: Array<Array<number>>;
+    /**
      * Per line, flattened `[start, end, class, start, end, class, …]`.
      * `class` indexes [`SyntaxClass::ALL`].
      */
     syntax: Array<Array<number>>;
-    /**
-     * Per line, flattened `[start, end, …]`: tokens difftastic marks as novel.
-     */
-    novel: Array<Array<number>>;
 };
 
 /**
@@ -1845,13 +1851,13 @@ export type StartResponse = {
  */
 export type StatusResponse = {
     /**
-     * Whether this deployment supports browser connection.
-     */
-    enabled: boolean;
-    /**
      * Whether the authenticated Macro user has connected.
      */
     connected: boolean;
+    /**
+     * Whether this deployment supports browser connection.
+     */
+    enabled: boolean;
     /**
      * Whether reconnecting after service restart is required.
      */
@@ -1862,19 +1868,16 @@ export type StatusResponse = {
  * A definition found by the tags queries: what `gd` jumps to.
  */
 export type Symbol = {
-    name: string;
-    /**
-     * e.g. "function", "class", "method", "module".
-     */
-    kind: string;
+    end: number;
     /**
      * Index into [`Snapshot::files`].
      */
     file: number;
-    side: Side;
+    /**
+     * e.g. "function", "class", "method", "module".
+     */
+    kind: string;
     line: number;
-    start: number;
-    end: number;
     /**
      * The whole definition's first and last line (1-based), e.g. a function with its body.
      */
@@ -1882,6 +1885,9 @@ export type Symbol = {
         number,
         number
     ];
+    name: string;
+    side: Side;
+    start: number;
 };
 
 /**
@@ -1889,46 +1895,46 @@ export type Symbol = {
  */
 export type Thread = {
     /**
-     * Stable thread identity.
-     */
-    id: string;
-    /**
      * Anchor in `Review.anchors`.
      */
     anchor: string;
     /**
-     * Human-controlled resolution.
+     * Stable thread identity.
      */
-    resolved: boolean;
+    id: string;
     /**
      * Ordered, idempotent messages.
      */
     messages: Array<Message>;
+    /**
+     * Human-controlled resolution.
+     */
+    resolved: boolean;
 };
 
 export type UpdateChannelSharePermission = {
+    accessLevel?: null | AccessLevel;
+    /**
+     * The channel id
+     */
+    channelId: string;
     /**
      * The type of operation to be performed on the chanel share permission
      * You can add, remove or replace and existing permission
      */
     operation: UpdateOperation;
-    /**
-     * The channel id
-     */
-    channelId: string;
-    accessLevel?: null | AccessLevel;
 };
 
 export type UpdateOperation = 'add' | 'remove' | 'replace';
 
 export type UpdateSharePermissionRequestV2 = {
-    linkShare?: null | LinkShare;
-    linkShareAccessLevel?: null | AccessLevel;
-    teamShareAccessLevel?: null | AccessLevel;
     /**
      * Any channel share permissions to be created/updated/removed
      */
     channelSharePermissions?: Array<UpdateChannelSharePermission> | null;
+    linkShare?: null | LinkShare;
+    linkShareAccessLevel?: null | AccessLevel;
+    teamShareAccessLevel?: null | AccessLevel;
 };
 
 /**

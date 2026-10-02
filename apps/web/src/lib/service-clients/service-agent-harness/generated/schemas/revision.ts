@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { Annotation } from './annotation';
 import type { Chapter } from './chapter';
 import type { Comparison } from './comparison';
@@ -17,24 +16,24 @@ import type { Symbol } from './symbol';
  * One immutable revision; older links keep resolving after new captures.
  */
 export interface Revision {
+  /** Inline explanations belonging to this revision. */
+  annotations?: Annotation[];
+  /** The comparison that produced the snapshot. */
+  comparison: Comparison;
+  /** Time this revision was published. */
+  createdAt: string;
+  /** Agent-selected file groups for this revision. */
+  fileGroups?: FileGroup[];
+  /** Lazy body references. */
+  files: FileEntry[];
+  graph?: RevisionGraph;
   /**
    * Monotonic, one-based revision number.
    * @minimum 0
    */
   number: number;
-  /** Time this revision was published. */
-  createdAt: string;
-  /** The comparison that produced the snapshot. */
-  comparison: Comparison;
-  /** Lazy body references. */
-  files: FileEntry[];
-  /** Tour as it was explained for this revision. */
-  tour?: Chapter[];
-  /** Inline explanations belonging to this revision. */
-  annotations?: Annotation[];
-  /** Agent-selected file groups for this revision. */
-  fileGroups?: FileGroup[];
-  graph?: RevisionGraph;
   /** Definitions indexed by diffd across the snapshot. */
   symbols: Symbol[];
+  /** Tour as it was explained for this revision. */
+  tour?: Chapter[];
 }

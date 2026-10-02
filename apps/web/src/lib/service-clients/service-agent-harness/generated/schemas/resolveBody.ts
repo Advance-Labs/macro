@@ -6,6 +6,6 @@
  */
 
 export interface ResolveBody {
-  thread: string;
   resolved: boolean;
+  thread: string;
 }

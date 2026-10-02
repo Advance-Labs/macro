@@ -2725,14 +2725,12 @@ export const EditTagResponse = z.object({
 
 export const GenerateImage = z.object({
   prompt: z.string(),
-  fileName: z.union([z.string(), z.null()]).optional(),
   aspectRatio: z
     .union([
       z.enum(['square', 'landscape', 'portrait', 'widescreen', 'tall']),
       z.null(),
     ])
     .optional(),
-  projectId: z.union([z.string().uuid(), z.null()]).optional(),
   referenceImages: z
     .union([
       z
@@ -2770,8 +2768,8 @@ export const GenerateImage = z.object({
 });
 
 export const GenerateImageResponse = z.object({
-  documentId: z.string(),
-  fileName: z.string(),
+  staticFileId: z.string(),
+  url: z.string(),
   mimeType: z.string(),
   sizeBytes: z.number().int().gte(0),
   note: z.union([z.string(), z.null()]).optional(),
@@ -5910,6 +5908,7 @@ export const SetEntityProperty = z.object({
           'call',
           'user',
           'company',
+          'contact',
         ]),
         entityId: z.string(),
       }),
@@ -5931,6 +5930,7 @@ export const SetEntityProperty = z.object({
             'call',
             'user',
             'company',
+            'contact',
           ]),
           entityId: z.string(),
         })

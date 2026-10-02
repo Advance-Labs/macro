@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { CaptureAttemptDtoError } from './captureAttemptDtoError';
 import type { CaptureAttemptDtoFinishedAt } from './captureAttemptDtoFinishedAt';
 import type { CaptureAttemptDtoOutcome } from './captureAttemptDtoOutcome';
@@ -15,11 +14,11 @@ import type { CaptureAttemptDtoOutcome } from './captureAttemptDtoOutcome';
 Clients deserialize this, so both derives are used.
  */
 export interface CaptureAttemptDto {
-  /** When it started. */
-  startedAt: string;
+  /** Why it did not capture, in a sentence the user can read. */
+  error?: CaptureAttemptDtoError;
   /** When it ended; absent while it runs. */
   finishedAt?: CaptureAttemptDtoFinishedAt;
   outcome?: CaptureAttemptDtoOutcome;
-  /** Why it did not capture, in a sentence the user can read. */
-  error?: CaptureAttemptDtoError;
+  /** When it started. */
+  startedAt: string;
 }

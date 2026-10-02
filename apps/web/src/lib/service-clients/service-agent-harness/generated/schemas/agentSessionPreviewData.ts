@@ -13,19 +13,19 @@ import type { SessionStatusDto } from './sessionStatusDto';
 Clients deserialize this, so both derives are used.
  */
 export interface AgentSessionPreviewData {
+  bot?: AgentSessionPreviewDataBot;
+  /** The bot running the agent. */
+  botId: string;
+  /** When the session was created. */
+  createdAt: string;
   /** The session id. */
   id: string;
+  /** When the session was last modified. */
+  modifiedAt: string;
   /** User-facing session name. */
   name: string;
   /** The user who owns the session. */
   ownerId: string;
-  /** The bot running the agent. */
-  botId: string;
-  bot?: AgentSessionPreviewDataBot;
   /** The session's last known status. */
   status: SessionStatusDto;
-  /** When the session was created. */
-  createdAt: string;
-  /** When the session was last modified. */
-  modifiedAt: string;
 }

@@ -10,7 +10,7 @@ import type { PermissionAnswerOneOfKind } from './permissionAnswerOneOfKind';
  * One of the options the agent offered was chosen.
  */
 export type PermissionAnswerOneOf = {
+  kind: PermissionAnswerOneOfKind;
   /** The chosen option's id, as the agent listed it. */
   optionId: string;
-  kind: PermissionAnswerOneOfKind;
 };

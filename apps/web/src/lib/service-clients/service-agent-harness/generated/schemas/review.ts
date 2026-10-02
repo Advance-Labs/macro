@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { Anchor } from './anchor';
 import type { Annotation } from './annotation';
 import type { Chapter } from './chapter';
@@ -19,31 +18,31 @@ import type { Thread } from './thread';
  * Durable aggregate protected by a compare-and-swap version.
  */
 export interface Review {
-  /** Stable review ID. */
-  id: ReviewId;
-  /** Owning session; never supplied by an MCP tool argument. */
-  sessionId: string;
-  /** Metadata/activity version, independent of code revisions. */
-  version: number;
-  /** Display title. */
-  title: string;
-  /** Agent summary. */
-  summary: string;
-  /** Repository name or URL. */
-  repository: string;
-  /** Availability of uncommitted changes. */
-  source: SourceKind;
-  /** Immutable revision history. */
-  revisions: Revision[];
-  /** Current reading tour. */
-  tour: Chapter[];
+  /** Durable selections. */
+  anchors: Anchor[];
   /** Current inline explanations. */
   annotations: Annotation[];
   /** Current agent-selected file groups. */
   fileGroups?: FileGroup[];
   graph?: ReviewGraphProperty;
-  /** Durable selections. */
-  anchors: Anchor[];
+  /** Stable review ID. */
+  id: ReviewId;
+  /** Repository name or URL. */
+  repository: string;
+  /** Immutable revision history. */
+  revisions: Revision[];
+  /** Owning session; never supplied by an MCP tool argument. */
+  sessionId: string;
+  /** Availability of uncommitted changes. */
+  source: SourceKind;
+  /** Agent summary. */
+  summary: string;
   /** Durable discussion. */
   threads: Thread[];
+  /** Display title. */
+  title: string;
+  /** Current reading tour. */
+  tour: Chapter[];
+  /** Metadata/activity version, independent of code revisions. */
+  version: number;
 }

@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { FileEntryCollapsed } from './fileEntryCollapsed';
 import type { FileEntryLanguage } from './fileEntryLanguage';
 import type { FileEntryOldPath } from './fileEntryOldPath';
@@ -15,29 +14,29 @@ import type { FileStatus } from './fileStatus';
  * One file in the manifest, fetched independently by content identity.
  */
 export interface FileEntry {
-  /** Repository-relative path, including deletions. */
-  path: string;
-  /** Original path of a rename. */
-  oldPath?: FileEntryOldPath;
-  /** Session-scoped immutable body identifier. */
-  content: string;
-  /** Engine file status. */
-  status: FileStatus;
-  /** Language when recognized. */
-  language?: FileEntryLanguage;
   /**
    * Changed lines on the new side.
    * @minimum 0
    */
   added: number;
+  /** Explanation for a collapsed generated file. */
+  collapsed?: FileEntryCollapsed;
+  /** Session-scoped immutable body identifier. */
+  content: string;
+  /** Semantic labels from diffd or the agent. */
+  labels: string[];
+  /** Language when recognized. */
+  language?: FileEntryLanguage;
+  /** Original path of a rename. */
+  oldPath?: FileEntryOldPath;
+  omitted?: FileEntryOmitted;
+  /** Repository-relative path, including deletions. */
+  path: string;
   /**
    * Changed lines on the old side.
    * @minimum 0
    */
   removed: number;
-  /** Explanation for a collapsed generated file. */
-  collapsed?: FileEntryCollapsed;
-  /** Semantic labels from diffd or the agent. */
-  labels: string[];
-  omitted?: FileEntryOmitted;
+  /** Engine file status. */
+  status: FileStatus;
 }

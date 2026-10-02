@@ -266,10 +266,13 @@ bottom of the area carries the other decisions, refusal first: `Dismiss · Open 
 for a tool draft, `Decline · Submit · Open in session` (or `Open` for a URL) for a question.
 Only the session's owner can act; other viewers see the question read-only and the header
 names who is being waited on. Once answered, the area shows the agent's passage again.
+Images made with `GenerateImage` are saved to static file service. The bot embeds
+the returned URL as a Markdown image in its channel reply; generated images have
+no document mention or filename card.
 Agent replies may contain mention chips (`<m-document-mention>`) that render like any
-other channel mention. A mention of an image document (PNG, JPG, GIF, SVG, WebP —
-including a picture the bot made with `GenerateImage`) also unfurls beneath the
-message text as an image card: a header with the filename above the picture,
+other channel mention. A mention of an image document (PNG, JPG, GIF, SVG, WebP)
+also unfurls beneath the message text as an image card: a header with the filename
+above the picture,
 inside the message's `[data-message-mentioned-images]` element. The chip stays;
 clicking the card opens the image document in a split. The same image mentioned
 twice unfurls once, mentions of other document types, channels, and chats never
@@ -364,13 +367,13 @@ and message/unread-chip navigation may still open the thread.
 
 Channel messages, thread replies, reactions, edits, deletions, and typing go
 through the shared message API at `GET|POST /dss/messages/channel/<id>` and its
-`items`, `threads`, and `typing` subroutes; the `/dss/channels/<id>/message*`
-routes are no longer called by the web app. Live updates arrive as one
+`items`, `threads`, and `typing` subroutes; the `/dss/channels/<id>/message*`,
+reaction, and typing routes no longer exist. Live updates arrive as one
 `message_update` websocket payload per committed change (`posted`, `edited`,
 `message_deleted`, `reaction_changed`, `thread_updated`, `typing`); the older
 `comms_message`, `comms_reaction`, `comms_attachment`, and `comms_typing`
-frames are ignored. Documents share the same client, cache, and components
-behind `enable-unified-document-discussions` (see documents.md).
+frames are no longer sent. Documents share the same client, cache, and
+components (see documents.md).
 
 Reopening a channel already loaded this session requests
 `GET /dss/messages/channel/<id>?selection=<cursor of the newest cached root, direction newer, limit 50>`
@@ -752,6 +755,49 @@ channel surface to the live call. Repeated Join clicks while connecting should
 produce one connection; leaving from either control ends the same call. Navigate
 away and return while connected to check that the call and its controls remain
 usable.
+
+The **Open chat** button in its own island at the far right of the bottom toolbar
+opens the chat beside the video. The panel has no header or divider above the
+composer. The media controls stay centered. On narrow screens it overlays the
+video. The same toolbar button, now **Close chat**, or Escape closes the panel
+and returns focus to the chat button; reopening preserves the draft and scroll
+position. The call continues while chat is open or closed.
+
+Signed-in participants in channel, quick, and scheduled calls use the same chat
+panel. Guest meeting participants do not see chat because shared messages require
+a Macro account. Each call session has one persistent message thread, using the
+shared message composer, attachments, reactions, and message actions. The `@`
+menu offers Macro and available owned and team agents. Mention an agent and send
+to invoke it in the call thread; follow-up mentions use the same thread. Reply
+on your own or another participant’s message inserts a quote into the bottom
+composer while preserving its draft and attachments. Enter sends; subsequent
+messages and quoted replies join the same thread. Clicking a quote highlights its
+message in the live chat; Shift-click opens its durable saved-call link. Participants see new messages without reopening the panel.
+Check simultaneous first sends from two participants, edit/delete/reaction
+updates, a retained unsent draft after toggling chat, and a new incoming message
+while scrolled into history.
+
+After the call ends, its recording page shows a read-only **Call chat** below
+the transcript. A copied chat message link opens
+`/app/call/<callId>?call_message_id=<messageId>` and highlights that message in
+the recording's chat. Clicking the highlighted message clears the target from
+the pane's route while leaving chat expanded; verify this on standalone and
+Drive recording pages. A transcript search result clears any earlier chat
+target in that pane. In an already-open Home call preview, follow a second
+message link and then open the call without a message target: the highlight
+must move to the second message and then clear without remounting the preview.
+After following a message link, scroll away and follow that same link again:
+the view must return to the message. Check repeated links in Home, Drive, and
+standalone recordings, and repeated quote clicks in live chat; navigation must
+preserve the mounted thread and any unsent draft.
+A new call in the same channel starts a separate thread.
+
+An initial missing thread means the call has no messages yet. If a later chat
+refresh reports the thread missing or access denied after messages loaded,
+show the retry error and hide the stale thread. Verify that it never shows
+the empty-conversation prompt alongside cached messages. A transient server
+error may retain readable messages; Retry restores the thread when access
+and the request recover.
 
 For recovery checks, keep another participant connected and briefly interrupt
 the first participant's network. Recovery may rejoin that same live call. It

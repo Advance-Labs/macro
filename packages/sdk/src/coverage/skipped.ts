@@ -38,6 +38,13 @@ export const agentHarnessExcluded = [
 export const agentHarnessBacklog = [
   'getAgentSessionPermissions',
   'updateAgentSessionPermissions',
+  // Code review currently uses the app client and session-bound Internal MCP.
+  'capture',
+  'comment',
+  'file',
+  'link',
+  'resolve',
+  'view',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
 
 export const authExcluded = [
@@ -299,6 +306,8 @@ export const storageExcluded = [
   'deleteHistoryHandler',
   'deleteUserDocumentViewLocation',
   'deleteViewHandler',
+  // Old numeric comment links resolve inside the web app only.
+  'entityMessageLegacy',
   'excludeDefaultViewHandler',
   'getAttachmentReferences',
   'getBatchCallRecordPreview',
@@ -341,12 +350,10 @@ export const storageExcluded = [
   'meetingParticipants',
   'mentionPreviews',
   'patchViewHandler',
-  'postChannelMessages',
   'postItemsSoup',
   'postItemsSoupAst',
   'postItemsSoupAstGrouped',
   'removeBotFromChannelByBot',
-  'resolveChannelMessage',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
   'uploadExtractFolderHandler',
@@ -380,16 +387,8 @@ export const storageBacklog = [
   'editAnchor',
   'editCallTranscript',
   'editThreadV2',
-  'entityMessageCreate',
-  'entityMessageDeleteMessage',
   'entityMessageDeleteThread',
-  'entityMessageEdit',
-  'entityMessageGetMessage',
-  'entityMessageGetThread',
-  'entityMessageLegacy',
   'entityMessagePatchThread',
-  'entityMessageReact',
-  'entityMessageTyping',
   'getActivity',
   'getDocumentAnchors',
   'getDocumentByTeamSlug',
@@ -412,7 +411,6 @@ export const storageBacklog = [
   'listReminders',
   'listTeamOutOfOffice',
   'listUserApiKeys',
-  'messageTimeline',
   // Meeting management uses the generated client.
   'meetingCancel',
   'meetingCreate',

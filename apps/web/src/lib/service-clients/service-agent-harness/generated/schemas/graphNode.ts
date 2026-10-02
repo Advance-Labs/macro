@@ -13,22 +13,22 @@ import type { Location } from './location';
  * A component linked to its implementation in this revision.
  */
 export interface GraphNode {
-  /** Unique component identity within the map. */
-  id: string;
-  /** Short component name. */
-  title: string;
   /** Optional concise explanation of this component's role or change (180 characters). */
   description?: GraphNodeDescription;
-  /** Optional agent-chosen category, such as UI, Runtime, or Storage (32 characters). */
-  kind?: GraphNodeKind;
-  /** Optional containing component ID. Zooming reveals children inside their
-parent. Use up to four levels, from broad components to specific code areas.
-Parent references must exist and cannot form cycles. */
-  parent?: GraphNodeParent;
   /** Changed paths, directories, or globs belonging to this component.
 Omitted or empty uses the linked file. Reads expand patterns to exact paths;
 the reader derives actual change counts rather than trusting authored totals. */
   files?: string[];
+  /** Unique component identity within the map. */
+  id: string;
+  /** Optional agent-chosen category, such as UI, Runtime, or Storage (32 characters). */
+  kind?: GraphNodeKind;
   /** Implementation to reveal when clicked. */
   location: Location;
+  /** Optional containing component ID. Zooming reveals children inside their
+parent. Use up to four levels, from broad components to specific code areas.
+Parent references must exist and cannot form cycles. */
+  parent?: GraphNodeParent;
+  /** Short component name. */
+  title: string;
 }

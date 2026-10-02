@@ -14,10 +14,10 @@ the agent made, so it carries the agent's own request id rather than
 receiving a server-minted one.
  */
 export interface AgentPermissionAction {
+  /** What the user decided. */
+  answer: PermissionAnswer;
   /** The agent's JSON-RPC request id, echoed verbatim from the folded
 permission part. A string or a number on the wire; agents mint both,
 and `7` does not answer `"7"`. */
   requestId: unknown;
-  /** What the user decided. */
-  answer: PermissionAnswer;
 }

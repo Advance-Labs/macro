@@ -13,10 +13,10 @@ import type { LoadAgentModelsResponseCurrentModel } from './loadAgentModelsRespo
  * Successful model-discovery response.
  */
 export interface LoadAgentModelsResponse {
-  /** Model-selection availability. */
-  status: AgentModelsStatusDto;
   /** Current provider model, if model selection is available. */
   currentModel?: LoadAgentModelsResponseCurrentModel;
   /** Ordered model catalog. */
   models: AgentModelDto[];
+  /** Model-selection availability. */
+  status: AgentModelsStatusDto;
 }
