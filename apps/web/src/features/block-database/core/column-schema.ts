@@ -21,6 +21,14 @@ export function tableRenameMessage(error: DatabaseOpsError): string {
   );
 }
 
+/** What the tabs say when deleting a table was refused. */
+export function tableDeleteMessage(error: DatabaseOpsError): string {
+  return (
+    refusalMessage(error) ??
+    'Could not delete this table. Check your connection and try again.'
+  );
+}
+
 /** What the create dialog says when the service refused a new table. */
 export function tableCreateMessage(error: DatabaseOpsError): string {
   return (

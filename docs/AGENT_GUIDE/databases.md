@@ -117,6 +117,9 @@ Shift+F10 (or right-click it) and choose **Move left** or **Move right**; each i
 disabled at its end of the strip. The new order shows at once, is saved for every
 viewer, and survives a reload. If the save fails, the tabs return to their previous
 order and a toast says so.
+To delete a table, right-click its tab and choose **Delete table**, then confirm in
+the dialog; its columns, records and views go with it, and a refusal shows as a
+toast. A database's only table cannot be deleted: the item is disabled there.
 
 An editable empty row always follows the records. Enter a value in any of its
 cells to create a record; the next empty row appears immediately. Merely focusing
