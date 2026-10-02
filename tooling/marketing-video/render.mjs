@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const HTML = "file://" + path.resolve(process.env.PAGE || "trailer.html") + "?render=1" + (process.env.VIBE ? "&vibe=" + process.env.VIBE : "") + (process.env.FMT ? "&fmt=" + process.env.FMT : "");
-const [VW, VH] = { "916": [1080, 1920], "11": [1440, 1440], "169": [1920, 1080] }[process.env.FMT || "11"];
+const [VW, VH] = { "916": [1080, 1920], "45": [1080, 1350], "11": [1440, 1440], "169": [1920, 1080] }[process.env.FMT || "11"];
 const FPS = 60, SUB = 4, SHUTTER = 0.5; // 180° shutter, 4 samples per frame
 
 async function openPage(browser) {

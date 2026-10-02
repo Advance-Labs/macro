@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>macro.com: one platform</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* macro.com launch ad. Graphics follow the live homepage sections (Email and chat, Documents and
+   tasks, Coding agents, Sheets and databases): dark cards with the lit rim, glass bubbles,
+   Roboto Slab titles, blue accent. */
+@font-face { font-family: "Inter"; src: url("fonts/inter-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "display"; src: url("fonts/roboto-slab-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+:root { --c0: #fff; --c1: #dedede; --c2: #bebebe; --c3: #9e9e9e; --c4: #808080; --a0: #61a3e6; --ok: #2fc46b; --doc: #b590ff; --warn: #e2b646; --sheet: #3ec27a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+html.render body { display: block; min-height: 0; }
+#stage { position: relative; overflow: hidden; flex: none; background: #000; color: var(--c1);
+  font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-feature-settings: "cv11", "ss01"; }
+#rings { position: absolute; width: 3200px; height: 3200px; margin: -1600px 0 0 -1600px; transform-origin: 50% 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, transparent 0 41px, rgba(255,255,255,.045) 41px 42px), radial-gradient(circle at 50% 50%, rgba(255,255,255,.035), transparent 40%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); }
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.a { position: absolute; }
+.flex { display: flex; align-items: center; }
+.nowrap { white-space: nowrap; }
+.ic { display: inline-block; flex: none; vertical-align: -3px; }
+/* homepage-email-surface: dark card, 135° lit rim, soft shadow */
+.card { position: absolute; background: #0f0f10; border-radius: 30px; box-shadow: 0 10px 40px -8px #0004; }
+.card::after, .bub::after, .rim::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.card::after { background: linear-gradient(135deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.05) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.08) 100%); }
+/* chat bubble: glass rim, specular upper-left */
+.bub { position: relative; display: inline-block; background: #19191b; border-radius: 30px; padding: 15px 22px; font-size: 22px; line-height: 31px; color: #ececec; box-shadow: 0 8px 24px -14px #0006; }
+.bub::after { background: linear-gradient(135deg, rgba(222,222,222,.24) 0%, transparent 26%, transparent 74%, rgba(222,222,222,.12) 100%); }
+.who { font-size: 16px; color: var(--c3); margin: 0 0 8px 2px; display: flex; gap: 7px; align-items: baseline; }
+.who i { font-style: normal; font-size: 12px; color: var(--c4); }
+.who i.ag { color: var(--a0); }
+.av { width: 44px; height: 44px; border-radius: 50%; flex: none; background-size: cover; background-position: center; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.men { color: var(--a0); text-decoration: underline; text-decoration-color: rgba(97,163,230,.35); text-underline-offset: 4px; }
+.ref { white-space: nowrap; }
+.ref u { text-decoration-color: rgba(222,222,222,.35); text-underline-offset: 4px; color: #ececec; }
+.hair { position: absolute; left: 24px; right: 24px; height: 1px; background: rgba(255,255,255,.06); }
+.lab { position: absolute; left: 0; right: 0; text-align: center; font-family: display; font-weight: 330; letter-spacing: -0.035em; line-height: 1; color: #fff; white-space: nowrap; }
+.sub { position: absolute; left: 0; right: 0; text-align: center; font-size: 17px; line-height: 26px; color: var(--c4); }
+/* sheet */
+.grid { position: absolute; left: 0; right: 0; font-size: 16px; color: #e4e4e4; }
+.grid .r { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid rgba(255,255,255,.06); display: flex; }
+.grid .c { flex: none; border-right: 1px solid rgba(255,255,255,.06); padding: 0 8px; line-height: 30px; white-space: nowrap; overflow: hidden; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 14px; font-weight: 500; }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 18px; background: rgba(255,255,255,.06); font-size: 16px; color: #e8e8e8; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 10px; font-size: 15px; font-weight: 500; white-space: nowrap; }
+.tile { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+</style>
+<script src="icons.js"></script>
+<script src="phx.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div id="rings"></div>
+  <div id="world"></div>
+</div>
+<script>
+"use strict";
+// ---------- formats: 9:16 (Reels/Stories), 4:5 (feed), 1:1 ----------
+const FMT = new URLSearchParams(location.search).get("fmt") || "916";
+const [W, H] = { "916": [1080, 1920], "45": [1080, 1350], "11": [1440, 1440], "169": [1920, 1080] }[FMT];
+const SC = { "916": 1.22, "45": 1.1, "11": 1.42, "169": 1.2 }[FMT];        // world → screen
+const TALL = FMT === "916";
+
+// ---------- music-driven timing ----------
+// Ambient: "Kodama Night Town" (Mixkit 114), 78.01 BPM, downbeat 11.6186 s. 20 beats = 5 bars.
+//                  mark word head  em ch dc sh db pr ag  orbit end
+const MUSIC = [["ambient", 78.01, [2, 2, 3, 1, 1, 1, 1, 1, 1, 1, 3, 3]]];
+const STEP_T = [0];
+for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
+const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
+function B(x) { const k = Math.floor(x / BEATS), r = x - k * BEATS, i = Math.min(BEATS - 1, Math.floor(r)); return k * T + STEP_T[i] + (r - i) * (STEP_T[i + 1] - STEP_T[i]); }
+function stepAt(t) { let i = 0; while (i < BEATS - 1 && STEP_T[i + 1] <= t) i++; return i + (t - STEP_T[i]) / (STEP_T[i + 1] - STEP_T[i]); }
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, p) => a + (b - a) * p;
+const sm = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const TAU = Math.PI * 2;
+
+// Closed-form unit step response of a damped spring.
+// resp = undamped period (s), damp = damping ratio (<1 gives a tiny overshoot).
+function spr(t, resp = 0.42, damp = 0.82) {
+  if (t <= 0) return 0;
+  const w = TAU / resp;
+  if (damp >= 1) { const e = Math.exp(-w * t); return 1 - e * (1 + w * t); }
+  const wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return 1 - e * (Math.cos(wd * t) + (damp * w / wd) * Math.sin(wd * t));
+}
+// Free response from displacement x0 and velocity v0 (used after a drag release).
+function free(t, x0, v0, resp, damp) {
+  const w = TAU / resp, wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return e * (x0 * Math.cos(wd * t) + ((v0 + damp * w * x0) / wd) * Math.sin(wd * t));
+}
+const mj = (x) => { x = clamp(x); return x * x * x * (10 + x * (-15 + 6 * x)); }; // minimum-jerk
+const bell = (x) => (x <= 0 || x >= 1 ? 0 : 16 * x * x * (1 - x) * (1 - x));
+
+// A value that changes target many times is the sum of one spring per change.
+// Periodic: every change also contributes from the previous loop (t + T), so the
+// last frame flows into the first with matching position and velocity.
+function Track(evs, resp = 0.42, damp = 0.82) {
+  const E = evs.map(([bt, v, r, d]) => ({ t: B(bt), v, r: r ?? resp, d: d ?? damp }));
+  const n = E.length;
+  E.forEach((e, i) => { e.dv = e.v - E[(i + n - 1) % n].v; });
+  const base = E[n - 1].v;
+  const f = (t) => {
+    let v = base;
+    for (const e of E) if (e.dv !== 0) v += e.dv * (spr(t - e.t, e.r, e.d) + spr(t + T - e.t, e.r, e.d));
+    return v;
+  };
+  f.target = (t) => {
+    let best = -Infinity, v = base;
+    for (const e of E) for (const tt of [e.t, e.t - T]) if (tt <= t && tt > best) { best = tt; v = e.v; }
+    return v;
+  };
+  return f;
+}
+
+// Cursor path: sum of minimum-jerk moves, each with a slight perpendicular arc.
+function Path(segs) {
+  const S = segs.map(([b0, b1, x, y, bow]) => ({ t0: B(b0), t1: B(b1), x, y, bow: bow ?? 0.07 }));
+  const n = S.length;
+  S.forEach((s, i) => { const p = S[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = S[n - 1].x, by = S[n - 1].y;
+  return (t) => {
+    let x = bx, y = by;
+    for (const s of S) for (const tt of [t, t + T]) {
+      const u = (tt - s.t0) / (s.t1 - s.t0);
+      if (u <= 0) continue;
+      const m = mj(u), bb = bell(u) * s.bow;
+      x += s.dx * m - s.dy * bb;
+      y += s.dy * m + s.dx * bb;
+    }
+    return [x, y];
+  };
+}
+
+// Content enter/exit: its own timing, so swapped text never overlaps.
+function visAmt(t, tin, tout, inResp = 0.3) {
+  const f = (tt) => {
+    if (tt < tin) return null;
+    const pin = spr(tt - tin, inResp, 1);
+    const pout = tout == null ? 0 : sm((tt - tout) / 0.11);
+    return { pin, pout, o: pin * (1 - pout) };
+  };
+  let r = f(t) || { pin: 0, pout: 0, o: 0 };
+  if (tout != null && tout > T) { // only windows that wrap past the loop point
+    const r2 = f(t + T);
+    if (r2 && r2.o > r.o) r = r2;
+  }
+  return r;
+}
+
+
+
+// ---------- icons ----------
+const px_ = (n, size, color = "currentColor") => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 256 256" fill="${color}">${window.PHX[n]}</svg>`;
+const ic = (name, size, color = "currentColor") => `<span class="ic" style="width:${size}px;height:${size}px;color:${color}">${window.ICONS[name]}</span>`;
+const MARK = ["M0 10.014v6.801a.75.75 0 0 0 .225.513l2.742 2.644 2.002-.8v-7.099l-2.97-2.859z", "M4.078 4.8v5.786l1.36 1.309v1.313L12.481 20l2.002-.8-.001-7.1L6.078 4z", "M13.594 4.8v5.786l1.36 1.311-.013 1.3L22 20 24 19.2V12.42a.75.75 0 0 0-.225-.533L15.595 4z"];
+const photo = (n, s = 44) => `<div class="av" style="width:${s}px;height:${s}px;background-image:url(img/${n}.webp)"></div>`;
+const glyphAv = (inner, s = 44, bg = "#16161a") => `<div class="av flex" style="width:${s}px;height:${s}px;justify-content:center;background:${bg}">${inner}</div>`;
+const cursorSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.13a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg>`;
+const ref = (icon, label) => `<span class="ref">${icon} <u>${label}</u></span>`;
+const docIc = px_("file", 22, "var(--doc)"), pdfIc = px_("file-pdf", 22, "#f06a6a"), calIc = px_("calendar-blank", 22, "var(--c2)"),
+  callIc = px_("phone-call", 22, "var(--c2)"), prIc = px_("git-pull-request", 21, "var(--ok)"), sheetIc = px_("table", 22, "var(--sheet)");
+const bubble = (id, side, av, who, body, extra = "") =>
+  `<div class="a" id="${id}" style="${side === "r" ? "right" : "left"}:0;${extra}"><div class="flex" style="align-items:flex-end;gap:14px;${side === "r" ? "flex-direction:row-reverse" : ""}">${av}<div><div class="who" style="${side === "r" ? "justify-content:flex-end" : ""}">${who}</div><div class="bub">${body}</div></div></div></div>`;
+
+// ---------- the seven graphics (world px; each centered on its own box) ----------
+// p = id prefix, so the orbit tiles can reuse the same markup
+const CARDS = [
+  { key: "email", label: "Email", w: 800, h: 520, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a nowrap" style="left:26px;top:30px;font-size:17px;color:var(--c4)">From</div>
+      <div class="a chip" style="left:108px;top:20px;height:44px;border-radius:22px;padding:0 16px 0 6px">${photo("jacob", 32)}Jacob Beckerman</div>
+      <div class="a nowrap" id="${p}gen" style="left:430px;top:30px;font-size:16px;color:var(--c3)">Generating…</div>
+      <div class="a nowrap" style="right:26px;top:30px;font-size:16px;color:var(--c3)">Bcc</div>
+      <div class="hair" style="top:82px"></div>
+      <div class="a nowrap" style="left:26px;top:100px;font-size:17px;color:var(--c4)">To</div><div class="a nowrap" style="left:108px;top:99px;font-size:18px;color:#ececec">Dana Whitfield &lt;dana@example.com&gt;</div>
+      <div class="hair" style="top:142px"></div>
+      <div class="a nowrap" style="left:26px;top:160px;font-size:17px;color:var(--c4)">Cc</div><div class="a nowrap" style="left:108px;top:159px;font-size:18px;color:#ececec">Julia Westphal &lt;julia@macro.com&gt;</div>
+      <div class="hair" style="top:202px"></div>
+      <div class="a nowrap" style="left:26px;top:220px;font-size:17px;color:var(--c4)">Subject</div><div class="a nowrap" style="left:108px;top:219px;font-size:19px;color:#ececec">Great meeting you — demo follow-up</div>
+      <div class="hair" style="top:264px"></div>
+      <div class="a nowrap" id="${p}b0" style="left:26px;top:292px;font-size:19px;color:#ececec">Hi Dana,</div>
+      <div class="a nowrap" id="${p}b1" style="left:26px;top:334px;font-size:19px;color:#ececec">Thanks for joining the demo on September 14. Great meeting your team!</div>
+      <div class="a nowrap" id="${p}b2" style="left:26px;top:376px;font-size:19px;color:#ececec">Here’s our ${ref(pdfIc, "Macro sales overview.pdf")} and the ${ref(docIc, "Team rollout plan")}.</div>
+      <div class="a flex" style="right:22px;bottom:20px;gap:18px;color:var(--c3)">${px_("paperclip", 24)}${px_("text-aa", 24)}<div class="flex" style="width:46px;height:46px;border-radius:50%;justify-content:center;background:rgba(255,255,255,.08)">${px_("arrow-up", 22, "#ddd")}</div></div>
+    </div>` },
+  { key: "chat", label: "Chat", w: 740, h: 330, html: (p) => `
+    ${bubble(p + "c0", "l", photo("julia"), "Julia", "Dana wants to invite her team.<br>Are we still on for Thursday?", "top:0")}
+    ${bubble(p + "c1", "r", photo("jacob"), "Jacob", `<span class="men">@Claude</span>, draft a follow-up based on<br>${ref(calIc, "Demo Call Sep 14th")} and ${ref(callIc, "the transcript")}.`, "top:146px")}` },
+  { key: "docs", label: "Docs", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a nowrap" style="left:44px;top:42px;font-size:30px;font-weight:600;color:#f2f2f2">Q3 launch plan</div>
+      <div class="a nowrap" style="left:44px;top:116px;font-size:21px;color:#e6e6e6">Launch owner: <span style="background:rgba(97,163,230,.18);color:var(--a0);border-radius:5px;padding:1px 4px" id="${p}men">@evan</span><span id="${p}car" style="display:inline-block;width:2px;height:24px;background:var(--doc);vertical-align:-5px;margin-left:1px;position:relative"><span class="a nowrap" style="left:0;top:-30px;background:var(--doc);color:#1a1033;font-size:14px;font-weight:500;padding:3px 7px;border-radius:5px 5px 5px 0">Julia</span></span></div>
+      <div class="a nowrap" id="${p}d1" style="left:44px;top:170px;font-size:21px;color:var(--c2)">Announcement: <span class="men">@Julia</span> · Invite check: <span class="men">@Gabriel</span></div>
+      <div class="a nowrap" id="${p}d2" style="left:44px;top:230px;font-size:22px;font-weight:600;color:#f2f2f2">Launch checklist</div>
+      ${[["square-task-in-progress-circle", "var(--warn)", "Announcement post", "Julia"], ["square-task-created-circle", "var(--ok)", "Invite check", "Gabriel"], ["square-task-done-circle", "var(--a0)", "Rollout doc", "Claude"]].map(([i, c, l, o], k) =>
+        `<div class="a flex nowrap" id="${p}t${k}" style="left:44px;top:${282 + k * 50}px;gap:12px;font-size:20px;color:#e6e6e6">${ic(i, 20, c)}${l}<span style="color:var(--c4);font-size:16px">${o}</span></div>`).join("")}
+      <div class="a flex nowrap" style="right:30px;top:44px;gap:8px;font-size:14px;color:var(--c3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--doc)"></span>Julia<span style="width:8px;height:8px;border-radius:50%;background:#d9895a;margin-left:8px"></span>Claude</div>
+    </div>` },
+  { key: "sheet", label: "Spreadsheets", w: 800, h: 450, html: (p) => {
+    const cols = [[34, ""], [190, "Customer"], [150, "Company"], [140, "Last active"], [110, "Events"], [176, "Plan"]];
+    const rows = [["Dana Whitfield", "Northwind", "Today", "1,842", "Team"], ["Maya Chen", "Lumen", "Yesterday", "1,204", "Team"], ["Owen Park", "Fieldnote", "Sep 20", "986", "Pro"],
+      ["Priya Shah", "Harbor", "Sep 19", "874", "Team"], ["Leo Martins", "Kindred", "Sep 18", "731", "Pro"], ["Sam Okonkwo", "Relay", "Sep 17", "655", "Team"], ["Elena Voss", "Paperplane", "Sep 15", "512", "Pro"]];
+    const row = (cells, y, i, bold) => `<div class="r" id="${p}r${i}" style="top:${y}px">${cols.map(([w], k) => `<div class="c" style="width:${w}px;${k === 0 ? "color:var(--c4);text-align:center;font-size:13px" : ""}${k === 4 ? ";text-align:right" : ""}${bold && k ? ";font-weight:600" : ""}">${cells[k]}</div>`).join("")}</div>`;
+    return `<div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:24px;top:22px;gap:10px;font-size:17px;color:#ddd">${sheetIc}Customers to reach</div>
+      <div class="a flex nowrap" style="right:24px;top:22px;gap:14px;font-size:15px;color:var(--c4)">${["100%", "$", "%", "Sans serif", "B", "I"].map((x) => `<span>${x}</span>`).join("")}</div>
+      <div class="a flex nowrap" style="left:0;right:0;top:62px;height:34px;border-top:1px solid rgba(255,255,255,.06);border-bottom:1px solid rgba(255,255,255,.06);font-size:15px;color:var(--c3)"><span style="width:76px;padding-left:22px">A1</span><span style="color:var(--c4)">ƒ</span>&nbsp;&nbsp;Customer</div>
+      <div class="grid" style="top:96px">
+        <div class="r" style="top:0;background:rgba(255,255,255,.03);color:var(--c4);font-size:13px">${cols.map(([w], k) => `<div class="c" style="width:${w}px;text-align:center">${k ? "ABCDE"[k - 1] : ""}</div>`).join("")}</div>
+        ${row(["1", ...cols.slice(1).map((c) => c[1])], 30, 0, true)}
+        ${rows.map((r, i) => row([String(i + 2), ...r], 60 + i * 30, i + 1)).join("")}
+        <div class="a" id="${p}sel" style="left:34px;top:30px;width:190px;height:30px;box-shadow:inset 0 0 0 2px #e8e8e8"></div>
+      </div>
+      <div class="a flex nowrap" style="left:24px;bottom:16px;gap:16px;font-size:14px;color:var(--c4)"><span style="color:#ddd;border-bottom:2px solid #ddd;padding-bottom:4px">Top customers</span>200 rows × 26 columns</div>
+    </div>`; } },
+  { key: "db", label: "Databases", w: 800, h: 450, html: (p) => {
+    const ST = { "In progress": ["var(--warn)", "rgba(226,182,70,.14)"], "Todo": ["var(--c2)", "rgba(255,255,255,.08)"], "Done": ["var(--a0)", "rgba(97,163,230,.16)"], "In review": ["var(--doc)", "rgba(181,144,255,.15)"] };
+    const rows = [["Announcement post", "In progress", "julia", "Sep 24"], ["Invite check", "In review", "teo", "Sep 24"], ["Rollout doc", "Done", "jacob", "Sep 22"], ["Pricing page", "Todo", "julia", "Sep 26"], ["Customer emails", "In progress", "jacob", "Sep 25"]];
+    return `<div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:30px;top:28px;gap:12px;font-size:24px;font-weight:600;color:#f2f2f2">${px_("database", 26, "var(--c2)")}Launch tracker</div>
+      <div class="a flex nowrap" style="right:28px;top:30px;gap:8px;font-size:14px;color:var(--c3)">${ic("logo-notion", 16, "#ddd")}Imported from Notion</div>
+      <div class="a flex nowrap" style="left:30px;top:82px;gap:6px;font-size:15px;color:var(--c3)"><span class="pill" style="background:rgba(255,255,255,.08);color:#eee">${px_("table", 16)}Table</span><span class="pill">${px_("kanban", 16)}Board</span></div>
+      <div class="a flex nowrap" style="left:30px;right:30px;top:132px;height:38px;border-bottom:1px solid rgba(255,255,255,.07);font-size:14px;color:var(--c4)"><span style="width:300px">Name</span><span style="width:180px">Status</span><span style="width:150px">Owner</span><span>Due</span></div>
+      ${rows.map(([n, s, o, d], i) => `<div class="a flex nowrap" id="${p}r${i}" style="left:30px;right:30px;top:${170 + i * 52}px;height:52px;border-bottom:1px solid rgba(255,255,255,.05);font-size:18px;color:#e8e8e8">
+        <span class="flex" style="width:300px;gap:10px">${px_("file", 18, "var(--c3)")}${n}</span><span style="width:180px"><span class="pill" style="color:${ST[s][0]};background:${ST[s][1]}">${s}</span></span>
+        <span class="flex" style="width:150px;gap:8px;font-size:16px;color:var(--c2)">${photo(o, 24)}${o[0].toUpperCase() + o.slice(1)}</span><span style="font-size:16px;color:var(--c3)">${d}</span></div>`).join("")}
+    </div>`; } },
+  { key: "pr", label: "Pull requests", w: 800, h: 460, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:32px;top:32px;gap:12px;font-size:23px;font-weight:600;color:#f2f2f2">${px_("git-pull-request", 26, "var(--ok)")}fix(deploy): retry transient registry failures<span style="font-weight:400;color:var(--c4)">#482</span></div>
+      <div class="a flex nowrap" style="left:32px;top:82px;gap:10px;font-size:16px;color:var(--c3)"><span class="pill" style="background:rgba(47,196,107,.15);color:var(--ok)">Open</span>${photo("teo", 24)}Teo wants to merge into <span class="pill" style="background:rgba(97,163,230,.12);color:var(--a0);font-family:ui-monospace,monospace;font-size:13px">main</span> from <span class="pill" style="background:rgba(97,163,230,.12);color:var(--a0);font-family:ui-monospace,monospace;font-size:13px">teo/deploy-retry</span></div>
+      <div class="a rim" style="left:32px;right:32px;top:136px;height:206px;border-radius:16px;background:rgba(255,255,255,.025)">
+        <div class="a nowrap" id="${p}sum" style="left:20px;top:16px;font-size:17px;font-weight:600;color:#eee">All checks have passed</div>
+        <div class="a nowrap" style="left:20px;top:44px;font-size:14px;color:var(--c4)">3 successful checks</div>
+        ${["build", "test (ubuntu-latest)", "deploy-preview"].map((n, k) => `<div class="a flex nowrap" style="left:20px;right:20px;top:${82 + k * 40}px;gap:12px;font-size:17px;color:#e6e6e6">
+          <span id="${p}k${k}" style="position:relative;width:20px;height:20px">${px_("check-circle-fill", 20, "var(--ok)")}</span>${n}<span style="margin-left:auto;font-size:14px;color:var(--c4)">${["1m 12s", "3m 40s", "48s"][k]}</span></div>`).join("")}
+      </div>
+      <div class="a flex nowrap" style="left:32px;bottom:34px;gap:12px;font-size:16px;color:var(--c3)"><span style="color:var(--ok)">+124</span><span style="color:#f06a6a">−4</span>· 3 files · linked to ${ref(ic("square-task-in-review-circle", 18, "var(--doc)"), "Flaky deploy pipeline")}</div>
+      <div class="a btn" id="${p}merge" style="right:32px;bottom:26px;height:42px;padding:0 16px;background:var(--ok);color:#06210f;font-size:16px">${px_("git-merge", 18, "#06210f")}Merge</div>
+    </div>` },
+  { key: "agent", label: "Coding agents", w: 740, h: 440, html: (p) => `
+    ${bubble(p + "a0", "l", photo("teo"), "Teo", `I’ve started ${ref(prIc, "PR #482")} to fix the flaky deploy<br>pipeline. <span class="men">@Cursor</span>, investigate the failures.`, "top:0")}
+    ${bubble(p + "a1", "l", glyphAv(cursorSvg, 44, "#111"), `Cursor <i>Agent</i>`, "On it. I’ll work on your branch, fix the failures,<br>and run the tests.", "top:150px")}
+    <div class="a rim" id="${p}a2" style="left:58px;right:0;top:300px;height:120px;border-radius:16px;background:#141416">
+      <div class="a flex nowrap" style="left:16px;top:16px;gap:10px;font-size:17px;color:#eee">${px_("check-circle-fill", 20, "var(--ok)")}<b style="font-weight:600">Cursor Agent</b><span style="color:var(--c4)">· Done</span></div>
+      <div class="a flex nowrap" style="right:14px;top:10px;gap:8px">
+        <span class="btn" style="background:rgba(255,255,255,.05);color:var(--c2);font-size:14px">View session ${px_("arrow-up-right", 14)}</span>
+        <span class="btn" style="font-size:14px;color:#e8e8e8">${px_("git-pull-request", 16, "var(--ok)")}<u style="text-underline-offset:3px">PR #482</u></span>
+        <span class="btn" style="background:rgba(47,196,107,.12);color:var(--ok);font-size:14px">${px_("git-merge", 16, "var(--ok)")}Merge</span></div>
+      <div class="a nowrap" style="left:16px;right:16px;top:70px;font-size:17px;color:#e2e2e2;overflow:hidden;text-overflow:ellipsis">Updated your existing PR with the deploy fix. Fixed transient registry failures with bounded retries…</div>
+    </div>` },
+];
+const NC = CARDS.length, FIRST = 3;   // card k lives in step FIRST + k
+
+// =====================================================================
+// DOM
+// =====================================================================
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), world = $("world"), rings = $("rings");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+rings.style.left = W / 2 + "px"; rings.style.top = H / 2 + "px";
+world.style.transform = `translate(${W / 2}px,${H / 2}px) scale(${SC})`;
+const el = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); const n = d.firstElementChild; world.appendChild(n); return n; };
+
+// lockup: the Macro mark + "macro.com", and the headline
+const MS = 104, WM_SIZE = 104;
+const lock = el(`<div class="a" id="lock" style="left:0;top:0">
+  <svg id="mk" class="a" width="${MS}" height="${MS}" viewBox="0 0 24 24" fill="#fff" style="left:${-MS / 2}px;top:${-MS / 2}px;overflow:visible">${MARK.map((d, i) => `<path id="mk${i}" d="${d}"/>`).join("")}</svg>
+  <div class="a nowrap" id="wm" style="left:0;top:${-WM_SIZE * 0.62}px;font-size:${WM_SIZE}px;font-weight:620;letter-spacing:-0.05em;color:#fff;line-height:1.2">macro<span style="color:var(--c3)">.com</span></div>
+</div>`);
+const head = el(`<div class="a" id="head" style="left:-500px;width:1000px;top:0">
+  <div class="lab" style="position:relative;font-size:${TALL ? 70 : 64}px;line-height:1.12;white-space:normal">A single platform<br>for your company.</div></div>`);
+const E = {};
+// measure the wordmark to center the lockup
+const GAP = 26;
+let WMW = 0;
+
+// hero card instances + their labels
+const hero = CARDS.map((c, k) => {
+  const n = el(`<div class="a" id="card${k}" style="left:${-c.w / 2}px;top:${-c.h / 2}px;width:${c.w}px;height:${c.h}px">${c.html("h" + k)}</div>`);
+  const lab = el(`<div class="a" id="lab${k}" style="left:-600px;width:1200px;top:0"><div class="lab" style="position:relative;font-size:${TALL ? 92 : 80}px">${c.label}</div></div>`);
+  return { n, lab };
+});
+// orbit tiles (static copies)
+const tiles = CARDS.map((c, k) => el(`<div class="tile" id="tile${k}"><div style="position:relative;width:${c.w}px;height:${c.h}px">${c.html("t" + k)}</div></div>`));
+document.querySelectorAll("#world [id]").forEach((n) => { E[n.id] = n; });
+
+// ---------- motion ----------
+const LBL_GAP = TALL ? 60 : 44;
+const cardTop = (k) => -CARDS[k].h / 2 + (TALL ? 70 : 52);       // card sits a little low; its label above
+let BLUR = 3;
+const px = (v) => v.toFixed(3) + "px";
+function show(n, o) { if (o <= 0.002) { n.style.display = "none"; return false; } n.style.display = ""; n.style.opacity = Math.min(1, o).toFixed(4); return true; }
+function fx(n, o, blur, tr) { if (!show(n, o)) return false; n.style.filter = blur > 0.04 ? `blur(${blur.toFixed(3)}px)` : "none"; n.style.transform = tr || "none"; return true; }
+const pop = (n, t, at, dy = 10, resp = 0.26) => { const p = spr(t - at, resp, 1); fx(n, t < at ? 0 : p, (1 - p) * 6, `translate3d(0,${px((1 - p) * dy)},0)`); };
+function write(n, t, a, b) { const p = sm((t - a) / (b - a)); if (!show(n, p > 0 ? 0.3 + 0.7 * p : 0)) return; n.style.clipPath = p >= 1 ? "none" : `inset(-8px ${((1 - p) * 100).toFixed(2)}% -8px -8px)`; }
+
+// lockup tracks (periodic: the mark slides left as the wordmark arrives, recenters for the orbit)
+let SH = 0;
+let LK_X, LK_Y, LK_S;
+function buildTracks() {
+  WMW = E.wm.getBoundingClientRect().width / SC;
+  SH = (GAP + WMW) / 2;                                   // mark center offset when the wordmark is out
+  LK_X = Track([[1, -SH], [10, 0], [11.15, -SH], [11.98, 0]], 0.5, 0.9);
+  LK_Y = Track([[2, TALL ? -230 : -150], [3.6, 0], [11.5, TALL ? -230 : -150], [11.98, 0]], 0.55, 0.92);
+  LK_S = Track([[2, 0.8], [3.6, 1], [10, 1.3], [11.15, 1], [11.5, 0.8], [11.98, 1]], 0.5, 0.92);
+}
+// gather layout: seven tiles around the mark (hand-placed per format), drifting gently
+const SLOTS = {
+  "916": [0.5, [[0, -650], [-222, -360], [222, -360], [-222, 360], [222, 360], [-222, 650], [222, 650]]],
+  "45": [0.34, [[-330, -390], [0, -390], [330, -390], [-350, 0], [350, 0], [-175, 390], [175, 390]]],
+  "11": [0.36, [[-330, -330], [0, -330], [330, -330], [-358, 0], [358, 0], [-175, 330], [175, 330]]],
+  "169": [0.3, [[-560, -250], [-280, -250], [280, -250], [560, -250], [-420, 250], [0, 250], [420, 250]]],
+}[FMT];
+const ORB = [0, 0, SLOTS[0]];
+const orbitAt = (k, bt) => {
+  const [x, y] = SLOTS[1][k], d = (bt - 10) * 6;
+  return [x * (1 + 0.006 * d), y * (1 + 0.006 * d)];
+};
+
+// ---------- sound ----------
+const CUES = [];
+const cue = (bt, type, gain = 1, extra = {}) => CUES.push({ t: B(bt), type, gain, ...extra });
+const MARK_T = [0.04, 0.29, 0.54];
+MARK_T.forEach((b, i) => cue(b, "pop", 0.7, { pitch: [1, 1.26, 1.5][i] }));
+cue(1, "swoosh", 0.5);
+for (let i = 0; i < 9; i++) cue(1.06 + i * 0.045, "key", 0.32, { seed: i });
+cue(2, "swish", 0.5);
+const BEEP = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
+CARDS.forEach((_, k) => cue(FIRST + k, "beep", 0.85, { pitch: BEEP[k] }));
+CARDS.forEach((_, k) => cue(10 + k / 8, "tick", 0.38, { pitch: BEEP[k] * 1.5 }));
+cue(10, "swoosh", 0.6); cue(11, "swoosh", 0.55); cue(11.15, "chime", 0.75);
+
+// =====================================================================
+// seek(t)
+// =====================================================================
+function seek(tIn) {
+  const t = ((tIn % T) + T) % T, bt = stepAt(t);
+  BLUR = 9;
+  rings.style.transform = `scale(${(1 + 0.04 * Math.sin((t / T) * TAU)).toFixed(4)})`;
+
+  // ----- lockup -----
+  const lv1 = visAmt(t, 0, B(3) - 0.02, 0.3), lv2 = visAmt(t, B(10), B(11.82), 0.3);
+  const lv = lv1.o > 0.002 ? lv1 : lv2;
+  if (fx(E.lock, lv.o, lv.pout * 16, `translate3d(${px(LK_X(t) * LK_S(t))},${px(LK_Y(t))},0) scale(${LK_S(t).toFixed(4)})`)) {
+    // the mark: three pieces, one per eighth note (and again for the orbit)
+    MARK.forEach((_, i) => {
+      const at = bt >= 9 ? B(10 + i * 0.05) : B(MARK_T[i]), p = spr(t - at, 0.3, 0.8);
+      const pe = E["mk" + i]; pe.style.opacity = (t < at ? 0 : clamp(p * 1.4)).toFixed(3);
+      pe.style.transform = `translate(0px,${((1 - p) * 4).toFixed(3)}px)`;
+    });
+    // the wordmark wipes in after the mark moves aside
+    const wOn = (bt >= 1 && bt < 3.2) || bt >= 11.15;
+    const w0 = bt >= 11 ? B(11.15) + 0.05 : B(1) + 0.08;
+    E.wm.style.left = px(MS / 2 + GAP + 0);
+    E.mk.style.left = px(-MS / 2);
+    if (wOn) write(E.wm, t, w0, w0 + 0.42); else E.wm.style.display = "none";
+  }
+  // headline
+  const hv1 = visAmt(t, B(2) + 0.05, B(3) - 0.02, 0.36), hv2 = visAmt(t, B(11.5), B(11.82), 0.36);
+  const hv = hv1.o > 0.002 ? hv1 : hv2;
+  if (fx(E.head, hv.o, (1 - hv.pin) * 14 + hv.pout * 16, `translate3d(0,${px((TALL ? 0 : 20) + (1 - hv.pin) * 18)},0)`)) {}
+
+  // ----- the seven graphics, one per beat -----
+  CARDS.forEach((c, k) => {
+    const s0 = FIRST + k, tin = B(s0), tout = B(s0 + 1) - 0.01;
+    const v = visAmt(t, tin, tout, 0.2);
+    const top = cardTop(k);
+    const on = fx(hero[k].n, v.o, (1 - v.pin) * 10 + v.pout * 14, `translate3d(0,${px(top + c.h / 2 + (1 - v.pin) * 26)},0) scale(${(0.965 + 0.035 * v.pin).toFixed(4)})`);
+    const lv_ = visAmt(t, tin + 0.02, tout, 0.24);
+    fx(hero[k].lab, lv_.o, (1 - lv_.pin) * 10 + lv_.pout * 14, `translate3d(0,${px(top - LBL_GAP - (TALL ? 92 : 80) + (1 - lv_.pin) * 14)},0)`);
+    if (!on) return;
+    const p = "h" + k, a = (f) => tin + f * (tout - tin);
+    if (c.key === "email") {
+      E[p + "gen"].style.opacity = (0.45 + 0.55 * (0.5 + 0.5 * Math.cos((t - tin) * 9))).toFixed(3);
+      write(E[p + "b0"], t, a(0.12), a(0.3)); write(E[p + "b1"], t, a(0.25), a(0.6)); write(E[p + "b2"], t, a(0.5), a(0.86));
+    } else if (c.key === "chat") { pop(E[p + "c0"], t, tin, 14); pop(E[p + "c1"], t, a(0.3), 14); }
+    else if (c.key === "docs") {
+      const n = clamp(Math.floor((t - a(0.12)) / ((a(0.5) - a(0.12)) / 5)), 0, 5);
+      E[p + "men"].textContent = "@evan".slice(0, n); show(E[p + "men"], n > 0 ? 1 : 0);
+      pop(E[p + "d1"], t, a(0.35)); pop(E[p + "d2"], t, a(0.45)); [0, 1, 2].forEach((i) => pop(E[p + "t" + i], t, a(0.5 + i * 0.1)));
+    } else if (c.key === "sheet") {
+      for (let i = 0; i < 8; i++) pop(E[p + "r" + i], t, a(0.05 + i * 0.05), 6);
+      const r = Math.min(7, Math.floor(clamp((t - a(0.5)) / (a(0.95) - a(0.5))) * 4));
+      E[p + "sel"].style.top = px(30 + 30 * r);
+    } else if (c.key === "db") { for (let i = 0; i < 5; i++) pop(E[p + "r" + i], t, a(0.08 + i * 0.07), 8); }
+    else if (c.key === "pr") {
+      [0, 1, 2].forEach((i) => { const at = a(0.18 + i * 0.16), q = spr(t - at, 0.22, 0.7); E[p + "k" + i].style.transform = `scale(${(t < at ? 0 : q).toFixed(3)})`; });
+      const mp = spr(t - a(0.68), 0.25, 0.7); E[p + "merge"].style.transform = `scale(${(0.9 + 0.1 * mp).toFixed(3)})`; E[p + "merge"].style.opacity = (0.35 + 0.65 * clamp(mp)).toFixed(3);
+    } else if (c.key === "agent") { pop(E[p + "a0"], t, tin, 14); pop(E[p + "a1"], t, a(0.28), 14); pop(E[p + "a2"], t, a(0.55), 14); }
+  });
+
+  // ----- orbit: all seven around the mark, then they fold into it -----
+  tiles.forEach((n, k) => {
+    const at = B(10 + k / 8), v = visAmt(t, at, B(11.6), 0.3);
+    const c = CARDS[k];
+    if (!show(n, v.o)) return;
+    const [ox, oy] = orbitAt(k, bt);
+    const fold = clamp(spr(t - B(11) - k * 0.025, 0.42, 1));
+    const x = ox * (1 - fold), y = oy * (1 - fold) + (TALL ? 0 : 0);
+    const s = ORB[2] * (0.6 + 0.4 * v.pin) * (1 - 0.85 * fold);
+    n.style.filter = (1 - v.pin) * 8 + fold * 6 > 0.04 ? `blur(${((1 - v.pin) * 8 + fold * 6).toFixed(3)}px)` : "none";
+    n.style.opacity = (v.o * (1 - fold * 0.9)).toFixed(4);
+    n.style.transform = `translate3d(${px(x - (c.w * s) / 2)},${px(y - (c.h * s) / 2)},0) scale(${s.toFixed(4)})`;
+  });
+}
+
+// ---------- boot ----------
+window.SONGS = { ambient: ["song-ambient-kodama-night-town.mp3", 11.6186] }; // Mixkit 114
+window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
+window.probe = (t) => [LK_X(t), LK_Y(t), LK_S(t), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+window.ready = Promise.all(['400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '620 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f)))
+  .then(() => document.fonts.ready)
+  .then(() => Promise.all([...document.querySelectorAll(".av")].map((a) => { const u = a.style.backgroundImage.match(/url\("?(.*?)"?\)/); if (!u) return 0; return new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = u[1]; }); })))
+  .then(() => { E.wm.style.display = ""; buildTracks(); seek(0); return true; });
+const params = new URLSearchParams(location.search);
+if (params.has("render")) document.documentElement.classList.add("render");
+else {
+  const fit = () => { const k = Math.min(innerWidth / W, innerHeight / H); Object.assign(stage.style, { position: "fixed", left: "50%", top: "50%", transformOrigin: "50% 50%", transform: `translate(-50%,-50%) scale(${k})` }); };
+  addEventListener("resize", fit); fit();
+  const at = params.has("t") ? parseFloat(params.get("t")) : null;
+  window.ready.then(() => { if (at != null) { seek(at); return; } const t0 = performance.now(); const loop = () => { seek((performance.now() - t0) / 1000); requestAnimationFrame(loop); }; requestAnimationFrame(loop); });
+}
+</script>
+</body>
+</html>

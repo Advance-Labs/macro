@@ -156,6 +156,13 @@ def release():
     return norm(y)
 
 
+def beep(pitch=1.0):
+    n = int(0.22 * SR)
+    f = 1046.5 * pitch
+    y = sine(f, n) * env(n, 0.002, 0.07) + 0.18 * sine(2 * f, n) * env(n, 0.001, 0.03) + 0.08 * sine(3 * f, n) * env(n, 0.001, 0.015)
+    return norm(y)
+
+
 def hover():
     n = int(0.05 * SR)
     return norm(sine(1240, n) * env(n, 0.001, 0.012))
@@ -175,10 +182,11 @@ SYNTH = {
     "stretch": lambda c: stretch(),
     "release": lambda c: release(),
     "hover": lambda c: hover(),
+    "beep": lambda c: beep(c.get("pitch", 1.0)),
 }
 LEVEL = {  # per-type bus level (linear, relative to the UI bus)
     "click": 1.0, "key": 0.55, "enter": 0.8, "tick": 0.55, "pop": 0.55, "blip": 0.5, "chime": 0.5,
-    "swish": 0.35, "swoosh": 0.4, "grab": 0.8, "stretch": 0.35, "release": 0.5, "hover": 0.35,
+    "swish": 0.35, "swoosh": 0.4, "grab": 0.8, "stretch": 0.35, "release": 0.5, "hover": 0.35, "beep": 0.55,
 }
 
 
