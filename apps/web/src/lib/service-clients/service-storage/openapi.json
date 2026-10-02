@@ -8814,6 +8814,97 @@
         }
       }
     },
+    "/databases/{id}/tables/{table_id}/rows/{row_id}/history": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "A row's history, from the change journal: every committed change that\ntouched it, newest first, with who made it, when, and the values of the\ncolumns it touched before and after. It reads after the row is removed,\nso a removed row's last values stay readable.",
+        "operationId": "get_database_row_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "description": "Table id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "row_id",
+            "in": "path",
+            "description": "Row id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/views/{view_id}/positions": {
       "get": {
         "tags": ["databases"],
@@ -32644,6 +32735,11 @@
           }
         }
       },
+      "RowChangeKind": {
+        "type": "string",
+        "description": "How a change touched a row.",
+        "enum": ["insert", "update", "delete"]
+      },
       "RowChanges": {
         "oneOf": [
           {
@@ -32692,6 +32788,92 @@
           }
         ],
         "description": "Which rows an update writes, and with what."
+      },
+      "RowHistoryEntry": {
+        "type": "object",
+        "description": "One change of a row, as its history shows it.",
+        "required": [
+          "change",
+          "version",
+          "actor",
+          "actingBot",
+          "at",
+          "kind",
+          "columns",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "actingBot": {
+            "type": ["string", "null"],
+            "description": "The agent acting for them, if one was."
+          },
+          "actor": {
+            "type": ["string", "null"],
+            "description": "Who made it; `null` for an internal caller, or a removed user."
+          },
+          "after": {
+            "type": "object",
+            "description": "Those columns' values it wrote, by column id; a cell it emptied is\nleft out.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CellValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it committed."
+          },
+          "before": {
+            "type": "object",
+            "description": "Those columns' values before it, by column id; an empty cell is\nleft out.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CellValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "change": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The change's id in the journal."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The columns it wrote; for a removal, those the row had values in."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RowChangeKind",
+            "description": "How it touched the row."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The table version it produced."
+          }
+        }
+      },
+      "RowHistoryResponse": {
+        "type": "object",
+        "description": "A row's history.",
+        "required": ["changes"],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RowHistoryEntry"
+            },
+            "description": "Every committed change that touched the row, newest first: who made\nit, when, how, and the touched columns' values before and after."
+          }
+        }
       },
       "RowsChange": {
         "oneOf": [

@@ -9868,6 +9868,11 @@ export type RowChange = {
 };
 
 /**
+ * How a change touched a row.
+ */
+export type RowChangeKind = 'insert' | 'update' | 'delete';
+
+/**
  * Which rows an update writes, and with what.
  */
 export type RowChanges = {
@@ -9886,6 +9891,65 @@ export type RowChanges = {
      * The rows and their cells, in order.
      */
     rows: Array<RowChange>;
+};
+
+/**
+ * One change of a row, as its history shows it.
+ */
+export type RowHistoryEntry = {
+    /**
+     * The agent acting for them, if one was.
+     */
+    actingBot: string | null;
+    /**
+     * Who made it; `null` for an internal caller, or a removed user.
+     */
+    actor: string | null;
+    /**
+     * Those columns' values it wrote, by column id; a cell it emptied is
+     * left out.
+     */
+    after: {
+        [key: string]: CellValue;
+    };
+    /**
+     * When it committed.
+     */
+    at: string;
+    /**
+     * Those columns' values before it, by column id; an empty cell is
+     * left out.
+     */
+    before: {
+        [key: string]: CellValue;
+    };
+    /**
+     * The change's id in the journal.
+     */
+    change: number;
+    /**
+     * The columns it wrote; for a removal, those the row had values in.
+     */
+    columns: Array<string>;
+    /**
+     * How it touched the row.
+     */
+    kind: RowChangeKind;
+    /**
+     * The table version it produced.
+     */
+    version: number;
+};
+
+/**
+ * A row's history.
+ */
+export type RowHistoryResponse = {
+    /**
+     * Every committed change that touched the row, newest first: who made
+     * it, when, how, and the touched columns' values before and after.
+     */
+    changes: Array<RowHistoryEntry>;
 };
 
 /**
@@ -16609,6 +16673,47 @@ export type InferDatabaseColumnTypeResponses = {
 };
 
 export type InferDatabaseColumnTypeResponse = InferDatabaseColumnTypeResponses[keyof InferDatabaseColumnTypeResponses];
+
+export type GetDatabaseRowHistoryData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Row id
+         */
+        row_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/rows/{row_id}/history';
+};
+
+export type GetDatabaseRowHistoryErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseRowHistoryError = GetDatabaseRowHistoryErrors[keyof GetDatabaseRowHistoryErrors];
+
+export type GetDatabaseRowHistoryResponses = {
+    200: RowHistoryResponse;
+};
+
+export type GetDatabaseRowHistoryResponse = GetDatabaseRowHistoryResponses[keyof GetDatabaseRowHistoryResponses];
 
 export type GetDatabaseViewPositionsData = {
     body?: never;

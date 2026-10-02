@@ -4,6 +4,7 @@
 pub mod activity;
 pub mod catalog;
 pub mod events;
+pub mod journal;
 pub mod models;
 
 #[cfg(feature = "entity_mutation")]

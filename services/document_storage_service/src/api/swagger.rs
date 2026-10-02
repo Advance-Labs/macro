@@ -77,6 +77,9 @@ use collab_surface::domain::models::SurfaceState;
 use collab_surface::inbound::axum_router::{
     CollabSurfaceResponse, CollabSurfaceTokenResponse, EnsureCollabSurfaceRequest,
 };
+use databases::domain::journal::{
+    RowChangeKind as DatabaseRowChangeKind, RowHistoryEntry as DatabaseRowHistoryEntry,
+};
 use databases::domain::models::{
     Awareness as DatabaseAwareness, Column as DatabaseColumn, ColumnConfig as DatabaseColumnConfig,
     ColumnDetail as DatabaseColumnDetail, Database, DatabaseDetail, ListedDatabase,
@@ -84,6 +87,7 @@ use databases::domain::models::{
     Table as DatabaseTable, TableDetail as DatabaseTableDetail,
     TableVersion as DatabaseTableVersion,
 };
+use databases::inbound::axum_router::history::RowHistoryResponse as DatabaseRowHistoryResponse;
 use databases::inbound::axum_router::ops::{
     ApplyOpsRequest as DatabaseApplyOpsRequest, ApplyOpsResponse as DatabaseApplyOpsResponse,
     OpRefusalResponse as DatabaseOpRefusalResponse,
@@ -452,6 +456,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::awareness_handler,
         databases::inbound::axum_router::ops::apply_ops_handler,
         databases::inbound::axum_router::views::view_positions_handler,
+        databases::inbound::axum_router::history::row_history_handler,
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
@@ -640,6 +645,9 @@ use utoipa::OpenApi;
             DatabaseApplyOpsRequest,
             DatabaseApplyOpsResponse,
             DatabaseOpRefusalResponse,
+            DatabaseRowHistoryResponse,
+            DatabaseRowHistoryEntry,
+            DatabaseRowChangeKind,
             DatabaseOp,
             DatabaseTableChange,
             DatabaseColumnChange,

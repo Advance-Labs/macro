@@ -15,6 +15,8 @@ use crate::outbound::pg_cell_store::PgCellStore;
 mod apply_ops;
 mod cell_triggers;
 #[cfg(feature = "gateway")]
+mod journal;
+#[cfg(feature = "gateway")]
 mod rename_column;
 #[cfg(feature = "gateway")]
 mod reorder_tables;
@@ -133,6 +135,7 @@ async fn commit(
             writes,
             related_rows: Vec::new(),
             expected_versions: Vec::new(),
+            journal: crate::domain::journal::JournalPlan::default(),
         })
         .await
         .expect("the batch should run");

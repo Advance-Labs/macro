@@ -6,6 +6,7 @@ use models_databases::{ColumnId, RowId};
 use uuid::Uuid;
 
 use super::*;
+use crate::domain::journal::created_table;
 use crate::domain::models::{DatabaseId, Table, Viewer};
 use crate::domain::transfer::{
     DatabaseTransferRepo, ImportFingerprint, ImportOutcome, ImportTable,
@@ -135,10 +136,13 @@ where
         };
         let column_positions =
             keys_between(None, None, definitions.len()).map_err(PgDatabasesRepoError::from)?;
+        let mut columns = Vec::with_capacity(definitions.len());
         for (definition, position) in definitions.iter().zip(column_positions) {
+            let column = ColumnId::new();
+            columns.push(column);
             sqlx::query!(
                 "INSERT INTO database_columns (id, table_id, property_definition_id, position, infer_type) VALUES ($1, $2, $3, $4, false)",
-                ColumnId::new().into_uuid(),
+                column.into_uuid(),
                 id.into_uuid(),
                 definition,
                 position.as_str(),
@@ -178,9 +182,23 @@ where
                     .map_err(cells_error)?;
             }
         }
+        let table: Table = table.try_into().map_err(PgDatabasesRepoError::from)?;
+        journal::record(
+            &mut transaction,
+            &JournalActor {
+                user: Some(viewer.user_id.to_string()),
+                acting_bot: viewer.acting_bot,
+            },
+            &[created_table(
+                database_id,
+                table.id,
+                table.version,
+                &columns,
+                &rows,
+            )],
+        )
+        .await?;
         transaction.commit().await?;
-        Ok(ImportOutcome::Created(
-            table.try_into().map_err(PgDatabasesRepoError::from)?,
-        ))
+        Ok(ImportOutcome::Created(table))
     }
 }

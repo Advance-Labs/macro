@@ -546,6 +546,7 @@ async fn a_stale_expected_version_conflicts_and_writes_nothing(pool: PgPool) {
             ],
             related_rows: Vec::new(),
             expected_versions: vec![(guests.table_id, TableVersion(before.0 - 1))],
+            journal: crate::domain::journal::JournalPlan::default(),
         })
         .await
         .unwrap();

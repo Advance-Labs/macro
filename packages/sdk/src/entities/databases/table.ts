@@ -5,6 +5,7 @@ import type {
 import { MacroNotFoundError } from '../../utils';
 import { DatabaseColumn } from './column';
 import type { AddColumnOptions, Database } from './database';
+import { DatabaseRow } from './row';
 import { DatabaseView } from './view';
 
 /**
@@ -83,6 +84,11 @@ export class DatabaseTable {
   async reorderColumns(columns: DatabaseColumn[]): Promise<DatabaseTable> {
     await this.database.reorderColumns(this, columns);
     return this;
+  }
+
+  /** A handle to one of the table's rows, by the id an insert answered. */
+  row(id: string): DatabaseRow {
+    return DatabaseRow.byId(this, id);
   }
 
   /** The table's views, in their order. */

@@ -1,6 +1,8 @@
 //! The fake cell store's write batch, applied straight to the world.
 
 use super::*;
+use crate::domain::journal::{Before, RowImage, cell_value, row_cells};
+use crate::domain::models::{ChangeId, CommittedChange};
 
 /// A first value settles the columns it landed in, as the cell store does in
 /// its transaction.
@@ -83,6 +85,17 @@ pub(super) fn apply_in_world(
             return Ok(WritesOutcome::VersionConflict(table_id));
         }
     }
+    for (table_id, version) in writes.journal.read_versions() {
+        let current = world
+            .tables
+            .iter()
+            .find(|table| table.id == table_id)
+            .map(|table| table.version);
+        if current.is_some_and(|current| current != version) {
+            return Ok(WritesOutcome::SchemaMoved(table_id));
+        }
+    }
+    let before = before_image(world, writes);
     for (index, write) in writes.writes.iter().enumerate() {
         let options: &[(OptionId, PropertyOptionValue)] = match write {
             Write::AddOptions { options, .. } => options,
@@ -335,14 +348,30 @@ pub(super) fn apply_in_world(
                 }
                 inserted.push(Vec::new());
             }
-            Write::InsertRows { table_id, rows } => {
+            Write::InsertRows {
+                table_id,
+                rows,
+                restored,
+            } => {
                 let mut ids = Vec::new();
-                for cells in rows {
-                    let id = RowId::from_uuid(Uuid::now_v7());
+                for (row, cells) in rows.iter().enumerate() {
                     let table_rows = world.rows.entry(*table_id).or_default();
-                    let position =
-                        key_between(table_rows.last().map(|last| &last.position), None).unwrap();
+                    let (id, position) = match restored.get(row) {
+                        Some(restored) => (restored.id, restored.position.clone()),
+                        None => (
+                            RowId::from_uuid(Uuid::now_v7()),
+                            key_between(table_rows.last().map(|last| &last.position), None)
+                                .unwrap(),
+                        ),
+                    };
+                    if table_rows.iter().any(|stored| stored.id == id) {
+                        return Ok(WritesOutcome::RowTaken {
+                            write: index,
+                            row: id,
+                        });
+                    }
                     table_rows.push(RowRef { id, position });
+                    table_rows.sort_by(|left, right| left.position.cmp(&right.position));
                     ids.push(id);
                     if !cells.is_empty() {
                         world
@@ -594,10 +623,75 @@ pub(super) fn apply_in_world(
         table.version.0 += 1;
         table_versions.insert(table_id, table.version);
     }
+    let entries = crate::domain::journal::entries(writes, &before, &inserted, &table_versions);
+    let mut changes = Vec::new();
+    for entry in entries {
+        let id = ChangeId(i64::try_from(world.journal.len()).unwrap() + 1);
+        changes.push(CommittedChange {
+            table: entry.table,
+            version: entry.version,
+            change: id,
+        });
+        world.journal.push(JournaledChange {
+            id,
+            actor: writes.created_by.to_string(),
+            entry,
+        });
+    }
     Ok(WritesOutcome::Applied {
         inserted,
         table_versions,
+        changes,
     })
+}
+
+/// The batch's before-image, read from the world as the cell store reads it
+/// under its locks.
+fn before_image(world: &World, writes: &Writes) -> Before {
+    let reads = crate::domain::journal::reads(writes);
+    let schema = &writes.journal.schema;
+    let mut before = Before {
+        schema: schema.clone(),
+        ..Before::default()
+    };
+    for row in &reads.rows {
+        let Some((table, stored)) = world.rows.iter().find_map(|(table, rows)| {
+            rows.iter()
+                .find(|stored| stored.id == *row)
+                .map(|stored| (*table, stored))
+        }) else {
+            continue;
+        };
+        let cells = world.cells.get(row).cloned().unwrap_or_default();
+        before.rows.insert(
+            *row,
+            RowImage {
+                table,
+                position: stored.position.clone(),
+                cells: row_cells(schema, table, &cells),
+            },
+        );
+    }
+    for (table, column, definition) in &reads.columns {
+        let cells = world
+            .rows
+            .get(table)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| {
+                let value = world.cells.get(&row.id)?.get(definition)?;
+                Some((row.id, cell_value(value)?))
+            })
+            .collect();
+        before.column_cells.insert(*column, cells);
+    }
+    for board in &reads.boards {
+        before.cards.insert(
+            *board,
+            world.positions.get(board).cloned().unwrap_or_default(),
+        );
+    }
+    before
 }
 
 /// Store a definition a write creates, as the properties system would.

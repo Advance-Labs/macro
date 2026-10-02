@@ -203,6 +203,15 @@ impl DatabasesService for FakeService {
         unimplemented!("no tool converts a column into a new one")
     }
 
+    async fn row_history(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: crate::domain::models::TableId,
+        _row_id: crate::domain::models::RowId,
+    ) -> Result<Vec<crate::domain::journal::RowHistoryEntry>, DatabaseError> {
+        unimplemented!("the toolset reads no history")
+    }
+
     async fn view_positions(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

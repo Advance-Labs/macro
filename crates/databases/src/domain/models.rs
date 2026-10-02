@@ -21,8 +21,10 @@ use models_databases::DatabaseOp;
 pub use models_databases::position::Position;
 pub use models_databases::views::{CardPosition, DatabaseView, ViewId, ViewPosition};
 pub use models_databases::{
-    ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion, TakenId,
+    ChangeId, ColumnId, DatabaseId, OptionId, QueryId, RowId, TableId, TableVersion, TakenId,
 };
+
+use crate::domain::journal::{JournalPlan, RestoredRow};
 
 /// Identifier of a `models_properties` property definition bound as a column.
 pub type PropertyDefinitionId = Uuid;
@@ -410,6 +412,10 @@ pub enum Write {
         table_id: TableId,
         /// One entry per new row.
         rows: Vec<Vec<(PropertyDefinitionId, PropertyValue)>>,
+        /// The ids and positions the rows come back under, one per row,
+        /// when the insert puts back rows a removal took; empty to mint
+        /// new ones after the table's last row.
+        restored: Vec<RestoredRow>,
     },
     /// Set (or, with `None`, clear) cells of existing rows of the table.
     UpdateRows {
@@ -569,6 +575,8 @@ pub struct Writes {
     /// The versions tables must still be at when the batch takes their
     /// locks: the caller's base versions.
     pub expected_versions: Vec<(TableId, TableVersion)>,
+    /// What the batch's journal entries are built from.
+    pub journal: JournalPlan,
 }
 
 impl Writes {
@@ -596,7 +604,12 @@ pub enum WritesOutcome {
         inserted: Vec<Vec<RowId>>,
         /// The new version of every table a write changed, bumped once.
         table_versions: HashMap<TableId, TableVersion>,
+        /// The journal's change for each table version the batch produced.
+        changes: Vec<CommittedChange>,
     },
+    /// A table whose schema the batch changes moved after the batch was
+    /// planned: planned again, it is planned against what is there now.
+    SchemaMoved(TableId),
     /// The database is gone or trashed, or a written table is gone.
     TableNotFound(TableId),
     /// A table is no longer at the version it was expected at.
@@ -668,6 +681,28 @@ pub enum WritesOutcome {
     },
     /// A relation cell named a row its target table does not have.
     MissingRelatedRow(RowId),
+    /// A write put a removed row back under an id a row has again.
+    RowTaken {
+        /// The write's index.
+        write: usize,
+        /// The row.
+        row: RowId,
+    },
+}
+
+/// One change a committed batch journaled: a table, the version the batch
+/// produced, and the journal's id for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CommittedChange {
+    /// The table.
+    #[schema(value_type = Uuid)]
+    pub table: TableId,
+    /// The version the batch produced.
+    pub version: TableVersion,
+    /// The journal's id of the change.
+    #[schema(value_type = i64)]
+    pub change: ChangeId,
 }
 
 /// A batch of ops for one database and the versions its tables must be at.

@@ -12,6 +12,7 @@ use models_properties::service::property_definition_with_options::PropertyDefini
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
+use crate::domain::journal::{JournalActor, JournaledRowChange, RowHistoryEntry};
 use crate::domain::models::{
     Awareness, CardPosition, Column, ColumnCast, ColumnConversion, ColumnId, CreateDatabase,
     Database, DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable, InferColumnType,
@@ -67,12 +68,13 @@ pub trait DatabasesRepo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Settle an untyped column on a definition, provided no row has a value
-    /// in it yet.
+    /// in it yet, journaling the change as `actor`'s.
     fn infer_column_type(
         &self,
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
+        actor: &JournalActor,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Every row of a table, in position order.
@@ -130,6 +132,15 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         &self,
         id: QueryId,
     ) -> impl Future<Output = Result<Option<SavedQuery>, Self::Error>> + Send;
+
+    /// A row's journaled changes in one table of a database, newest first,
+    /// the row's removal among them.
+    fn row_history(
+        &self,
+        database_id: DatabaseId,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<Vec<JournaledRowChange>, Self::Error>> + Send;
 }
 
 /// A row's cells, kept by the properties system as entity properties of the
@@ -364,6 +375,16 @@ pub trait DatabasesService: Send + Sync + 'static {
         receipt: EntityAccessReceipt<ViewAccessLevel>,
         view_id: ViewId,
     ) -> impl Future<Output = Result<Vec<CardPosition>, DatabaseError>> + Send;
+
+    /// A row's history: every committed change that touched it, newest
+    /// first, with who made it, when, and the values of the columns it
+    /// touched before and after. It reads after the row is removed, too.
+    fn row_history(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<Vec<RowHistoryEntry>, DatabaseError>> + Send;
 
     /// Tell the database's other viewers where this viewer is; a relay
     /// failure is the caller's error.

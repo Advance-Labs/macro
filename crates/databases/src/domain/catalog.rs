@@ -259,6 +259,76 @@ impl PropertyType {
     }
 }
 
+/// The [`ColumnKind`] an op names a column's current type by; `None` for a
+/// stored type no op can name, a reference without a kind among them.
+pub fn column_kind(
+    column: &Column,
+    definition: &PropertyDefinitionWithOptions,
+) -> Option<ColumnKind> {
+    if let Some(crate::domain::models::ColumnConfig::Link {
+        database_id,
+        table_id,
+    }) = column.config
+    {
+        return Some(ColumnKind::Relation {
+            database: database_id,
+            table: table_id,
+        });
+    }
+    let definition = &definition.definition;
+    let multi = definition.is_multi_select;
+    Some(match definition.data_type {
+        DataType::String => ColumnKind::Text,
+        DataType::Number => ColumnKind::Number,
+        DataType::Boolean => ColumnKind::Boolean,
+        DataType::Date => ColumnKind::Date,
+        DataType::Link => ColumnKind::Link,
+        DataType::SelectString => ColumnKind::Select { multi },
+        DataType::SelectNumber => ColumnKind::SelectNumber { multi },
+        DataType::Tag => ColumnKind::Tag,
+        DataType::Entity => ColumnKind::Entity {
+            target: entity_kind(definition.specific_entity_type?)?,
+            multi,
+        },
+    })
+}
+
+/// The database's schema as a batch's journal keeps it: every table's
+/// columns, with their options, and views, as `entries` has them.
+pub fn schema_image(entries: &[TableEntry]) -> crate::domain::journal::SchemaImage {
+    use crate::domain::journal::{ColumnImage, OptionImage, SchemaImage, TableImage};
+    let mut image = SchemaImage::default();
+    for entry in entries {
+        image.tables.push(TableImage {
+            id: entry.table.id,
+            name: entry.table.name.clone(),
+            version: entry.table.version,
+        });
+        for column in &entry.columns {
+            let mut options: Vec<_> = column.definition.property_options.iter().collect();
+            options.sort_by_key(|option| option.display_order);
+            image.columns.push(ColumnImage {
+                id: column.column.id,
+                table: entry.table.id,
+                name: column.name().to_owned(),
+                definition_name: column.definition.definition.display_name.clone(),
+                definition: column.definition.definition.id,
+                kind: column_kind(&column.column, &column.definition),
+                options: options
+                    .into_iter()
+                    .map(|option| OptionImage {
+                        id: OptionId::from_uuid(option.id),
+                        label: option_display(&option.value),
+                        color: option.color.clone(),
+                    })
+                    .collect(),
+            });
+        }
+        image.views.extend(entry.views.iter().cloned());
+    }
+    image
+}
+
 /// The menu's types a column holding values can change to: those every
 /// value survives, and those whose values are checked first. Its own type
 /// is in neither.

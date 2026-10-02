@@ -17,13 +17,14 @@ use properties::domain::model::UpdatePropertyOptionOutcome;
 use properties::domain::ports::PropertiesRepo;
 use sqlx::{PgPool, Postgres, Transaction};
 
+use crate::domain::journal::{Before, JournalActor, RowImage, cell_value, row_cells};
 use crate::domain::models::{
     NewDefinition, OptionId, PropertyDefinitionId, RowId, TableId, TakenId, Write, Writes,
     WritesOutcome,
 };
 use crate::domain::ports::CellStore;
 use crate::outbound::pg_databases_repo::schema::{self, Inserted, Removed};
-use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, rows, views};
+use crate::outbound::pg_databases_repo::{PgDatabasesRepoError, journal, rows, views};
 
 /// [`CellStore`] over the properties repository, with the pool its batches
 /// open their transaction on.
@@ -256,6 +257,12 @@ where
                 return Ok(WritesOutcome::VersionConflict(table));
             }
         }
+        for (table, version) in writes.journal.read_versions() {
+            if live.get(&table).is_some_and(|live| *live != version) {
+                return Ok(WritesOutcome::SchemaMoved(table));
+            }
+        }
+        let before = self.before_image(&mut transaction, writes).await?;
 
         let mut minted: Vec<(usize, OptionId)> = Vec::new();
         for (index, write) in writes.writes.iter().enumerate() {
@@ -336,10 +343,30 @@ where
             let version = rows::bump_table_version(&mut *transaction, table).await?;
             table_versions.insert(table, version);
         }
+        let mut stamped: Vec<RowId> = inserted.iter().flatten().copied().collect();
+        stamped.extend(writes.writes.iter().flat_map(|write| match write {
+            Write::UpdateRows { rows, .. } => rows.iter().map(|(row, _)| *row).collect(),
+            Write::MoveCard { row, .. } => vec![*row],
+            _ => Vec::new(),
+        }));
+        stamped.sort();
+        stamped.dedup();
+        journal::stamp_rows(&mut *transaction, &stamped, writes.created_by.as_ref()).await?;
+        let entries = crate::domain::journal::entries(writes, &before, &inserted, &table_versions);
+        let changes = journal::record(
+            &mut transaction,
+            &JournalActor {
+                user: Some(writes.created_by.to_string()),
+                acting_bot: writes.journal.acting_bot,
+            },
+            &entries,
+        )
+        .await?;
         transaction.commit().await?;
         Ok(WritesOutcome::Applied {
             inserted,
             table_versions,
+            changes,
         })
     }
 }
@@ -505,15 +532,36 @@ where
                     .await
                     .map_err(cells_error)?;
             }
-            Write::InsertRows { table_id, rows } => {
-                let Some(minted) = rows::append_rows(
-                    transaction,
-                    *table_id,
-                    writes.created_by.as_ref(),
-                    rows.len(),
-                )
-                .await?
-                else {
+            Write::InsertRows {
+                table_id,
+                rows,
+                restored,
+            } => {
+                let minted = if restored.is_empty() {
+                    rows::append_rows(
+                        transaction,
+                        *table_id,
+                        writes.created_by.as_ref(),
+                        rows.len(),
+                    )
+                    .await?
+                } else {
+                    match rows::restore_rows(
+                        transaction,
+                        *table_id,
+                        writes.created_by.as_ref(),
+                        restored,
+                    )
+                    .await?
+                    {
+                        rows::Restored::Applied(rows) => Some(rows),
+                        rows::Restored::TableGone => None,
+                        rows::Restored::Taken(row) => {
+                            return refused(WritesOutcome::RowTaken { write: index, row });
+                        }
+                    }
+                };
+                let Some(minted) = minted else {
                     return refused(WritesOutcome::TableNotFound(*table_id));
                 };
                 let mut valued = Vec::new();
@@ -701,6 +749,75 @@ where
             }
         }
         Ok(Applied::Rows(Vec::new()))
+    }
+
+    /// What the batch touches, read under its locks before it writes: the
+    /// rows it updates, deletes or moves, every cell of the columns it
+    /// removes or retypes or takes an option out of, and the cards of the
+    /// boards it moves a card on.
+    async fn before_image(
+        &self,
+        transaction: &mut Transaction<'static, Postgres>,
+        writes: &Writes,
+    ) -> Result<Before, PgCellStoreError> {
+        let reads = crate::domain::journal::reads(writes);
+        let schema = &writes.journal.schema;
+        let mut before = Before {
+            schema: schema.clone(),
+            ..Before::default()
+        };
+        let places = journal::row_places(&mut **transaction, &reads.rows).await?;
+        if !places.is_empty() {
+            let rows: Vec<RowId> = places.iter().map(|(row, _, _)| *row).collect();
+            let values = self
+                .properties
+                .entity_values_in(
+                    transaction,
+                    EntityType::DatabaseRow,
+                    &journal::entity_ids(&rows),
+                    None,
+                )
+                .await
+                .map_err(cells_error)?;
+            let mut values = journal::by_row(values);
+            for (row, table, position) in places {
+                let cells = values.remove(&row).unwrap_or_default();
+                before.rows.insert(
+                    row,
+                    RowImage {
+                        table,
+                        position,
+                        cells: row_cells(schema, table, &cells),
+                    },
+                );
+            }
+        }
+        for (table, column, definition) in &reads.columns {
+            let rows = journal::table_rows(&mut **transaction, *table).await?;
+            let values = self
+                .properties
+                .entity_values_in(
+                    transaction,
+                    EntityType::DatabaseRow,
+                    &journal::entity_ids(&rows),
+                    Some(&[*definition]),
+                )
+                .await
+                .map_err(cells_error)?;
+            let cells = journal::by_row(values)
+                .into_iter()
+                .filter_map(|(row, mut values)| {
+                    let value = values.remove(definition)?;
+                    Some((row, cell_value(&value)?))
+                })
+                .collect();
+            before.column_cells.insert(*column, cells);
+        }
+        for board in &reads.boards {
+            let cards = views::view_positions(&mut **transaction, *board).await?;
+            before.cards.insert(*board, cards);
+        }
+        Ok(before)
     }
 
     /// Create a definition a write needs, under the ids the service minted.

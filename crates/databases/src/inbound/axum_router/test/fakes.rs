@@ -247,6 +247,15 @@ impl DatabasesService for RecordingService {
         }
     }
 
+    async fn row_history(
+        &self,
+        _: EntityAccessReceipt<ViewAccessLevel>,
+        _: crate::domain::models::TableId,
+        _: crate::domain::models::RowId,
+    ) -> Result<Vec<crate::domain::journal::RowHistoryEntry>, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+
     async fn view_positions(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,

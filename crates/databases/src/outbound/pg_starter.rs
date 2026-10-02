@@ -15,10 +15,11 @@ use properties::domain::database_definition_writer::{
 };
 use sqlx::{PgPool, Postgres, Transaction};
 
+use crate::domain::journal::{JournalActor, created_table};
 use crate::domain::models::Viewer;
 use crate::domain::starter::{DatabaseStarterRepo, StarterBlueprint, StarterDatabase};
 use crate::outbound::pg_databases_repo::{
-    PgDatabasesRepoError, insert_column, insert_owned_database, rows, views,
+    PgDatabasesRepoError, insert_column, insert_owned_database, journal, rows, views,
 };
 
 /// Starter seeding errors; any of them rolls the whole seed back.
@@ -187,9 +188,10 @@ where
             )
             .await?;
         }
-        rows::bump_table_version(&mut *transaction, table_id)
+        let version = rows::bump_table_version(&mut *transaction, table_id)
             .await
             .map_err(PgDatabasesRepoError::from)?;
+        let mut seeded = Vec::with_capacity(blueprint.rows.len());
         let positions = keys_between(None, None, blueprint.rows.len())?;
         for ((name, stage_index), position) in blueprint.rows.iter().zip(positions) {
             let stage_option = stage
@@ -197,6 +199,7 @@ where
                 .get(*stage_index)
                 .ok_or(PgStarterError::MissingStage(*stage_index))?;
             let row_id = RowId::new();
+            seeded.push(row_id);
             sqlx::query!(
                 "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)",
                 row_id.into_uuid(),
@@ -237,6 +240,21 @@ where
         )?;
         views::insert_view(&mut *transaction, &table_view).await?;
         views::insert_view(&mut *transaction, &board).await?;
+        journal::record(
+            &mut transaction,
+            &JournalActor {
+                user: Some(user_id.to_string()),
+                acting_bot: None,
+            },
+            &[created_table(
+                database_id,
+                table_id,
+                version,
+                &[title_column_id, stage_column_id],
+                &seeded,
+            )],
+        )
+        .await?;
         sqlx::query!(
             "UPDATE database_starter_seeds SET database_id = $2 WHERE user_id = $1",
             user_id,

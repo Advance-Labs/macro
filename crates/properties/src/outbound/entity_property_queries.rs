@@ -53,6 +53,42 @@ impl EntityPropertyMutationRow {
     }
 }
 
+/// What entities of one type hold, inside a caller's transaction: every
+/// property with a value, or only those of `definitions` when given.
+/// Undecodable values are left out.
+pub async fn entity_values_in_transaction(
+    tx: &mut sqlx::PgConnection,
+    entity_type: EntityType,
+    entity_ids: &[String],
+    definitions: Option<&[Uuid]>,
+) -> Result<Vec<(String, Uuid, PropertyValue)>, PropertyQueryError> {
+    if entity_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT entity_id, property_definition_id, values as "values: serde_json::Value"
+        FROM entity_properties
+        WHERE entity_type = $1 AND entity_id = ANY($2)
+          AND ($3::uuid[] IS NULL OR property_definition_id = ANY($3))
+          AND values IS NOT NULL
+        "#,
+        entity_type as EntityType,
+        entity_ids,
+        definitions as Option<&[Uuid]>,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let value = row.values.filter(|value| !value.is_null())?;
+            let value = serde_json::from_value(value).ok()?;
+            Some((row.entity_id, row.property_definition_id, value))
+        })
+        .collect())
+}
+
 /// Upsert an entity property value (insert or update).
 /// If the property doesn't exist, it will be created and attached to the entity.
 /// If it exists, the value will be updated. The returned snapshot carries the

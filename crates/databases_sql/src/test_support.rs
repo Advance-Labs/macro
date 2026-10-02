@@ -124,6 +124,15 @@ pub(crate) fn sql(
 pub(crate) struct FakeDatabases(pub(crate) Shared);
 
 impl DatabasesService for FakeDatabases {
+    async fn row_history(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: databases::domain::models::TableId,
+        _row_id: databases::domain::models::RowId,
+    ) -> Result<Vec<databases::domain::journal::RowHistoryEntry>, DatabaseError> {
+        unimplemented!("the SQL adapter reads no history")
+    }
+
     async fn view_positions(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

@@ -21,6 +21,10 @@ use models_properties::service::property_definition_with_options::PropertyDefini
 
 use super::*;
 use crate::domain::catalog::ColumnEntry;
+use std::collections::BTreeMap;
+
+use crate::domain::journal::{JournalPlan, RestoredRow};
+use crate::domain::models::CommittedChange;
 use crate::domain::models::{
     DatabaseView, OpBatch, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write, Writes,
     WritesOutcome,
@@ -29,6 +33,9 @@ use chrono::DateTime;
 
 /// Most rows one request inserts, updates and deletes in total.
 const MAX_WRITTEN_ROWS: usize = 10_000;
+/// How often a batch is planned again when a table whose schema it changes
+/// moves between its planning and its locks.
+const MAX_PLANNING_ATTEMPTS: usize = 3;
 
 impl<Repository, Definitions, Cells, Events, Access, Broker>
     DatabasesServiceImpl<Repository, Definitions, Cells, Events, Access, Broker>
@@ -46,17 +53,54 @@ where
         viewer: Viewer,
         batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
+        self.apply_batch(&receipt, &viewer, &batch, &BTreeMap::new())
+            .await
+            .map(|applied| applied.results)
+    }
+
+    /// Apply a batch, putting the rows `restored_rows` names back under
+    /// their ids and positions: each entry is the index of a row insert of
+    /// the batch, and the rows it puts back, one per inserted row.
+    pub(crate) async fn apply_batch(
+        &self,
+        receipt: &EntityAccessReceipt<EditAccessLevel>,
+        viewer: &Viewer,
+        batch: &OpBatch,
+        restored_rows: &BTreeMap<usize, Vec<RestoredRow>>,
+    ) -> Result<AppliedBatch, DatabaseError> {
+        for _ in 0..MAX_PLANNING_ATTEMPTS {
+            if let Some(applied) = self
+                .plan_and_apply(receipt, viewer, batch, restored_rows)
+                .await?
+            {
+                return Ok(applied);
+            }
+        }
+        Err(DatabaseError::VersionConflict)
+    }
+
+    /// Plan the batch against the schema as it is now and apply it; `None`
+    /// when a table whose schema it changes moved in between, so it must be
+    /// planned again.
+    async fn plan_and_apply(
+        &self,
+        receipt: &EntityAccessReceipt<EditAccessLevel>,
+        viewer: &Viewer,
+        batch: &OpBatch,
+        restored_rows: &BTreeMap<usize, Vec<RestoredRow>>,
+    ) -> Result<Option<AppliedBatch>, DatabaseError> {
         let OpBatch { ops, base_versions } = batch;
-        let database_id = receipt_database_id(&receipt)?;
-        let grant = receipt_grant(&receipt, AccessLevel::Edit);
+        let ops = ops.as_slice();
+        let database_id = receipt_database_id(receipt)?;
+        let grant = receipt_grant(receipt, AccessLevel::Edit);
         let entries = self
             .entries_for(&HashMap::from([(database_id, grant)]))
             .await?;
         let Some(database) = entries.first().map(|entry| entry.database.clone()) else {
             return Err(DatabaseError::NotFound);
         };
-        refuse_foreign_tables(&entries, &ops)?;
-        for (table, version) in &base_versions {
+        refuse_foreign_tables(&entries, ops)?;
+        for (table, version) in base_versions {
             let entry = entries
                 .iter()
                 .find(|entry| entry.table.id == *table)
@@ -65,13 +109,13 @@ where
                 return Err(DatabaseError::VersionConflict);
             }
         }
-        let attribution = receipt_attribution(&receipt);
+        let attribution = receipt_attribution(receipt);
 
-        let found = self.found_for(&entries, &viewer, &ops).await?;
+        let found = self.found_for(&entries, viewer, ops).await?;
         let editable = self
-            .editable_shared_definitions(&entries, &found, database_id, &viewer, &ops)
+            .editable_shared_definitions(&entries, &found, database_id, viewer, ops)
             .await?;
-        let boards = self.boards_moved_by(&entries, &ops).await?;
+        let boards = self.boards_moved_by(&entries, ops).await?;
         let mut planner = Planner {
             entries: entries.iter().cloned().map(Arc::new).collect(),
             database,
@@ -87,6 +131,7 @@ where
             written_tables: HashSet::new(),
             created_tables: HashSet::new(),
             changed_options: HashSet::new(),
+            restored_rows: restored_rows.clone(),
         };
         let writes = ops
             .iter()
@@ -102,14 +147,25 @@ where
                 .iter()
                 .map(|related| (related.table, related.row))
                 .collect(),
-            expected_versions: base_versions.into_iter().collect(),
+            expected_versions: base_versions
+                .iter()
+                .map(|(table, version)| (*table, *version))
+                .collect(),
+            journal: JournalPlan {
+                ops: ops.to_vec(),
+                schema: catalog::schema_image(&entries),
+                acting_bot: viewer.acting_bot,
+            },
         };
         let outcome = self
             .cells
             .apply_writes(&writes)
             .await
             .map_err(repository_error)?;
-        let committed = applied(outcome, &ops, &planner.related)?;
+        if let WritesOutcome::SchemaMoved(_) = outcome {
+            return Ok(None);
+        }
+        let committed = applied(outcome, ops, &planner.related)?;
 
         let mut changes: Vec<(DatabaseId, TableId, TableVersion)> = committed
             .table_versions
@@ -124,7 +180,11 @@ where
             _ => None,
         }));
         self.publish(attribution, &changes).await;
-        op_results(&entries, &ops, &writes, committed)
+        let journaled = committed.changes.clone();
+        Ok(Some(AppliedBatch {
+            results: op_results(&entries, ops, &writes, committed)?,
+            changes: journaled,
+        }))
     }
 
     /// What the batch's ops need read before they are planned: the
@@ -432,6 +492,18 @@ struct Committed {
     inserted: Vec<Vec<RowId>>,
     /// The new version of every table a write changed.
     table_versions: HashMap<TableId, TableVersion>,
+    /// The journal's change for each table version.
+    changes: Vec<CommittedChange>,
+}
+
+/// What a committed batch answers: a result per op, and the journal's
+/// change for each table version it produced.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AppliedBatch {
+    /// One result per op, in order.
+    pub(crate) results: Vec<OpResult>,
+    /// The journal's changes.
+    pub(crate) changes: Vec<CommittedChange>,
 }
 
 /// What the cell store committed, or the op its refusal points at.
@@ -445,10 +517,13 @@ fn applied(
         WritesOutcome::Applied {
             inserted,
             table_versions,
+            changes,
         } => Ok(Committed {
             inserted,
             table_versions,
+            changes,
         }),
+        WritesOutcome::SchemaMoved(_) => Err(DatabaseError::VersionConflict),
         WritesOutcome::TableNotFound(_) => Err(DatabaseError::NotFound),
         WritesOutcome::VersionConflict(_) | WritesOutcome::TablesChanged { .. } => {
             Err(DatabaseError::VersionConflict)
@@ -513,6 +588,12 @@ fn applied(
             row_index(&ops[write], row),
             None,
             format!("no row {row} in this table"),
+        )),
+        WritesOutcome::RowTaken { write, row } => Err(refuse(
+            write,
+            None,
+            None,
+            format!("row {row} is back already"),
         )),
         WritesOutcome::MissingRelatedRow(row) => {
             let origin = related
@@ -805,6 +886,8 @@ struct Planner {
     created_tables: HashSet<TableId>,
     /// The definitions whose options an op so far changed.
     changed_options: HashSet<PropertyDefinitionId>,
+    /// The rows each row insert of the batch puts back, by the op's index.
+    restored_rows: BTreeMap<usize, Vec<RestoredRow>>,
 }
 
 /// Where in the batch a cell is: its op, the row's index within the op

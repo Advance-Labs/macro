@@ -113,6 +113,27 @@ fn receipt_attribution<T: RequiredPermission>(
     }
 }
 
+/// Who a receipt says is acting, as the change journal records it.
+fn receipt_journal_actor<T: RequiredPermission>(
+    receipt: &EntityAccessReceipt<T>,
+) -> crate::domain::journal::JournalActor {
+    use crate::domain::journal::JournalActor;
+    match receipt.auth() {
+        EntityAccessAuth::Authenticated(user) => JournalActor {
+            user: Some(user.to_string()),
+            acting_bot: None,
+        },
+        EntityAccessAuth::Bot(bot) => JournalActor {
+            user: bot.scope().acting_user_id().map(ToString::to_string),
+            acting_bot: Some(bot.bot_id()),
+        },
+        EntityAccessAuth::Unauthenticated | EntityAccessAuth::Internal => JournalActor {
+            user: None,
+            acting_bot: None,
+        },
+    }
+}
+
 fn validate_name(name: &str) -> Result<String, DatabaseError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -742,6 +763,22 @@ where
         view_id: ViewId,
     ) -> Result<Vec<CardPosition>, DatabaseError> {
         self.board_positions(receipt, view_id).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn row_history(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Result<Vec<crate::domain::journal::RowHistoryEntry>, DatabaseError> {
+        let database_id = receipt_database_id(&receipt)?;
+        let changes = self
+            .repository
+            .row_history(database_id, table_id, row_id)
+            .await
+            .map_err(repository_error)?;
+        Ok(crate::domain::journal::row_history(row_id, changes))
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

@@ -1,5 +1,5 @@
-use models_properties::EntityReference;
 use models_properties::service::property_value::PropertyValue;
+use models_properties::{EntityReference, EntityType};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -30,5 +30,21 @@ impl DatabaseCellWriter for PropertiesPgRepo {
         )
         .await?;
         Ok(())
+    }
+
+    async fn entity_values_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        entity_type: EntityType,
+        entity_ids: &[String],
+        definitions: Option<&[Uuid]>,
+    ) -> Result<Vec<(String, Uuid, PropertyValue)>, Self::Err> {
+        entity_property_queries::entity_values_in_transaction(
+            transaction,
+            entity_type,
+            entity_ids,
+            definitions,
+        )
+        .await
     }
 }
