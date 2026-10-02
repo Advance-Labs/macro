@@ -1,3 +1,4 @@
+import type { CacheRevision } from '@app/lib/graphql-cache/protocol';
 import type {
   CellValue,
   DatabaseOp,
@@ -5,6 +6,7 @@ import type {
   Step,
   ViewQuery,
 } from '@core/database-sql/generated/types';
+import type { CacheHost } from '@graphql-cache/host/types';
 import { queryClient } from '@queries/client';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import {
@@ -271,6 +273,7 @@ function setup(
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseView>;
     onTableChanged?: (listener: (version: number) => void) => void;
+    changes?: Parameters<typeof createDatabaseRowsSource>[0]['changes'];
   } = {}
 ) {
   const client = queryClient;
@@ -289,6 +292,7 @@ function setup(
       view: options.view ?? (() => allGuests),
       applyOps,
       read: options.read ?? engine().read,
+      changes: options.changes,
       onTableChanged:
         options.onTableChanged ??
         ((listener) => {
@@ -1225,6 +1229,107 @@ describe('accepted writes after switching tables', () => {
     expect(source.snapshot()?.version).toBe(6);
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
+    ]);
+  });
+});
+
+describe("another writer's change", () => {
+  it('lands the new value with a full read when no local cache holds the rows', async () => {
+    let name = 'Ada';
+    const { read } = engine(() => guests([{ id: 'record', name }]));
+    const since = vi.fn((_version: number) =>
+      okAsync({
+        version: 7,
+        complete: true,
+        truncated: false,
+        rows: [{ row: 'record', kind: 'update' as const }],
+        columns: [],
+      })
+    );
+    const { source, tableChanged } = setup(detail(), vi.fn<ApplyOps>(), {
+      read,
+      changes: (readRows) => ({
+        since,
+        readRows,
+        forget: () => okAsync(undefined),
+      }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
+
+    name = 'Grace';
+    tableChanged(7);
+
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 7,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+    expect(since).not.toHaveBeenCalled();
+  });
+
+  it('reads just the changed rows into the cache, then answers the view from it', async () => {
+    let name = 'Ada';
+    const engineRead = engine(() => guests([{ id: 'record', name }]));
+    const host = {
+      // The view's rerun must not wait on a cache notification.
+      onCacheChanged: () => () => {},
+      entityFilter: async () => ({ kind: 'unsupported' as const }),
+      readRecordsByKeys: async () => ({
+        revision: 'revision-1' as CacheRevision,
+        records: [],
+      }),
+    } satisfies Pick<
+      CacheHost,
+      'onCacheChanged' | 'entityFilter' | 'readRecordsByKeys'
+    >;
+    const since = vi.fn((_version: number) =>
+      okAsync({
+        version: 7,
+        complete: true,
+        truncated: false,
+        rows: [{ row: 'record', kind: 'update' as const }],
+        columns: [],
+      })
+    );
+    const { source, tableChanged } = setup(detail(), vi.fn<ApplyOps>(), {
+      read: { ...engineRead.read, cacheHost: () => host },
+      changes: (readRows) => ({
+        since,
+        readRows,
+        forget: () => okAsync(undefined),
+      }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
+    const beforePing = engineRead.reads.length;
+
+    name = 'Grace';
+    tableChanged(7);
+
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 7,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+    expect(since).toHaveBeenCalledExactlyOnceWith(5);
+    expect(engineRead.reads.slice(beforePing)).toEqual([
+      `SELECT * FROM "guests" WHERE row_id IN ('record')`,
+      allGuests.query,
     ]);
   });
 });

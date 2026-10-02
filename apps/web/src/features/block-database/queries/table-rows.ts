@@ -332,6 +332,20 @@ export function createDatabaseRowsSource(props: {
       props.read
     ).map(() => undefined);
   }
+  /** Answer the open reads from the cache rows were read into; at least `version` once they land. */
+  function answerFromCache(
+    version: number
+  ): ResultAsync<void, DatabaseReadFailure> {
+    return ResultAsync.combine([
+      rowsQuery.answerFromCache(),
+      retainedRowIds().length
+        ? retainedQuery.answerFromCache()
+        : okAsync<DatabaseSqlRun>({ landed: true }),
+    ]).map(([rows, retained]) => {
+      if (rows.landed && retained.landed)
+        setReadVersion((previous) => Math.max(previous, version));
+    });
+  }
   const changes = props.changes?.(readRows);
   // Another viewer's edit. This writer's own edits read their version back.
   props.onTableChanged((version) => {
@@ -339,16 +353,16 @@ export function createDatabaseRowsSource(props: {
     const target = Math.max(version, currentTable()?.table.version ?? version);
     const fullRead = () => readAgain(target);
     refreshInBackground({
+      // Rows read by id reach the view only through a local cache; without one, read whole.
       refresh: () =>
-        changes
+        changes && rowsQuery.cached()
           ? refreshChangedRows({
               from: readVersion(),
               version: target,
               changes,
+              answerFromCache,
               fullRead,
-            }).map((reached) =>
-              setReadVersion((previous) => Math.max(previous, reached))
-            )
+            })
           : fullRead(),
     });
   });

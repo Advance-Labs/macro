@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { refreshChangedRows } from './table-changes';
 
 describe('an incremental table refresh', () => {
-  it('reads the changed rows into the cache and drops the removed ones, without a full read', async () => {
+  it('reads the changed rows into the cache, drops the removed ones and answers from the cache, without a full read', async () => {
     const read: string[][] = [];
     const forgotten: string[][] = [];
+    const answered: number[] = [];
     let fullReads = 0;
     const written = Array.from({ length: 120 }, (_, index) => `row-${index}`);
 
@@ -33,6 +34,10 @@ describe('an incremental table refresh', () => {
           return okAsync(undefined);
         },
       },
+      answerFromCache: (version) => {
+        answered.push(version);
+        return okAsync(undefined);
+      },
       fullRead: () => {
         fullReads += 1;
         return okAsync(undefined);
@@ -42,6 +47,7 @@ describe('an incremental table refresh', () => {
     expect(reached._unsafeUnwrap()).toBe(6);
     expect(read.map((chunk) => chunk.length)).toEqual([100, 20]);
     expect(forgotten).toEqual([['omar']]);
+    expect(answered).toEqual([6]);
     expect(fullReads).toBe(0);
   });
 
@@ -55,6 +61,9 @@ describe('an incremental table refresh', () => {
         since: () => errAsync('offline'),
         readRows: () => okAsync(undefined),
         forget: () => okAsync(undefined),
+      },
+      answerFromCache: () => {
+        throw new Error('nothing was read into the cache');
       },
       fullRead: () => {
         fullReads += 1;
@@ -87,6 +96,9 @@ describe('an incremental table refresh', () => {
           return okAsync(undefined);
         },
         forget: () => okAsync(undefined),
+      },
+      answerFromCache: () => {
+        throw new Error('nothing was read into the cache');
       },
       fullRead: () => {
         fullReads += 1;
