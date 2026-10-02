@@ -177,7 +177,17 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       if (event.payload.reset) {
         for (const cb of generationChangeSubscribers) cb({ storage: 'reset' });
       }
-      for (const cb of cacheChangeSubscribers) cb(revision);
+      for (const cb of cacheChangeSubscribers) {
+        if (
+          event.payload.reset ||
+          event.payload.searchChangedBuckets === undefined
+        )
+          cb(revision);
+        else
+          cb(revision, {
+            searchChangedBuckets: event.payload.searchChangedBuckets,
+          });
+      }
     }).catch((error) => {
       console.warn('graphql cache change listener failed', error);
       return undefined;
@@ -368,6 +378,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
           data: args.data,
           linkPatches: args.linkPatches,
           revalidations: args.revalidations,
+          identityBindings: args.identityBindings,
           createdAtMs: claim.nowMs,
           owner: claim.owner,
           nowMs: claim.nowMs,
@@ -460,7 +471,8 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
     async rollbackOptimisticWrite(
       transactionId: string,
       claim: MutationClaim,
-      error: string
+      error: string,
+      errorCode?: string
     ): Promise<RollbackOptimisticWriteResult> {
       await ready;
       return await request<RollbackOptimisticWriteResult>(
@@ -470,6 +482,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
           leaseOwner: claim.owner,
           leaseGeneration: claim.generation,
           error,
+          ...(errorCode === undefined ? {} : { errorCode }),
         }
       );
     },

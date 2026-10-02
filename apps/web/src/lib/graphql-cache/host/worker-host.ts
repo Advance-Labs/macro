@@ -305,7 +305,14 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
           for (const cb of generationChangeSubscribers)
             cb({ storage: 'reset' });
         }
-        for (const cb of cacheChangeSubscribers) cb(msg.revision);
+        for (const cb of cacheChangeSubscribers) {
+          if (msg.reset || msg.searchChangedBuckets === undefined)
+            cb(msg.revision);
+          else
+            cb(msg.revision, {
+              searchChangedBuckets: msg.searchChangedBuckets,
+            });
+        }
         return;
       }
       if (msg.kind === 'mutation-settled') {
@@ -1259,6 +1266,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
         data: args.data,
         linkPatches: args.linkPatches,
         revalidations: args.revalidations,
+        identityBindings: args.identityBindings,
         createdAtMs: claim.nowMs,
         owner: claim.owner,
         nowMs: claim.nowMs,
@@ -1338,7 +1346,8 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
     async rollbackOptimisticWrite(
       transactionId: string,
       claim: MutationClaim,
-      error: string
+      error: string,
+      errorCode?: string
     ): Promise<RollbackOptimisticWriteResult> {
       return (await initializedRequest({
         kind: 'rollback-optimistic-write',
@@ -1346,6 +1355,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
         leaseOwner: claim.owner,
         leaseGeneration: claim.generation,
         error,
+        ...(errorCode === undefined ? {} : { errorCode }),
       })) as RollbackOptimisticWriteResult;
     },
 

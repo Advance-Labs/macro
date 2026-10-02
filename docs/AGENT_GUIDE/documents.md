@@ -260,18 +260,21 @@ commented range. Hover any cell in that range to read its threads; choose
 triangle also opens the card on touch devices. Interacting with a card keeps it
 open until dismissed so a reply is not lost when moving the pointer.
 
-**Comments** in the document header opens all workbook threads. Range labels
+**Comments** in the document header opens the workbook commenting sidebar. Range labels
 navigate to the corresponding sheet and cells; deleted-sheet threads remain
-readable. **Workbook discussion** contains comments about the whole workbook,
-with its own composer. The pinned composer at the bottom posts on the displayed
-range; **Use selection** changes that range. Both surfaces use the shared message
-controls for replies, edits, deletion, reactions, and attachments. Range threads
-also offer **Resolve** and **Reopen**. Mentions and replies use inbox notifications
-and message links. Older spreadsheet annotation comments are not displayed.
+readable. Range threads are filtered by **Open**, **Resolved**, or **All**;
+Open is the default. **Discussion** contains comments about the whole workbook
+and is the sidebar's new-comment composer. To start a cell comment,
+select the range and use the ribbon, keyboard shortcut, or cell context menu.
+Both surfaces use the shared message controls for replies, edits, deletion,
+reactions, and attachments. Range threads also offer **Resolve** and **Reopen**.
+Mentions and replies use inbox notifications and message links. Older spreadsheet
+annotation comments are not displayed.
 Opening an inbox notification opens the sidebar and targets its comment/range.
-Range links leave Workbook discussion on its normal timeline; workbook links
-open that discussion at the linked message, clear the previous range highlight
-or navigation error, and preserve an open range draft's attachment.
+Range links leave Discussion on its normal timeline; workbook links
+open that discussion at the linked message and clear the previous range highlight
+or navigation error. A resolved range link switches the filter to **Resolved** so
+the targeted thread remains visible.
 Comment-only access can post/reply; view-only access can read. Edit/delete applies
 to the author's own comments, and failures retain the input draft. Draft demos
 must be saved before persistent comments are available.
@@ -279,7 +282,7 @@ must be saved before persistent comments are available.
 ## Ask Macro about a spreadsheet
 
 **Ask Macro** sits immediately left of **Share**. Select the relevant cells, then
-click it to open a new chat in a split beside the workbook. The composer starts
+click it to open a new agent session in a split beside the workbook. The composer starts
 with the workbook mention followed by one space; nothing sends automatically.
 The mention captures the active sheet ID/name and normalized selected range at
 click time. Changing the selection later does not change that draft attachment.
@@ -334,6 +337,10 @@ nodes — use the snapshot itself to verify content. For formatting checks, run
 
 Body placeholder advertises: `/` for block commands, `@` to reference files, `;` for snippets.
 Markdown auto-format works while typing (`#` heading, `[]` checklist, `>` quote).
+On Android, use the software keyboard to check `:` emoji, `/` commands, `;`
+snippets, and `#` tags where enabled. Each should open once and filter as you
+type. Tapping an emoji or command applies it; a second `#` closes the tags menu
+and leaves literal `##` for Markdown headings.
 
 AI text-writing operations require a paragraph/list-item or text-run ID. A
 table, row, cell, or list-container ID is rejected with guidance to choose a
@@ -343,6 +350,9 @@ table cells is preserved in paragraphs when the editor opens the document.
 `@` opens the mention menu wherever the caret starts a word, including directly
 in front of existing text — the menu opens empty there instead of searching for
 the word ahead of the caret. Typed inside a word (`he@llo`) it stays literal text.
+On Android, verify this with the software keyboard: tap `@`, type a name to
+filter, and tap a result to insert a single mention. The menu should remain
+visible above the keyboard while typing.
 
 `Ctrl+F` / `Cmd+F` opens the in-document find bar. Matches include paragraph
 text and inline mention chips (tasks, docs, channels, skills, …) by the title
@@ -552,14 +562,11 @@ document should stay visible and the thread should open; loading the document
 with its badges still collapsed does not exercise thread rendering. Comment
 copy links should retain the document/task route and the selected comment.
 
-### Unified document discussions (`enable-unified-document-discussions`)
+### Document discussions
 
-With the PostHog flag `enable-unified-document-discussions` on (locally
-`VITE_ENABLE_UNIFIED_DOCUMENT_DISCUSSIONS=true`), document comments are messages
-read and written through `/dss/messages/document/<id>`, and both comment
-surfaces reuse the channel message components. The legacy annotation comment
-endpoints are not called for that document. Channels are not gated and always
-use the message API.
+Document comments are messages read and written through
+`/dss/messages/document/<id>`, and both comment surfaces reuse the channel
+message components, as channels do.
 
 Below the editor, expand `Discussion` to see comments without a text anchor.
 Its `Leave a comment...` composer is the channel composer: `Attach files`,
@@ -569,6 +576,10 @@ retains the draft. The timeline initially loads a bounded page with up to three
 preview replies per thread. Expand a thread to load its replies;
 `Load earlier comments` pages backward. Live updates preserve unsent replies
 and edits while updating the surrounding thread.
+
+Discussion and comment headers include the date for older messages (for example,
+`Yesterday at 4:37 PM` or `09/24/26 at 4:37 PM`). Regular channel timelines retain
+their date dividers and time-only message headers.
 
 When verifying `@` mentions, compare the same person query in the document body
 and the Discussion composer: shared contacts use the same recent-interaction
@@ -608,27 +619,29 @@ editable view removes the retained mark when the document loads. Read-only
 viewers see plain text without a dead comment highlight; the stored document
 and overlapping live comments stay intact.
 
-PDFs follow the same flag. With it on, PDF comment threads in the right margin
-use the channel composer (`Leave a comment...`, Enter sends) and the message
+PDF comment threads in the right margin use the channel composer (`Leave a comment...`, Enter sends) and the message
 thread controls. Highlight comments come from selecting text and choosing the
 comment button in the selection menu; placeable comments come from the toolbar
 `Comment` tool and a click on the page. Discussions read and post through
 `/dss/messages/document/<id>`; anchor geometry still loads from
-`/dss/annotations/anchors/document/<id>`, and `/dss/annotations/comments/...`
-is not called. Deleting a highlight's discussion keeps the highlight as a plain
-highlight; deleting a placeable's discussion removes the placeable. With the
-flag off, PDFs use the legacy composer (`Add a comment...`). A PDF anchor
-created by the other path is hidden rather than shown as a bare highlight, so a
-comment written on one path does not appear on the other until the comment
-importer runs.
-
-With the flag off, documents behave exactly as described above this section.
+`/dss/annotations/anchors/document/<id>`. Deleting a highlight's discussion keeps the highlight as a plain
+highlight; deleting a placeable's discussion removes the placeable. An anchor bound only
+to a legacy annotation thread that was never imported stays hidden rather than
+shown as a bare highlight.
 
 ## Side panel
 
 Right side of a doc (toggle with `Hide/Show Side Panel`):
 
-- `Actions` → `Ask Macro` (opens a doc-scoped AI chat, see ai-chat.md).
+- `Actions` → `Ask Macro` (opens a doc-scoped AI chat, see ai-chat.md), and on
+  desktop a `Copy as prompt` pill for documents and tasks. Its primary button
+  runs the last-used agent action; the `Agent options` caret lists `Copy as
+  prompt`, `MCP setup instructions`, and an `Open in` group (Claude Code Web,
+  Codex Desktop, Cursor, Zed). Tasks add `Copy branch name`. A document prompt
+  wraps the title and markdown in `<document>` / `<document-content>` tags with
+  no branch instructions; the toast reads `Prompt copied to clipboard`. The
+  Files-view title menu (three dots beside the breadcrumb) also lists `Copy as
+  prompt` directly above `Download` for plain documents.
 - `Details` → Owner, Created, Last updated.
 - `Tags` → `Add tags` (dialog). Click a tag's label to toggle and save; Shift-click
   keeps the picker open for multiple selections. Reopen it to remove a tag.
