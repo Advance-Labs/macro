@@ -64,6 +64,9 @@ internal object Calls {
     private val videoMutex = Mutex()
     var recipient: String? = null
         private set
+    var drawerTheme: CallTheme? = null
+    var audioRoute: String? = null
+        private set
     var title: String? = null
     val displayNames = mutableMapOf<String, String>()
     private val watchers = mutableMapOf<String, Channel>()
@@ -256,7 +259,10 @@ internal object Calls {
         media.audioSwitchHandler?.loggingEnabled = false
         media.audioSwitchHandler?.registerAudioDeviceChangeListener { devices, selected ->
             scope.launch {
-                if (room === media && selected?.javaClass?.simpleName != desiredAudioType) {
+                if (room !== media) return@launch
+                audioRoute = selected?.javaClass?.simpleName
+                publish()
+                if (selected?.javaClass?.simpleName != desiredAudioType) {
                     devices.firstOrNull { it.javaClass.simpleName == desiredAudioType }?.let { media.audioSwitchHandler?.selectDevice(it) }
                 }
             }
@@ -382,7 +388,7 @@ internal object Calls {
         session?.cancel(); session = null
         val media = room; room = null
         val telecomConnection = connection; connection = null
-        offer = null; pendingAnswered = null; state = "disconnected"; title = null; recipient = null; displayNames.clear(); error = null; muted = false; video = false; held = false; answering = false; accepted = false; focusLost = false; telecomMuted = false; telecomFocusLost = false; desiredAudioType = null; overlay = "hidden"
+        offer = null; pendingAnswered = null; state = "disconnected"; title = null; recipient = null; displayNames.clear(); error = null; muted = false; video = false; held = false; answering = false; accepted = false; focusLost = false; telecomMuted = false; telecomFocusLost = false; desiredAudioType = null; audioRoute = null; overlay = "hidden"
         // Native/SDK callbacks may fail or reenter; no resource owns the cleared session.
         // Release each resource independently so one failure cannot leave a phantom call.
         runCatching { media?.disconnect() }

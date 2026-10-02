@@ -34,6 +34,8 @@ internal class TitleArgs { var channelTitle: String? = null }
 @InvokeArg
 internal class NameArgs { lateinit var identity: String; var displayName: String? = null }
 @InvokeArg
+internal class ThemeArgs { var theme: Map<String, Map<String, Double>> = emptyMap() }
+@InvokeArg
 internal class ModeArgs { var mode = "hidden" }
 
 @TauriPlugin(permissions = [Permission(strings = [Manifest.permission.RECORD_AUDIO], alias = "microphone"), Permission(strings = [Manifest.permission.CAMERA], alias = "camera")])
@@ -122,8 +124,15 @@ class CallPlugin(private val activity: Activity) : Plugin(activity) {
         Calls.publish(); invoke.resolve()
     }
     @Command fun switchCamera(invoke: Invoke) { Calls.switchCamera(); invoke.resolve() }
-    // iOS drawer styling commands are accepted for the shared metadata bridge.
-    @Command fun setCallDrawerTheme(invoke: Invoke) { invoke.resolve() }
+    @Command fun setCallDrawerTheme(invoke: Invoke) {
+        try {
+            val json = org.json.JSONObject(invoke.parseArgs(ThemeArgs::class.java).theme)
+            Calls.drawerTheme = CallTheme.parse(json)
+            activity.getSharedPreferences("macro_call_theme", android.content.Context.MODE_PRIVATE)
+                .edit().putString("theme", json.toString()).apply()
+            Calls.publish(); invoke.resolve()
+        } catch (_: Exception) { invoke.reject("Invalid call drawer theme") }
+    }
     @Command fun setCallDrawerChannelTitle(invoke: Invoke) {
         Calls.title = invoke.parseArgs(TitleArgs::class.java).channelTitle
         Calls.title?.let { Calls.connection?.setCallerDisplayName(it, android.telecom.TelecomManager.PRESENTATION_ALLOWED) }

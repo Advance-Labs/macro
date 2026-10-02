@@ -476,8 +476,14 @@ camera access is requested when enabling video, and Bluetooth access when select
 that route on Android 12 or newer. A denied permission does not silently enable
 capture.
 
-The native call activity contains microphone/camera controls, camera switching,
-audio routes, End call, Open Macro and Picture in picture. Audio continues in the
+The native call activity presents a themed drawer at approximately 92% of the
+safe screen height, above navigation bars/cutouts. A large participant tile sits
+above a horizontally scrolling participant strip; tapping a strip tile selects
+it as primary. Speaker, Mute and Video form a compact control row, with Leave
+in the header and camera switching on the primary local video tile. Hold Speaker
+to select headset/Bluetooth routing. Back,
+tapping the scrim, or swiping the handle down enters PiP on supported devices.
+Without PiP support, dismissal returns to Macro while retaining audio. Audio continues in the
 foreground service while backgrounded. Camera capture stops when the call activity
 is backgrounded outside PiP. PiP uses native renderers and requires device support.
 The web call controls can reopen the native activity after returning to Macro.

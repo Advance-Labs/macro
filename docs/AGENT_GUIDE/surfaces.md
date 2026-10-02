@@ -1903,9 +1903,12 @@ contracts and test coverage.
 ### Android native channel calls
 
 Android channel calls use a native call activity rather than browser media.
-After joining, use its Mute, Camera, Switch camera, audio-route and End call
-controls. **Open Macro** returns to channel navigation; **Open call controls**
-in the web call controls restores the native surface. Leaving the channel does
+After joining, the themed drawer shows a large participant tile and a horizontally
+scrolling participant strip; tap a strip tile to make it primary. Speaker toggles
+speaker mode (hold it for headset/Bluetooth routing), Mute and Video control capture, and **Leave** ends the call.
+The local primary video tile exposes Switch camera. Swipe the drawer handle down,
+tap outside the drawer, or use Back to enter PiP on supported devices; **Open call
+controls** in the web call controls restores the native surface. Leaving the channel does
 not end the call. Incoming calls expose Answer/Decline in the **Calls** notification
 channel, including while locked/backgrounded. PiP is a native, device-dependent
 flow. Browser-only tests cannot validate Telecom, FCM wakeup or background media;

@@ -18,6 +18,6 @@
         </service>
         <service android:name="com.macro.call.CallService" android:exported="false" android:foregroundServiceType="phoneCall|microphone|camera" />
         <receiver android:name="com.macro.call.CallReceiver" android:exported="false" />
-        <activity android:name="com.macro.call.CallActivity" android:exported="false" android:launchMode="singleTask" android:showWhenLocked="true" android:turnScreenOn="true" android:supportsPictureInPicture="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" />
+        <activity android:name="com.macro.call.CallActivity" android:theme="@style/MacroCallOverlay" android:enableOnBackInvokedCallback="true" android:exported="false" android:launchMode="singleTask" android:showWhenLocked="true" android:turnScreenOn="true" android:supportsPictureInPicture="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout" />
     </application>
 </manifest>
