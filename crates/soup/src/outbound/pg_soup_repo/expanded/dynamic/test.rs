@@ -15,9 +15,9 @@ fn grouped_access_shape() {
     let candidates = builder.sql().split("GroupedItems AS").next().unwrap();
     assert!(!candidates.contains("AccessibleItems"));
     for (id, entity_type) in [("d.id", "document"), ("c.id", "chat"), ("p.id", "project")] {
-        assert!(candidates.contains(&access_semi_join(id, entity_type)));
+        assert!(candidates.contains(&access_semi_join(id, entity_type, SOURCE_IDS_SQL)));
     }
-    assert!(candidates.contains("cp.left_at IS NULL"));
+    assert!(!candidates.contains("user_source_ids"));
     assert!(candidates.contains("event.owner_id = $1"));
     assert!(candidates.contains("link.link_id = event.source_link_id"));
     assert!(candidates.contains("link.primary_macro_id = $1"));
@@ -64,7 +64,7 @@ fn grouped_candidate_sort_shape() {
             assert_eq!(rest.matches("LEFT JOIN \"UserHistory\"").count(), 3);
             assert!(rest.contains("COUNT(*) OVER (PARTITION BY"));
             assert!(rest.contains("ORDER BY t.sort_ts DESC, t.id DESC"));
-            assert!(rest.contains("AND ep.entity_type = $10"));
+            assert!(rest.contains("AND ep.entity_type = $11"));
             assert!(rest.contains("\"group_key\", \"sort_ts\" DESC, \"id\" DESC"));
             assert_eq!(sql.ends_with("LIMIT $3"), grouping.group_key.is_some());
             assert_eq!(
@@ -114,6 +114,7 @@ async fn grouped_query_explain_local(pool: PgPool) -> anyhow::Result<()> {
     let version = sqlx::query_scalar!("SELECT version()")
         .fetch_one(&pool)
         .await?;
+    let source_ids = user_source_ids(&pool, "macro|user-1@test.com").await?;
     println!(
         "database={version:?}; synthetic_documents=12000; tasks=120; grants=24000; repetitions=3"
     );
@@ -183,6 +184,7 @@ async fn grouped_query_explain_local(pool: PgPool) -> anyhow::Result<()> {
                     .bind(StatusOption::COMPLETED_UUID.to_string())
                     .bind(SystemPropertyKey::STATUS_UUID)
                     .bind(SystemPropertyKey::ASSIGNEES_UUID)
+                    .bind(source_ids.clone())
                     .bind(grouping.group_key.clone());
                 if let Some(ref entity_type) = entity_type {
                     query = query.bind(entity_type);
@@ -303,6 +305,7 @@ async fn soup_page(
     cursor: &SoupCursor,
 ) -> anyhow::Result<Vec<(String, String, DateTime<Utc>)>> {
     let (cursor_ts, cursor_id) = cursor.clone().unzip();
+    let source_ids = user_source_ids(pool, user).await?;
     let rows = builder
         .build()
         .bind(user)
@@ -313,6 +316,7 @@ async fn soup_page(
         .bind(StatusOption::COMPLETED_UUID.to_string())
         .bind(SystemPropertyKey::STATUS_UUID)
         .bind(SystemPropertyKey::ASSIGNEES_UUID)
+        .bind(source_ids)
         .persistent(false)
         .fetch_all(pool)
         .await?;
@@ -340,6 +344,7 @@ async fn doc_ordered_ok(
         strategy.ctes.trim_end().trim_end_matches(',')
     ));
     let (cursor_ts, cursor_id) = cursor.clone().unzip();
+    let source_ids = user_source_ids(pool, user).await?;
     let row = builder
         .build()
         .bind(user)
@@ -347,6 +352,10 @@ async fn doc_ordered_ok(
         .bind(limit)
         .bind(cursor_ts)
         .bind(cursor_id)
+        .bind(StatusOption::COMPLETED_UUID.to_string())
+        .bind(SystemPropertyKey::STATUS_UUID)
+        .bind(SystemPropertyKey::ASSIGNEES_UUID)
+        .bind(source_ids)
         .persistent(false)
         .fetch_one(pool)
         .await?;

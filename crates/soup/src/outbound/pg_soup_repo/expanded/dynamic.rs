@@ -51,20 +51,13 @@ use crate::domain::models::{
 use crate::outbound::pg_soup_repo::grouping::{
     GroupJoinClause, group_join_clause, group_select_expr,
 };
+use crate::outbound::pg_soup_repo::source_ids::user_source_ids;
 use crate::outbound::pg_soup_repo::type_err;
 use models_grouping::{GroupByField, GroupingConfig, date_bucket_sql_order};
 
-static PREFIX: &str = r#"
-    WITH user_source_ids AS (
-        SELECT cp.channel_id::text as source_id FROM comms_channel_participants cp
-            WHERE cp.user_id = $1 AND cp.left_at IS NULL
-        UNION ALL
-        SELECT t.team_id::text FROM team_user t
-            WHERE t.user_id = $1
-        UNION ALL
-        SELECT $1
-    ),
-"#;
+static PREFIX: &str = "\n    WITH\n";
+
+const SOURCE_IDS_SQL: &str = "$9";
 
 // -- Lightweight top clauses: only id + sort_ts (plus filter-required joins) --
 
@@ -1234,13 +1227,14 @@ fn top_needs_user_history(sort_method: SimpleSortMethod) -> bool {
 pub(in crate::outbound::pg_soup_repo) fn access_semi_join(
     id_sql: &str,
     entity_type: &str,
+    source_ids_sql: &str,
 ) -> String {
     format!(
         r#"{id_sql} IN (
                     SELECT ea.entity_id::text
                     FROM entity_access ea
-                    JOIN user_source_ids us ON us.source_id = ea.source_id
-                    WHERE ea.entity_type = '{entity_type}'
+                    WHERE ea.source_id = ANY({source_ids_sql})
+                    AND ea.entity_type = '{entity_type}'
                 )"#
     )
 }
@@ -1276,7 +1270,7 @@ fn document_top_where_clause(sort_method: SimpleSortMethod) -> String {
         r#"{user_history_join}                WHERE d."deletedAt" IS NULL
                 AND {}
 "#,
-        access_semi_join("d.id", "document")
+        access_semi_join("d.id", "document", SOURCE_IDS_SQL)
     )
 }
 
@@ -1305,7 +1299,7 @@ fn chat_top_where_clause() -> String {
         r#"                WHERE c."deletedAt" IS NULL
                 AND {}
 "#,
-        access_semi_join("c.id", "chat")
+        access_semi_join("c.id", "chat", SOURCE_IDS_SQL)
     )
 }
 
@@ -1337,7 +1331,7 @@ fn project_top_where_clause() -> String {
         r#"                WHERE p."deletedAt" IS NULL
                 AND {}
 "#,
-        access_semi_join("p.id", "project")
+        access_semi_join("p.id", "project", SOURCE_IDS_SQL)
     )
 }
 
@@ -1895,6 +1889,7 @@ async fn expanded_dynamic_cursor_soup_hydrated(
     let status_property_id = SystemPropertyKey::STATUS_UUID;
     let assignees_property_id = SystemPropertyKey::ASSIGNEES_UUID;
     let completed_option_id = StatusOption::COMPLETED_UUID.to_string();
+    let source_ids = user_source_ids(db, user_id.as_ref()).await?;
 
     let items = build_query(cursor.filter(), exclude_frecency, *cursor.sort_method())
         .build()
@@ -1906,6 +1901,7 @@ async fn expanded_dynamic_cursor_soup_hydrated(
         .bind(completed_option_id)
         .bind(status_property_id)
         .bind(assignees_property_id)
+        .bind(source_ids)
         // Unnamed statement: the SQL text varies per filter shape and per
         // interpolated literal (dates change daily), so a cached prepared
         // statement is rarely reused but flips to a generic plan after five
@@ -1984,7 +1980,7 @@ struct GroupedSoupRow {
 const PER_GROUP_LIMIT: i32 = 10;
 
 /// Build the GroupedItems CTE based on the grouping configuration.
-/// Returns the entity_type value to bind at $10, if property grouping with entity_type filter.
+/// Returns the entity_type value to bind at $11, if property grouping with entity_type filter.
 fn build_grouped_items_cte(
     builder: &mut QueryBuilder<'_, Postgres>,
     grouping: &GroupingConfig,
@@ -2013,10 +2009,9 @@ fn build_grouped_items_cte(
 
     if grouping.group_key.is_some() {
         // Single group mode: fetch items for a specific group (for "load more")
-        // Uses $9 parameter for group_key to prevent SQL injection
         builder.push("WHERE (");
         builder.push(&select_expr);
-        builder.push(") = $9 ");
+        builder.push(") = $10 ");
     }
 
     builder.push("), ");
@@ -2033,7 +2028,7 @@ fn build_grouped_items_cte(
 
 /// Build the grouped query with grouping CTE.
 /// Returns (QueryBuilder, entity_type_bind) where entity_type_bind is Some when
-/// property grouping with entity_type filter is used (bind at $10).
+/// property grouping with entity_type filter is used (bind at $11).
 fn build_grouped_query<'a>(
     filter_ast: &'a EntityFilterAst,
     exclude_frecency: bool,
@@ -2275,6 +2270,7 @@ pub async fn expanded_dynamic_cursor_soup_grouped(
     let status_property_id = SystemPropertyKey::STATUS_UUID;
     let assignees_property_id = SystemPropertyKey::ASSIGNEES_UUID;
     let completed_option_id = StatusOption::COMPLETED_UUID.to_string();
+    let source_ids = user_source_ids(db, user_id.as_ref()).await?;
 
     let (mut query_builder, entity_type_bind) = build_grouped_query(
         cursor.filter(),
@@ -2284,7 +2280,7 @@ pub async fn expanded_dynamic_cursor_soup_grouped(
     );
 
     // Keep the reserved $2 sort slot even though candidates now specialize it away.
-    // $9 is bound unconditionally (NULL when not in single-group mode) so $10 stays aligned.
+    // $10 is bound unconditionally (NULL when not in single-group mode) so $11 stays aligned.
     let mut query = query_builder
         .build_query_as::<'_, GroupedSoupRow>()
         .bind(user_id.as_ref())
@@ -2295,9 +2291,9 @@ pub async fn expanded_dynamic_cursor_soup_grouped(
         .bind(completed_option_id)
         .bind(status_property_id)
         .bind(assignees_property_id)
+        .bind(source_ids)
         .bind(grouping.group_key.clone());
 
-    // Bind entity_type as $10 when property grouping with entity_type filter
     if let Some(ref et) = entity_type_bind {
         query = query.bind(et.clone());
     }

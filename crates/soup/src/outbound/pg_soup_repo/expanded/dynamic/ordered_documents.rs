@@ -1,6 +1,8 @@
 use item_filters::ast::EntityFilterAst;
 use models_pagination::SimpleSortMethod;
 
+use super::SOURCE_IDS_SQL;
+
 pub(super) struct OrderedDocuments {
     pub ctes: String,
     pub arm: String,
@@ -9,12 +11,13 @@ pub(super) struct OrderedDocuments {
 pub(super) const PROBE_ALL_FALLBACK: &str =
     "                AND NOT (SELECT ok FROM doc_ordered_ok)\n";
 
-const STRATEGY: &str = r#"doc_strategy AS MATERIALIZED (
+fn strategy() -> String {
+    format!(
+        r#"doc_strategy AS MATERIALIZED (
     SELECT walk_budget, (
         SELECT count(*) >= walk_budget FROM (
             SELECT 1 FROM entity_access ea
-            JOIN user_source_ids us ON us.source_id = ea.source_id
-            WHERE ea.entity_type = 'document'
+            WHERE ea.source_id = ANY({SOURCE_IDS_SQL}) AND ea.entity_type = 'document'
             LIMIT walk_budget
         ) s
     ) AS dense
@@ -23,7 +26,9 @@ const STRATEGY: &str = r#"doc_strategy AS MATERIALIZED (
         FROM pg_class c WHERE c.oid = '"Document"'::regclass
     ) k
 ),
-"#;
+"#
+    )
+}
 
 const DENSE: &str = "(SELECT dense FROM doc_strategy)";
 
@@ -106,7 +111,7 @@ pub(super) fn ordered_document_strategy(
     };
     let viewed = viewed_gate.map(viewed_cte).unwrap_or_default();
     let ctes = [
-        STRATEGY,
+        strategy().as_str(),
         viewed.as_str(),
         walk.cte().as_str(),
         ordered_ok(&page_complete).as_str(),
@@ -165,8 +170,8 @@ fn access_probe(id_sql: &str) -> String {
     format!(
         r#"CROSS JOIN LATERAL (
         SELECT 1 FROM entity_access ea
-        JOIN user_source_ids us ON us.source_id = ea.source_id
-        WHERE ea.entity_type = 'document' AND ea.entity_id::text = {id_sql}
+        WHERE ea.source_id = ANY({SOURCE_IDS_SQL}) AND ea.entity_type = 'document'
+        AND ea.entity_id::text = {id_sql}
         LIMIT 1
     ) granted"#
     )
