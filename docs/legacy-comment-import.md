@@ -39,8 +39,7 @@ removes them.
 
 1. Deploy the contract release that freezes legacy writes (#6732). Keep the
    PDF attachment prerequisite (#7358) out of this initial deployment. From
-   then on the legacy tables are frozen by
-   construction; the new document discussion UI is the only writer and it
+   then on the legacy tables are frozen by construction; the new document discussion UI is the only writer and it
    writes the message store.
 2. Run the importer. Repeat until a run prints `Nothing to import`; the second
    consecutive run must do so.
@@ -51,10 +50,11 @@ removes them.
 5. Ship the schema-drop migration only after the prerequisite is deployed to
    every production consumer, a snapshot is verified, and external SQL readers
    have been checked. The mapping tables
-   (`migrated_comment_id`, `migrated_comment_thread_id`) stay for auditing.
+   (`migrated_comment_id`, `migrated_comment_thread_id`) stay for old-link resolution.
 
-An edit made through the new API is never reverted by a stale legacy row
-(newer `updated_at` wins), so running the importer after the deploy is safe.
+Message text imports respect newer `updated_at` values, but highlight root
+projection does not use that guard. Importer reruns are safe only before the
+PDF attachment prerequisite is deployed.
 
 ## Running it
 
