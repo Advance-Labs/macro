@@ -3,12 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 use async_graphql::dataloader::{DataLoader, Loader};
 use entity_access::domain::models::{EntityAccessReceipt, EntityPermission, ViewAccessLevel};
 use entity_access::domain::ports::EntityAccessService;
+use futures::{StreamExt, stream};
 use macro_user_id::user_id::MacroUserIdStr;
 use models_properties::service::entity_property_with_definition::EntityPropertyWithDefinition;
 use models_properties::service::{
     property_definition::PropertyDefinition, property_option::PropertyOption,
 };
 use rootcause::markers::{Cloneable, Dynamic};
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::definitions::GraphqlPropertyDefinitionScope;
@@ -186,6 +188,7 @@ where
             .map_err(|err| rootcause::report!(err))?)
     }
 
+    #[tracing::instrument(skip_all, fields(entity_count = keys.len()), err)]
     async fn get_properties(
         &self,
         user_id: &MacroUserIdStr<'static>,
@@ -202,32 +205,20 @@ where
 
         // Mint a view receipt per entity; entities the caller cannot view are
         // skipped and keep their empty property list.
-        let mut receipts = Vec::with_capacity(keys.len());
-        for key in keys {
-            if !is_property_target(key.entity_type) {
-                continue;
-            }
-            let access_receipt = self
-                .entity_access_service
+        let receipts = load_view_receipts(keys, |key| {
+            self.entity_access_service
                 .generate_entity_access_receipt::<ViewAccessLevel>(
                     user_id,
                     None,
                     &key.entity_id,
                     key.entity_type,
                 )
-                .await;
-            match access_receipt {
-                Ok(receipt) => receipts.push(receipt),
-                Err(err) => {
-                    tracing::debug!(
-                        entity_id = %key.entity_id,
-                        entity_type = %key.entity_type,
-                        error = ?err,
-                        "user lacks view permission, skipping property edge"
-                    );
-                }
-            }
-        }
+        })
+        .instrument(tracing::info_span!(
+            "graphql_properties.authorize",
+            entity_count = keys.len()
+        ))
+        .await;
 
         if receipts.is_empty() {
             return Ok(result);
@@ -236,6 +227,10 @@ where
         let properties_by_entity = self
             .properties_service
             .get_bulk_entity_properties(&receipts, Vec::new())
+            .instrument(tracing::info_span!(
+                "graphql_properties.hydrate",
+                entity_count = receipts.len()
+            ))
             .await
             .map_err(|err| rootcause::report!(err))?;
 
@@ -339,3 +334,50 @@ where
 {
     DataLoader::new(EntityPropertiesLoader::new(user_id, reader), tokio::spawn)
 }
+
+/// Bound database pressure while independent property targets are authorized.
+const PROPERTY_ACCESS_CONCURRENCY: usize = 16;
+
+/// Mint a receipt for each supported target, retaining only authorized entities.
+async fn load_view_receipts<'a, F>(
+    keys: &'a [model_entity::Entity<'static>],
+    authorize: impl Fn(&'a model_entity::Entity<'static>) -> F,
+) -> Vec<EntityAccessReceipt<ViewAccessLevel>>
+where
+    F: Future<
+        Output = Result<
+            EntityAccessReceipt<ViewAccessLevel>,
+            entity_access::domain::models::AccessError,
+        >,
+    >,
+{
+    let checks = keys
+        .iter()
+        .filter(|key| is_property_target(key.entity_type))
+        .map(|key| {
+            let receipt = authorize(key);
+            async move {
+                match receipt.await {
+                    Ok(receipt) => Some(receipt),
+                    Err(error) => {
+                        tracing::debug!(
+                            entity_id = %key.entity_id,
+                            entity_type = %key.entity_type,
+                            error = ?error,
+                            "user lacks view permission, skipping property edge"
+                        );
+                        None
+                    }
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+    stream::iter(checks)
+        .buffer_unordered(PROPERTY_ACCESS_CONCURRENCY)
+        .filter_map(std::future::ready)
+        .collect()
+        .await
+}
+
+#[cfg(test)]
+mod test;
