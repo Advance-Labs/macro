@@ -158,12 +158,16 @@ previous status catalog remain visible until an editor changes them.
 Submit with
 `Create Project` or Cmd/Ctrl+Enter. `Continue editing in split` preserves the
 name, properties, and sharing choice; `Clear Draft` resets an uncreated draft.
-Leaving a property unset keeps its normal server default. If creation succeeds
-but a property write fails, `Retry saving properties` finishes the existing
-project, including after continuing in a split, without creating a duplicate.
-Closing the popover keeps the underlying view open. Creating from the popover
-opens the project in another split; creating from a full composer replaces that
-composer with the project.
+Leaving a property unset keeps its normal server default.
+Submitting closes the composer at once; a full composer returns its split to
+Projects, and Back skips the submitted composer. One request creates the project
+together with its selected properties: a value the server rejects fails the whole
+create, so no half-configured project is left behind. When the server answers, a
+`Project created` toast offers `Open` and `Open (New Split)` (on touch devices
+both open in place); nothing navigates on its own. The Projects list then
+refreshes in the background to include the new row. If creation fails, the
+composer reopens as a popover with the draft and the error.
+Closing the popover without submitting keeps the underlying view open.
 
 Opening a project keeps the Tasks workspace and its navigation. The top bar
 shows the Projects return breadcrumb and the project name, with the same Share
@@ -188,6 +192,19 @@ attachments list it in their Projects section.
 Assigning a person to a project also adds them as a collaborator with edit access.
 Clearing the assignee leaves that access in place; the owner can remove it through
 Manage collaborators in Share. Removing a collaborator does not clear assignees.
+
+Project Assignees also offers the same agents as task Assignees. Choose an agent
+in the project composer, Overview property pills, project list, or Properties
+side panel; dismiss the picker to save. The picker explains that assigned agents
+automatically take on tasks created in or moved into the project. People and
+agents can remain assigned together. Existing agent permissions still apply:
+private agents run for their owner, and shared team agents run for team members.
+Assigning an agent to the project does not start work on tasks already in it.
+Removing the project agent stops assignment to future tasks; it does not cancel
+sessions already started for its tasks.
+For verification, create a task from the project's Tasks tab, then move another
+task into the project through `Set project…`; both should start the assigned
+agent's normal task session and show its message in the task's Discussion.
 
 Overview's Description uses the shared collaborative Markdown editor and saves
 automatically to the existing backing document. Edit/owner access allows typing;

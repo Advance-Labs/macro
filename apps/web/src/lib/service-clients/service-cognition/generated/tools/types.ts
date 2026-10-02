@@ -1174,7 +1174,8 @@ export type ToolEntityType =
   | 'channel'
   | 'call'
   | 'user'
-  | 'company';
+  | 'company'
+  | 'contact';
 /**
  * Where future mail from this sender lands: `signal`, `noise`, or `block`.
  */
@@ -3665,7 +3666,7 @@ export interface EditTagResponse {
   summary: string;
 }
 /**
- * Generate or edit an image with Google's Nano Banana image model and save the result as a new image document in Macro. Use for pictures, illustrations, diagram concepts, logo ideas, mockups, or edits based on reference photos. When the user supplies photos or asks to modify an existing image, pass them in referenceImages; describing a photo in the prompt alone does not send it to the image model. Describe the subject, style, composition, lighting, and any text to render; only the prompt is required. Refer to reference images by their order (image 1, image 2, image 3) when explaining how to use them. Returns the new document ID to cite inline. Generation takes several seconds.
+ * Generate or edit an image with Google's Nano Banana image model and save the result in static file service. Use for pictures, illustrations, diagram concepts, logo ideas, mockups, or edits based on reference photos. When the user supplies photos or asks to modify an existing image, pass them in referenceImages; describing a photo in the prompt alone does not send it to the image model. Describe the subject, style, composition, lighting, and any text to render; only the prompt is required. Refer to reference images by their order (image 1, image 2, image 3) when explaining how to use them. Returns the static file ID and image URL. The tool displays the image inline in chat. In channel messages without tool cards, embed the returned URL as a Markdown image. Do not cite it as a document. Generation takes several seconds.
  */
 export interface GenerateImage {
   /**
@@ -3673,19 +3674,11 @@ export interface GenerateImage {
    */
   prompt: string;
   /**
-   * Optional short descriptive name for the saved image, for example `sunset-lighthouse`. The file extension is added from the generated format. No directory path. Omit to name the image after the prompt.
-   */
-  fileName?: string | null;
-  /**
    * Shape of the image. Omit for the model default (square). `widescreen` (16:9) suits banners and slides, `tall` (9:16) suits phone screens and stories.
    */
   aspectRatio?: AspectRatio | null;
   /**
-   * Optional destination project (folder) ID. Requires edit access. Omit to save to the user's top-level files.
-   */
-  projectId?: string | null;
-  /**
-   * Up to three reference photos, in the order used by the prompt. Use type document with a Macro image document ID, or type staticFile with the UUID from /file/<id> in an uploaded attachment's source URL. Use the actual IDs supplied in the conversation or by tools; do not invent IDs. Omit for text-only generation.
+   * Up to three reference photos, in the order used by the prompt. Use type document with a Macro image document ID, or type staticFile with the UUID from /file/<id> in an uploaded attachment's source URL or the staticFileId of a previous generation. Use the actual IDs supplied in the conversation or by tools; do not invent IDs. Omit for text-only generation.
    *
    * @maxItems 3
    */
@@ -3701,13 +3694,13 @@ export interface GenerateImage {
  */
 export interface GenerateImageResponse {
   /**
-   * ID of the new image document.
+   * ID of the static file, reusable in referenceImages.
    */
-  documentId: string;
+  staticFileId: string;
   /**
-   * Saved filename, including its extension.
+   * Permanent URL of the generated image.
    */
-  fileName: string;
+  url: string;
   /**
    * IANA media type of the image, e.g. `image/png`.
    */
@@ -6580,6 +6573,10 @@ export interface SendEmail {
  * - Owner (00000001-0000-0000-0000-000000000011): entity, single. Use entity_ref with entity_type='user' and entity_id='macro|email@domain.com'.
  * - Revenue (00000001-0000-0000-0000-000000000012): number, single. Use number_value (dollars).
  * Any member of the owning team can edit visible company properties; hidden records remain admin/owner-only.
+ *
+ * Any entity (task, document, call, ...) can be associated with CRM records through these system properties:
+ * - Companies (00000001-0000-0000-0000-00000000000c): entity, multi. Use entity_refs with entity_type='company' and the company UUID.
+ * - Contacts (00000001-0000-0000-0000-000000000013): entity, multi. Use entity_refs with entity_type='contact' and the contact UUID.
  *
  * For non-system or custom properties, call GetEntityProperties first to discover property_definition_id values and options.
  */

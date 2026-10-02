@@ -60,7 +60,6 @@ import type { CreateChannelRequest } from './generated/schemas/createChannelRequ
 import type { CreateChannelResponse } from './generated/schemas/createChannelResponse';
 import type { CreateChannelScopedBotRequest } from './generated/schemas/createChannelScopedBotRequest';
 import type { CreateChannelScopedBotResponse } from './generated/schemas/createChannelScopedBotResponse';
-import type { CreateCommentResponse } from './generated/schemas/createCommentResponse';
 import type { CreateCrmCompanyRequest } from './generated/schemas/createCrmCompanyRequest';
 import type { CreateCrmContactRequest } from './generated/schemas/createCrmContactRequest';
 import type { CreateDocument200 as CreateDocumentResponse } from './generated/schemas/createDocument200';
@@ -84,7 +83,6 @@ import type { CrmCompanyResponse } from './generated/schemas/crmCompanyResponse'
 import type { CrmContactResponse } from './generated/schemas/crmContactResponse';
 import type { CrmStagesResponse } from './generated/schemas/crmStagesResponse';
 import type { CrmTeamSettingsResponse } from './generated/schemas/crmTeamSettingsResponse';
-import type { DeleteCommentResponse } from './generated/schemas/deleteCommentResponse';
 import type { DeleteEntityMentionResponse } from './generated/schemas/deleteEntityMentionResponse';
 import type { DeleteUnthreadedAnchorResponse } from './generated/schemas/deleteUnthreadedAnchorResponse';
 import type { DocumentMetadata } from './generated/schemas/documentMetadata';
@@ -92,7 +90,6 @@ import type { DocumentPreview } from './generated/schemas/documentPreview';
 import type { DocumentResponseMetadataWithContent } from './generated/schemas/documentResponseMetadataWithContent';
 import type { DocumentTeamShareResponse } from './generated/schemas/documentTeamShareResponse';
 import type { EditAnchorResponse } from './generated/schemas/editAnchorResponse';
-import type { EditCommentResponse } from './generated/schemas/editCommentResponse';
 import type { EmailFollowup } from './generated/schemas/emailFollowup';
 import type { EmailFollowupCommand } from './generated/schemas/emailFollowupCommand';
 import type { ExportDocumentResponse } from './generated/schemas/exportDocumentResponse';
@@ -145,6 +142,8 @@ import type { ReorderFavoritesRequest } from './generated/schemas/reorderFavorit
 import type { ReorderPinRequest } from './generated/schemas/reorderPinRequest';
 import type { ReplaceCrmStagesRequest } from './generated/schemas/replaceCrmStagesRequest';
 import type { SaveDocumentResponseData } from './generated/schemas/saveDocumentResponseData';
+import type { SearchContactsParams } from './generated/schemas/searchContactsParams';
+import type { SearchContactsResponse } from './generated/schemas/searchContactsResponse';
 import type { SetChannelLabelRequest } from './generated/schemas/setChannelLabelRequest';
 import type { SetChannelPictureRequest } from './generated/schemas/setChannelPictureRequest';
 import type { SetCompanyNameRequest } from './generated/schemas/setCompanyNameRequest';
@@ -154,7 +153,6 @@ import type { SmartTagPreview } from './generated/schemas/smartTagPreview';
 import type { SoupPage } from './generated/schemas/soupPage';
 import type { SyncServiceVersionID } from './generated/schemas/syncServiceVersionID';
 import type { TeamOutOfOfficeResponse } from './generated/schemas/teamOutOfOfficeResponse';
-import type { ThreadResponse } from './generated/schemas/threadResponse';
 import type { TypedSuccessResponse } from './generated/schemas/typedSuccessResponse';
 import type { UpdateAgentRequest } from './generated/schemas/updateAgentRequest';
 import type { UpdateCrmTeamSettingsRequest } from './generated/schemas/updateCrmTeamSettingsRequest';
@@ -168,7 +166,7 @@ import type { ViewsResponse } from './generated/schemas/viewsResponse';
 import { saveDocumentHandlerResponse } from './generated/zod';
 import type { ItemType } from './itemType';
 
-export type { ItemType } from './itemType';
+export type { HistoryItemType, ItemType } from './itemType';
 export {
   blockNameToItemType,
   DEFAULT_ITEM_TYPE,
@@ -1860,16 +1858,6 @@ export const storageServiceClient = {
   },
 
   annotations: {
-    async getComments({ documentId }) {
-      return (
-        await dssFetch<ThreadResponse>(
-          `/annotations/comments/document/${documentId}`,
-          {
-            method: 'GET',
-          }
-        )
-      ).map((result) => ({ data: result.data }));
-    },
     async getAnchors({ documentId }) {
       return (
         await dssFetch<AnchorResponse>(
@@ -1879,17 +1867,6 @@ export const storageServiceClient = {
           }
         )
       ).map((result) => ({ data: result.data }));
-    },
-    async createComment({ documentId, body }) {
-      return (
-        await dssFetch<CreateCommentResponse>(
-          `/annotations/comments/document/${documentId}`,
-          {
-            method: 'POST',
-            body: JSON.stringify(body),
-          }
-        )
-      ).map((result) => result);
     },
     async createAnchor({ documentId, body }) {
       return (
@@ -1902,17 +1879,6 @@ export const storageServiceClient = {
         )
       ).map((result) => result);
     },
-    async deleteComment({ commentId, body }) {
-      return (
-        await dssFetch<DeleteCommentResponse>(
-          `/annotations/comments/comment/${commentId}`,
-          {
-            method: 'DELETE',
-            body: JSON.stringify(body),
-          }
-        )
-      ).map((result) => result);
-    },
     async deleteAnchor({ body }) {
       return (
         await dssFetch<DeleteUnthreadedAnchorResponse>(`/annotations/anchors`, {
@@ -1920,15 +1886,6 @@ export const storageServiceClient = {
           body: JSON.stringify(body),
         })
       ).map((result) => result);
-    },
-    async editComment({ commentId, body }) {
-      return await dssFetch<EditCommentResponse>(
-        `/annotations/comments/comment/${commentId}`,
-        {
-          method: 'PATCH',
-          body: JSON.stringify(body),
-        }
-      );
     },
     async editAnchor({ body }) {
       return (
@@ -2554,6 +2511,18 @@ export const storageServiceClient = {
     const query = new URLSearchParams({ email });
     return await dssFetch<GetContactByEmailResponse>(
       `/crm/contacts/by-email?${query.toString()}`,
+      { method: 'GET', signal }
+    );
+  },
+  async searchContacts({
+    query,
+    limit,
+    signal,
+  }: SearchContactsParams & { signal?: AbortSignal }) {
+    const params = new URLSearchParams({ query: query ?? '' });
+    if (limit) params.set('limit', String(limit));
+    return await dssFetch<SearchContactsResponse>(
+      `/crm/contacts?${params.toString()}`,
       { method: 'GET', signal }
     );
   },
