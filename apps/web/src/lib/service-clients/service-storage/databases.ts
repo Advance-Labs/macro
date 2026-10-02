@@ -31,6 +31,7 @@ import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { StarterDatabase } from './generated/schemas/starterDatabase';
 import type { Table } from './generated/schemas/table';
 import type { TakenId } from './generated/schemas/takenId';
+import type { UndoChangeResponse } from './generated/schemas/undoChangeResponse';
 import type { UpdateSharePermissionRequestV2 } from './generated/schemas/updateSharePermissionRequestV2';
 import type { ViewPositionsResponse } from './generated/schemas/viewPositionsResponse';
 
@@ -279,6 +280,18 @@ export const databasesClient = {
         }
       )
     ).mapErr((errors) => errors.map(withRefusal));
+  },
+
+  /**
+   * Undo one of the caller's own committed changes, by its journal id from an
+   * `/ops` response. Guarded against later edits: the outcome says whether it
+   * reverted, partly reverted, or was refused. Undoing the undo's change redoes.
+   */
+  undoChange({ id, change }: { id: string; change: number }) {
+    return databasesFetch<UndoChangeResponse>(
+      `/databases/${id}/changes/${change}/undo`,
+      { method: 'POST' }
+    );
   },
 
   /** Where a board's cards sit: each placed card's lane and key there. */

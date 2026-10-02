@@ -238,6 +238,8 @@ export const TOKENS = {
 
   database: {
     search: 'database.search',
+    undo: 'database.undo',
+    redo: 'database.redo',
   },
 
   // markdown editor

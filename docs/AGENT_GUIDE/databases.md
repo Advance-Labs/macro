@@ -270,6 +270,24 @@ through `POST /databases/{id}/ops` (`create_view`, `update_view`, `delete_view`,
 `reorder_views`, `move_card`); rows load by running the view in the browser's
 engine, never SQL text.
 
+## Undo and history
+
+**Cmd/Ctrl+Z** undoes your own last edit to the database you are in, and
+**Cmd/Ctrl+Shift+Z** redoes it: cell edits, added and deleted records, column,
+option and view changes, and card moves, newest first, for this session. While a
+cell editor or another text input has focus, the shortcut stays with its text.
+Undo only reverts your change: an edit someone else made later is kept. A toast
+says what happened, for example "Undid your edit. Julia’s later change to RSVP
+was kept." or "Can’t undo: Julia edited this row after you added it."; a refused
+undo drops off the stack. Deleting records, a column or an option shows a toast
+with an **Undo** action. Deleting a table cannot be undone.
+
+Every committed batch is journaled with its inverse. `POST /databases/{id}/ops`
+answers `changes` (one journal id per table version), `POST
+/databases/{id}/changes/{change}/undo` undoes one of your own (undoing the undo
+redoes), and `GET /databases/{id}/tables/{table}/rows/{row}/history` lists a
+record's changes, newest first, also after it was deleted.
+
 ## First database
 
 When Databases is enabled and an authenticated user has no accessible databases,
