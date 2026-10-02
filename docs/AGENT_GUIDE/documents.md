@@ -387,6 +387,31 @@ check that the inserted company mention points to the correct company. Also chec
 searching by domain and that an open picker updates when companies finish hydrating.
 Discard unsent test drafts rather than sending them.
 
+## Project mentions
+
+With Projects enabled, type `@` followed by a project name in an editor,
+composer or spreadsheet cell. Projects (not folders) come from Quick Access, so
+they appear alongside documents and tasks in the **Documents, Agents, & Tasks**
+section and in entity property pickers that accept projects. The command menu
+keeps its own project search. Selecting one inserts a document mention with the
+project's icon and current name, like a channel mention. Clicking it or
+pressing Enter on it opens the project the way a task mention opens a task:
+in Tasks, under **Projects** › the project (on touch devices, as the project
+view on its own). A project you cannot read shows **No Access**. Pasting
+`/app/initiative/<id>` or a Tasks project link inserts the same mention.
+
+The mention is stored as
+`<m-document-mention>{"documentId":"<initiative id>","blockName":"initiative",…}</m-document-mention>`
+(`project` is a folder). In a document it is tracked as a reference like other
+entity mentions. It is deliberately not a channel-message reference, so
+mentioning a project in a channel never shares the project with the channel's
+members.
+
+To verify, mention a project in a document and in a channel draft, check the
+mention opens the right project, rename the project and reload to see the name
+update, and delete the mention. Discard unsent test drafts rather than sending
+them.
+
 ## CRM associations
 
 With CRM enabled, any task, document or call can point at CRM records through the
