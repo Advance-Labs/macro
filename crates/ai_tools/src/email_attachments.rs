@@ -105,7 +105,11 @@ impl<D: DocumentService> DraftAttachmentSource for DocumentAttachmentSource<D> {
             .map_err(|e| unavailable(&name, format!("its file could not be located ({e})")))?;
 
         let presigned_url = match location {
-            LocationResponseV3::PresignedUrl { presigned_url, .. } => presigned_url,
+            // The location is browser-facing; a server-side fetch on the
+            // local stack must reach LocalStack directly (a no-op elsewhere).
+            LocationResponseV3::PresignedUrl { presigned_url, .. } => {
+                macro_aws_config::transform_aws_url_for_internal_fetch(&presigned_url)
+            }
             LocationResponseV3::PresignedUrls { .. }
             | LocationResponseV3::SyncServiceContent { .. } => {
                 return Err(unavailable(
