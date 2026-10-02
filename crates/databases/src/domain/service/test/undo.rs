@@ -1,11 +1,11 @@
 //! Undoing one's own change over the fakes: guarded against later edits by
 //! others, and redone by undoing the undo.
 
-use models_databases::RowChange;
 use models_databases::views::{
-    Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, NewView, NumberOperator,
-    RequestedLayout, ViewId, ViewQuery,
+    Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, Lane, LaneKey, NewView,
+    NumberOperator, RequestedLayout, ViewId, ViewLayout, ViewQuery,
 };
+use models_databases::{EntityKind, EntityRef, RowChange};
 
 use super::*;
 use crate::domain::journal::{SkippedCell, UndoOutcome, UndoRefusal};
@@ -403,5 +403,275 @@ async fn nobody_undoes_someone_elses_change() {
             seeded.name_column.property_definition_id
         ),
         Some(PropertyValue::Str("Sammy".into()))
+    );
+}
+
+/// A person reference to `user`, as a Host cell holds it.
+fn host(user: &str) -> CellValue {
+    CellValue::Entities(vec![EntityRef {
+        entity_type: EntityKind::User,
+        entity_id: user.into(),
+    }])
+}
+
+/// The ops that give the guest list a Host column, Sam hosted by Sam and a
+/// new guest Alex by Ana, and a board of them by host whose lanes are
+/// `lanes`.
+fn hosted_board(
+    seeded: &Seeded,
+    column: ColumnId,
+    board: ViewId,
+    lanes: Vec<Lane>,
+) -> Vec<DatabaseOp> {
+    vec![
+        DatabaseOp::Column {
+            table: seeded.table_id,
+            column,
+            change: ColumnChange::Create {
+                definition: NewColumn::New {
+                    name: "Host".into(),
+                    kind: ColumnKind::Entity {
+                        target: EntityKind::User,
+                        multi: false,
+                    },
+                    options: vec![],
+                    infer_type: false,
+                },
+                after: None,
+            },
+        },
+        DatabaseOp::Rows {
+            table: seeded.table_id,
+            change: RowsChange::Update {
+                changes: RowChanges::Uniform {
+                    rows: vec![seeded.row_id],
+                    cells: vec![CellWrite {
+                        column,
+                        value: host("macro|sam@macro.com"),
+                    }],
+                },
+            },
+        },
+        DatabaseOp::Rows {
+            table: seeded.table_id,
+            change: RowsChange::Insert {
+                rows: vec![vec![
+                    CellWrite {
+                        column: seeded.name_column.id,
+                        value: CellValue::Text("Alex".into()),
+                    },
+                    CellWrite {
+                        column,
+                        value: host("macro|ana@macro.com"),
+                    },
+                ]],
+            },
+        },
+        DatabaseOp::View {
+            table: seeded.table_id,
+            view: board,
+            change: ViewChange::Create {
+                view: NewView {
+                    name: "By host".into(),
+                    query: ViewQuery::default(),
+                    layout: RequestedLayout::Board {
+                        group_by: column,
+                        title: Some(seeded.name_column.id),
+                        lanes,
+                        card_fields: vec![],
+                        hide_empty_lanes: false,
+                    },
+                },
+            },
+        },
+    ]
+}
+
+fn host_definition(seeded: &Seeded, column: ColumnId) -> PropertyDefinitionId {
+    seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|placed| placed.id == column)
+        .unwrap()
+        .property_definition_id
+}
+
+#[tokio::test]
+async fn undoing_a_move_into_a_persons_lane_hands_the_card_back_to_its_person() {
+    let seeded = seeded().await;
+    let column = ColumnId::new();
+    let board = ViewId::new();
+    change_as(&seeded, OWNER, hosted_board(&seeded, column, board, vec![])).await;
+    let alex = *row_ids(&seeded.world, seeded.table_id).last().unwrap();
+    let definition = host_definition(&seeded, column);
+    let moved = change_as(
+        &seeded,
+        OWNER,
+        vec![DatabaseOp::View {
+            table: seeded.table_id,
+            view: board,
+            change: ViewChange::MoveCard {
+                row: alex,
+                lane: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                before: Some(seeded.row_id),
+                after: None,
+            },
+        }],
+    )
+    .await;
+    let journaled = seeded.world.lock().unwrap().journal.last().unwrap().clone();
+
+    let outcome = undo_as(&seeded, OWNER, moved).await;
+
+    assert_eq!(
+        journaled.entry.inverse.ops,
+        vec![DatabaseOp::View {
+            table: seeded.table_id,
+            view: board,
+            change: ViewChange::MoveCard {
+                row: alex,
+                lane: LaneKey::User("macro|ana@macro.com".try_into().unwrap()),
+                before: None,
+                after: None,
+            },
+        }]
+    );
+    assert_eq!(
+        outcome,
+        UndoOutcome::Reverted {
+            changes: vec![latest_change(&seeded)],
+        }
+    );
+    assert_eq!(
+        cell(&seeded.world, alex, definition),
+        Some(PropertyValue::EntityRef(vec![
+            models_properties::shared::EntityReference {
+                entity_id: "macro|ana@macro.com".into(),
+                entity_type: PropertyEntityType::User,
+                specific_message_id: None,
+            }
+        ]))
+    );
+}
+
+#[tokio::test]
+async fn undoing_a_move_into_a_persons_lane_is_refused_once_julia_reassigned_the_card() {
+    let seeded = seeded().await;
+    let column = ColumnId::new();
+    let board = ViewId::new();
+    change_as(&seeded, OWNER, hosted_board(&seeded, column, board, vec![])).await;
+    let alex = *row_ids(&seeded.world, seeded.table_id).last().unwrap();
+    let moved = change_as(
+        &seeded,
+        OWNER,
+        vec![DatabaseOp::View {
+            table: seeded.table_id,
+            view: board,
+            change: ViewChange::MoveCard {
+                row: alex,
+                lane: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                before: None,
+                after: None,
+            },
+        }],
+    )
+    .await;
+    change_as(
+        &seeded,
+        JULIA,
+        set_cells(
+            &seeded,
+            alex,
+            vec![CellWrite {
+                column,
+                value: host(JULIA),
+            }],
+        ),
+    )
+    .await;
+
+    let outcome = undo_as(&seeded, OWNER, moved).await;
+
+    assert_eq!(
+        outcome,
+        UndoOutcome::Refused {
+            reason: UndoRefusal::ChangedSince,
+            by: Some(JULIA.into()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn undoing_a_board_change_brings_back_its_person_lanes() {
+    let seeded = seeded().await;
+    let column = ColumnId::new();
+    let board = ViewId::new();
+    let lanes = vec![
+        Lane {
+            key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+            hidden: true,
+        },
+        Lane {
+            key: LaneKey::None,
+            hidden: false,
+        },
+    ];
+    change_as(
+        &seeded,
+        OWNER,
+        hosted_board(&seeded, column, board, lanes.clone()),
+    )
+    .await;
+    let shown = change_as(
+        &seeded,
+        OWNER,
+        vec![DatabaseOp::View {
+            table: seeded.table_id,
+            view: board,
+            change: ViewChange::Update {
+                name: None,
+                query: None,
+                layout: Some(RequestedLayout::Board {
+                    group_by: column,
+                    title: None,
+                    lanes: vec![],
+                    card_fields: vec![],
+                    hide_empty_lanes: false,
+                }),
+            },
+        }],
+    )
+    .await;
+
+    let outcome = undo_as(&seeded, OWNER, shown).await;
+
+    assert_eq!(
+        outcome,
+        UndoOutcome::Reverted {
+            changes: vec![latest_change(&seeded)],
+        }
+    );
+    let stored = seeded
+        .world
+        .lock()
+        .unwrap()
+        .views
+        .iter()
+        .find(|view| view.id == board)
+        .unwrap()
+        .layout
+        .clone();
+    assert_eq!(
+        stored,
+        ViewLayout::Board {
+            group_by: column,
+            title: seeded.name_column.id,
+            lanes,
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        }
     );
 }

@@ -2,23 +2,28 @@ use chrono::TimeZone;
 use serde_json::json;
 
 use super::*;
+use crate::cast::CastKind;
+use crate::ops::{CellValue, EntityKind, EntityRef, OptionRef};
 use uuid::Uuid;
 
 const NAME: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01a));
 const STATUS: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01b));
 const DIET: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01c));
 const PLUS_ONES: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01d));
+const HOST: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01e));
+const HELPERS: ColumnId = ColumnId::from_uuid(Uuid::from_u128(0xc01f));
 const GOING: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b1));
 const DECLINED: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b2));
 const VEGAN: OptionId = OptionId::from_uuid(Uuid::from_u128(0x0b3));
 
 /// `Guests(Name TEXT, Status SELECT[Going|Declined], Diet MULTI SELECT[Vegan],
-/// Plus ones NUMBER)`.
+/// Plus ones NUMBER, Host USER, Helpers MULTI USER)`.
 fn guests() -> Vec<SchemaColumn> {
     vec![
         SchemaColumn {
             id: NAME,
             name: "Name".into(),
+            kind: CastKind::Text,
             values: ValueKind::Text,
             multi: false,
             options: vec![],
@@ -26,6 +31,7 @@ fn guests() -> Vec<SchemaColumn> {
         SchemaColumn {
             id: STATUS,
             name: "Status".into(),
+            kind: CastKind::Select { multi: false },
             values: ValueKind::Options,
             multi: false,
             options: vec![GOING, DECLINED],
@@ -33,6 +39,7 @@ fn guests() -> Vec<SchemaColumn> {
         SchemaColumn {
             id: DIET,
             name: "Diet".into(),
+            kind: CastKind::Select { multi: true },
             values: ValueKind::Options,
             multi: true,
             options: vec![VEGAN],
@@ -40,8 +47,31 @@ fn guests() -> Vec<SchemaColumn> {
         SchemaColumn {
             id: PLUS_ONES,
             name: "Plus ones".into(),
+            kind: CastKind::Number,
             values: ValueKind::Number,
             multi: false,
+            options: vec![],
+        },
+        SchemaColumn {
+            id: HOST,
+            name: "Host".into(),
+            kind: CastKind::Entity {
+                target: EntityKind::User,
+                multi: false,
+            },
+            values: ValueKind::Entities,
+            multi: false,
+            options: vec![],
+        },
+        SchemaColumn {
+            id: HELPERS,
+            name: "Helpers".into(),
+            kind: CastKind::Entity {
+                target: EntityKind::User,
+                multi: true,
+            },
+            values: ValueKind::Entities,
+            multi: true,
             options: vec![],
         },
     ]
@@ -76,7 +106,10 @@ fn a_view_reads_from_json_with_its_filter_tree_and_layout() {
         "layout": {
             "kind": "board",
             "groupBy": STATUS,
-            "lanes": [{"option": DECLINED, "hidden": true}, {"option": null}],
+            "lanes": [
+                {"key": {"kind": "option", "id": DECLINED}, "hidden": true},
+                {"key": {"kind": "none"}},
+            ],
             "cardFields": [NAME],
             "hideEmptyLanes": false,
         },
@@ -120,11 +153,11 @@ fn a_view_reads_from_json_with_its_filter_tree_and_layout() {
                 title: None,
                 lanes: vec![
                     Lane {
-                        option: Some(DECLINED),
+                        key: LaneKey::Option(DECLINED),
                         hidden: true,
                     },
                     Lane {
-                        option: None,
+                        key: LaneKey::None,
                         hidden: false,
                     },
                 ],
@@ -173,11 +206,11 @@ fn a_view_that_fits_its_table_passes() {
         title: NAME,
         lanes: vec![
             Lane {
-                option: Some(GOING),
+                key: LaneKey::Option(GOING),
                 hidden: false,
             },
             Lane {
-                option: None,
+                key: LaneKey::None,
                 hidden: true,
             },
         ],
@@ -186,6 +219,28 @@ fn a_view_that_fits_its_table_passes() {
     };
 
     assert_eq!(check(&query, &board, &guests()), Ok(()));
+}
+
+#[test]
+fn a_board_grouped_by_one_person_has_a_lane_per_person() {
+    let board = ViewLayout::Board {
+        group_by: HOST,
+        title: NAME,
+        lanes: vec![
+            Lane {
+                key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                hidden: true,
+            },
+            Lane {
+                key: LaneKey::None,
+                hidden: false,
+            },
+        ],
+        card_fields: vec![STATUS],
+        hide_empty_lanes: false,
+    };
+
+    assert_eq!(check(&ViewQuery::default(), &board, &guests()), Ok(()));
 }
 
 #[test]
@@ -363,11 +418,98 @@ fn a_view_that_does_not_fit_its_table_says_why() {
                 card_fields: vec![],
                 hide_empty_lanes: false,
             },
-            ViewProblem::BoardNeedsSingleSelect {
+            ViewProblem::BoardCannotGroupBy {
                 column: "Diet".into(),
             },
-            "a board is grouped by a single-select column, so each card has one lane; \"Diet\" \
-             is not one",
+            "a board is grouped by a single-select or single-person column, so each card has one \
+             lane; \"Diet\" is neither",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: HELPERS,
+                title: NAME,
+                lanes: vec![],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::BoardCannotGroupBy {
+                column: "Helpers".into(),
+            },
+            "a board is grouped by a single-select or single-person column, so each card has one \
+             lane; \"Helpers\" is neither",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: PLUS_ONES,
+                title: NAME,
+                lanes: vec![],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::BoardCannotGroupBy {
+                column: "Plus ones".into(),
+            },
+            "a board is grouped by a single-select or single-person column, so each card has one \
+             lane; \"Plus ones\" is neither",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: HOST,
+                title: NAME,
+                lanes: vec![Lane {
+                    key: LaneKey::Option(GOING),
+                    hidden: false,
+                }],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::LaneDoesNotFit {
+                column: "Host".into(),
+                people: true,
+            },
+            "\"Host\" groups the board by person; a lane names a person, or no one",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: STATUS,
+                title: NAME,
+                lanes: vec![Lane {
+                    key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                    hidden: false,
+                }],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::LaneDoesNotFit {
+                column: "Status".into(),
+                people: false,
+            },
+            "\"Status\" groups the board by option; a lane names one of its options, or none",
+        ),
+        (
+            ViewQuery::default(),
+            ViewLayout::Board {
+                group_by: HOST,
+                title: NAME,
+                lanes: vec![
+                    Lane {
+                        key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                        hidden: false,
+                    },
+                    Lane {
+                        key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                        hidden: true,
+                    },
+                ],
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            },
+            ViewProblem::RepeatedLane,
+            "a lane is listed twice",
         ),
         (
             ViewQuery::default(),
@@ -376,11 +518,11 @@ fn a_view_that_does_not_fit_its_table_says_why() {
                 title: NAME,
                 lanes: vec![
                     Lane {
-                        option: None,
+                        key: LaneKey::None,
                         hidden: false,
                     },
                     Lane {
-                        option: None,
+                        key: LaneKey::None,
                         hidden: true,
                     },
                 ],
@@ -408,7 +550,7 @@ fn a_view_that_does_not_fit_its_table_says_why() {
                 group_by: STATUS,
                 title: NAME,
                 lanes: vec![Lane {
-                    option: Some(VEGAN),
+                    key: LaneKey::Option(VEGAN),
                     hidden: false,
                 }],
                 card_fields: vec![],
@@ -687,11 +829,11 @@ fn removing_an_option_drops_it_from_tests_and_lanes() {
         title: NAME,
         lanes: vec![
             Lane {
-                option: Some(GOING),
+                key: LaneKey::Option(GOING),
                 hidden: false,
             },
             Lane {
-                option: Some(DECLINED),
+                key: LaneKey::Option(DECLINED),
                 hidden: true,
             },
         ],
@@ -704,7 +846,7 @@ fn removing_an_option_drops_it_from_tests_and_lanes() {
             group_by: STATUS,
             title: NAME,
             lanes: vec![Lane {
-                option: Some(DECLINED),
+                key: LaneKey::Option(DECLINED),
                 hidden: true,
             }],
             card_fields: vec![],
@@ -853,4 +995,69 @@ fn neighbours_that_are_not_adjacent_are_refused() {
             after: FIRST
         })
     );
+}
+
+#[test]
+fn a_lane_key_crosses_the_wire_tagged_by_kind() {
+    let lanes = vec![
+        Lane {
+            key: LaneKey::Option(GOING),
+            hidden: false,
+        },
+        Lane {
+            key: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+            hidden: true,
+        },
+        Lane {
+            key: LaneKey::None,
+            hidden: false,
+        },
+    ];
+    let written = json!([
+        {"key": {"kind": "option", "id": GOING}, "hidden": false},
+        {"key": {"kind": "user", "id": "macro|sam@macro.com"}, "hidden": true},
+        {"key": {"kind": "none"}, "hidden": false},
+    ]);
+
+    assert_eq!(serde_json::to_value(&lanes).unwrap(), written);
+    assert_eq!(serde_json::from_value::<Vec<Lane>>(written).unwrap(), lanes);
+}
+
+#[test]
+fn a_grouping_cell_names_its_cards_lane() {
+    assert_eq!(
+        LaneKey::of_cell(Some(&CellValue::Options(vec![OptionRef::Id(GOING)]))),
+        LaneKey::Option(GOING)
+    );
+    assert_eq!(
+        LaneKey::of_cell(Some(&CellValue::Entities(vec![EntityRef {
+            entity_type: EntityKind::User,
+            entity_id: "macro|sam@macro.com".into(),
+        }]))),
+        LaneKey::User("macro|sam@macro.com".try_into().unwrap())
+    );
+    assert_eq!(
+        LaneKey::of_cell(Some(&CellValue::Entities(vec![EntityRef {
+            entity_type: EntityKind::User,
+            entity_id: "not a user id".into(),
+        }]))),
+        LaneKey::None
+    );
+    assert_eq!(LaneKey::of_cell(None), LaneKey::None);
+}
+
+#[test]
+fn a_card_moved_into_a_lane_takes_its_value() {
+    assert_eq!(
+        LaneKey::Option(GOING).cell(),
+        CellValue::Options(vec![OptionRef::Id(GOING)])
+    );
+    assert_eq!(
+        LaneKey::User("macro|sam@macro.com".try_into().unwrap()).cell(),
+        CellValue::Entities(vec![EntityRef {
+            entity_type: EntityKind::User,
+            entity_id: "macro|sam@macro.com".into(),
+        }])
+    );
+    assert_eq!(LaneKey::None.cell(), CellValue::Clear);
 }

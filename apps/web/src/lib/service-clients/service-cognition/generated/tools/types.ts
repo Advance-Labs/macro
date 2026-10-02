@@ -1428,7 +1428,8 @@ export type RequestedLayout =
     }
   | {
       /**
-       * The single-select column whose options are the lanes.
+       * The single-select or single-person column whose values are the
+       * lanes.
        */
       groupBy: string;
       /**
@@ -1449,6 +1450,22 @@ export type RequestedLayout =
        */
       hideEmptyLanes: boolean;
       kind: 'board';
+    };
+/**
+ * A lane of a board, named by what its cards' grouping cells hold: one
+ * option of a select, one person, or nothing.
+ */
+export type LaneKey =
+  | {
+      kind: 'option';
+      id: string;
+    }
+  | {
+      kind: 'user';
+      id: string;
+    }
+  | {
+      kind: 'none';
     };
 /**
  * How search terms are matched against skill names.
@@ -7699,7 +7716,7 @@ export interface SaveDatabaseQueryResponse {
   markdown: string;
 }
 /**
- * Save a table or kanban board view of one table of a Macro database. Views are shared with everyone who can open the database, so saving one needs edit access. Call DescribeDatabase first: a view names columns and select options by their ids, never by name. The filter's conditions combine with one `and` or `or`, each test fitting its column's type (text, number, date, checkbox, options, entities, or presence for any column); sort keys order the rows. A board groups its cards into lanes by a single-select column, one lane per option plus one for cards without; no other column type can group a board. A card's title is a column, the first by default. Saving under a name the table already has replaces that view, so read `created` in the result. Views change presentation, never records, and cannot save charts or SQL.
+ * Save a table or kanban board view of one table of a Macro database. Views are shared with everyone who can open the database, so saving one needs edit access. Call DescribeDatabase first: a view names columns and select options by their ids, never by name. The filter's conditions combine with one `and` or `or`, each test fitting its column's type (text, number, date, checkbox, options, entities, or presence for any column); sort keys order the rows. A board groups its cards into lanes by a single-select or single-person column: one lane per option, or per person its cards name, plus one for cards with an empty cell; no other column type can group a board. A lane's `key` has a `kind`: `option` with the option's `id`, `user` with the person's user `id`, or `none`. A card's title is a column, the first by default. Saving under a name the table already has replaces that view, so read `created` in the result. Views change presentation, never records, and cannot save charts or SQL.
  */
 export interface SaveDatabaseView {
   /**
@@ -7772,10 +7789,7 @@ export interface ViewColumn {
  * How one lane shows in a board layout.
  */
 export interface Lane {
-  /**
-   * The option the lane holds the cards of; `null` for cards without one.
-   */
-  option?: string | null;
+  key: LaneKey;
   /**
    * Whether it is hidden.
    */

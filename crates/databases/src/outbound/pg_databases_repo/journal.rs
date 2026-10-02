@@ -7,10 +7,10 @@ use std::collections::HashMap;
 use sqlx::{PgConnection, PgExecutor};
 use uuid::Uuid;
 
-use super::{PgDatabasesRepoError, uuids};
+use super::{PgDatabasesRepoError, stored, uuids};
 use crate::domain::journal::{
-    ChangeInverse, ChangeRecord, ColumnTouch, JournalActor, JournalEntry, JournaledRowChange,
-    RowTouch, StoredChange, VersionTouches,
+    ChangeRecord, ColumnTouch, JournalActor, JournalEntry, JournaledRowChange, RowTouch,
+    StoredChange, VersionTouches,
 };
 use crate::domain::models::{
     ChangeId, ColumnId, CommittedChange, DatabaseId, RowId, TableId, TableVersion,
@@ -213,8 +213,8 @@ pub(crate) async fn row_history(
                     actor: record.actor,
                     acting_bot: record.acting_bot,
                     at: record.at,
-                    ops: serde_json::from_value(record.ops)?,
-                    inverse: serde_json::from_value::<ChangeInverse>(record.inverse)?,
+                    ops: stored::ops(record.ops)?,
+                    inverse: stored::inverse(record.inverse)?,
                 },
                 kind: record
                     .kind
@@ -273,8 +273,8 @@ pub(crate) async fn change(
                 actor: record.actor,
                 acting_bot: record.acting_bot,
                 at: record.at,
-                ops: serde_json::from_value(record.ops)?,
-                inverse: serde_json::from_value(record.inverse)?,
+                ops: stored::ops(record.ops)?,
+                inverse: stored::inverse(record.inverse)?,
             })
         })
         .collect::<Result<Vec<_>, PgDatabasesRepoError>>()?;
@@ -306,8 +306,8 @@ pub(crate) async fn changes_after(
                 actor: record.actor,
                 acting_bot: record.acting_bot,
                 at: record.at,
-                ops: serde_json::from_value(record.ops)?,
-                inverse: serde_json::from_value(record.inverse)?,
+                ops: stored::ops(record.ops)?,
+                inverse: stored::inverse(record.inverse)?,
             })
         })
         .collect::<Result<Vec<_>, PgDatabasesRepoError>>()?;

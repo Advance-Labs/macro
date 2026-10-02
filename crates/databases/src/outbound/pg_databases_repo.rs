@@ -9,6 +9,7 @@ mod saved_queries;
 /// Schema statements of the cell store's batches.
 pub(crate) mod schema;
 mod sharing;
+mod stored;
 #[cfg(test)]
 mod test;
 /// View and card-place statements, shared with the cell store's batches.
@@ -49,9 +50,13 @@ pub enum PgDatabasesRepoError {
     /// A stored position is not a fractional key.
     #[error("stored position")]
     Position(#[from] PositionError),
-    /// A stored card lane is neither empty nor an option id.
-    #[error("stored card lane `{0}` is not an option id")]
+    /// A stored card lane names no option, person or empty lane.
+    #[error("stored card lane `{0}` names no lane")]
     CorruptLane(String),
+    /// A board stored without a card title belongs to a table with no
+    /// column to title it by.
+    #[error("board {0} has no card title and its table no column")]
+    UntitledBoard(ViewId),
     /// The properties domain refused or failed a write.
     #[error("properties write failed: {0}")]
     Properties(#[source] Box<dyn std::error::Error + Send + Sync>),

@@ -434,7 +434,7 @@ async fn view_access_cannot_move_a_card() {
             "change": {
                 "kind": "move_card",
                 "row": Uuid::from_u128(0x5a11),
-                "lane": null,
+                "lane": {"kind": "none"},
                 "before": null,
                 "after": null,
             },

@@ -1,5 +1,6 @@
 //! Explicit literal tests of inverting each kind of op.
 
+use models_databases::views::LaneKey;
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
@@ -1032,7 +1033,7 @@ fn a_card_move_is_undone_by_moving_it_back_between_its_old_neighbours() {
         view: BOARD,
         change: ViewChange::MoveCard {
             row: MARIA,
-            lane: Some(NO),
+            lane: LaneKey::Option(NO),
             before: None,
             after: None,
         },
@@ -1055,12 +1056,12 @@ fn a_card_move_is_undone_by_moving_it_back_between_its_old_neighbours() {
             vec![
                 CardPosition {
                     row: ana,
-                    lane: Some(YES),
+                    lane: LaneKey::Option(YES),
                     position: first_key(),
                 },
                 CardPosition {
                     row: MARIA,
-                    lane: Some(YES),
+                    lane: LaneKey::Option(YES),
                     position: second_key(),
                 },
             ],
@@ -1084,7 +1085,7 @@ fn a_card_move_is_undone_by_moving_it_back_between_its_old_neighbours() {
             view: BOARD,
             change: ViewChange::MoveCard {
                 row: MARIA,
-                lane: Some(YES),
+                lane: LaneKey::Option(YES),
                 before: Some(ana),
                 after: None,
             },

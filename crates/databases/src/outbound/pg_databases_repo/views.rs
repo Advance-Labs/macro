@@ -1,28 +1,53 @@
-//! View and card-place statements over any connection. A card's lane is
-//! stored as its option's id, or as the empty string for cards without one.
+//! View and card-place statements over any connection.
+//!
+//! A card's lane is stored as text (`database_view_positions.lane`): an
+//! option's lane as the option's id, the lane of empty cells as the empty
+//! string, and a person's lane as `user:` and their user id. Options and
+//! empty cells keep the spelling they had when only selects grouped
+//! boards, so places stored then read the same; a user id never parses as
+//! a uuid, and the prefix keeps it from ever being taken for one.
 
+#[cfg(test)]
+mod test;
+
+use macro_user_id::user_id::MacroUserIdStr;
+use models_databases::views::LaneKey;
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
-use super::{PgDatabasesRepoError, uuids};
+use super::{PgDatabasesRepoError, stored, uuids};
 use crate::domain::models::{
-    CardPosition, DatabaseId, DatabaseView, OptionId, RowId, TableId, ViewId, ViewPosition,
+    CardPosition, ColumnId, DatabaseId, DatabaseView, OptionId, RowId, TableId, ViewId,
+    ViewPosition,
 };
 
+/// What a person's stored lane starts with.
+const USER_LANE_PREFIX: &str = "user:";
+
 /// The lane as stored.
-fn lane_key(lane: Option<OptionId>) -> String {
-    lane.map(|option| option.to_string()).unwrap_or_default()
+fn stored_lane(lane: &LaneKey) -> String {
+    match lane {
+        LaneKey::Option(option) => option.to_string(),
+        LaneKey::User(user) => format!("{USER_LANE_PREFIX}{user}"),
+        LaneKey::None => String::new(),
+    }
 }
 
-/// The lane a stored key names; `None` for the lane of cards without an
-/// option.
-fn lane_of(key: &str) -> Result<Option<OptionId>, PgDatabasesRepoError> {
-    if key.is_empty() {
-        return Ok(None);
+/// The lane a stored key names.
+fn lane_of(stored: &str) -> Result<LaneKey, PgDatabasesRepoError> {
+    let corrupt = || PgDatabasesRepoError::CorruptLane(stored.to_string());
+    if stored.is_empty() {
+        return Ok(LaneKey::None);
     }
-    key.parse()
-        .map(Some)
-        .map_err(|_| PgDatabasesRepoError::CorruptLane(key.to_string()))
+    if let Some(user) = stored.strip_prefix(USER_LANE_PREFIX) {
+        return MacroUserIdStr::try_from(user.to_string())
+            .map(LaneKey::User)
+            .map_err(|_| corrupt());
+    }
+    stored
+        .parse::<OptionId>()
+        .map(LaneKey::Option)
+        .map_err(|_| corrupt())
 }
 
 /// Every view of the given tables, ordered by table then position.
@@ -32,10 +57,15 @@ pub(crate) async fn views_for_tables(
 ) -> Result<Vec<DatabaseView>, PgDatabasesRepoError> {
     let rows = sqlx::query!(
         r#"
-        SELECT id, database_id, table_id, name, position, query, layout, created_at, updated_at
-        FROM database_views
-        WHERE table_id = ANY($1)
-        ORDER BY table_id, position, id
+        SELECT view.id, view.database_id, view.table_id, view.name, view.position, view.query,
+               view.layout, view.created_at, view.updated_at,
+               (SELECT first.id FROM database_columns first
+                WHERE first.table_id = view.table_id
+                ORDER BY first.position, first.id
+                LIMIT 1) AS "first_column?"
+        FROM database_views view
+        WHERE view.table_id = ANY($1)
+        ORDER BY view.table_id, view.position, view.id
         "#,
         &uuids(table_ids),
     )
@@ -43,14 +73,15 @@ pub(crate) async fn views_for_tables(
     .await?;
     rows.into_iter()
         .map(|row| {
+            let id = ViewId::from_uuid(row.id);
             Ok(DatabaseView {
-                id: ViewId::from_uuid(row.id),
+                id,
                 database_id: DatabaseId::from_uuid(row.database_id),
                 table_id: TableId::from_uuid(row.table_id),
                 name: row.name,
                 position: row.position.parse()?,
                 query: serde_json::from_value(row.query)?,
-                layout: serde_json::from_value(row.layout)?,
+                layout: stored::layout(row.layout, id, row.first_column.map(ColumnId::from_uuid))?,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             })
@@ -209,7 +240,7 @@ pub(crate) async fn place_cards(
         .collect();
     let lanes: Vec<String> = positions
         .iter()
-        .map(|placed| lane_key(placed.lane))
+        .map(|placed| stored_lane(&placed.lane))
         .collect();
     let keys: Vec<String> = positions
         .iter()
@@ -247,7 +278,7 @@ pub(crate) async fn clear_lane(
         WHERE placed.view_id = board.id AND board.table_id = ANY($1) AND placed.lane = $2
         "#,
         &uuids(table_ids),
-        lane_key(Some(option)),
+        stored_lane(&LaneKey::Option(option)),
     )
     .execute(executor)
     .await?;

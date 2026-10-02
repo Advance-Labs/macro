@@ -81,9 +81,17 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: ['first', 'last'] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
-            { option: null, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'done' },
+              hidden: false,
+              cards: ['first', 'last'],
+            },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -117,7 +125,11 @@ describe('board card drag', () => {
     dropPointer(30, 150);
     fireEvent.click(card);
     await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('moving', 'done', 'last')
+      expect(onMove).toHaveBeenCalledWith(
+        'moving',
+        { kind: 'option', id: 'done' },
+        'last'
+      )
     );
     expect(onMove).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
@@ -157,9 +169,17 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: ['first', 'last'] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
-            { option: null, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'done' },
+              hidden: false,
+              cards: ['first', 'last'],
+            },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -186,7 +206,11 @@ describe('board card drag', () => {
     expect(marker()?.dataset.beforeRowId).toBeUndefined();
     dropPointer(30, 410);
     await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('moving', 'done', undefined)
+      expect(onMove).toHaveBeenCalledWith(
+        'moving',
+        { kind: 'option', id: 'done' },
+        undefined
+      )
     );
   });
 
@@ -222,9 +246,17 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: ['first'] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
-            { option: null, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'done' },
+              hidden: false,
+              cards: ['first'],
+            },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -251,7 +283,7 @@ describe('board card drag', () => {
     expect(marker()?.dataset.laneId).toBe('no-option');
     dropPointer(680, 150);
     await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('moving', null, undefined)
+      expect(onMove).toHaveBeenCalledWith('moving', { kind: 'none' }, undefined)
     );
   });
 
@@ -283,7 +315,13 @@ describe('board card drag', () => {
           stage,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: ['first', 'last'] }],
+          lanes: [
+            {
+              key: { kind: 'option', id: 'done' },
+              hidden: false,
+              cards: ['first', 'last'],
+            },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -315,7 +353,11 @@ describe('board card drag', () => {
     expect(marker()?.dataset.beforeRowId).toBe('first');
     dropPointer(40, 70);
     await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('last', 'done', 'first')
+      expect(onMove).toHaveBeenCalledWith(
+        'last',
+        { kind: 'option', id: 'done' },
+        'first'
+      )
     );
   });
 
@@ -350,9 +392,13 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
-            { option: null, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -415,8 +461,12 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
           ],
         }}
         layout={{
@@ -481,8 +531,12 @@ describe('board card drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: ['moving'] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['moving'],
+            },
           ],
         }}
         layout={{
@@ -544,10 +598,14 @@ describe('board lane drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
-            { option: null, hidden: false, cards: [] },
-            { option: 'archived', hidden: true, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'archived' },
+              hidden: true,
+              cards: [],
+            },
           ],
         }}
         layout={{
@@ -582,10 +640,10 @@ describe('board lane drag', () => {
     dropPointer(560, 20);
     expect(onLaneOrderChange).toHaveBeenCalledOnce();
     expect(onLaneOrderChange).toHaveBeenCalledWith([
-      'todo',
-      'done',
-      null,
-      'archived',
+      { kind: 'option', id: 'todo' },
+      { kind: 'option', id: 'done' },
+      { kind: 'none' },
+      { kind: 'option', id: 'archived' },
     ]);
     expect(onMove).not.toHaveBeenCalled();
   });
@@ -619,9 +677,9 @@ describe('board lane drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
-            { option: null, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -652,7 +710,11 @@ describe('board lane drag', () => {
       marker()?.closest('[data-kanban-lane]')?.getAttribute('aria-label')
     ).toBe('No stage lane');
     dropPointer(560, 20);
-    expect(onLaneOrderChange).toHaveBeenCalledWith(['todo', null, 'done']);
+    expect(onLaneOrderChange).toHaveBeenCalledWith([
+      { kind: 'option', id: 'todo' },
+      { kind: 'none' },
+      { kind: 'option', id: 'done' },
+    ]);
   });
 
   it('rejects a lane drop whose insertion line is clipped out of view', () => {
@@ -684,9 +746,9 @@ describe('board lane drag', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
-            { option: null, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{

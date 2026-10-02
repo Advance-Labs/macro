@@ -4,7 +4,7 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-import type { LaneOption } from './laneOption';
+import type { LaneKey } from './laneKey';
 
 /**
  * How one lane shows in a board layout.
@@ -12,6 +12,6 @@ import type { LaneOption } from './laneOption';
 export interface Lane {
   /** Whether it is hidden. */
   hidden?: boolean;
-  /** The option the lane holds the cards of; `null` for cards without one. */
-  option: LaneOption;
+  /** The lane. */
+  key: LaneKey;
 }

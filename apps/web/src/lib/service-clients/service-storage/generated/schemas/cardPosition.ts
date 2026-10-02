@@ -4,7 +4,7 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
-import type { CardPositionLane } from './cardPositionLane';
+import type { LaneKey } from './laneKey';
 
 /**
  * Where one card sits on a board: its lane, and its fractional key there.
@@ -12,9 +12,8 @@ A card whose row has since moved to another lane has no place until it is
 moved again.
  */
 export interface CardPosition {
-  /** The lane: an option of the board's column, `null` for the lane of
-cards without one. */
-  lane: CardPositionLane;
+  /** The lane. */
+  lane: LaneKey;
   /** The card's key in that lane. */
   position: string;
   /** The card's row. */

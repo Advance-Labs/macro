@@ -1,8 +1,12 @@
+import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import type { DatabaseViewColumn } from './database-view';
 import {
   allRecordsView,
+  boardGroupColumns,
+  laneLabel,
+  laneValue,
   layoutColumns,
   movedViewOrder,
   withLaneHidden,
@@ -95,35 +99,41 @@ describe('table layouts', () => {
   });
 });
 
-const board = {
-  kind: 'board' as const,
+const board: Extract<ViewLayout, { kind: 'board' }> = {
+  kind: 'board',
   groupBy: 'rsvp',
   title: 'name',
-  lanes: [{ option: 'yes', hidden: true }],
+  lanes: [{ key: { kind: 'option', id: 'yes' }, hidden: true }],
   cardFields: ['guests'],
   hideEmptyLanes: false,
 };
 
 describe('board lanes', () => {
   it('reorders every lane, keeping a hidden lane hidden', () => {
-    expect(withLaneOrder(board, [null, 'no', 'yes'])).toEqual({
+    expect(
+      withLaneOrder(board, [
+        { kind: 'none' },
+        { kind: 'option', id: 'no' },
+        { kind: 'option', id: 'yes' },
+      ])
+    ).toEqual({
       ...board,
       lanes: [
-        { option: null, hidden: false },
-        { option: 'no', hidden: false },
-        { option: 'yes', hidden: true },
+        { key: { kind: 'none' }, hidden: false },
+        { key: { kind: 'option', id: 'no' }, hidden: false },
+        { key: { kind: 'option', id: 'yes' }, hidden: true },
       ],
     });
   });
 
   it('hides a lane it does not list yet, and shows a listed one again', () => {
-    expect(withLaneHidden(board, null, true).lanes).toEqual([
-      { option: 'yes', hidden: true },
-      { option: null, hidden: true },
+    expect(withLaneHidden(board, { kind: 'none' }, true).lanes).toEqual([
+      { key: { kind: 'option', id: 'yes' }, hidden: true },
+      { key: { kind: 'none' }, hidden: true },
     ]);
-    expect(withLaneHidden(board, 'yes', false).lanes).toEqual([
-      { option: 'yes', hidden: false },
-    ]);
+    expect(
+      withLaneHidden(board, { kind: 'option', id: 'yes' }, false).lanes
+    ).toEqual([{ key: { kind: 'option', id: 'yes' }, hidden: false }]);
   });
 });
 
@@ -253,5 +263,65 @@ describe('allRecordsView', () => {
       createdAt: '1970-01-01T00:00:00.000Z',
       updatedAt: '1970-01-01T00:00:00.000Z',
     });
+  });
+});
+
+describe('a board grouped by people', () => {
+  const owner: DatabaseViewColumn = {
+    id: 'owner',
+    name: 'Owner',
+    dataType: 'ENTITY',
+    specificEntityType: 'USER',
+    isMultiSelect: false,
+    options: [],
+    writable: true,
+  };
+
+  it('groups by a single select or a single person, and nothing else', () => {
+    const columns: DatabaseViewColumn[] = [
+      owner,
+      { ...owner, id: 'reviewers', name: 'Reviewers', isMultiSelect: true },
+      {
+        ...owner,
+        id: 'doc',
+        name: 'Doc',
+        specificEntityType: 'DOCUMENT',
+      },
+      {
+        id: 'status',
+        name: 'Status',
+        dataType: 'SELECT_STRING',
+        isMultiSelect: false,
+        options: [],
+        writable: true,
+      },
+      {
+        id: 'labels',
+        name: 'Labels',
+        dataType: 'SELECT_STRING',
+        isMultiSelect: true,
+        options: [],
+        writable: true,
+      },
+    ];
+
+    expect(boardGroupColumns(columns).map((column) => column.id)).toEqual([
+      'owner',
+      'status',
+    ]);
+  });
+
+  it('names a person lane by their email and the empty lane by the column', () => {
+    expect(laneLabel(owner, { kind: 'user', id: 'macro|sam@macro.com' })).toBe(
+      'sam@macro.com'
+    );
+    expect(laneLabel(owner, { kind: 'none' })).toBe('No owner');
+  });
+
+  it('starts a card created in a person lane with that person', () => {
+    expect(laneValue(owner, { kind: 'user', id: 'macro|sam@macro.com' })).toBe(
+      'macro|sam@macro.com'
+    );
+    expect(laneValue(owner, { kind: 'none' })).toBeUndefined();
   });
 });

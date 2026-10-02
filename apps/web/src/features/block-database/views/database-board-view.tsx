@@ -1,5 +1,6 @@
 import { toast } from '@core/component/Toast/Toast';
 import { engineFailure } from '@core/database-sql/driver';
+import type { LaneKey } from '@core/database-sql/generated/types';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
@@ -29,6 +30,7 @@ import type { DatabaseRowsSource } from '../context/table-source';
 import {
   type CardMove,
   cardMove,
+  cardsOf,
   laneCards,
   placeCard,
   withMovedCards,
@@ -38,9 +40,10 @@ import type { DatabaseEntityType } from '../core/column-inference';
 import {
   type DatabaseViewColumn,
   isBoardGroupColumn,
+  isOptionColumn,
 } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
-import { withLaneHidden, withLaneOrder } from '../core/views';
+import { laneValue, withLaneHidden, withLaneOrder } from '../core/views';
 import {
   type DatabaseOpFailure,
   databaseOpMessage,
@@ -88,7 +91,7 @@ type DatabaseBoardViewProps = {
   controlsRef?: (controls: DatabaseBoardControls) => void;
 };
 
-/** A board view grouped by its single select, or a way back to the table when it has none. */
+/** A board view grouped by its single select or single person, or a way back to the table when it has neither. */
 export function DatabaseBoardView(props: DatabaseBoardViewProps) {
   const grouping = () => {
     const layout = props.view.layout;
@@ -123,7 +126,7 @@ export function DatabaseBoardView(props: DatabaseBoardViewProps) {
         fallback={
           <div class="flex flex-1 flex-col items-start px-5 py-8">
             <p class="text-sm text-ink-muted">
-              Choose a single Select column to group cards.
+              Choose a single Select or Person column to group cards.
             </p>
             <Show when={props.onViewChange}>
               {(changeView) => (
@@ -180,7 +183,7 @@ function GroupedBoard(
   /** A drop on a sorted board, held until the sort goes: where in its lane it landed. */
   const [sortedDrop, setSortedDrop] = createSignal<{
     row: string;
-    lane: string | null;
+    lane: LaneKey;
     index: number;
   }>();
   /** The board as the engine lays it out, sorted as the view says or, with `unsorted`, by hand. */
@@ -250,7 +253,7 @@ function GroupedBoard(
         toast.failure(databaseOpMessage(failure, 'this card'));
       });
   }
-  function drop(row: string, lane: string | null, next?: string) {
+  function drop(row: string, lane: LaneKey, next?: string) {
     const shown = board();
     const move = shown && cardMove(shown, row, lane, next);
     if (!move) return;
@@ -258,9 +261,7 @@ function GroupedBoard(
       write(move);
       return;
     }
-    const others = (
-      shown.lanes.find((entry) => entry.option === lane)?.cards ?? []
-    ).filter((card) => card !== row);
+    const others = cardsOf(shown, lane).filter((card) => card !== row);
     const index = next === undefined ? others.length : others.indexOf(next);
     if (index < 0) return;
     setSortedDrop({ row, lane, index });
@@ -274,9 +275,9 @@ function GroupedBoard(
     const laid = layOut(true);
     if (!laid?.isOk()) return;
     const arranged = laid.value;
-    const others = (
-      arranged.lanes.find((entry) => entry.option === dropped.lane)?.cards ?? []
-    ).filter((card) => card !== dropped.row);
+    const others = cardsOf(arranged, dropped.lane).filter(
+      (card) => card !== dropped.row
+    );
     const move = cardMove(
       arranged,
       dropped.row,
@@ -286,16 +287,14 @@ function GroupedBoard(
     if (move) write(move);
   }
   function create(
-    lane: string | null,
+    lane: LaneKey,
     title: string,
     intentId: string,
     options?: { open: true }
   ) {
-    const label = props.groupColumn.options.find(
-      (option) => option.id === lane
-    )?.label;
+    const value = laneValue(props.groupColumn, lane);
     return props.onCreate({
-      values: label === undefined ? {} : { [props.groupColumn.id]: label },
+      values: value === undefined ? {} : { [props.groupColumn.id]: value },
       title,
       titleColumn: props.layout.title,
       intentId,
@@ -307,7 +306,7 @@ function GroupedBoard(
   const addGroup = () => {
     const add = props.onAddGroup;
     const columnId = props.groupColumn.id;
-    return add && canEdit()
+    return add && canEdit() && isOptionColumn(props.groupColumn)
       ? (label: string) => add(columnId, label)
       : undefined;
   };

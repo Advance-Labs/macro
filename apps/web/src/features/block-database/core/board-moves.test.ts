@@ -1,3 +1,4 @@
+import type { Board } from '@core/database-sql/generated/types';
 import { err, ok } from 'neverthrow';
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,69 +13,87 @@ import {
 const keyBetween = (before: string | null, after: string | null) =>
   `(${before ?? '-'}..${after ?? '-'})`;
 
-const board = {
+const board: Board = {
   lanes: [
-    { option: null, hidden: false, cards: [] },
-    { option: 'yes', hidden: false, cards: ['ann', 'bob', 'cat'] },
-    { option: 'no', hidden: false, cards: ['dan'] },
+    { key: { kind: 'none' }, hidden: false, cards: [] },
+    {
+      key: { kind: 'option', id: 'yes' },
+      hidden: false,
+      cards: ['ann', 'bob', 'cat'],
+    },
+    { key: { kind: 'option', id: 'no' }, hidden: false, cards: ['dan'] },
   ],
 };
 
 describe('a card dropped on the board', () => {
   it('lands after the card above it and before the card below it', () => {
-    expect(cardMove(board, 'dan', 'yes', 'bob')).toEqual({
+    expect(
+      cardMove(board, 'dan', { kind: 'option', id: 'yes' }, 'bob')
+    ).toEqual({
       row: 'dan',
-      lane: 'yes',
+      lane: { kind: 'option', id: 'yes' },
       before: 'ann',
       after: 'bob',
     });
   });
 
   it('dropped first in a lane has only a card below it', () => {
-    expect(cardMove(board, 'dan', 'yes', 'ann')).toEqual({
+    expect(
+      cardMove(board, 'dan', { kind: 'option', id: 'yes' }, 'ann')
+    ).toEqual({
       row: 'dan',
-      lane: 'yes',
+      lane: { kind: 'option', id: 'yes' },
       before: null,
       after: 'ann',
     });
   });
 
   it('dropped at the end of a lane has only a card above it', () => {
-    expect(cardMove(board, 'ann', 'no', undefined)).toEqual({
+    expect(
+      cardMove(board, 'ann', { kind: 'option', id: 'no' }, undefined)
+    ).toEqual({
       row: 'ann',
-      lane: 'no',
+      lane: { kind: 'option', id: 'no' },
       before: 'dan',
       after: null,
     });
   });
 
   it('dropped in an empty lane has no neighbours', () => {
-    expect(cardMove(board, 'ann', null, undefined)).toEqual({
+    expect(cardMove(board, 'ann', { kind: 'none' }, undefined)).toEqual({
       row: 'ann',
-      lane: null,
+      lane: { kind: 'none' },
       before: null,
       after: null,
     });
   });
 
   it('moved within its lane skips itself when finding neighbours', () => {
-    expect(cardMove(board, 'ann', 'yes', undefined)).toEqual({
+    expect(
+      cardMove(board, 'ann', { kind: 'option', id: 'yes' }, undefined)
+    ).toEqual({
       row: 'ann',
-      lane: 'yes',
+      lane: { kind: 'option', id: 'yes' },
       before: 'cat',
       after: null,
     });
-    expect(cardMove(board, 'cat', 'yes', 'bob')).toEqual({
+    expect(
+      cardMove(board, 'cat', { kind: 'option', id: 'yes' }, 'bob')
+    ).toEqual({
       row: 'cat',
-      lane: 'yes',
+      lane: { kind: 'option', id: 'yes' },
       before: 'ann',
       after: 'bob',
     });
   });
 
   it('dropped back where it was is no move', () => {
-    expect(cardMove(board, 'bob', 'yes', 'cat')).toBeUndefined();
-    expect(cardMove(board, 'cat', 'yes', undefined)).toBeUndefined();
+    expect(
+      cardMove(board, 'bob', { kind: 'option', id: 'yes' }, 'cat')
+    ).toBeUndefined();
+    expect(
+      cardMove(board, 'cat', { kind: 'option', id: 'yes' }, undefined)
+    ).toBeUndefined();
   });
 });
 
@@ -86,27 +105,66 @@ describe('a moved card, placed before the server answers', () => {
           { row: 'ann', position: 'a0' },
           { row: 'bob', position: 'a1' },
         ],
-        { row: 'dan', lane: 'yes', before: 'ann', after: 'bob' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'ann',
+          after: 'bob',
+        },
         keyBetween
       )
-    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(a0..a1)' }]));
+    ).toEqual(
+      ok([
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          position: '(a0..a1)',
+        },
+      ])
+    );
   });
 
   it('takes a key before the first card, or after the last', () => {
     expect(
       placeCard(
         [{ row: 'ann', position: 'a0' }],
-        { row: 'dan', lane: 'yes', before: null, after: 'ann' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: null,
+          after: 'ann',
+        },
         keyBetween
       )
-    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(-..a0)' }]));
+    ).toEqual(
+      ok([
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          position: '(-..a0)',
+        },
+      ])
+    );
     expect(
       placeCard(
         [{ row: 'ann', position: 'a0' }],
-        { row: 'dan', lane: 'yes', before: 'ann', after: null },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'ann',
+          after: null,
+        },
         keyBetween
       )
-    ).toEqual(ok([{ row: 'dan', lane: 'yes', position: '(a0..-)' }]));
+    ).toEqual(
+      ok([
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          position: '(a0..-)',
+        },
+      ])
+    );
   });
 
   it('places the unplaced cards above it first, in their order, as the server does', () => {
@@ -117,14 +175,14 @@ describe('a moved card, placed before the server answers', () => {
           { row: 'bob', position: null },
           { row: 'cat', position: null },
         ],
-        { row: 'dan', lane: null, before: 'cat', after: null },
+        { row: 'dan', lane: { kind: 'none' }, before: 'cat', after: null },
         keyBetween
       )
     ).toEqual(
       ok([
-        { row: 'bob', lane: null, position: '(a0..-)' },
-        { row: 'cat', lane: null, position: '((a0..-)..-)' },
-        { row: 'dan', lane: null, position: '(((a0..-)..-)..-)' },
+        { row: 'bob', lane: { kind: 'none' }, position: '(a0..-)' },
+        { row: 'cat', lane: { kind: 'none' }, position: '((a0..-)..-)' },
+        { row: 'dan', lane: { kind: 'none' }, position: '(((a0..-)..-)..-)' },
       ])
     );
   });
@@ -137,7 +195,12 @@ describe('a moved card, placed before the server answers', () => {
           { row: 'bob', position: 'a1' },
           { row: 'cat', position: 'a2' },
         ],
-        { row: 'dan', lane: 'yes', before: 'ann', after: 'cat' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'ann',
+          after: 'cat',
+        },
         keyBetween
       )
     ).toEqual(err({ kind: 'not-adjacent', before: 'ann', after: 'cat' }));
@@ -147,7 +210,12 @@ describe('a moved card, placed before the server answers', () => {
           { row: 'ann', position: 'a0' },
           { row: 'bob', position: 'a1' },
         ],
-        { row: 'dan', lane: 'yes', before: 'bob', after: 'ann' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'bob',
+          after: 'ann',
+        },
         keyBetween
       )
     ).toEqual(err({ kind: 'not-adjacent', before: 'bob', after: 'ann' }));
@@ -157,14 +225,24 @@ describe('a moved card, placed before the server answers', () => {
     expect(
       placeCard(
         [{ row: 'ann', position: 'a0' }],
-        { row: 'dan', lane: 'yes', before: 'eve', after: null },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'eve',
+          after: null,
+        },
         keyBetween
       )
     ).toEqual(err({ kind: 'not-in-lane', row: 'eve' }));
     expect(
       placeCard(
         [{ row: 'ann', position: 'a0' }],
-        { row: 'dan', lane: 'yes', before: 'ann', after: 'eve' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'ann',
+          after: 'eve',
+        },
         keyBetween
       )
     ).toEqual(err({ kind: 'not-in-lane', row: 'eve' }));
@@ -175,11 +253,11 @@ describe('a moved card, placed before the server answers', () => {
       laneCards(
         board,
         [
-          { row: 'ann', lane: 'yes', position: 'a0' },
-          { row: 'bob', lane: 'no', position: 'a5' },
-          { row: 'cat', lane: 'yes', position: 'a1' },
+          { row: 'ann', lane: { kind: 'option', id: 'yes' }, position: 'a0' },
+          { row: 'bob', lane: { kind: 'option', id: 'no' }, position: 'a5' },
+          { row: 'cat', lane: { kind: 'option', id: 'yes' }, position: 'a1' },
         ],
-        'yes',
+        { kind: 'option', id: 'yes' },
         'cat'
       )
     ).toEqual([
@@ -192,14 +270,14 @@ describe('a moved card, placed before the server answers', () => {
     expect(
       withPositions(
         [
-          { row: 'ann', lane: 'yes', position: 'a0' },
-          { row: 'dan', lane: 'no', position: 'a0' },
+          { row: 'ann', lane: { kind: 'option', id: 'yes' }, position: 'a0' },
+          { row: 'dan', lane: { kind: 'option', id: 'no' }, position: 'a0' },
         ],
-        [{ row: 'dan', lane: 'yes', position: 'a1' }]
+        [{ row: 'dan', lane: { kind: 'option', id: 'yes' }, position: 'a1' }]
       )
     ).toEqual([
-      { row: 'ann', lane: 'yes', position: 'a0' },
-      { row: 'dan', lane: 'yes', position: 'a1' },
+      { row: 'ann', lane: { kind: 'option', id: 'yes' }, position: 'a0' },
+      { row: 'dan', lane: { kind: 'option', id: 'yes' }, position: 'a1' },
     ]);
   });
 });
@@ -208,13 +286,22 @@ describe('a moved card, shown before its row is read again', () => {
   it('leaves its old lane for its new one, between its neighbours', () => {
     expect(
       withMovedCards(board, [
-        { row: 'dan', lane: 'yes', before: 'ann', after: 'bob' },
+        {
+          row: 'dan',
+          lane: { kind: 'option', id: 'yes' },
+          before: 'ann',
+          after: 'bob',
+        },
       ])
     ).toEqual({
       lanes: [
-        { option: null, hidden: false, cards: [] },
-        { option: 'yes', hidden: false, cards: ['ann', 'dan', 'bob', 'cat'] },
-        { option: 'no', hidden: false, cards: [] },
+        { key: { kind: 'none' }, hidden: false, cards: [] },
+        {
+          key: { kind: 'option', id: 'yes' },
+          hidden: false,
+          cards: ['ann', 'dan', 'bob', 'cat'],
+        },
+        { key: { kind: 'option', id: 'no' }, hidden: false, cards: [] },
       ],
     });
   });
@@ -222,14 +309,23 @@ describe('a moved card, shown before its row is read again', () => {
   it('goes before its lower neighbour when it has no upper one, and last with neither', () => {
     expect(
       withMovedCards(board, [
-        { row: 'cat', lane: 'yes', before: null, after: 'ann' },
-        { row: 'bob', lane: null, before: null, after: null },
+        {
+          row: 'cat',
+          lane: { kind: 'option', id: 'yes' },
+          before: null,
+          after: 'ann',
+        },
+        { row: 'bob', lane: { kind: 'none' }, before: null, after: null },
       ])
     ).toEqual({
       lanes: [
-        { option: null, hidden: false, cards: ['bob'] },
-        { option: 'yes', hidden: false, cards: ['cat', 'ann'] },
-        { option: 'no', hidden: false, cards: ['dan'] },
+        { key: { kind: 'none' }, hidden: false, cards: ['bob'] },
+        {
+          key: { kind: 'option', id: 'yes' },
+          hidden: false,
+          cards: ['cat', 'ann'],
+        },
+        { key: { kind: 'option', id: 'no' }, hidden: false, cards: ['dan'] },
       ],
     });
   });

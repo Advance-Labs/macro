@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use models_databases::views::{NewView, RequestedLayout};
+use models_databases::views::{LaneKey, NewView, RequestedLayout};
 use models_databases::{
     CellValue, CellWrite, ColumnChange, ColumnId, DatabaseOp, NewColumn, NewOption, OptionId,
     OptionRef, PropertyId, RowChange, RowChanges, RowId, RowsChange, TableChange, TableId,
@@ -453,13 +453,7 @@ impl Inverter<'_> {
     fn card_back(&self, table: TableId, view: ViewId, row: RowId) -> Option<DatabaseOp> {
         let board = self.before.schema.view(view)?;
         let group_by = board.layout.group_by()?;
-        let lane = match self.before.rows.get(&row)?.cells.get(&group_by) {
-            Some(CellValue::Options(options)) => options.iter().find_map(|option| match option {
-                OptionRef::Id(id) => Some(*id),
-                OptionRef::Label(_) => None,
-            }),
-            _ => None,
-        };
+        let lane = LaneKey::of_cell(self.before.rows.get(&row)?.cells.get(&group_by));
         let mut placed: Vec<_> = self
             .before
             .cards

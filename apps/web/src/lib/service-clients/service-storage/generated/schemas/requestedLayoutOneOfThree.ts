@@ -9,13 +9,14 @@ import type { Lane } from './lane';
 import type { RequestedLayoutOneOfThreeKind } from './requestedLayoutOneOfThreeKind';
 
 /**
- * Cards in lanes, one lane per option of a single-select column plus
-one for cards without one.
+ * Cards in lanes, one per option of a single-select column or per
+person of a single-person column, plus one for empty cells.
  */
 export type RequestedLayoutOneOfThree = {
   /** The columns a card shows under its title, in order. */
   cardFields: string[];
-  /** The single-select column whose options are the lanes. */
+  /** The single-select or single-person column whose values are the
+lanes. */
   groupBy: string;
   /** Whether a lane with no cards is hidden. */
   hideEmptyLanes: boolean;

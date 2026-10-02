@@ -1,4 +1,4 @@
-import type { Board } from '@core/database-sql/generated/types';
+import type { Board, LaneKey } from '@core/database-sql/generated/types';
 import { isEditableInput } from '@core/util/isEditableInput';
 import CaretDownIcon from '@phosphor/caret-down.svg';
 import CheckIcon from '@phosphor/check.svg';
@@ -47,7 +47,7 @@ import {
   isWritableText,
   rowValue,
 } from '../core/table';
-import { cardTitleColumn, laneLabel } from '../core/views';
+import { cardTitleColumn, laneId, laneLabel } from '../core/views';
 import { OptionEditor } from './option-editor';
 import { PropertyIcon } from './property-icon';
 import { SelectPill } from './select-pill';
@@ -57,19 +57,14 @@ type DatabaseGroupAdded = Result<void, DatabaseOpsError>;
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
 
-/** One lane as the board draws it: its option, or none for cards without one. */
+/** One lane as the board draws it: its key as one string, the lane, and its option when it is an option's. */
 type BoardGroup = {
   key: string;
+  lane: LaneKey;
   option: DatabaseOption | null;
   label: string;
   rows: DatabaseRow[];
 };
-
-const NO_OPTION_LANE = 'no-option';
-
-function laneKey(option: string | null): string {
-  return option === null ? NO_OPTION_LANE : `option:${option}`;
-}
 
 type DatabaseBoardProps = {
   /** The view's rows, which the board's lanes name by id. */
@@ -86,14 +81,14 @@ type DatabaseBoardProps = {
   createComplete?: (intentId: string) => boolean;
   onOpen: (rowId: string) => void;
   /** A card dropped into `lane` in front of `next`, or last there without one. */
-  onMove: (rowId: string, lane: string | null, next?: string) => void;
+  onMove: (rowId: string, lane: LaneKey, next?: string) => void;
   /** The lanes, every one, in their new order. */
-  onLaneOrderChange?: (order: (string | null)[]) => void;
-  onHideLane?: (lane: string | null) => void;
+  onLaneOrderChange?: (order: LaneKey[]) => void;
+  onHideLane?: (lane: LaneKey) => void;
   onHideEmptyLanes?: (hide: boolean) => void;
   /** Resolves whether the record was saved. `open` asks to show it once it is. */
   onCreate: (
-    lane: string | null,
+    lane: LaneKey,
     title: string,
     intentId: string,
     options?: { open: true }
@@ -126,13 +121,17 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     return props.board.lanes
       .filter((lane) => !lane.hidden)
       .map((lane) => {
+        const key = lane.key;
         const option =
-          props.groupColumn.options.find((entry) => entry.id === lane.option) ??
-          null;
+          key.kind === 'option'
+            ? (props.groupColumn.options.find((entry) => entry.id === key.id) ??
+              null)
+            : null;
         return {
-          key: laneKey(lane.option),
+          key: laneId(key),
+          lane: key,
           option,
-          label: laneLabel(props.groupColumn, lane.option),
+          label: laneLabel(props.groupColumn, key),
           rows: lane.cards.flatMap((id) => {
             const row = rows.get(id);
             return row ? [row] : [];
@@ -140,8 +139,8 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
         };
       });
   });
-  const optionOfLane = (key: string) =>
-    lanes().find((lane) => lane.key === key)?.option?.id ?? null;
+  const laneOf = (key: string): LaneKey =>
+    lanes().find((lane) => lane.key === key)?.lane ?? { kind: 'none' };
   const [announcement, setAnnouncement] = createSignal('');
   const draftPrefix = createUniqueId();
   let draftSequence = 0;
@@ -194,7 +193,7 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     updateDraft(id, { saving: true });
     if (submission === 'next') startDraft(draft.lane);
     const saved = await props.onCreate(
-      optionOfLane(draft.lane),
+      laneOf(draft.lane),
       title,
       id,
       ...(submission === 'open' ? [{ open: true } as const] : [])
@@ -217,12 +216,12 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
   function move(rowId: string, lane: BoardGroup, next?: string) {
     const row = props.rows.find((row) => row.rowId === rowId);
     if (!row || !canMove()) return;
-    props.onMove(rowId, lane.option?.id ?? null, next);
+    props.onMove(rowId, lane.lane, next);
     setAnnouncement(`${cellTitle(row, titleField())} moved to ${lane.label}.`);
   }
   function reorder(from: string, to: string, edge?: 'before' | 'after') {
     if (from === to || !props.onLaneOrderChange) return;
-    const order = props.board.lanes.map((lane) => laneKey(lane.option));
+    const order = props.board.lanes.map((lane) => laneId(lane.key));
     const source = order.indexOf(from);
     const target = order.indexOf(to);
     if (source < 0 || target < 0) return;
@@ -233,11 +232,12 @@ export function DatabaseBoard(props: DatabaseBoardProps) {
     if (insertion === source) return;
     order.splice(insertion, 0, from);
     props.onLaneOrderChange(
-      order.map(
-        (key) =>
-          props.board.lanes.find((lane) => laneKey(lane.option) === key)
-            ?.option ?? null
-      )
+      order.flatMap((key) => {
+        const lane = props.board.lanes.find(
+          (entry) => laneId(entry.key) === key
+        );
+        return lane ? [lane.key] : [];
+      })
     );
   }
   return (
@@ -389,10 +389,10 @@ function BoardLane(
             : undefined
         }
       >
-        <SelectPill
-          label={props.group.label}
+        <LanePill
+          group={props.group}
           column={props.groupColumn}
-          empty={props.group.option === null}
+          renderMentionValue={props.renderMentionValue}
         />
         <span class="text-xs tabular-nums text-ink-placeholder">
           {props.group.rows.length + savingCount()}
@@ -423,9 +423,7 @@ function BoardLane(
               <Dropdown.Content class="min-w-44">
                 <Show when={props.onHideLane}>
                   <Dropdown.Item
-                    onSelect={() =>
-                      props.onHideLane?.(props.group.option?.id ?? null)
-                    }
+                    onSelect={() => props.onHideLane?.(props.group.lane)}
                   >
                     Hide lane
                   </Dropdown.Item>
@@ -515,6 +513,37 @@ function BoardLane(
         </Show>
       </div>
     </KanbanLane>
+  );
+}
+
+/** A lane's name: its option's pill, its person's mention, or the empty lane's muted pill. */
+function LanePill(props: {
+  group: BoardGroup;
+  column: DatabaseViewColumn;
+  renderMentionValue?: (id: string, type: DatabaseEntityType) => JSX.Element;
+}) {
+  const person = () => {
+    const lane = props.group.lane;
+    const render = props.renderMentionValue;
+    return lane.kind === 'user' && render ? { id: lane.id, render } : undefined;
+  };
+  return (
+    <Show
+      when={person()}
+      fallback={
+        <SelectPill
+          label={props.group.label}
+          column={props.column}
+          empty={props.group.lane.kind === 'none'}
+        />
+      }
+    >
+      {(shown) => (
+        <span class="min-w-0 truncate text-xs">
+          {shown().render(shown().id, 'USER')}
+        </span>
+      )}
+    </Show>
   );
 }
 
@@ -783,10 +812,10 @@ function BoardCard(props: {
                       onSelect={() => props.onMove(props.row.rowId, group)}
                     >
                       <span class="flex-1">
-                        <SelectPill
-                          label={group.label}
+                        <LanePill
+                          group={group}
                           column={props.groupColumn}
-                          empty={group.option === null}
+                          renderMentionValue={props.renderMentionValue}
                         />
                       </span>
                       <Show when={group.key === props.laneId}>

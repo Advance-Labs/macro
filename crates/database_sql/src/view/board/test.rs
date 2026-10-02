@@ -1,5 +1,5 @@
 use models_databases::views::{
-    CardPosition, Lane, SortDirection, SortKey, ViewLayout, ViewProblem, ViewQuery,
+    CardPosition, Lane, LaneKey, SortDirection, SortKey, ViewLayout, ViewProblem, ViewQuery,
 };
 use models_databases::{OptionId, RowId};
 use uuid::Uuid;
@@ -52,7 +52,7 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
             group_by: STATUS_PLACEMENT,
             title: SUMMARY_PLACEMENT,
             lanes: vec![Lane {
-                option: Some(DOING),
+                key: LaneKey::Option(DOING),
                 hidden: false,
             }],
             card_fields: vec![SUMMARY_PLACEMENT],
@@ -104,18 +104,18 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
     let positions = vec![
         CardPosition {
             row: FOURTH,
-            lane: Some(DOING),
+            lane: LaneKey::Option(DOING),
             position: "80".parse().unwrap(),
         },
         CardPosition {
             row: FIFTH,
-            lane: Some(TODO),
+            lane: LaneKey::Option(TODO),
             position: "8180".parse().unwrap(),
         },
         // Placed when it was in Doing; it has since moved to Todo.
         CardPosition {
             row: FIRST,
-            lane: Some(DOING),
+            lane: LaneKey::Option(DOING),
             position: "7f80".parse().unwrap(),
         },
     ];
@@ -125,22 +125,22 @@ fn cards_sit_in_their_lanes_in_hand_arranged_order() {
         Ok(Board {
             lanes: vec![
                 BoardLane {
-                    option: Some(DOING),
+                    key: LaneKey::Option(DOING),
                     hidden: false,
                     cards: vec![FOURTH, SECOND],
                 },
                 BoardLane {
-                    option: None,
+                    key: LaneKey::None,
                     hidden: false,
                     cards: vec![THIRD, SIXTH],
                 },
                 BoardLane {
-                    option: Some(TODO),
+                    key: LaneKey::Option(TODO),
                     hidden: false,
                     cards: vec![FIFTH, FIRST],
                 },
                 BoardLane {
-                    option: Some(WONT_DO),
+                    key: LaneKey::Option(WONT_DO),
                     hidden: true,
                     cards: vec![],
                 },
@@ -170,12 +170,12 @@ fn unpositioned_cards_follow_positioned_ones_by_row_id() {
     let positions = vec![
         CardPosition {
             row: FOURTH,
-            lane: Some(TODO),
+            lane: LaneKey::Option(TODO),
             position: "8180".parse().unwrap(),
         },
         CardPosition {
             row: THIRD,
-            lane: Some(TODO),
+            lane: LaneKey::Option(TODO),
             position: "80".parse().unwrap(),
         },
     ];
@@ -185,7 +185,7 @@ fn unpositioned_cards_follow_positioned_ones_by_row_id() {
     assert_eq!(
         board.lanes[1],
         BoardLane {
-            option: Some(TODO),
+            key: LaneKey::Option(TODO),
             hidden: false,
             cards: vec![THIRD, FOURTH, FIRST, SECOND],
         }
@@ -217,7 +217,7 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
     ]);
     let positions = vec![CardPosition {
         row: SECOND,
-        lane: Some(TODO),
+        lane: LaneKey::Option(TODO),
         position: "80".parse().unwrap(),
     }];
 
@@ -226,22 +226,22 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
         Ok(Board {
             lanes: vec![
                 BoardLane {
-                    option: None,
+                    key: LaneKey::None,
                     hidden: false,
                     cards: vec![],
                 },
                 BoardLane {
-                    option: Some(TODO),
+                    key: LaneKey::Option(TODO),
                     hidden: false,
                     cards: vec![THIRD, SECOND],
                 },
                 BoardLane {
-                    option: Some(DOING),
+                    key: LaneKey::Option(DOING),
                     hidden: false,
                     cards: vec![FIRST],
                 },
                 BoardLane {
-                    option: Some(WONT_DO),
+                    key: LaneKey::Option(WONT_DO),
                     hidden: false,
                     cards: vec![],
                 },
@@ -250,8 +250,8 @@ fn a_sorted_view_keeps_the_read_order_in_every_lane() {
     );
 }
 
-/// A lane's option and whether it is hidden.
-type ShownLane = (Option<OptionId>, bool);
+/// A lane and whether it is hidden.
+type ShownLane = (LaneKey, bool);
 
 #[test]
 fn listed_lanes_come_first_and_keep_their_hidden_flag() {
@@ -261,58 +261,58 @@ fn listed_lanes_come_first_and_keep_their_hidden_flag() {
             vec![],
             false,
             vec![
-                (None, false),
-                (Some(TODO), false),
-                (Some(DOING), false),
-                (Some(WONT_DO), false),
+                (LaneKey::None, false),
+                (LaneKey::Option(TODO), false),
+                (LaneKey::Option(DOING), false),
+                (LaneKey::Option(WONT_DO), false),
             ],
         ),
         (
             "the no-option lane listed last stays last",
             vec![
                 Lane {
-                    option: Some(WONT_DO),
+                    key: LaneKey::Option(WONT_DO),
                     hidden: false,
                 },
                 Lane {
-                    option: None,
+                    key: LaneKey::None,
                     hidden: false,
                 },
             ],
             false,
             vec![
-                (Some(WONT_DO), false),
-                (None, false),
-                (Some(TODO), false),
-                (Some(DOING), false),
+                (LaneKey::Option(WONT_DO), false),
+                (LaneKey::None, false),
+                (LaneKey::Option(TODO), false),
+                (LaneKey::Option(DOING), false),
             ],
         ),
         (
             "a listed hidden lane is hidden even with cards",
             vec![Lane {
-                option: Some(TODO),
+                key: LaneKey::Option(TODO),
                 hidden: true,
             }],
             false,
             vec![
-                (Some(TODO), true),
-                (None, false),
-                (Some(DOING), false),
-                (Some(WONT_DO), false),
+                (LaneKey::Option(TODO), true),
+                (LaneKey::None, false),
+                (LaneKey::Option(DOING), false),
+                (LaneKey::Option(WONT_DO), false),
             ],
         ),
         (
             "hiding empty lanes hides every lane without cards, listed or not",
             vec![Lane {
-                option: Some(DOING),
+                key: LaneKey::Option(DOING),
                 hidden: false,
             }],
             true,
             vec![
-                (Some(DOING), true),
-                (None, true),
-                (Some(TODO), false),
-                (Some(WONT_DO), true),
+                (LaneKey::Option(DOING), true),
+                (LaneKey::None, true),
+                (LaneKey::Option(TODO), false),
+                (LaneKey::Option(WONT_DO), true),
             ],
         ),
     ];
@@ -336,7 +336,7 @@ fn listed_lanes_come_first_and_keep_their_hidden_flag() {
             board
                 .lanes
                 .iter()
-                .map(|lane| (lane.option, lane.hidden))
+                .map(|lane| (lane.key.clone(), lane.hidden))
                 .collect::<Vec<_>>(),
             expected,
             "{case}"
@@ -363,7 +363,7 @@ fn an_empty_options_cell_is_a_card_without_an_option() {
     assert_eq!(
         board.lanes[0],
         BoardLane {
-            option: None,
+            key: LaneKey::None,
             hidden: false,
             cards: vec![FIRST],
         }
@@ -408,8 +408,126 @@ fn only_a_board_view_of_a_visible_table_lays_out() {
     );
     assert_eq!(
         board(&by_tags, &issues_catalog(), &outcome(&[]), &[]),
-        Err(ViewProblem::BoardNeedsSingleSelect {
+        Err(ViewProblem::BoardCannotGroupBy {
             column: "labels".into(),
+        })
+    );
+}
+
+/// The rows a view's read found, in its order: each row's assignee cell.
+fn assigned(rows: &[(RowId, Option<Cell>)]) -> Outcome {
+    Outcome {
+        columns: vec![
+            OutcomeColumn {
+                name: "summary".into(),
+                column: Some(SUMMARY),
+                kind: OutcomeKind::Text,
+                table: None,
+            },
+            OutcomeColumn {
+                name: "assignee".into(),
+                column: Some(ASSIGNEE),
+                kind: OutcomeKind::Entity,
+                table: None,
+            },
+        ],
+        rows: rows
+            .iter()
+            .map(|(_, assignee)| vec![Some(Cell::Text("card".into())), assignee.clone()])
+            .collect(),
+        row_ids: rows.iter().map(|(row, _)| *row).collect(),
+        read_tables: vec![ISSUES],
+        ..Outcome::default()
+    }
+}
+
+#[test]
+fn a_board_grouped_by_a_person_has_a_lane_per_person_its_cards_name() {
+    let sam = LaneKey::User("macro|sam@macro.com".try_into().unwrap());
+    let ana = LaneKey::User("macro|ana@macro.com".try_into().unwrap());
+    let gone = LaneKey::User("macro|gone@macro.com".try_into().unwrap());
+    let view = issues_view(
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: ASSIGNEE_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
+            lanes: vec![
+                Lane {
+                    key: gone.clone(),
+                    hidden: false,
+                },
+                Lane {
+                    key: sam.clone(),
+                    hidden: true,
+                },
+            ],
+            card_fields: vec![SUMMARY_PLACEMENT],
+            hide_empty_lanes: false,
+        },
+    );
+    let rows = assigned(&[
+        (
+            FIRST,
+            Some(Cell::Entities(vec!["macro|sam@macro.com".into()])),
+        ),
+        (SECOND, None),
+        (
+            THIRD,
+            Some(Cell::Entities(vec!["macro|ana@macro.com".into()])),
+        ),
+        (
+            FOURTH,
+            Some(Cell::Entities(vec!["macro|sam@macro.com".into()])),
+        ),
+    ]);
+    let positions = vec![CardPosition {
+        row: FOURTH,
+        lane: sam.clone(),
+        position: "80".parse().unwrap(),
+    }];
+
+    let board = board(&view, &issues_catalog(), &rows, &positions).unwrap();
+
+    assert_eq!(
+        board,
+        Board {
+            lanes: vec![
+                BoardLane {
+                    key: sam,
+                    hidden: true,
+                    cards: vec![FOURTH, FIRST],
+                },
+                BoardLane {
+                    key: LaneKey::None,
+                    hidden: false,
+                    cards: vec![SECOND],
+                },
+                BoardLane {
+                    key: ana,
+                    hidden: false,
+                    cards: vec![THIRD],
+                },
+            ],
+        }
+    );
+}
+
+#[test]
+fn a_board_grouped_by_several_people_is_refused() {
+    let view = issues_view(
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: REVIEWERS_PLACEMENT,
+            title: SUMMARY_PLACEMENT,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        },
+    );
+    assert_eq!(
+        board(&view, &issues_catalog(), &assigned(&[]), &[]),
+        Err(ViewProblem::BoardCannotGroupBy {
+            column: "reviewers".into(),
         })
     );
 }

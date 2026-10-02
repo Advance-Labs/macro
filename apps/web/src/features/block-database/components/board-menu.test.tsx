@@ -70,7 +70,7 @@ describe('board menu', () => {
           kind: 'board',
           title: 'name',
           groupBy: 'status',
-          lanes: [{ option: 'option-done', hidden: true }],
+          lanes: [{ key: { kind: 'option', id: 'option-done' }, hidden: true }],
           cardFields: ['priority'],
           hideEmptyLanes: false,
         }}
@@ -189,8 +189,8 @@ describe('board menu', () => {
           title: 'name',
           groupBy: 'status',
           lanes: [
-            { option: 'option-done', hidden: true },
-            { option: null, hidden: true },
+            { key: { kind: 'option', id: 'option-done' }, hidden: true },
+            { key: { kind: 'none' }, hidden: true },
           ],
           cardFields: [],
           hideEmptyLanes: false,
@@ -211,8 +211,8 @@ describe('board menu', () => {
       title: 'name',
       groupBy: 'status',
       lanes: [
-        { option: 'option-done', hidden: true },
-        { option: null, hidden: true },
+        { key: { kind: 'option', id: 'option-done' }, hidden: true },
+        { key: { kind: 'none' }, hidden: true },
       ],
       cardFields: [],
       hideEmptyLanes: true,
@@ -232,8 +232,8 @@ describe('board menu', () => {
         title: 'name',
         groupBy: 'status',
         lanes: [
-          { option: 'option-done', hidden: false },
-          { option: null, hidden: true },
+          { key: { kind: 'option', id: 'option-done' }, hidden: false },
+          { key: { kind: 'none' }, hidden: true },
         ],
         cardFields: [],
         hideEmptyLanes: false,

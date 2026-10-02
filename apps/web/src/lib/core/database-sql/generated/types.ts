@@ -34,8 +34,8 @@ export type Board = {
 
 /**  One lane and its cards. */
 export type BoardLane = {
-  /**  The option whose cards the lane holds; `null` for cards without one. */
-  option: OptionId | null;
+  /**  The lane: an option, a person, or the lane of empty cells. */
+  key: LaneKey;
   /**  Whether the lane is hidden: by the layout, or for being empty. */
   hidden: boolean;
   /**  The cards' rows, in display order. */
@@ -50,11 +50,8 @@ export type BoardLane = {
 export type CardPosition = {
   /**  The card's row. */
   row: RowId;
-  /**
-   *  The lane: an option of the board's column, `null` for the lane of
-   *  cards without one.
-   */
-  lane: OptionId | null;
+  /**  The lane. */
+  lane: LaneKey;
   /**  The card's key in that lane. */
   position: Position;
 };
@@ -659,11 +656,23 @@ export type KeyHint = {
 
 /**  How one lane shows in a board layout. */
 export type Lane = {
-  /**  The option the lane holds the cards of; `null` for cards without one. */
-  option: OptionId | null;
+  /**  The lane. */
+  key: LaneKey;
   /**  Whether it is hidden. */
   hidden?: boolean;
 };
+
+/**
+ *  A lane of a board, named by what its cards' grouping cells hold: one
+ *  option of a select, one person, or nothing.
+ */
+export type LaneKey =
+  /**  The cards holding this option of the board's select column. */
+  | { kind: 'option'; id: OptionId }
+  /**  The cards naming this person in the board's person column. */
+  | { kind: 'user'; id: string }
+  /**  The cards whose grouping cell is empty. */
+  | { kind: 'none' };
 
 /**  What a new column holds. */
 export type NewColumn =
@@ -1111,12 +1120,15 @@ export type RequestedLayout =
       columns: ViewColumn[];
     }
   /**
-   *  Cards in lanes, one lane per option of a single-select column plus
-   *  one for cards without one.
+   *  Cards in lanes, one per option of a single-select column or per
+   *  person of a single-person column, plus one for empty cells.
    */
   | {
       kind: 'board';
-      /**  The single-select column whose options are the lanes. */
+      /**
+       *  The single-select or single-person column whose values are the
+       *  lanes.
+       */
       groupBy: ColumnId;
       /**
        *  The column a card is titled by. Left out, a board keeps the
@@ -1938,19 +1950,19 @@ export type ViewChange =
   | { kind: 'delete' }
   /**
    *  Move one of the board's cards: into a lane, which sets the row's
-   *  grouping cell to the lane's option (or empties it for the lane
-   *  without one), and to a place there, between two of its cards. Only
-   *  an unsorted board's cards move by hand.
+   *  grouping cell to the lane's option or person (or empties it for the
+   *  lane of empty cells), and to a place there, between two of its
+   *  cards. Only an unsorted board's cards move by hand.
    */
   | {
       kind: 'move_card';
       /**  The card's row. */
       row: RowId;
       /**
-       *  The lane it goes to: an option of the board's column, or `null`
-       *  for the lane of cards without one.
+       *  The lane it goes to: an option of a select board's column, a
+       *  person for a board grouped by people, or the lane of empty cells.
        */
-      lane: OptionId | null;
+      lane: LaneKey;
       /**
        *  The card that ends up just before it (it lands right after this
        *  one), if any.
@@ -1987,16 +1999,17 @@ export type ViewLayout =
       columns: ViewColumn[];
     }
   /**
-   *  Cards in lanes, one lane per option of a single-select column plus
-   *  one for cards without one. A multi-select column cannot group a
-   *  board: a card is in exactly one lane, so a card in several would need
-   *  a place in each.
+   *  Cards in lanes: one lane per option of a single-select column, or
+   *  one per person a single-person column names, plus one for cards
+   *  with an empty cell. A multi-valued column cannot group a board: a
+   *  card is in exactly one lane, so a card in several would need a place
+   *  in each.
    */
   | {
       kind: 'board';
       /**
-       *  The single-select column whose options are the lanes; moving a
-       *  card to another lane sets this column.
+       *  The single-select or single-person column whose values are the
+       *  lanes; moving a card to another lane sets this column.
        */
       groupBy: ColumnId;
       /**
@@ -2006,8 +2019,8 @@ export type ViewLayout =
       title: ColumnId;
       /**
        *  How lanes show, in display order. A lane left out shows after the
-       *  listed ones, options in the column's order; the lane of cards
-       *  without an option first.
+       *  listed ones: the lane of empty cells first, then options in the
+       *  column's order, or people by id.
        */
       lanes: Lane[];
       /**  The columns a card shows under its title, in order. */
@@ -2089,11 +2102,25 @@ export type ViewProblem =
   | { kind: 'repeatedLane' }
   /**  A board was asked of a view laid out as a table. */
   | { kind: 'notABoard' }
-  /**  A board is grouped by a column that is not a single select. */
+  /**
+   *  A board is grouped by a column that is neither a single select nor
+   *  a single person.
+   */
   | {
-      kind: 'boardNeedsSingleSelect';
+      kind: 'boardCannotGroupBy';
       /**  The column's name. */
       column: string;
+    }
+  /**
+   *  A lane names an option on a board grouped by people, or a person on
+   *  one grouped by options.
+   */
+  | {
+      kind: 'laneDoesNotFit';
+      /**  The grouping column's name. */
+      column: string;
+      /**  Whether the column groups the board by people. */
+      people: boolean;
     };
 
 /**

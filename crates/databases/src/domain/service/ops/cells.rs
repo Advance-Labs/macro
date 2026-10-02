@@ -47,7 +47,7 @@ impl Planner {
 
     /// A value as the properties system stores it in `column`, checked to
     /// fit the column's type the way a property value is.
-    fn value(
+    pub(super) fn value(
         &mut self,
         place: Place,
         column: &ColumnEntry,
