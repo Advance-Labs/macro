@@ -480,10 +480,14 @@ async fn pdf_root_tombstone_keeps_anchor_and_thread_deletion_removes_placeable(p
         height_pct: 0.05,
     });
     let root = repo.create(create).await.unwrap();
-    let saved = sqlx::query!(r#"SELECT root_id, "threadId" AS thread_id, "xPct" AS x FROM "PdfPlaceableCommentAnchor" WHERE uuid = $1"#, anchor_id)
-        .fetch_one(&pool).await.unwrap();
+    let saved = sqlx::query!(
+        r#"SELECT root_id, "xPct" AS x FROM "PdfPlaceableCommentAnchor" WHERE uuid = $1"#,
+        anchor_id
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(saved.root_id, Some(root.id));
-    assert_eq!(saved.thread_id, None);
     assert_eq!(saved.x, 0.2);
     repo.delete(&root.parent, root.id).await.unwrap();
     assert_eq!(
@@ -528,18 +532,22 @@ async fn highlight_attachment_is_scoped_and_explicit_thread_deletion_preserves_h
         .is_empty()
     );
     create.parent = MessageParent::parse("document", "message-doc-a").unwrap();
-    let root = repo.create(create).await.unwrap();
+    let root = repo.create(create.clone()).await.unwrap();
+    // The root identity alone prevents a second discussion from stealing a highlight.
+    assert!(repo.create(create.clone()).await.is_err());
     repo.delete_thread(&root.parent, root.id).await.unwrap();
     let remaining = sqlx::query!(
-        r#"SELECT root_id, "threadId" AS thread_id, text FROM "PdfHighlightAnchor" WHERE uuid = $1"#,
+        r#"SELECT root_id, text FROM "PdfHighlightAnchor" WHERE uuid = $1"#,
         anchor_id
     )
     .fetch_one(&pool)
     .await
     .unwrap();
     assert!(remaining.root_id.is_none());
-    assert!(remaining.thread_id.is_none());
     assert_eq!(remaining.text, "selected text");
+    // Deleting a discussion releases its highlight for a new discussion.
+    let replacement = repo.create(create).await.unwrap();
+    assert_ne!(replacement.id, root.id);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
