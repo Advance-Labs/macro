@@ -11,6 +11,8 @@ mod service;
 mod test_support;
 #[cfg(feature = "ai_tools")]
 pub mod toolset;
+mod view_only;
 
 pub use outcome::{ResultColumn, ResultSet, SqlOutcome, SqlStatement};
 pub use service::{ChartColumns, DatabasesSql, SqlError, SqlRequest};
+pub use view_only::ViewOnlyAccess;

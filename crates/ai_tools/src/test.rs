@@ -128,8 +128,10 @@ fn project_workflows_are_available_in_every_host_alongside_folder_and_property_t
     }
 }
 
+/// Document answers get the one SQL tool, not a read-only twin: the access
+/// they run over refuses the writes (see `databases_sql`'s view-only tests).
 #[test]
-fn document_answers_expose_only_discovery_and_read_only_query() {
+fn document_answers_expose_discovery_and_the_one_query_tool() {
     let tools = database_read_only_tools();
     let names = tools
         .tools
@@ -141,6 +143,11 @@ fn document_answers_expose_only_discovery_and_read_only_query() {
         ["ListDatabases", "DescribeDatabase", "QueryDatabase"]
             .into_iter()
             .collect()
+    );
+    assert_eq!(
+        tools.tools["QueryDatabase"].annotations,
+        database_tools().tools["QueryDatabase"].annotations,
+        "the same QueryDatabase every host gets"
     );
     assert!(tools.user_tools.is_empty());
 }

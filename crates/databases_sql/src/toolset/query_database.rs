@@ -1,5 +1,5 @@
-//! QueryDatabase tool: the read *and* write verb for Macro Databases, and
-//! its read-only twin for document answers.
+//! QueryDatabase tool: the read *and* write verb for Macro Databases. What
+//! it may write is the viewer's access, never the tool.
 
 use models_databases::{DatabaseId, RowId, TableId};
 use std::collections::HashMap;
@@ -80,54 +80,6 @@ pub enum QueryDatabaseDisplay {
     Scatter,
     /// Show category proportions with a pie chart.
     Pie,
-}
-
-/// Read-only query capability for document answers and automatic discovery.
-#[derive(Debug, Deserialize, JsonSchema, Clone)]
-#[serde(rename_all = "camelCase")]
-#[schemars(
-    title = "QueryDatabase",
-    description = concat!(
-        "Read Macro database records with a SELECT. Discover the relevant database with ListDatabases, then call DescribeDatabase to see ALL of its tables and exact columns. This tool cannot change records, schema, or saved views; the query service rejects writes regardless of the caller's edit permission. Results are permission-filtered for the current user. Inspect truncatedTables before reporting totals.\n\n## Dialect\n\n",
-        include_str!("sql_guide.md"),
-    )
-)]
-pub struct ReadOnlyQueryDatabase {
-    /// The SELECT to run, using the names DescribeDatabase reported.
-    pub sql: String,
-}
-
-impl ToolAnnotated for ReadOnlyQueryDatabase {
-    const ANNOTATIONS: ToolAnnotations = ToolAnnotations::read_only("Query database");
-}
-
-#[async_trait]
-impl<Databases, Access, Soup, Contacts>
-    AsyncTool<DatabasesSqlToolContext<Databases, Access, Soup, Contacts>> for ReadOnlyQueryDatabase
-where
-    Databases: DatabasesService,
-    Access: EntityAccessService,
-    Soup: SoupService,
-    Contacts: ContactsService,
-{
-    type Output = QueryDatabaseResponse;
-
-    #[tracing::instrument(skip_all, fields(user_id = ?request_context.user_id), err)]
-    async fn call(
-        &self,
-        service_context: ServiceContext<DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>,
-        request_context: RequestContext,
-    ) -> ToolResult<Self::Output> {
-        service_context
-            .sql
-            .query(
-                service_context.viewer(&request_context.user_id),
-                self.sql.clone(),
-            )
-            .await
-            .map(Into::into)
-            .map_err(sql_error)
-    }
 }
 
 /// Version of one table actually read by a query.

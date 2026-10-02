@@ -741,20 +741,43 @@ async fn people_are_the_viewers_contacts() {
 }
 
 #[tokio::test]
-async fn a_read_only_query_refuses_a_write_before_reading() {
+async fn view_only_sql_refuses_an_owners_write_as_a_view_grant_is_refused() {
     let world = world();
     let error = sql(&world)
-        .query(
+        .view_only()
+        .execute(
             agent_for(OWNER),
-            "DELETE FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Sam'".into(),
+            SqlRequest {
+                sql: "DELETE FROM \"Offsite\".\"Guests\" WHERE \"Name\" = 'Sam'".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
         )
         .await
-        .expect_err("queries never write");
+        .expect_err("view-only access never writes");
 
-    assert!(matches!(error, SqlError::ReadOnlyQuery), "{error:?}");
-    let world = world.lock().unwrap();
-    assert!(world.soup_reads.is_empty());
-    assert!(world.applied.is_empty());
+    assert!(
+        matches!(&error, SqlError::TableReadOnly { table } if table == "Guests"),
+        "{error:?}"
+    );
+    assert!(world.lock().unwrap().applied.is_empty());
+
+    let outcome = sql(&world)
+        .view_only()
+        .execute(
+            agent_for(OWNER),
+            SqlRequest {
+                sql: "SELECT COUNT(*) FROM \"Offsite\".\"Guests\"".into(),
+                scope: None,
+                base_versions: HashMap::new(),
+            },
+        )
+        .await
+        .expect("view-only access reads");
+    assert_eq!(
+        outcome.result.as_ref().unwrap().rows,
+        vec![vec![Some(Cell::Number(2.0))]]
+    );
 }
 
 #[tokio::test]
