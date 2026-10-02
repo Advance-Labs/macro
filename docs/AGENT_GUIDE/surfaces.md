@@ -684,7 +684,12 @@ For recovery verification, reject a draft save with a GraphQL error (including
 legacy `retryable: true` metadata), then perform an unrelated queued action: the
 failed save must release the queue. Reload and reopen the draft; verify subject,
 recipients, body, and pending file contents. Retry and check that exactly one
-server draft exists. Repeat with two tabs, a save response arriving after a newer
+server draft exists. If per-mutation recovery preparation fails or times out,
+the mutation must fail and release the queue too, including legacy drafts that
+have not been copied into recovery storage. Existing local working copies remain;
+an unmigrated legacy edit can be lost if the queue held its only durable copy.
+Verify that an unrelated queued action still completes in both cases.
+Repeat with two tabs, a save response arriving after a newer
 edit, an attachment upload completing during another local save, and Discard
 while an attachment snapshot is still being saved. Latest committed local edits
 win across tabs; a completed discard must not resurrect on reload. A clean,
@@ -719,25 +724,22 @@ offline: a blocking notice explains and nothing is attached.
 For a new standalone email, a failed REST draft save is best-effort: Send can
 still proceed without a draft ID when no save was queued and no attachment is
 waiting to upload. A server rejection blocks sending even an existing draft.
-An internal draft-save failure, including a failed response read after the save
-commits, stays queued and retries with backoff. It must not permanently disable
-autosave; Send stays blocked until a save is confirmed. Invalid or unauthorized
-writes still stop retrying.
+GraphQL draft saves automatically retry only network failures. GraphQL errors,
+including internal, invalid, and unauthorized errors, fail the mutation and
+release the queue. The local working copy offers explicit Retry; Send stays
+blocked until a save is confirmed.
 A successful save response with an invalid cache identity binding still commits
 its normalizable server data and reports a cache diagnostic without replaying
 the mutation or asking the user to save again. If that response also cannot be
 normalized, the attempt stops retrying and reports a permanent cache failure.
-If an offline save is permanently rejected after reconnect, a persistent
-**Draft could not be saved** notice offers **Save as new draft**. The editor keeps
-the latest text and stops autosaving until that action is chosen. Recovery saves
-the current content under a new draft identity; a reply stays in its conversation.
-Previously saved attachments that cannot be copied require reattachment, with a
-separate notice. Verify that further typing alone does not retry the rejected
-write, recovery uses the newest text, and closing or resetting the composer
-removes its recovery notice. Other transient notices must not hide that action.
+If a queued GraphQL save is permanently rejected after reconnect, **Not synced**
+offers **Retry** using the original draft handle and latest locally saved content.
+Further typing saves locally without retrying the rejected write. Verify that
+pending attachment bytes survive reopening and that a reply stays in its
+conversation.
 An already-sent rejection after reconnect follows the same path as an immediate
 already-sent response: announce that the email or reply was sent, clear the local
-composer, and cancel pending autosave. It must never offer **Save as new draft**.
+composer, and cancel pending autosave. It must never offer Retry for that draft.
 Verify this in standalone and reply composers, including a queued edit awaiting
 its debounce and a failure racing the first identity read. A settlement for a
 previous or different draft must not clear the current editor.

@@ -2662,9 +2662,14 @@ describe('normalizedCacheExchange', () => {
       }
     );
 
-    it.each(['rejects', 'hangs'] as const)(
-      'releases a recoverable draft when admission %s',
-      async (failure) => {
+    it.each([
+      { failure: 'rejects', legacy: false },
+      { failure: 'hangs', legacy: false },
+      { failure: 'rejects', legacy: true },
+      { failure: 'hangs', legacy: true },
+    ])(
+      'releases a draft when admission $failure (legacy=$legacy)',
+      async ({ failure, legacy }) => {
         vi.useFakeTimers();
         try {
           host.seedQueued({
@@ -2673,7 +2678,7 @@ describe('normalizedCacheExchange', () => {
             operationName: 'SaveEmailDraft',
             variables: { input: { draftId: 'draft' } },
             data: optimistic,
-            clientMetadata: { kind: 'email-draft' },
+            clientMetadata: legacy ? undefined : { kind: 'email-draft' },
           });
           host.seedQueued({
             uuid: 'other',
@@ -2690,7 +2695,6 @@ describe('normalizedCacheExchange', () => {
                 throw new Error('Recovery storage unavailable');
               return await new Promise<boolean>(() => {});
             },
-            hasDurableMutationRecovery: (mutation) => !!mutation.clientMetadata,
             onMutationAttemptResult,
           });
           await vi.advanceTimersByTimeAsync(2_010);
@@ -2718,7 +2722,6 @@ describe('normalizedCacheExchange', () => {
         beforeMutationAttempt: async () => {
           throw new Error('Local storage unavailable');
         },
-        hasDurableMutationRecovery: () => true,
       });
       ops.next(makeMutationOp(1, optimistic));
       await vi.waitFor(() => expect(results).toHaveLength(1));
@@ -2732,30 +2735,6 @@ describe('normalizedCacheExchange', () => {
       expect(results[0]?.error?.graphQLErrors[0]?.extensions.code).toBe(
         'LOCAL_RECOVERY_FAILED'
       );
-    });
-
-    it('preserves a legacy draft if its recovery admission cannot complete', async () => {
-      vi.useFakeTimers();
-      try {
-        host.seedQueued({
-          uuid: 'legacy-draft',
-          query: stringifyDocument(SaveEmailDraftDocument),
-          operationName: 'SaveEmailDraft',
-          variables: { input: { draftId: 'legacy-draft' } },
-          data: optimistic,
-        });
-        const { forwarded } = harness(host, undefined, {
-          beforeMutationAttempt: async () =>
-            await new Promise<boolean>(() => {}),
-        });
-        await vi.advanceTimersByTimeAsync(2_010);
-        expect(forwarded).toHaveLength(0);
-        expect(host.rollbacks).toHaveLength(0);
-        expect(host.defers).toMatchObject([{ transactionId: 'restored-1' }]);
-        expect(host.claims).toHaveLength(1);
-      } finally {
-        vi.useRealTimers();
-      }
     });
 
     it.each([true, false])(

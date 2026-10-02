@@ -185,23 +185,25 @@ describe('draft queue recovery', () => {
     ).rejects.toThrow('no longer active');
     await expect(runtime.localDraftStore.save(owner, prior)).rejects.toThrow();
   });
-  it('only declares metadata mutations recoverable during storage failure', () => {
+  it('reconciles again after a recovery failure without mutation metadata', async () => {
     const lifecycle = runtime.localDraftQueueLifecycle(host);
-    expect(lifecycle.hasDurableMutationRecovery!(claimed(undefined))).toBe(
+    await lifecycle.prepareMutationQueue!();
+    const draft = await runtime.saveLocalDraft(input());
+    const attempt = await runtime.beginDraftAttempt(draft, 'save');
+    await runtime.markDraftAttemptQueued(attempt);
+    await lifecycle.onMutationAttemptResult!(
+      claimed(undefined),
+      {
+        error: {
+          graphQLErrors: [{ extensions: { code: 'LOCAL_RECOVERY_FAILED' } }],
+        },
+      } as unknown as OperationResult,
       false
     );
-    expect(
-      lifecycle.hasDurableMutationRecovery!(
-        claimed({
-          kind: 'email-draft',
-          id: 'attempt',
-          draftKey: 'local',
-          accountId: 'owner',
-          generation: 'generation',
-          revision: 1,
-          operation: 'save',
-        })
-      )
-    ).toBe(true);
+    await lifecycle.prepareMutationQueue!();
+    expect(await runtime.readLocalDraft('local')).toMatchObject({
+      status: 'unconfirmed',
+      content: { subject: 'Draft' },
+    });
   });
 });

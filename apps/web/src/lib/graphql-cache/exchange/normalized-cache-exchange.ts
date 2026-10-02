@@ -457,12 +457,10 @@ function mutationErrorCode(
 }
 
 export interface NormalizedCacheExchangeOptions {
-  /** Best-effort startup recovery; per-mutation admission protects legacy intent. */
+  /** Best-effort startup recovery before per-mutation admission. */
   prepareMutationQueue?: () => Promise<void>;
   /** False discards obsolete client intent without sending it to the server. */
   beforeMutationAttempt?: (mutation: ClaimedMutation) => Promise<boolean>;
-  /** Whether admission failure can release this entry without losing its only durable copy. */
-  hasDurableMutationRecovery?: (mutation: ClaimedMutation) => boolean;
   /** Persist domain recovery state for a replayed result, including when its UI is closed. */
   onMutationAttemptResult?: (
     mutation: ClaimedMutation,
@@ -884,83 +882,64 @@ export function normalizedCacheExchange(
             scheduleDrain();
             return;
           }
-        } catch (error) {
+        } catch {
           queuePreparation = undefined;
-          let recoverable = false;
           try {
-            recoverable =
-              options.hasDurableMutationRecovery?.(claimed) === true;
-          } catch {
-            /* Unknown recovery must preserve the queued copy. */
-          }
-          try {
-            if (recoverable) {
-              const live = liveQueuedOps.get(claimed.transactionId);
-              const operation =
-                live?.operation ??
-                makeOperation(
-                  'mutation',
-                  createRequest(
-                    replayDocument(claimed.query, claimed.operationName),
-                    claimed.variables
-                  ),
-                  { url: '', requestPolicy: 'network-only' }
-                );
-              const failure = new CombinedError({
-                graphQLErrors: [
-                  {
-                    message: 'Unable to prepare the saved mutation for replay',
-                    extensions: { code: 'LOCAL_RECOVERY_FAILED' },
-                  },
-                ],
-              });
-              const result: OperationResult = {
-                operation,
-                data: undefined,
-                error: failure,
-                stale: false,
-                hasNext: false,
-              };
-              await recordAttemptResult(
+            const live = liveQueuedOps.get(claimed.transactionId);
+            const operation =
+              live?.operation ??
+              makeOperation(
+                'mutation',
+                createRequest(
+                  replayDocument(claimed.query, claimed.operationName),
+                  claimed.variables
+                ),
+                { url: '', requestPolicy: 'network-only' }
+              );
+            const failure = new CombinedError({
+              graphQLErrors: [
                 {
-                  mutation: claimed,
-                  transactionId: claimed.transactionId,
-                  leaseOwner: queueOwner,
-                  leaseGeneration: claimed.leaseGeneration,
-                  attemptCount: claimed.attemptCount,
+                  message: 'Unable to prepare the saved mutation for replay',
+                  extensions: { code: 'LOCAL_RECOVERY_FAILED' },
                 },
-                result,
-                false
-              );
-              await host.rollbackOptimisticWrite(
-                claimed.transactionId,
-                { owner: queueOwner, generation: claimed.leaseGeneration },
-                failure.message,
-                'LOCAL_RECOVERY_FAILED'
-              );
-              liveQueuedOps.delete(claimed.transactionId);
-              live?.resolveRoute(
-                withOptimisticMutationDisposition(result, {
-                  kind: 'permanently-failed',
-                  transactionId: claimed.transactionId,
-                })
-              );
-              deferredUntil = undefined;
-            } else {
-              // Legacy entries may be the only durable copy. Keep them until
-              // recovery storage is available instead of losing user content.
-              deferredUntil = Date.now() + EMPTY_QUEUE_POLL_MS;
-              await host.deferOptimisticWrite(
-                claimed.transactionId,
-                { owner: queueOwner, generation: claimed.leaseGeneration },
-                deferredUntil,
-                error instanceof Error ? error.message : String(error)
-              );
-            }
+              ],
+            });
+            const result: OperationResult = {
+              operation,
+              data: undefined,
+              error: failure,
+              stale: false,
+              hasNext: false,
+            };
+            await recordAttemptResult(
+              {
+                mutation: claimed,
+                transactionId: claimed.transactionId,
+                leaseOwner: queueOwner,
+                leaseGeneration: claimed.leaseGeneration,
+                attemptCount: claimed.attemptCount,
+              },
+              result,
+              false
+            );
+            await host.rollbackOptimisticWrite(
+              claimed.transactionId,
+              { owner: queueOwner, generation: claimed.leaseGeneration },
+              failure.message,
+              'LOCAL_RECOVERY_FAILED'
+            );
+            liveQueuedOps.delete(claimed.transactionId);
+            live?.resolveRoute(
+              withOptimisticMutationDisposition(result, {
+                kind: 'permanently-failed',
+                transactionId: claimed.transactionId,
+              })
+            );
+            deferredUntil = undefined;
           } finally {
             attemptInFlight = false;
             resolveLiveOperationsAsQueued();
-            scheduleDrain(recoverable ? 0 : EMPTY_QUEUE_POLL_MS);
+            scheduleDrain();
           }
           return;
         }

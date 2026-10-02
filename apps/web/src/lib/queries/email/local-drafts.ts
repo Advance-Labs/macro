@@ -500,10 +500,7 @@ export function localDraftQueueLifecycle(
   host: CacheHost
 ): Pick<
   NormalizedCacheExchangeOptions,
-  | 'prepareMutationQueue'
-  | 'hasDurableMutationRecovery'
-  | 'beforeMutationAttempt'
-  | 'onMutationAttemptResult'
+  'prepareMutationQueue' | 'beforeMutationAttempt' | 'onMutationAttemptResult'
 > {
   let initialized: Promise<void> | undefined;
   const legacy = new Map<string, DraftAttempt>();
@@ -699,10 +696,6 @@ export function localDraftQueueLifecycle(
     return await preserveLegacy(queued);
   }
   return {
-    hasDurableMutationRecovery(mutation) {
-      initialized = undefined;
-      return !!attemptOf(mutation);
-    },
     async prepareMutationQueue() {
       try {
         initialized ??= prepare();
@@ -727,6 +720,12 @@ export function localDraftQueueLifecycle(
             attempt.revision >= local.acknowledgedRevision;
     },
     async onMutationAttemptResult(mutation, result, retry) {
+      if (
+        result.error?.graphQLErrors.some(
+          (error) => error.extensions.code === 'LOCAL_RECOVERY_FAILED'
+        )
+      )
+        initialized = undefined;
       const attempt = attemptOf(mutation) ?? legacy.get(mutation.transactionId);
       if (!attempt || retry) return;
       await settleDraftAttempt(attempt, result, mutation.superseded);
