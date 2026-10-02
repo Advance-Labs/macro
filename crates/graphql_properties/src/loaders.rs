@@ -332,7 +332,9 @@ pub fn entity_properties_loader<R>(
 where
     R: EntityPropertyReader,
 {
-    DataLoader::new(EntityPropertiesLoader::new(user_id, reader), tokio::spawn)
+    DataLoader::new(EntityPropertiesLoader::new(user_id, reader), |future| {
+        tokio::spawn(future.in_current_span())
+    })
 }
 
 /// Bound database pressure while independent property targets are authorized.
