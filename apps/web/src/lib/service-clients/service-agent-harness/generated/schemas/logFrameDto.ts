@@ -4,6 +4,7 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { LogDirectionDto } from './logDirectionDto';
 import type { LogFrameDtoContent } from './logFrameDtoContent';
 
@@ -17,9 +18,9 @@ drift from the fold's wire format, and the point of the endpoint is that it
 cannot - so this describes that format without being able to produce it.
  */
 export interface LogFrameDto {
-  /** Which way the frame travelled. */
-  direction: LogDirectionDto;
   /** The protocol envelope, verbatim. Opaque here: it is Agent Runtime
 Protocol, whose shape belongs to the fold rather than this endpoint. */
   content: LogFrameDtoContent;
+  /** Which way the frame travelled. */
+  direction: LogDirectionDto;
 }

@@ -18,12 +18,12 @@ means the harness translates without resolving anything, and the fold
 reads the same fields back off the logged frame.
  */
 export interface PromptAttachment {
-  /** Where the agent can fetch the file. */
-  uri: string;
-  /** Display name, typically the original file name. */
-  name: string;
   /** The file's media type, when known. */
   mimeType?: PromptAttachmentMimeType;
+  /** Display name, typically the original file name. */
+  name: string;
   /** Size in bytes, when known. */
   size?: PromptAttachmentSize;
+  /** Where the agent can fetch the file. */
+  uri: string;
 }

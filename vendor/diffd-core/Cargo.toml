@@ -16,7 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 schemars.workspace = true
-utoipa = { workspace = true, features = ["preserve_order"] }
+utoipa.workspace = true
 similar.workspace = true
 tree-sitter = "0.25"
 tree-sitter-highlight = "0.25"

@@ -10,9 +10,9 @@
  */
 export interface SideText {
   lines: string[];
+  /** Per line, flattened `[start, end, …]`: tokens difftastic marks as novel. */
+  novel: number[][];
   /** Per line, flattened `[start, end, class, start, end, class, …]`.
 `class` indexes [`SyntaxClass::ALL`]. */
   syntax: number[][];
-  /** Per line, flattened `[start, end, …]`: tokens difftastic marks as novel. */
-  novel: number[][];
 }

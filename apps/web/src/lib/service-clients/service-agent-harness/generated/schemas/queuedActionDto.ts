@@ -17,17 +17,17 @@ Clients deserialize this, so both derives are used.
 export interface QueuedActionDto {
   /** The id the action was accepted under. */
   actionId: AgentActionId;
+  /** The user who queued it, absent when a bot acted on nobody's behalf. */
+  actorUserId?: QueuedActionDtoActorUserId;
+  /** Files the prompt refers to, for prompts only. Kept through an edit,
+which replaces the text alone. */
+  attachments?: PromptAttachment[];
+  /** When it was accepted. */
+  createdAt: string;
   /** What kind of action waits - `prompt` or `compact`; only
 turn-occupying actions are ever queued. */
   kind: string;
   /** The prompt's raw text, present for prompts only. What an edit
 replaces. */
   prompt?: QueuedActionDtoPrompt;
-  /** Files the prompt refers to, for prompts only. Kept through an edit,
-which replaces the text alone. */
-  attachments?: PromptAttachment[];
-  /** The user who queued it, absent when a bot acted on nobody's behalf. */
-  actorUserId?: QueuedActionDtoActorUserId;
-  /** When it was accepted. */
-  createdAt: string;
 }

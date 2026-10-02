@@ -10,11 +10,11 @@ import type { AgentRepositoryDtoDefaultBranch } from './agentRepositoryDtoDefaul
  * One repository the caller can select for a coding session.
  */
 export interface AgentRepositoryDto {
-  /** The canonical `https://github.com/owner/name` url, in the form
-`POST /agent-sessions` accepts as `repoUrl`. */
-  url: string;
   /** The branch a clone checks out, and where a session starts when its
 request selects this repository without a `repoBranch`. Absent for a
 repository with no commits. */
   defaultBranch?: AgentRepositoryDtoDefaultBranch;
+  /** The canonical `https://github.com/owner/name` url, in the form
+`POST /agent-sessions` accepts as `repoUrl`. */
+  url: string;
 }

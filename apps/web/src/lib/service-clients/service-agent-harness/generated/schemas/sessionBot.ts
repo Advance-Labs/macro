@@ -4,6 +4,7 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { BotId } from './botId';
 import type { SessionBotAvatarUrl } from './sessionBotAvatarUrl';
 
@@ -11,12 +12,12 @@ import type { SessionBotAvatarUrl } from './sessionBotAvatarUrl';
  * The agent behind a session, as much of it as rendering a message needs.
  */
 export interface SessionBot {
+  /** Avatar, when it has one. */
+  avatarUrl?: SessionBotAvatarUrl;
+  /** Stable `@` handle, without a leading `@`. */
+  handle: string;
   /** The bot's id. A message it sent has `"bot|{id}"` as its sender. */
   id: BotId;
   /** Display name. */
   name: string;
-  /** Stable `@` handle, without a leading `@`. */
-  handle: string;
-  /** Avatar, when it has one. */
-  avatarUrl?: SessionBotAvatarUrl;
 }

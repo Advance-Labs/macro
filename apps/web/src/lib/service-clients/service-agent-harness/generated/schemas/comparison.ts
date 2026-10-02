@@ -13,8 +13,8 @@ import type { ComparisonHead } from './comparisonHead';
 export interface Comparison {
   /** Base commit or branch; defaults to HEAD for a new workspace review. */
   base?: ComparisonBase;
-  /** Explicitly switch a fixed-head workspace comparison back to the live worktree. */
-  worktree?: boolean;
   /** Optional tip commit; absent keeps the previous workspace tip or follows the PR. */
   head?: ComparisonHead;
+  /** Explicitly switch a fixed-head workspace comparison back to the live worktree. */
+  worktree?: boolean;
 }

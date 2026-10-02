@@ -10,14 +10,14 @@ import type { Location } from './location';
  * A chapter authored by the agent. Keys allow idempotent replacement.
  */
 export interface Chapter {
-  /** Stable agent-supplied key. */
-  key: string;
-  /** Short title describing intent. */
-  title: string;
   /** Markdown explanation of why these changes belong together. */
   description: string;
-  /** Reading order of repository-relative files. */
-  paths: string[];
   /** Initial code selection, validated against the published revision. */
   focus: Location;
+  /** Stable agent-supplied key. */
+  key: string;
+  /** Reading order of repository-relative files. */
+  paths: string[];
+  /** Short title describing intent. */
+  title: string;
 }

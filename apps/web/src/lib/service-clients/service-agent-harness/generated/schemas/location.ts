@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { LocationEndLine } from './locationEndLine';
 import type { Side } from './side';
 
@@ -12,18 +11,18 @@ import type { Side } from './side';
  * A code reference supplied by a user or agent; lines are one-based, inclusive.
  */
 export interface Location {
-  /** Repository-relative path. */
-  path: string;
-  /** Before or after side. */
-  side: Side;
-  /**
-   * First selected line.
-   * @minimum 0
-   */
-  line: number;
   /**
    * Last selected line; omitted for a single line.
    * @minimum 0
    */
   endLine?: LocationEndLine;
+  /**
+   * First selected line.
+   * @minimum 0
+   */
+  line: number;
+  /** Repository-relative path. */
+  path: string;
+  /** Before or after side. */
+  side: Side;
 }

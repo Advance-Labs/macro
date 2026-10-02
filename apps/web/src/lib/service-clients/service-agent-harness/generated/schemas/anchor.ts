@@ -12,19 +12,19 @@ import type { Location } from './location';
  * A durable code link with preserved original context.
  */
 export interface Anchor {
+  /** Latest resolved selection. */
+  current: Location;
+  /** Exact selected lines, never replaced by a later capture. */
+  excerpt: string[];
   /** Stable identity used in URLs. */
   id: string;
+  /** Original selection. */
+  original: Location;
   /**
    * Revision the author was viewing.
    * @minimum 0
    */
   revision: number;
-  /** Original selection. */
-  original: Location;
-  /** Exact selected lines, never replaced by a later capture. */
-  excerpt: string[];
-  /** Latest resolved selection. */
-  current: Location;
   /** How the current selection relates to the original. */
   status: AnchorStatus;
 }

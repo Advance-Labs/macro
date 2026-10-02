@@ -7,7 +7,7 @@
 import type { Location } from './location';
 
 export interface LinkBody {
+  location: Location;
   /** @minimum 0 */
   revision: number;
-  location: Location;
 }

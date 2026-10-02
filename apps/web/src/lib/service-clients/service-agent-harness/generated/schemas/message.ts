@@ -11,8 +11,6 @@ import type { MessageDelivery } from './messageDelivery';
  * An immutable thread message. Its ID is also its retry key.
  */
 export interface Message {
-  /** Caller-minted UUID reused for network retries. */
-  id: string;
   /** Server-assigned author. */
   author: Author;
   /** Markdown body. */
@@ -20,4 +18,6 @@ export interface Message {
   /** Time accepted by the review store. */
   createdAt: string;
   delivery?: MessageDelivery;
+  /** Caller-minted UUID reused for network retries. */
+  id: string;
 }

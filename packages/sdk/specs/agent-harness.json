@@ -2054,6 +2054,14 @@
             "type": "object",
             "required": ["id", "name"],
             "properties": {
+              "category": {
+                "type": ["string", "null"],
+                "description": "ACP semantic category, such as `model` or `thought_level`."
+              },
+              "description": {
+                "type": ["string", "null"],
+                "description": "Optional explanatory copy."
+              },
               "id": {
                 "type": "string",
                 "description": "Opaque id used to change this setting."
@@ -2061,14 +2069,6 @@
               "name": {
                 "type": "string",
                 "description": "Display label supplied by the agent."
-              },
-              "description": {
-                "type": ["string", "null"],
-                "description": "Optional explanatory copy."
-              },
-              "category": {
-                "type": ["string", "null"],
-                "description": "ACP semantic category, such as `model` or `thought_level`."
               }
             }
           }
@@ -2080,14 +2080,6 @@
         "description": "One value in an agent-advertised select.",
         "required": ["value", "name"],
         "properties": {
-          "value": {
-            "type": "string",
-            "description": "Opaque value returned to the agent when selected."
-          },
-          "name": {
-            "type": "string",
-            "description": "Display label."
-          },
           "description": {
             "type": ["string", "null"],
             "description": "Optional provider description of this value."
@@ -2095,6 +2087,14 @@
           "group": {
             "type": ["string", "null"],
             "description": "Optional group heading supplied by the provider."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display label."
+          },
+          "value": {
+            "type": "string",
+            "description": "Opaque value returned to the agent when selected."
           }
         }
       },
@@ -2103,14 +2103,6 @@
         "description": "One model picker option.",
         "required": ["id", "name"],
         "properties": {
-          "id": {
-            "type": "string",
-            "description": "Provider model id."
-          },
-          "name": {
-            "type": "string",
-            "description": "Display name."
-          },
           "description": {
             "type": ["string", "null"],
             "description": "Optional provider description."
@@ -2118,6 +2110,14 @@
           "group": {
             "type": ["string", "null"],
             "description": "Optional group heading supplied by the provider."
+          },
+          "id": {
+            "type": "string",
+            "description": "Provider model id."
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name."
           }
         }
       },
@@ -2131,12 +2131,12 @@
         "description": "A user's answer to the agent's `session/request_permission`.\n\nUnlike every other action this is not a new request but the reply to one\nthe agent made, so it carries the agent's own request id rather than\nreceiving a server-minted one.",
         "required": ["requestId", "answer"],
         "properties": {
-          "requestId": {
-            "description": "The agent's JSON-RPC request id, echoed verbatim from the folded\npermission part. A string or a number on the wire; agents mint both,\nand `7` does not answer `\"7\"`."
-          },
           "answer": {
             "$ref": "#/components/schemas/PermissionAnswer",
             "description": "What the user decided."
+          },
+          "requestId": {
+            "description": "The agent's JSON-RPC request id, echoed verbatim from the folded\npermission part. A string or a number on the wire; agents mint both,\nand `7` does not answer `\"7\"`."
           }
         }
       },
@@ -2145,16 +2145,16 @@
         "description": "Ask the agent to work on something.",
         "required": ["prompt"],
         "properties": {
-          "prompt": {
-            "type": "string",
-            "description": "What to tell the agent."
-          },
           "attachments": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PromptAttachment"
             },
             "description": "Files the prompt refers to, in the order the user attached them.\nDelivered after the text as one `resource_link` block each."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What to tell the agent."
           }
         }
       },
@@ -2191,13 +2191,13 @@
         "description": "One repository the caller can select for a coding session.",
         "required": ["url"],
         "properties": {
-          "url": {
-            "type": "string",
-            "description": "The canonical `https://github.com/owner/name` url, in the form\n`POST /agent-sessions` accepts as `repoUrl`."
-          },
           "defaultBranch": {
             "type": ["string", "null"],
             "description": "The branch a clone checks out, and where a session starts when its\nrequest selects this repository without a `repoBranch`. Absent for a\nrepository with no commits."
+          },
+          "url": {
+            "type": "string",
+            "description": "The canonical `https://github.com/owner/name` url, in the form\n`POST /agent-sessions` accepts as `repoUrl`."
           }
         }
       },
@@ -2236,17 +2236,6 @@
         "description": "Response body for `GET /agent-sessions/{session_id}/changes`.\n\nClients deserialize this, so both derives are used.",
         "required": ["capturing"],
         "properties": {
-          "changeset": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ChangesetDto",
-                "description": "The latest capture, if any succeeded."
-              }
-            ]
-          },
           "attempt": {
             "oneOf": [
               {
@@ -2261,6 +2250,17 @@
           "capturing": {
             "type": "boolean",
             "description": "A capture is running right now."
+          },
+          "changeset": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChangesetDto",
+                "description": "The latest capture, if any succeeded."
+              }
+            ]
           }
         }
       },
@@ -2274,15 +2274,15 @@
             "type": "object",
             "required": ["id", "createdAt"],
             "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "description": "Durable transport row identity; together with `createdAt`, its order cursor."
-              },
               "createdAt": {
                 "type": "string",
                 "format": "date-time",
                 "description": "When the log recorded the frame.\n\nThe frame itself carries no time, so this comes from the log row. It is\nwhat a reader has to order these against anything else it is showing\nbeside them - the fold derives an order among the messages of one\nsession and nothing more."
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Durable transport row identity; together with `createdAt`, its order cursor."
               },
               "userId": {
                 "type": ["string", "null"],
@@ -2324,24 +2324,6 @@
           "modifiedAt"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The session id."
-          },
-          "name": {
-            "type": "string",
-            "description": "User-facing session name."
-          },
-          "ownerId": {
-            "type": "string",
-            "description": "The user who owns the session."
-          },
-          "botId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The bot running the agent."
-          },
           "bot": {
             "oneOf": [
               {
@@ -2353,19 +2335,37 @@
               }
             ]
           },
-          "status": {
-            "$ref": "#/components/schemas/SessionStatusDto",
-            "description": "The session's last known status."
+          "botId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The bot running the agent."
           },
           "createdAt": {
             "type": "string",
             "format": "date-time",
             "description": "When the session was created."
           },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The session id."
+          },
           "modifiedAt": {
             "type": "string",
             "format": "date-time",
             "description": "When the session was last modified."
+          },
+          "name": {
+            "type": "string",
+            "description": "User-facing session name."
+          },
+          "ownerId": {
+            "type": "string",
+            "description": "The user who owns the session."
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatusDto",
+            "description": "The session's last known status."
           }
         }
       },
@@ -2464,26 +2464,94 @@
           "modifiedAt"
         ],
         "properties": {
+          "acpSessionId": {
+            "type": ["string", "null"],
+            "description": "The ACP session id, if one exists."
+          },
+          "botId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The bot running the agent."
+          },
+          "canEdit": {
+            "type": "boolean",
+            "description": "Whether the caller may drive the session - prompt it, answer its\nquestions, stop it - rather than only watch. Edit access; the\ncreator owns the session, so a create response always says so."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the session was created."
+          },
+          "external": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ExternalSessionResponse",
+                "description": "The external provider serving this session, when one does. Absent for\nsandboxed sessions, so existing payloads are byte-identical."
+              }
+            ]
+          },
+          "harness": {
+            "type": "string",
+            "description": "Harness slug."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
             "description": "The session id."
           },
-          "name": {
-            "type": "string",
-            "description": "User-facing session name."
+          "instructions": {
+            "type": ["string", "null"],
+            "description": "Instructions the session's runtime works under, when any were stated\nat creation. Absent otherwise, so existing payloads are unchanged."
           },
           "isArchived": {
             "type": "boolean",
             "description": "Whether the session is archived and read-only."
           },
+          "model": {
+            "type": "string",
+            "description": "Model slug."
+          },
+          "modifiedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the session was last modified."
+          },
+          "name": {
+            "type": "string",
+            "description": "User-facing session name."
+          },
+          "originatingMessageId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "The exact message that invoked the bot, if any."
+          },
           "ownerId": {
             "type": "string",
             "description": "The user who created and owns the session."
           },
-          "canEdit": {
-            "type": "boolean",
-            "description": "Whether the caller may drive the session - prompt it, answer its\nquestions, stop it - rather than only watch. Edit access; the\ncreator owns the session, so a create response always says so."
+          "pullRequestUrl": {
+            "type": ["string", "null"],
+            "description": "The session's linked pull request."
+          },
+          "repoUrl": {
+            "type": ["string", "null"],
+            "description": "The repository the session works with, when one was stated."
+          },
+          "sandboxSize": {
+            "$ref": "#/components/schemas/SandboxSize",
+            "description": "Compute tier of the managed sandbox."
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatusDto",
+            "description": "The session's status."
+          },
+          "threadChannelId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "The channel `thread_id` lives in, when the session was spawned from a\nchannel thread. Derived from `thread_parent`."
           },
           "threadId": {
             "type": ["string", "null"],
@@ -2501,77 +2569,9 @@
               }
             ]
           },
-          "threadChannelId": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "The channel `thread_id` lives in, when the session was spawned from a\nchannel thread. Derived from `thread_parent`."
-          },
-          "originatingMessageId": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "The exact message that invoked the bot, if any."
-          },
-          "botId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The bot running the agent."
-          },
-          "model": {
-            "type": "string",
-            "description": "Model slug."
-          },
-          "harness": {
-            "type": "string",
-            "description": "Harness slug."
-          },
-          "repoUrl": {
-            "type": ["string", "null"],
-            "description": "The repository the session works with, when one was stated."
-          },
-          "pullRequestUrl": {
-            "type": ["string", "null"],
-            "description": "The session's linked pull request."
-          },
           "workspace": {
             "type": "string",
             "description": "The directory the session's harness runs in on its runtime."
-          },
-          "sandboxSize": {
-            "$ref": "#/components/schemas/SandboxSize",
-            "description": "Compute tier of the managed sandbox."
-          },
-          "instructions": {
-            "type": ["string", "null"],
-            "description": "Instructions the session's runtime works under, when any were stated\nat creation. Absent otherwise, so existing payloads are unchanged."
-          },
-          "acpSessionId": {
-            "type": ["string", "null"],
-            "description": "The ACP session id, if one exists."
-          },
-          "status": {
-            "$ref": "#/components/schemas/SessionStatusDto",
-            "description": "The session's status."
-          },
-          "external": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ExternalSessionResponse",
-                "description": "The external provider serving this session, when one does. Absent for\nsandboxed sessions, so existing payloads are byte-identical."
-              }
-            ]
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the session was created."
-          },
-          "modifiedAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the session was last modified."
           }
         }
       },
@@ -2606,13 +2606,13 @@
         "description": "Public admission error payload. Handlers with additional fields can reuse the\ndomain error's code and message and [`admission_status`].",
         "required": ["error", "code"],
         "properties": {
-          "error": {
-            "type": "string",
-            "description": "Human-readable explanation, without internal billing diagnostics."
-          },
           "code": {
             "type": "string",
             "description": "Stable denial or unavailability code."
+          },
+          "error": {
+            "type": "string",
+            "description": "Human-readable explanation, without internal billing diagnostics."
           }
         }
       },
@@ -2628,20 +2628,9 @@
           "status"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Stable identity used in URLs."
-          },
-          "revision": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Revision the author was viewing.",
-            "minimum": 0
-          },
-          "original": {
+          "current": {
             "$ref": "#/components/schemas/Location",
-            "description": "Original selection."
+            "description": "Latest resolved selection."
           },
           "excerpt": {
             "type": "array",
@@ -2650,9 +2639,20 @@
             },
             "description": "Exact selected lines, never replaced by a later capture."
           },
-          "current": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable identity used in URLs."
+          },
+          "original": {
             "$ref": "#/components/schemas/Location",
-            "description": "Latest resolved selection."
+            "description": "Original selection."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Revision the author was viewing.",
+            "minimum": 0
           },
           "status": {
             "$ref": "#/components/schemas/AnchorStatus",
@@ -2670,6 +2670,10 @@
         "description": "An explanation pinned next to code.",
         "required": ["key", "location", "body"],
         "properties": {
+          "body": {
+            "type": "string",
+            "description": "Markdown explanation."
+          },
           "key": {
             "type": "string",
             "description": "Stable key, reused to update the explanation."
@@ -2677,10 +2681,6 @@
           "location": {
             "$ref": "#/components/schemas/Location",
             "description": "Where this explanation belongs."
-          },
-          "body": {
-            "type": "string",
-            "description": "Markdown explanation."
           }
         },
         "additionalProperties": false
@@ -2729,10 +2729,9 @@
         "description": "The latest capture attempt.\n\nClients deserialize this, so both derives are used.",
         "required": ["startedAt"],
         "properties": {
-          "startedAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When it started."
+          "error": {
+            "type": ["string", "null"],
+            "description": "Why it did not capture, in a sentence the user can read."
           },
           "finishedAt": {
             "type": ["string", "null"],
@@ -2750,9 +2749,10 @@
               }
             ]
           },
-          "error": {
-            "type": ["string", "null"],
-            "description": "Why it did not capture, in a sentence the user can read."
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it started."
           }
         }
       },
@@ -2773,23 +2773,15 @@
           "patchOmitted"
         ],
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "The file's path after the change, or before it for a deletion."
-          },
-          "previousPath": {
-            "type": ["string", "null"],
-            "description": "Where a renamed file came from."
-          },
-          "kind": {
-            "$ref": "#/components/schemas/FileChangeKindDto",
-            "description": "What happened to the file."
-          },
           "additions": {
             "type": "integer",
             "format": "int32",
             "description": "Lines added.",
             "minimum": 0
+          },
+          "binary": {
+            "type": "boolean",
+            "description": "The diff carries no text for this file."
           },
           "deletions": {
             "type": "integer",
@@ -2797,13 +2789,21 @@
             "description": "Lines removed.",
             "minimum": 0
           },
-          "binary": {
-            "type": "boolean",
-            "description": "The diff carries no text for this file."
+          "kind": {
+            "$ref": "#/components/schemas/FileChangeKindDto",
+            "description": "What happened to the file."
           },
           "patchOmitted": {
             "type": "boolean",
             "description": "The file's hunks were left out of the patch to fit the size budget."
+          },
+          "path": {
+            "type": "string",
+            "description": "The file's path after the change, or before it for a deletion."
+          },
+          "previousPath": {
+            "type": ["string", "null"],
+            "description": "Where a renamed file came from."
           }
         }
       },
@@ -2823,26 +2823,26 @@
           "capturedAt"
         ],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The capture's id; changes with every capture."
-          },
-          "source": {
-            "$ref": "#/components/schemas/ChangesetSourceDto",
-            "description": "Where the diff was read from."
-          },
-          "repository": {
-            "type": ["string", "null"],
-            "description": "`https://github.com/owner/name`, when known."
+          "additions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Lines added across all files.",
+            "minimum": 0
           },
           "base": {
             "$ref": "#/components/schemas/GitRefDto",
             "description": "The side the work started from."
           },
-          "head": {
-            "$ref": "#/components/schemas/GitRefDto",
-            "description": "The side carrying the work."
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the diff was taken."
+          },
+          "deletions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Lines removed across all files.",
+            "minimum": 0
           },
           "files": {
             "type": "array",
@@ -2851,17 +2851,14 @@
             },
             "description": "Every changed file, in patch order."
           },
-          "additions": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Lines added across all files.",
-            "minimum": 0
+          "head": {
+            "$ref": "#/components/schemas/GitRefDto",
+            "description": "The side carrying the work."
           },
-          "deletions": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Lines removed across all files.",
-            "minimum": 0
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The capture's id; changes with every capture."
           },
           "patchBytes": {
             "type": "integer",
@@ -2869,14 +2866,17 @@
             "description": "Size of the patch `GET .../changes/patch` serves; zero when nothing\nchanged.",
             "minimum": 0
           },
+          "repository": {
+            "type": ["string", "null"],
+            "description": "`https://github.com/owner/name`, when known."
+          },
+          "source": {
+            "$ref": "#/components/schemas/ChangesetSourceDto",
+            "description": "Where the diff was read from."
+          },
           "truncated": {
             "type": "boolean",
             "description": "Some files' hunks were left out of the patch."
-          },
-          "capturedAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "When the diff was taken."
           }
         }
       },
@@ -2890,13 +2890,13 @@
         "description": "The channel share permission",
         "required": ["channel_id", "access_level"],
         "properties": {
-          "channel_id": {
-            "type": "string",
-            "description": "The channel id"
-          },
           "access_level": {
             "$ref": "#/components/schemas/AccessLevel",
             "description": "The access level for the channel"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "The channel id"
           }
         }
       },
@@ -2905,17 +2905,17 @@
         "description": "A chapter authored by the agent. Keys allow idempotent replacement.",
         "required": ["key", "title", "description", "paths", "focus"],
         "properties": {
-          "key": {
-            "type": "string",
-            "description": "Stable agent-supplied key."
-          },
-          "title": {
-            "type": "string",
-            "description": "Short title describing intent."
-          },
           "description": {
             "type": "string",
             "description": "Markdown explanation of why these changes belong together."
+          },
+          "focus": {
+            "$ref": "#/components/schemas/Location",
+            "description": "Initial code selection, validated against the published revision."
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable agent-supplied key."
           },
           "paths": {
             "type": "array",
@@ -2924,9 +2924,9 @@
             },
             "description": "Reading order of repository-relative files."
           },
-          "focus": {
-            "$ref": "#/components/schemas/Location",
-            "description": "Initial code selection, validated against the published revision."
+          "title": {
+            "type": "string",
+            "description": "Short title describing intent."
           }
         },
         "additionalProperties": false
@@ -2936,21 +2936,14 @@
         "description": "A user comment or reply request.",
         "required": ["id", "revision", "body"],
         "properties": {
+          "body": {
+            "type": "string",
+            "description": "Markdown comment text."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
             "description": "UUID reused for retries."
-          },
-          "thread": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "Existing thread for a reply; absent creates a new thread."
-          },
-          "revision": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Revision the user saw.",
-            "minimum": 0
           },
           "location": {
             "oneOf": [
@@ -2963,9 +2956,16 @@
               }
             ]
           },
-          "body": {
-            "type": "string",
-            "description": "Markdown comment text."
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Revision the user saw.",
+            "minimum": 0
+          },
+          "thread": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "Existing thread for a reply; absent creates a new thread."
           }
         },
         "additionalProperties": false
@@ -2978,13 +2978,13 @@
             "type": ["string", "null"],
             "description": "Base commit or branch; defaults to HEAD for a new workspace review."
           },
-          "worktree": {
-            "type": "boolean",
-            "description": "Explicitly switch a fixed-head workspace comparison back to the live worktree."
-          },
           "head": {
             "type": ["string", "null"],
             "description": "Optional tip commit; absent keeps the previous workspace tip or follows the PR."
+          },
+          "worktree": {
+            "type": "boolean",
+            "description": "Explicitly switch a fixed-head workspace comparison back to the live worktree."
           }
         },
         "additionalProperties": false
@@ -3054,35 +3054,39 @@
         "type": "object",
         "description": "Request body for `POST /agent-sessions`.\n\nCarries two shapes, told apart by `workspace`. Naming one asks for an\nexternal session: the runtime is the bot operator's, so the caller has to\nsay which bot and which directory, and must own that bot. Omitting it asks\nfor a managed session, whose runtime this deployment provisions. A managed\nrequest may select an authorized persisted persona with `botId`; omitting\nit uses the deployment's default coding persona. Fields describing someone\nelse's runtime must still be omitted rather than quietly ignored. Mixing\nthe two shapes is refused rather than guessed at.\n\nClients serialize this, so both derives are used.",
         "properties": {
-          "id": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "Id to create the session under, minted by the caller. Lets a surface\nopen on the session's final id - URL, history row, references - the\nmoment the user acts, rather than after this request answers (which\nfor a managed sandbox can take a while). Omitted, the service mints\none. Answers 409 if a session already holds the id. On an external\nrequest it is how a runtime answering a composer request names the\nid it was handed, so the requester waiting on that id finds the session."
-          },
           "botId": {
             "type": ["string", "null"],
             "format": "uuid",
             "description": "Bot the session runs for. On a managed request this optionally selects\na persisted persona the user owns, may use through team membership, or\ncan `@` mention in a shared channel; omitting it uses the deployment's\ndefault coding persona. On an external request, bot callers may omit it\n(their own identity is used) and must not name another bot; user callers\nmust supply a bot they own."
           },
-          "workspace": {
+          "id": {
             "type": ["string", "null"],
-            "description": "Absolute directory the bot's harness runs in on its runtime. Present\nfor an external session, absent for a managed one, which runs in the\npath baked into its image."
+            "format": "uuid",
+            "description": "Id to create the session under, minted by the caller. Lets a surface\nopen on the session's final id - URL, history row, references - the\nmoment the user acts, rather than after this request answers (which\nfor a managed sandbox can take a while). Omitted, the service mints\none. Answers 409 if a session already holds the id. On an external\nrequest it is how a runtime answering a composer request names the\nid it was handed, so the requester waiting on that id finds the session."
+          },
+          "instructions": {
+            "type": ["string", "null"],
+            "description": "Instructions the session's runtime works under, for its whole life.\n\nRecorded on the session whichever runtime serves it. Only the\nin-process one acts on them today; `agent_harness`'s `AgentKind`\nrecords what each of the others will need to."
+          },
+          "model": {
+            "type": ["string", "null"],
+            "description": "Model the managed session runs on, overriding the persona's. Managed\nsessions only: an external runtime picks its own.\n\nThe session's model from the moment it exists, which is what a caller\nchoosing one before the first prompt means. Selecting a model *during*\na session is a control action instead, and reads as one in its\ntranscript."
+          },
+          "owner": {
+            "type": ["string", "null"],
+            "description": "The user who owns the session. Ignored for user callers, who always\nown their own sessions, for harness callers, whose verified acting\nuser owns the session, and for bots that already act for a verified\nuser. A bot without one may name a user here. That claim is trusted\nfor the bot's own sessions. With no claim, a team bot owns the session\nitself only while non-user owners are enabled. Every other bot still\nneeds an owner."
           },
           "prompt": {
             "type": ["string", "null"],
             "description": "First prompt to deliver once the session is running. Managed sessions\nonly - an external runtime sends its own first prompt through the\ncontrol endpoint. Omitted, the session opens idle."
           },
-          "repoUrl": {
-            "type": ["string", "null"],
-            "description": "Explicit GitHub repository for a managed Cursor session, as one of the\nurls `GET /agent-repositories` lists for the caller. Access is checked\nfor the session owner. For external sessions this is informational:\ncloning it is the runtime operator's job."
-          },
           "repoBranch": {
             "type": ["string", "null"],
             "description": "Starting branch for a managed coding session's selected repository.\nOmitted, the session starts on the repository's default branch."
           },
-          "owner": {
+          "repoUrl": {
             "type": ["string", "null"],
-            "description": "The user who owns the session. Ignored for user callers, who always\nown their own sessions, for harness callers, whose verified acting\nuser owns the session, and for bots that already act for a verified\nuser. A bot without one may name a user here. That claim is trusted\nfor the bot's own sessions. With no claim, a team bot owns the session\nitself only while non-user owners are enabled. Every other bot still\nneeds an owner."
+            "description": "Explicit GitHub repository for a managed Cursor session, as one of the\nurls `GET /agent-repositories` lists for the caller. Access is checked\nfor the session owner. For external sessions this is informational:\ncloning it is the runtime operator's job."
           },
           "thread": {
             "oneOf": [
@@ -3095,13 +3099,9 @@
               }
             ]
           },
-          "instructions": {
+          "workspace": {
             "type": ["string", "null"],
-            "description": "Instructions the session's runtime works under, for its whole life.\n\nRecorded on the session whichever runtime serves it. Only the\nin-process one acts on them today; `agent_harness`'s `AgentKind`\nrecords what each of the others will need to."
-          },
-          "model": {
-            "type": ["string", "null"],
-            "description": "Model the managed session runs on, overriding the persona's. Managed\nsessions only: an external runtime picks its own.\n\nThe session's model from the moment it exists, which is what a caller\nchoosing one before the first prompt means. Selecting a model *during*\na session is a control action instead, and reads as one in its\ntranscript."
+            "description": "Absolute directory the bot's harness runs in on its runtime. Present\nfor an external session, absent for a managed one, which runs in the\npath baked into its image."
           }
         }
       },
@@ -3121,9 +3121,19 @@
         "description": "The triggering mention on a create request.\n\nClients serialize this, so both derives are used.",
         "required": ["messageId"],
         "properties": {
-          "reuseOriginMessage": {
-            "type": "boolean",
-            "description": "Update the existing bot response reserved by a task assignment."
+          "channelId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "Channel the mentioning message was posted in. Runtimes built before\nmessage parents send this instead of `parent`."
+          },
+          "content": {
+            "type": "string",
+            "description": "The mention's text, quoted in the session's announcement."
+          },
+          "messageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The mentioning message."
           },
           "parent": {
             "oneOf": [
@@ -3136,24 +3146,14 @@
               }
             ]
           },
-          "channelId": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "Channel the mentioning message was posted in. Runtimes built before\nmessage parents send this instead of `parent`."
+          "reuseOriginMessage": {
+            "type": "boolean",
+            "description": "Update the existing bot response reserved by a task assignment."
           },
           "threadId": {
             "type": ["string", "null"],
             "format": "uuid",
             "description": "Thread the session belongs to; defaults to the message itself, which\nis how a top-level mention roots its own thread."
-          },
-          "messageId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The mentioning message."
-          },
-          "content": {
-            "type": "string",
-            "description": "The mention's text, quoted in the session's announcement."
           }
         }
       },
@@ -3219,6 +3219,10 @@
             "description": "The user submitted the form, or consented to open the URL.",
             "required": ["action"],
             "properties": {
+              "action": {
+                "type": "string",
+                "enum": ["accept"]
+              },
               "content": {
                 "type": ["object", "null"],
                 "description": "Form: the submitted values keyed by property. URL: omitted.",
@@ -3228,10 +3232,6 @@
                 "propertyNames": {
                   "type": "string"
                 }
-              },
-              "action": {
-                "type": "string",
-                "enum": ["accept"]
               }
             }
           },
@@ -3314,13 +3314,13 @@
         "description": "The provider-side identity of an externally-served session.",
         "required": ["provider"],
         "properties": {
-          "provider": {
-            "type": "string",
-            "description": "Which provider serves the session, e.g. `cursor`."
-          },
           "name": {
             "type": ["string", "null"],
             "description": "The provider's display name for the agent, when it reported one."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Which provider serves the session, e.g. `cursor`."
           },
           "url": {
             "type": ["string", "null"],
@@ -3338,18 +3338,55 @@
         "description": "One file's diff: both sides in full, aligned line by line.",
         "required": ["path", "status", "added", "removed", "rows", "since"],
         "properties": {
-          "path": {
-            "type": "string"
+          "added": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
-          "oldPath": {
-            "type": ["string", "null"]
+          "collapsed": {
+            "type": ["string", "null"],
+            "description": "Why the file starts collapsed (set by the agent, e.g. \"generated by ts-rs\")."
           },
-          "status": {
-            "$ref": "#/components/schemas/FileStatus"
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Changes the rows can't show: the file mode, line endings, the final\nnewline, a submodule's commit. Short phrases, e.g. \"mode 100644 → 100755\"."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What kind of file it is, as diffd can tell by itself: `test`, `generated`."
           },
           "language": {
             "type": ["string", "null"],
             "description": "Display name of the language, when we recognise it."
+          },
+          "new": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SideText"
+              }
+            ]
+          },
+          "old": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SideText"
+              }
+            ]
+          },
+          "oldPath": {
+            "type": ["string", "null"]
           },
           "omitted": {
             "oneOf": [
@@ -3362,53 +3399,13 @@
               }
             ]
           },
-          "details": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Changes the rows can't show: the file mode, line endings, the final\nnewline, a submodule's commit. Short phrases, e.g. \"mode 100644 → 100755\"."
-          },
-          "collapsed": {
-            "type": ["string", "null"],
-            "description": "Why the file starts collapsed (set by the agent, e.g. \"generated by ts-rs\")."
-          },
-          "labels": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "What kind of file it is, as diffd can tell by itself: `test`, `generated`."
-          },
-          "added": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
+          "path": {
+            "type": "string"
           },
           "removed": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
-          },
-          "old": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/SideText"
-              }
-            ]
-          },
-          "new": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/SideText"
-              }
-            ]
           },
           "rows": {
             "type": "array",
@@ -3425,6 +3422,9 @@
               "minimum": 0
             },
             "description": "New-side lines (1-based) that changed since the previous revision."
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus"
           }
         }
       },
@@ -3433,41 +3433,19 @@
         "description": "One file in the manifest, fetched independently by content identity.",
         "required": ["path", "content", "status", "added", "removed", "labels"],
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "Repository-relative path, including deletions."
-          },
-          "oldPath": {
-            "type": ["string", "null"],
-            "description": "Original path of a rename."
-          },
-          "content": {
-            "type": "string",
-            "description": "Session-scoped immutable body identifier."
-          },
-          "status": {
-            "$ref": "#/components/schemas/FileStatus",
-            "description": "Engine file status."
-          },
-          "language": {
-            "type": ["string", "null"],
-            "description": "Language when recognized."
-          },
           "added": {
             "type": "integer",
             "format": "int32",
             "description": "Changed lines on the new side.",
             "minimum": 0
           },
-          "removed": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Changed lines on the old side.",
-            "minimum": 0
-          },
           "collapsed": {
             "type": ["string", "null"],
             "description": "Explanation for a collapsed generated file."
+          },
+          "content": {
+            "type": "string",
+            "description": "Session-scoped immutable body identifier."
           },
           "labels": {
             "type": "array",
@@ -3475,6 +3453,14 @@
               "type": "string"
             },
             "description": "Semantic labels from diffd or the agent."
+          },
+          "language": {
+            "type": ["string", "null"],
+            "description": "Language when recognized."
+          },
+          "oldPath": {
+            "type": ["string", "null"],
+            "description": "Original path of a rename."
           },
           "omitted": {
             "oneOf": [
@@ -3486,6 +3472,20 @@
                 "description": "Why text is unavailable, when omitted by the source."
               }
             ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Repository-relative path, including deletions."
+          },
+          "removed": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Changed lines on the old side.",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/FileStatus",
+            "description": "Engine file status."
           }
         }
       },
@@ -3494,14 +3494,6 @@
         "description": "A named set of files the reviewer can hide and reveal together.",
         "required": ["key", "title", "files"],
         "properties": {
-          "key": {
-            "type": "string",
-            "description": "Stable agent-supplied key."
-          },
-          "title": {
-            "type": "string",
-            "description": "Short label, such as Generated or Tests."
-          },
           "files": {
             "type": "array",
             "items": {
@@ -3512,6 +3504,14 @@
           "hidden": {
             "type": "boolean",
             "description": "Whether these files start hidden. The reader can always reveal them."
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable agent-supplied key."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short label, such as Generated or Tests."
           }
         },
         "additionalProperties": false
@@ -3538,13 +3538,13 @@
         "type": "object",
         "required": ["revision", "location"],
         "properties": {
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          },
           "revision": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
-          },
-          "location": {
-            "$ref": "#/components/schemas/Location"
           }
         },
         "additionalProperties": false
@@ -3575,10 +3575,6 @@
         "description": "Successful model-discovery response.",
         "required": ["status", "models"],
         "properties": {
-          "status": {
-            "$ref": "#/components/schemas/AgentModelsStatusDto",
-            "description": "Model-selection availability."
-          },
           "currentModel": {
             "type": ["string", "null"],
             "description": "Current provider model, if model selection is available."
@@ -3589,6 +3585,10 @@
               "$ref": "#/components/schemas/AgentModelDto"
             },
             "description": "Ordered model catalog."
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentModelsStatusDto",
+            "description": "Model-selection availability."
           }
         }
       },
@@ -3597,13 +3597,11 @@
         "description": "A code reference supplied by a user or agent; lines are one-based, inclusive.",
         "required": ["path", "side", "line"],
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "Repository-relative path."
-          },
-          "side": {
-            "$ref": "#/components/schemas/Side",
-            "description": "Before or after side."
+          "endLine": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Last selected line; omitted for a single line.",
+            "minimum": 0
           },
           "line": {
             "type": "integer",
@@ -3611,11 +3609,13 @@
             "description": "First selected line.",
             "minimum": 0
           },
-          "endLine": {
-            "type": ["integer", "null"],
-            "format": "int32",
-            "description": "Last selected line; omitted for a single line.",
-            "minimum": 0
+          "path": {
+            "type": "string",
+            "description": "Repository-relative path."
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side",
+            "description": "Before or after side."
           }
         },
         "additionalProperties": false
@@ -3630,13 +3630,13 @@
         "description": "The two fields [`AgentSessionLogEntryDto`] flattens in.\n\nSchema only. Nothing constructs one: the entry serializes through\n[`Message`], and this exists so the generated clients see `direction` and\n`content` as named fields instead of an open map. A hand-built copy could\ndrift from the fold's wire format, and the point of the endpoint is that it\ncannot - so this describes that format without being able to produce it.",
         "required": ["direction", "content"],
         "properties": {
-          "direction": {
-            "$ref": "#/components/schemas/LogDirectionDto",
-            "description": "Which way the frame travelled."
-          },
           "content": {
             "type": "object",
             "description": "The protocol envelope, verbatim. Opaque here: it is Agent Runtime\nProtocol, whose shape belongs to the fold rather than this endpoint."
+          },
+          "direction": {
+            "$ref": "#/components/schemas/LogDirectionDto",
+            "description": "Which way the frame travelled."
           }
         }
       },
@@ -3645,11 +3645,6 @@
         "description": "An immutable thread message. Its ID is also its retry key.",
         "required": ["id", "author", "body", "createdAt"],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Caller-minted UUID reused for network retries."
-          },
           "author": {
             "$ref": "#/components/schemas/Author",
             "description": "Server-assigned author."
@@ -3673,6 +3668,11 @@
                 "description": "Present for human feedback only."
               }
             ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Caller-minted UUID reused for network retries."
           }
         }
       },
@@ -3793,13 +3793,13 @@
             "description": "One of the options the agent offered was chosen.",
             "required": ["optionId", "kind"],
             "properties": {
-              "optionId": {
-                "type": "string",
-                "description": "The chosen option's id, as the agent listed it."
-              },
               "kind": {
                 "type": "string",
                 "enum": ["selected"]
+              },
+              "optionId": {
+                "type": "string",
+                "description": "The chosen option's id, as the agent listed it."
               }
             }
           },
@@ -3851,22 +3851,22 @@
         "description": "A file the prompt refers to, by where the agent can fetch it.\n\nMirrors ACP's `resource_link` content block, which every agent must\naccept: bytes never ride the prompt, only a URI (a static file service URL\nin practice) with enough metadata for a client to render a chip and for\nthe agent to decide whether to fetch it. Keeping the wire shape ACP-native\nmeans the harness translates without resolving anything, and the fold\nreads the same fields back off the logged frame.",
         "required": ["uri", "name"],
         "properties": {
-          "uri": {
-            "type": "string",
-            "description": "Where the agent can fetch the file."
+          "mimeType": {
+            "type": ["string", "null"],
+            "description": "The file's media type, when known."
           },
           "name": {
             "type": "string",
             "description": "Display name, typically the original file name."
           },
-          "mimeType": {
-            "type": ["string", "null"],
-            "description": "The file's media type, when known."
-          },
           "size": {
             "type": ["integer", "null"],
             "format": "int64",
             "description": "Size in bytes, when known."
+          },
+          "uri": {
+            "type": "string",
+            "description": "Where the agent can fetch the file."
           }
         }
       },
@@ -3879,13 +3879,9 @@
             "$ref": "#/components/schemas/AgentActionId",
             "description": "The id the action was accepted under."
           },
-          "kind": {
-            "type": "string",
-            "description": "What kind of action waits - `prompt` or `compact`; only\nturn-occupying actions are ever queued."
-          },
-          "prompt": {
+          "actorUserId": {
             "type": ["string", "null"],
-            "description": "The prompt's raw text, present for prompts only. What an edit\nreplaces."
+            "description": "The user who queued it, absent when a bot acted on nobody's behalf."
           },
           "attachments": {
             "type": "array",
@@ -3894,14 +3890,18 @@
             },
             "description": "Files the prompt refers to, for prompts only. Kept through an edit,\nwhich replaces the text alone."
           },
-          "actorUserId": {
-            "type": ["string", "null"],
-            "description": "The user who queued it, absent when a bot acted on nobody's behalf."
-          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
             "description": "When it was accepted."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What kind of action waits - `prompt` or `compact`; only\nturn-occupying actions are ever queued."
+          },
+          "prompt": {
+            "type": ["string", "null"],
+            "description": "The prompt's raw text, present for prompts only. What an edit\nreplaces."
           }
         }
       },
@@ -3920,12 +3920,12 @@
         "type": "object",
         "required": ["thread", "resolved"],
         "properties": {
+          "resolved": {
+            "type": "boolean"
+          },
           "thread": {
             "type": "string",
             "format": "uuid"
-          },
-          "resolved": {
-            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -3959,49 +3959,12 @@
           "threads"
         ],
         "properties": {
-          "id": {
-            "$ref": "#/components/schemas/ReviewId",
-            "description": "Stable review ID."
-          },
-          "sessionId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Owning session; never supplied by an MCP tool argument."
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Metadata/activity version, independent of code revisions."
-          },
-          "title": {
-            "type": "string",
-            "description": "Display title."
-          },
-          "summary": {
-            "type": "string",
-            "description": "Agent summary."
-          },
-          "repository": {
-            "type": "string",
-            "description": "Repository name or URL."
-          },
-          "source": {
-            "$ref": "#/components/schemas/SourceKind",
-            "description": "Availability of uncommitted changes."
-          },
-          "revisions": {
+          "anchors": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Revision"
+              "$ref": "#/components/schemas/Anchor"
             },
-            "description": "Immutable revision history."
-          },
-          "tour": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Chapter"
-            },
-            "description": "Current reading tour."
+            "description": "Durable selections."
           },
           "annotations": {
             "type": "array",
@@ -4017,12 +3980,33 @@
             },
             "description": "Current agent-selected file groups."
           },
-          "anchors": {
+          "id": {
+            "$ref": "#/components/schemas/ReviewId",
+            "description": "Stable review ID."
+          },
+          "repository": {
+            "type": "string",
+            "description": "Repository name or URL."
+          },
+          "revisions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Anchor"
+              "$ref": "#/components/schemas/Revision"
             },
-            "description": "Durable selections."
+            "description": "Immutable revision history."
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Owning session; never supplied by an MCP tool argument."
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceKind",
+            "description": "Availability of uncommitted changes."
+          },
+          "summary": {
+            "type": "string",
+            "description": "Agent summary."
           },
           "threads": {
             "type": "array",
@@ -4030,6 +4014,22 @@
               "$ref": "#/components/schemas/Thread"
             },
             "description": "Durable discussion."
+          },
+          "title": {
+            "type": "string",
+            "description": "Display title."
+          },
+          "tour": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            },
+            "description": "Current reading tour."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Metadata/activity version, independent of code revisions."
           }
         }
       },
@@ -4081,41 +4081,21 @@
         "description": "One immutable revision; older links keep resolving after new captures.",
         "required": ["number", "createdAt", "comparison", "files", "symbols"],
         "properties": {
-          "number": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Monotonic, one-based revision number.",
-            "minimum": 0
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Time this revision was published."
-          },
-          "comparison": {
-            "$ref": "#/components/schemas/Comparison",
-            "description": "The comparison that produced the snapshot."
-          },
-          "files": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FileEntry"
-            },
-            "description": "Lazy body references."
-          },
-          "tour": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Chapter"
-            },
-            "description": "Tour as it was explained for this revision."
-          },
           "annotations": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Annotation"
             },
             "description": "Inline explanations belonging to this revision."
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/Comparison",
+            "description": "The comparison that produced the snapshot."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time this revision was published."
           },
           "fileGroups": {
             "type": "array",
@@ -4124,12 +4104,32 @@
             },
             "description": "Agent-selected file groups for this revision."
           },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileEntry"
+            },
+            "description": "Lazy body references."
+          },
+          "number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Monotonic, one-based revision number.",
+            "minimum": 0
+          },
           "symbols": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Symbol"
             },
             "description": "Definitions indexed by diffd across the snapshot."
+          },
+          "tour": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            },
+            "description": "Tour as it was explained for this revision."
           }
         }
       },
@@ -4166,6 +4166,14 @@
         "description": "The agent behind a session, as much of it as rendering a message needs.",
         "required": ["id", "name", "handle"],
         "properties": {
+          "avatarUrl": {
+            "type": ["string", "null"],
+            "description": "Avatar, when it has one."
+          },
+          "handle": {
+            "type": "string",
+            "description": "Stable `@` handle, without a leading `@`."
+          },
           "id": {
             "$ref": "#/components/schemas/BotId",
             "description": "The bot's id. A message it sent has `\"bot|{id}\"` as its sender."
@@ -4173,14 +4181,6 @@
           "name": {
             "type": "string",
             "description": "Display name."
-          },
-          "handle": {
-            "type": "string",
-            "description": "Stable `@` handle, without a leading `@`."
-          },
-          "avatarUrl": {
-            "type": ["string", "null"],
-            "description": "Avatar, when it has one."
           }
         }
       },
@@ -4241,6 +4241,13 @@
         "type": "object",
         "required": ["id", "owner"],
         "properties": {
+          "channelSharePermissions": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/ChannelSharePermission"
+            },
+            "description": "The channel share permissions for the item"
+          },
           "id": {
             "type": "string",
             "description": "The share permission id"
@@ -4267,6 +4274,10 @@
               }
             ]
           },
+          "owner": {
+            "type": "string",
+            "description": "The owner of the item"
+          },
           "teamShareAccessLevel": {
             "oneOf": [
               {
@@ -4277,17 +4288,6 @@
                 "description": "The explicit access level granted to the owner's team, or `null` when disabled."
               }
             ]
-          },
-          "owner": {
-            "type": "string",
-            "description": "The owner of the item"
-          },
-          "channelSharePermissions": {
-            "type": ["array", "null"],
-            "items": {
-              "$ref": "#/components/schemas/ChannelSharePermission"
-            },
-            "description": "The channel share permissions for the item"
           }
         }
       },
@@ -4306,18 +4306,6 @@
               "type": "string"
             }
           },
-          "syntax": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "format": "int32",
-                "minimum": 0
-              }
-            },
-            "description": "Per line, flattened `[start, end, class, start, end, class, …]`.\n`class` indexes [`SyntaxClass::ALL`]."
-          },
           "novel": {
             "type": "array",
             "items": {
@@ -4329,6 +4317,18 @@
               }
             },
             "description": "Per line, flattened `[start, end, …]`: tokens difftastic marks as novel."
+          },
+          "syntax": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            },
+            "description": "Per line, flattened `[start, end, class, start, end, class, …]`.\n`class` indexes [`SyntaxClass::ALL`]."
           }
         }
       },
@@ -4363,13 +4363,13 @@
         "description": "Safe connection metadata.",
         "required": ["enabled", "connected", "ephemeral"],
         "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether this deployment supports browser connection."
-          },
           "connected": {
             "type": "boolean",
             "description": "Whether the authenticated Macro user has connected."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether this deployment supports browser connection."
           },
           "ephemeral": {
             "type": "boolean",
@@ -4391,12 +4391,10 @@
           "lines"
         ],
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "description": "e.g. \"function\", \"class\", \"method\", \"module\"."
+          "end": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           },
           "file": {
             "type": "integer",
@@ -4404,20 +4402,11 @@
             "description": "Index into [`Snapshot::files`].",
             "minimum": 0
           },
-          "side": {
-            "$ref": "#/components/schemas/Side"
+          "kind": {
+            "type": "string",
+            "description": "e.g. \"function\", \"class\", \"method\", \"module\"."
           },
           "line": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "start": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "end": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
@@ -4432,6 +4421,17 @@
             "description": "The whole definition's first and last line (1-based), e.g. a function with its body.",
             "maxItems": 2,
             "minItems": 2
+          },
+          "name": {
+            "type": "string"
+          },
+          "side": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "start": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -4440,19 +4440,15 @@
         "description": "A discussion whose identity survives revisions.",
         "required": ["id", "anchor", "resolved", "messages"],
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Stable thread identity."
-          },
           "anchor": {
             "type": "string",
             "format": "uuid",
             "description": "Anchor in `Review.anchors`."
           },
-          "resolved": {
-            "type": "boolean",
-            "description": "Human-controlled resolution."
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable thread identity."
           },
           "messages": {
             "type": "array",
@@ -4460,6 +4456,10 @@
               "$ref": "#/components/schemas/Message"
             },
             "description": "Ordered, idempotent messages."
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "Human-controlled resolution."
           }
         }
       },
@@ -4467,14 +4467,6 @@
         "type": "object",
         "required": ["operation", "channelId"],
         "properties": {
-          "operation": {
-            "$ref": "#/components/schemas/UpdateOperation",
-            "description": "The type of operation to be performed on the chanel share permission\nYou can add, remove or replace and existing permission"
-          },
-          "channelId": {
-            "type": "string",
-            "description": "The channel id"
-          },
           "accessLevel": {
             "oneOf": [
               {
@@ -4485,6 +4477,14 @@
                 "description": "The access level for the channel\nThis is required if the operation is add or replace"
               }
             ]
+          },
+          "channelId": {
+            "type": "string",
+            "description": "The channel id"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/UpdateOperation",
+            "description": "The type of operation to be performed on the chanel share permission\nYou can add, remove or replace and existing permission"
           }
         }
       },
@@ -4495,6 +4495,13 @@
       "UpdateSharePermissionRequestV2": {
         "type": "object",
         "properties": {
+          "channelSharePermissions": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/UpdateChannelSharePermission"
+            },
+            "description": "Any channel share permissions to be created/updated/removed"
+          },
           "linkShare": {
             "oneOf": [
               {
@@ -4527,13 +4534,6 @@
                 "description": "The explicit team access level. Omit to leave unchanged or pass `null` to disable team\nsharing. Only the actual owner may change this setting; `owner` is not an allowed level."
               }
             ]
-          },
-          "channelSharePermissions": {
-            "type": ["array", "null"],
-            "items": {
-              "$ref": "#/components/schemas/UpdateChannelSharePermission"
-            },
-            "description": "Any channel share permissions to be created/updated/removed"
           }
         }
       },

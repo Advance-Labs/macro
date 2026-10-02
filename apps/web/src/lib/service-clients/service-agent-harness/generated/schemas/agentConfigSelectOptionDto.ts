@@ -11,12 +11,12 @@ import type { AgentConfigSelectOptionDtoGroup } from './agentConfigSelectOptionD
  * One value in an agent-advertised select.
  */
 export interface AgentConfigSelectOptionDto {
-  /** Opaque value returned to the agent when selected. */
-  value: string;
-  /** Display label. */
-  name: string;
   /** Optional provider description of this value. */
   description?: AgentConfigSelectOptionDtoDescription;
   /** Optional group heading supplied by the provider. */
   group?: AgentConfigSelectOptionDtoGroup;
+  /** Display label. */
+  name: string;
+  /** Opaque value returned to the agent when selected. */
+  value: string;
 }
