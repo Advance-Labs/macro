@@ -13,13 +13,17 @@ const fixture = vi.hoisted(() => ({
   projectMounts: 0,
   projectDisposals: 0,
   userIcons: 0,
+  flagMounts: 0,
 }));
 
 vi.mock('@app/lib/analytics/posthog', () => ({
-  useFeatureFlag: () => () => ({
-    enabled: fixture.projectsEnabled?.() === true,
-    loading: fixture.projectsEnabled?.() === undefined,
-  }),
+  useFeatureFlag: () => {
+    fixture.flagMounts++;
+    return () => ({
+      enabled: fixture.projectsEnabled?.() === true,
+      loading: fixture.projectsEnabled?.() === undefined,
+    });
+  },
 }));
 vi.mock('@core/constant/featureFlags', () => ({
   enableProjects: { key: 'enable-projects' },
@@ -90,6 +94,7 @@ afterEach(() => {
   fixture.projectMounts = 0;
   fixture.projectDisposals = 0;
   fixture.userIcons = 0;
+  fixture.flagMounts = 0;
 });
 
 function setup(type: 'DOCUMENT' | 'CHANNEL' | 'INITIATIVE' | 'USER') {
@@ -103,6 +108,17 @@ function setup(type: 'DOCUMENT' | 'CHANNEL' | 'INITIATIVE' | 'USER') {
 }
 
 describe('usePropertyEntityDisplay subscription ownership', () => {
+  it('subscribes to the project flag only for project values', () => {
+    const [type, setType] = createSignal<'USER' | 'INITIATIVE'>('USER');
+    createRoot((dispose) => {
+      disposals.push(dispose);
+      usePropertyEntityDisplay(() => 'entity-1', type);
+    });
+    expect(fixture.flagMounts).toBe(0);
+    setType('INITIATIVE');
+    expect(fixture.flagMounts).toBe(1);
+  });
+
   it('builds a person’s avatar only when something shows the icon', () => {
     const display = setup('USER');
     expect(fixture.userIcons).toBe(0);

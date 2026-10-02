@@ -68,10 +68,12 @@ export function usePropertyEntityDisplay(
     specificMessageId?: Accessor<string | null | undefined>;
   }
 ): PropertyEntityDisplayResult {
-  const projectsFlag = useFeatureFlag(enableProjects);
+  const projectsFlag = createMemo(() =>
+    entityType() === 'INITIATIVE' ? useFeatureFlag(enableProjects) : undefined
+  );
   // Until Projects is enabled, a project stays the generic "Project" label.
   const projectSource = createMemo(() => {
-    if (entityType() !== 'INITIATIVE' || !projectsFlag().enabled) return;
+    if (!projectsFlag()?.().enabled) return;
     return untrack(() => {
       const userId = useUserId();
       return useProjectIdentityQuery(entityId, userId);

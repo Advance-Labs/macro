@@ -5,7 +5,7 @@ import CheckIcon from '@phosphor/check.svg';
 import LinkIcon from '@phosphor/link-simple.svg';
 import SearchIcon from '@phosphor/magnifying-glass.svg';
 import XIcon from '@phosphor/x.svg';
-import { Button } from '@ui/components/Button';
+import { Button, buttonClasses } from '@ui/components/Button';
 import { InputGroup } from '@ui/components/InputGroup';
 import {
   createSignal,
@@ -227,11 +227,15 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                     <LinkIcon class="size-3 shrink-0 text-ink-muted" />
                     <span class="truncate">{name(id)}</span>
                     {/* A native title: a styled tooltip per chip is a Kobalte root each. */}
-                    <Button
-                      size="icon-xs"
+                    <button
+                      type="button"
                       aria-label={`Open ${name(id)}`}
                       title={`Open ${name(id)}`}
-                      class="pointer-events-auto shrink-0"
+                      class={buttonClasses({
+                        size: 'icon-xs',
+                        class: 'pointer-events-auto shrink-0',
+                      })}
+                      data-disabled={!available(id) ? '' : undefined}
                       disabled={!available(id)}
                       onClick={() => openRecord(id)}
                       onKeyDown={(event) => {
@@ -247,7 +251,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                       }}
                     >
                       <ArrowRightIcon class="size-3" />
-                    </Button>
+                    </button>
                   </span>
                 )}
               </For>
