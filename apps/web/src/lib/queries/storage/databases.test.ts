@@ -136,6 +136,7 @@ describe('applying ops', () => {
             change: { kind: 'deleted' },
           },
         ],
+        changes: [],
       })
     );
 

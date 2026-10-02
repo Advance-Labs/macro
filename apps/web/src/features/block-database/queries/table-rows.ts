@@ -1,6 +1,6 @@
 import { databaseSqlSchema } from '@core/database-sql/catalog';
 import type { DatabaseOp } from '@core/database-sql/generated/types';
-import { thrownResultErrorHasCode } from '@core/util/result';
+import { type ResultError, thrownResultErrorHasCode } from '@core/util/result';
 import {
   createDatabaseSqlQuery,
   type DatabaseSqlQuery,
@@ -14,7 +14,10 @@ import {
 import { databaseDetailQueryOptions } from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import { storageServiceClient } from '@service-storage/client';
-import type { DatabaseOpsError } from '@service-storage/databases';
+import type {
+  DatabaseOpsError,
+  DatabaseSchemaErrorCode,
+} from '@service-storage/databases';
 import type { ColumnDetail } from '@service-storage/generated/schemas/columnDetail';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
@@ -143,6 +146,8 @@ export function createDatabaseRowsSource(props: {
   read?: DatabaseSqlQueryCapabilities;
   /** Calls back with the version of each change the gateway reports for this table. */
   onTableChanged: (listener: (version: number) => void) => void;
+  /** Calls back with the version each batch this viewer commits, such as an added or renamed column, moves this table to. */
+  onCommitted: (listener: (version: number) => void) => void;
   /**
    * The journal and row cache an incremental refresh reads, given how to read rows by id.
    * Left out, a change reads the table whole.
@@ -162,6 +167,12 @@ export function createDatabaseRowsSource(props: {
   let schemaStale = false;
   // Only advance across schema changes this writer has itself acknowledged.
   const inferredVersions = new Map<number, number>();
+  // The newest version this viewer's own batches moved the table to. A new
+  // column's type settles against it: its add and rename each moved the table.
+  let committedVersion: number | undefined;
+  props.onCommitted((version) => {
+    committedVersion = Math.max(committedVersion ?? version, version);
+  });
   const cachedDetail = () =>
     queryClient.getQueryData<DatabaseDetail>(detailKey);
   /**
@@ -390,22 +401,25 @@ export function createDatabaseRowsSource(props: {
   function latestInferenceBase(
     inferenceBaseVersion: number | undefined
   ): number | undefined {
-    let base = inferenceBaseVersion;
+    let base =
+      inferenceBaseVersion === undefined || committedVersion === undefined
+        ? (inferenceBaseVersion ?? committedVersion)
+        : Math.max(inferenceBaseVersion, committedVersion);
     while (base !== undefined && inferredVersions.has(base))
       base = inferredVersions.get(base);
     return base;
   }
 
-  /**
-   * Settle a new column's type from its first value. Another first entry
-   * may have typed it meanwhile; then the value is written against that type.
-   */
-  async function settleColumnType(
+  /** Ask the service to type a new column, against the table at `base`. */
+  async function inferColumnType(
     columnId: string,
     type: DatabaseColumnType,
     base: number
   ): Promise<
-    Result<{ column: ColumnDetail; base: number }, DatabaseWriteFailure>
+    Result<
+      { column: ColumnDetail; base: number },
+      ResultError<DatabaseSchemaErrorCode>[]
+    >
   > {
     const inferred = await storageServiceClient.databases.inferColumnType({
       id: props.databaseId,
@@ -419,28 +433,56 @@ export function createDatabaseRowsSource(props: {
         baseVersion: base,
       },
     });
-    if (inferred.isOk()) {
-      const settled = inferred.value;
-      inferredVersions.set(base, settled.table_version);
-      await patchTableColumn(queryClient, {
-        databaseId: props.databaseId,
-        tableId,
-        columnId,
-        tableVersion: settled.table_version,
-        change: () => settled.column,
-      });
-      return ok({ column: settled.column, base: settled.table_version });
-    }
+    if (inferred.isErr()) return err(inferred.error);
+    const settled = inferred.value;
+    inferredVersions.set(base, settled.table_version);
+    await patchTableColumn(queryClient, {
+      databaseId: props.databaseId,
+      tableId,
+      columnId,
+      tableVersion: settled.table_version,
+      change: () => settled.column,
+    });
+    return ok({ column: settled.column, base: settled.table_version });
+  }
+
+  /**
+   * Settle a new column's type from its first value. Another first entry
+   * may have typed it meanwhile; then the value is written against that type.
+   * A table that moved since `base` is typed again at the version read now.
+   * A column still left untyped takes an inferred value as text, so the
+   * entry is never dropped; only a type the viewer picked is refused.
+   */
+  async function settleColumnType(
+    columnId: string,
+    type: DatabaseColumnType,
+    base: number,
+    picked: boolean
+  ): Promise<
+    Result<{ column: ColumnDetail; base: number }, DatabaseWriteFailure>
+  > {
+    const inferred = await inferColumnType(columnId, type, base);
+    if (inferred.isOk()) return ok(inferred.value);
     const competing = inferred.error.some((error) => error.code === 'CONFLICT');
-    // A failed refresh keeps the rejected entry and its own error.
+    // A failed refresh leaves the cached schema to decide.
     await refreshSchema();
     const table = currentTable();
     if (!table) return err(TABLE_UNAVAILABLE);
     const refreshed = columnForWrite(table, columnId);
     if (refreshed.isErr()) return err(refreshed.error);
-    if (!competing || refreshed.value.column.infer_type)
-      return err({ kind: 'type-refused', errors: inferred.error });
-    return ok({ column: refreshed.value, base: table.table.version });
+    const current = { column: refreshed.value, base: table.table.version };
+    if (!refreshed.value.column.infer_type)
+      return competing
+        ? ok(current)
+        : err({ kind: 'type-refused', errors: inferred.error });
+    const retried =
+      competing && table.table.version !== base
+        ? await inferColumnType(columnId, type, table.table.version)
+        : inferred;
+    if (retried.isOk()) return ok(retried.value);
+    return picked
+      ? err({ kind: 'type-refused', errors: retried.error })
+      : ok(current);
   }
 
   /** A first value as its column takes it: a number column's text read as a number. */
@@ -490,7 +532,8 @@ export function createDatabaseRowsSource(props: {
           requested ?? {
             dataType: numeric === undefined ? 'STRING' : 'NUMBER',
           },
-          base
+          base,
+          requested !== undefined
         );
         if (settled.isErr()) return err(settled.error);
         column = settled.value.column;

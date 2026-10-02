@@ -3,6 +3,7 @@ import { refreshInBackground } from '@queries/database-sql/create-database-sql-q
 import {
   applyDatabaseOps,
   applyDatabaseTableVersions,
+  onDatabaseBatchCommitted,
   onDatabaseTableAdvanced,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
@@ -206,6 +207,15 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
               change.tableId === props.tableId
             )
               listener(change.version);
+          })
+        );
+      },
+      onCommitted: (listener) => {
+        onCleanup(
+          onDatabaseBatchCommitted((batch) => {
+            const version = batch.tableVersions[props.tableId];
+            if (batch.databaseId === databaseId && version !== undefined)
+              listener(version);
           })
         );
       },

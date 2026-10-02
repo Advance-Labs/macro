@@ -160,6 +160,7 @@ describe('reordering tabs', () => {
             ],
           },
         ],
+        changes: [],
       })
     );
     renderTabs();

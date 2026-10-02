@@ -11,6 +11,7 @@ import { queryClient } from '@queries/client';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
 import {
   applyDatabaseTableVersions,
+  onDatabaseBatchCommitted,
   onDatabaseTableAdvanced,
   undoDatabaseChange,
 } from '@queries/storage/databases';
@@ -24,7 +25,7 @@ import { cleanup, render, waitFor } from '@solidjs/testing-library';
 import { QueryClientProvider } from '@tanstack/solid-query';
 import { CombinedError, createClient, type Exchange } from '@urql/core';
 import { err, errAsync, ok, okAsync, ResultAsync } from 'neverthrow';
-import { type Accessor, createSignal } from 'solid-js';
+import { type Accessor, createSignal, onCleanup } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromValue, mergeMap, pipe } from 'wonka';
 import type { DatabaseRowsSource } from '../context/table-source';
@@ -32,9 +33,12 @@ import type { DatabaseRowMutation } from '../core/table';
 import { allRecordsView } from '../core/views';
 import { createDraftRows } from '../primitives/draft-rows';
 import { createTableController } from '../primitives/table-controller';
+import { createDatabaseColumn } from './columns';
+import { renameDatabaseColumn } from './rename-column';
 import { createDatabaseRowsSource } from './table-rows';
 
 const transport = vi.hoisted(() => ({
+  applyOps: vi.fn(),
   get: vi.fn(),
   inferColumnType: vi.fn(),
   undoChange: vi.fn(),
@@ -298,6 +302,16 @@ function setup(
         ((listener) => {
           tableChanged = listener;
         }),
+      // As in the app, this viewer's own batches report their versions.
+      onCommitted: (listener) => {
+        onCleanup(
+          onDatabaseBatchCommitted((batch) => {
+            const version = batch.tableVersions['guests-table'];
+            if (batch.databaseId === 'db' && version !== undefined)
+              listener(version);
+          })
+        );
+      },
       applyVersions,
       addOption: options.addOption ?? (() => okAsync(undefined)),
     });
@@ -711,6 +725,7 @@ describe('a column type change', () => {
             ),
         },
         onTableChanged: () => {},
+        onCommitted: () => {},
         applyVersions: () => {},
         addOption: () => okAsync(undefined),
       });
@@ -1480,6 +1495,170 @@ describe('first-entry column types', () => {
     }
   );
 
+  it('settles a column added then renamed against the version its rename returned', async () => {
+    const applyOps = vi.fn<ApplyOps>(() => okAsync(written));
+    const { source, client } = setup(detail(), applyOps);
+    await waitFor(() => expect(source.snapshot()?.version).toBe(5));
+    // The service: the add moves the table to 6, the rename to 7.
+    let addedColumnId = '';
+    transport.applyOps.mockImplementation(
+      ({ request }: { request: { ops: DatabaseOp[] } }) => {
+        const [op] = request.ops;
+        if (op.kind !== 'column') throw new Error('expected a column op');
+        if (op.change.kind === 'create') {
+          addedColumnId = op.column;
+          return okAsync({
+            results: [
+              {
+                kind: 'column',
+                table: 'guests-table',
+                column: op.column,
+                tableVersion: 6,
+                change: { kind: 'created' },
+              },
+            ],
+            changes: [{ change: 1, table: 'guests-table', version: 6 }],
+          });
+        }
+        return okAsync({
+          results: [
+            {
+              kind: 'column',
+              table: 'guests-table',
+              column: op.column,
+              tableVersion: 7,
+              change: { kind: 'renamed' },
+            },
+          ],
+          changes: [{ change: 2, table: 'guests-table', version: 7 }],
+        });
+      }
+    );
+
+    const created = await createDatabaseColumn({
+      databaseId: 'db',
+      tableId: 'guests-table',
+      name: 'Column',
+      type: { type: 'text' },
+      inferType: true,
+    });
+    expect(created).toEqual(ok(addedColumnId));
+    // The app's schema read lands before the rename, at the add's version.
+    const added = detail();
+    added.tables[0].table.version = 6;
+    added.tables[0].columns.push({
+      shared_outside_database: false,
+      column: {
+        id: addedColumnId,
+        table_id: 'guests-table',
+        property_definition_id: 'q3-definition',
+        position: 'b',
+        config: null,
+        display_name: null,
+        infer_type: true,
+      },
+      sql_name: '"Column"',
+      writable: true,
+      definition: {
+        definition: {
+          id: 'q3-definition',
+          owner: { scope: 'database', database_id: 'db' },
+          display_name: 'Column',
+          data_type: 'STRING',
+          is_multi_select: false,
+          specific_entity_type: null,
+          created_at: '',
+          updated_at: '',
+          is_system: false,
+          is_metadata: false,
+        },
+        property_options: [],
+      },
+    });
+    client.setQueryData(databasesKeys.detail('db').queryKey, added);
+    expect(
+      (
+        await renameDatabaseColumn({
+          databaseId: 'db',
+          tableId: 'guests-table',
+          columnId: addedColumnId,
+          name: 'Q3',
+          previousName: 'Column',
+        })
+      ).isOk()
+    ).toBe(true);
+
+    transport.inferColumnType.mockImplementation(() =>
+      okAsync({
+        column: {
+          shared_outside_database: false,
+          column: {
+            id: addedColumnId,
+            table_id: 'guests-table',
+            property_definition_id: 'q3-number-definition',
+            position: 'b',
+            config: null,
+            display_name: 'Q3',
+            infer_type: false,
+          },
+          sql_name: '"Q3"',
+          writable: true,
+          definition: {
+            definition: {
+              id: 'q3-number-definition',
+              owner: { scope: 'database', database_id: 'db' },
+              display_name: 'Column',
+              data_type: 'NUMBER',
+              is_multi_select: false,
+              specific_entity_type: null,
+              created_at: '',
+              updated_at: '',
+              is_system: false,
+              is_metadata: false,
+            },
+            property_options: [],
+          },
+        },
+        table_version: 8,
+      })
+    );
+    // The writer read the rows at 5; its own add and rename moved the table to 7.
+    await source.write(
+      { kind: 'cell', rowId: 'record', columnId: addedColumnId, value: '42' },
+      5,
+      false
+    );
+    expect(transport.inferColumnType).toHaveBeenCalledExactlyOnceWith({
+      id: 'db',
+      tableId: 'guests-table',
+      columnId: addedColumnId,
+      request: { dataType: 'NUMBER', baseVersion: 7 },
+    });
+    expect(applyOps).toHaveBeenLastCalledWith([
+      {
+        kind: 'rows',
+        table: 'guests-table',
+        change: {
+          kind: 'update',
+          changes: {
+            kind: 'per_row',
+            rows: [
+              {
+                row: 'record',
+                cells: [
+                  {
+                    column: addedColumnId,
+                    value: { type: 'number', value: 42 },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
   it('uses the selected mention type and retains its entity ID', async () => {
     const initial = detail();
     initial.tables[0].columns[0].column.infer_type = true;
@@ -1539,6 +1718,65 @@ describe('first-entry column types', () => {
     expect(transport.get).toHaveBeenCalledOnce();
     expect(applyOps).toHaveBeenLastCalledWith(
       nameEdit({ type: 'text', value: '123' })
+    );
+  });
+
+  it('settles the type again at the current version when the table moved since it was read', async () => {
+    const initial = detail();
+    initial.tables[0].columns[0].column.infer_type = true;
+    const applyOps = vi.fn<ApplyOps>(() => okAsync(written));
+    const { source } = setup(initial, applyOps);
+    await waitFor(() => expect(source.loading()).toBe(false));
+    transport.inferColumnType
+      .mockReturnValueOnce(
+        errAsync([
+          { code: 'CONFLICT', message: 'The table changed since it was read' },
+        ])
+      )
+      .mockReturnValueOnce(
+        okAsync({ column: inferredDetail('NUMBER'), table_version: 10 })
+      );
+    const moved = detail();
+    moved.tables[0].table.version = 9;
+    moved.tables[0].columns[0].column.infer_type = true;
+    transport.get.mockImplementation(() => okAsync(moved));
+
+    expect(
+      (await source.write({ ...edit, value: '42' }, 5, false)).isOk()
+    ).toBe(true);
+    expect(
+      transport.inferColumnType.mock.calls.map(([call]) => call.request)
+    ).toEqual([
+      { dataType: 'NUMBER', baseVersion: 5 },
+      { dataType: 'NUMBER', baseVersion: 9 },
+    ]);
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'number', value: 42 })
+    );
+  });
+
+  it('writes a first value as text when its column type cannot be settled', async () => {
+    const initial = detail();
+    initial.tables[0].columns[0].column.infer_type = true;
+    const applyOps = vi.fn<ApplyOps>(() => okAsync(written));
+    const { source } = setup(initial, applyOps);
+    await waitFor(() => expect(source.loading()).toBe(false));
+    transport.inferColumnType.mockImplementation(() =>
+      errAsync([
+        { code: 'CONFLICT', message: 'The table changed since it was read' },
+      ])
+    );
+    const moved = detail();
+    moved.tables[0].table.version = 9;
+    moved.tables[0].columns[0].column.infer_type = true;
+    transport.get.mockImplementation(() => okAsync(moved));
+
+    expect(
+      (await source.write({ ...edit, value: '42' }, 5, false)).isOk()
+    ).toBe(true);
+    expect(transport.inferColumnType).toHaveBeenCalledTimes(2);
+    expect(applyOps).toHaveBeenLastCalledWith(
+      nameEdit({ type: 'text', value: '42' })
     );
   });
 

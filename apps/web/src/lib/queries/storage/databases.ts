@@ -113,7 +113,31 @@ export type CommittedDatabaseBatch = {
   databaseId: string;
   ops: DatabaseOp[];
   changes: CommittedChange[];
+  /** The version the batch left each table it touched at, by table id. */
+  tableVersions: Record<string, number>;
 };
+
+/** The newest version a batch's results and journaled changes report for each table. */
+function committedTableVersions(
+  results: OpResult[],
+  changes: CommittedChange[]
+): Record<string, number> {
+  const reported = [
+    ...results.flatMap((result) =>
+      match(result)
+        .with({ kind: 'reorder_tables' }, ({ tables }) => tables)
+        .with({ tableVersion: P.number }, ({ table, tableVersion }) => [
+          { table, version: tableVersion },
+        ])
+        .otherwise(() => [])
+    ),
+    ...changes,
+  ];
+  const versions: Record<string, number> = {};
+  for (const { table, version } of reported)
+    versions[table] = Math.max(versions[table] ?? version, version);
+  return versions;
+}
 
 const committedListeners = new Set<(batch: CommittedDatabaseBatch) => void>();
 
@@ -142,8 +166,17 @@ export function applyDatabaseOps(
         request: baseVersions ? { ops, baseVersions } : { ops },
       })
       .map((response) => {
+        const tableVersions = committedTableVersions(
+          response.results,
+          response.changes
+        );
         for (const listener of committedListeners)
-          listener({ databaseId, ops, changes: response.changes });
+          listener({
+            databaseId,
+            ops,
+            changes: response.changes,
+            tableVersions,
+          });
         return response.results;
       })
       // A refused batch is one error: the first op the service could not apply.

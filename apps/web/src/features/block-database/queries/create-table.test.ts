@@ -107,6 +107,7 @@ beforeEach(() => {
           change: { kind: 'created' },
         },
       ],
+      changes: [],
     })
   );
   transport.get.mockImplementation(() => okAsync(detail([name])));
