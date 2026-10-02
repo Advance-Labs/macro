@@ -12,6 +12,7 @@ const fixture = vi.hoisted(() => ({
   projectsEnabled: undefined as (() => boolean | undefined) | undefined,
   projectMounts: 0,
   projectDisposals: 0,
+  userIcons: 0,
 }));
 
 vi.mock('@app/lib/analytics/posthog', () => ({
@@ -36,7 +37,12 @@ vi.mock('../../projects/queries/project-identity', () => ({
   },
 }));
 vi.mock('@core/component/EntityIcon', () => ({ EntityIcon: () => null }));
-vi.mock('@core/component/UserIcon', () => ({ UserIcon: () => null }));
+vi.mock('@core/component/UserIcon', () => ({
+  UserIcon: () => {
+    fixture.userIcons++;
+    return null;
+  },
+}));
 vi.mock('@core/constant/allBlocks', () => ({
   fileTypeToBlockName: (type: string) => type,
 }));
@@ -83,9 +89,10 @@ afterEach(() => {
   fixture.projectsEnabled = undefined;
   fixture.projectMounts = 0;
   fixture.projectDisposals = 0;
+  fixture.userIcons = 0;
 });
 
-function setup(type: 'DOCUMENT' | 'CHANNEL' | 'INITIATIVE') {
+function setup(type: 'DOCUMENT' | 'CHANNEL' | 'INITIATIVE' | 'USER') {
   return createRoot((dispose) => {
     disposals.push(dispose);
     return usePropertyEntityDisplay(
@@ -96,6 +103,16 @@ function setup(type: 'DOCUMENT' | 'CHANNEL' | 'INITIATIVE') {
 }
 
 describe('usePropertyEntityDisplay subscription ownership', () => {
+  it('builds a person’s avatar only when something shows the icon', () => {
+    const display = setup('USER');
+    expect(fixture.userIcons).toBe(0);
+
+    display.icon();
+    display.icon();
+
+    expect(fixture.userIcons).toBe(1);
+  });
+
   it('only owns project identity queries and links while the rollout is enabled', () => {
     const [enabled, setEnabled] = createSignal(false);
     fixture.projectsEnabled = enabled;

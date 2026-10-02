@@ -1,0 +1,899 @@
+import {
+  ContextMenuContent,
+  MenuItem,
+  MenuSeparator,
+} from '@core/component/ContextMenu';
+import type { SortKey } from '@core/database-sql/generated/types';
+import {
+  getDisplayNameParts,
+  getInitials,
+  macroIdToEmail,
+  tryMacroId,
+} from '@core/user';
+import { ContextMenu } from '@kobalte/core/context-menu';
+import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
+import CopyIcon from '@phosphor/copy.svg';
+import PencilIcon from '@phosphor/pencil-simple.svg';
+import TrashIcon from '@phosphor/trash.svg';
+import { Key } from '@solid-primitives/keyed';
+import { DragDropProvider, DragOverlay } from '@thisbeyond/solid-dnd';
+import { getHashedPaletteColor } from '@ui/utils/palette';
+import {
+  type Accessor,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  Show,
+} from 'solid-js';
+import { createHorizontalReorder } from '../../../components/drag-drop/create-horizontal-reorder';
+import { createReorderItem } from '../../../components/drag-drop/create-reorder';
+import { DragSessionSensors } from '../../../components/drag-drop/drag-session-sensors';
+import { InsertionLine } from '../../../components/drag-drop/insertion-line';
+import type {
+  DatabaseColumnCastsSource,
+  DatabaseColumnConversion,
+  DatabaseColumnTypeChange,
+  DatabaseSchemaChange,
+} from '../core/column-schema';
+import type { DatabaseViewColumn } from '../core/database-view';
+import type {
+  GridCellControl,
+  GridCellEditorOptions,
+} from '../core/grid-cell-editor';
+import { canEditCell, type DatabaseRow } from '../core/table';
+import type { DatabaseColumnHeaderProps } from './database-column-header';
+import { DatabaseColumnHeader } from './database-column-header';
+
+/** The cell this client has focused, as shared with the table's other viewers. */
+export type DatabaseCellFocus = {
+  rowId: string;
+  columnId?: string;
+  editing: boolean;
+};
+
+/** Another viewer of the same table; no row or column means no cell. */
+export type DatabaseCellPresence = {
+  userId: string;
+  rowId?: string;
+  columnId?: string;
+  editing: boolean;
+};
+
+/** Lets the host open a cell's editor or a header's rename; a target not yet mounted opens once it registers. */
+export type DatabaseTableControls = {
+  editCell: (rowId: string, columnId: string) => void;
+  renameColumn: (columnId: string) => void;
+};
+
+/** Focus inside one of these means the cell's inline editor is open. */
+const EDITOR_FIELDS =
+  'input:not([type="checkbox"]), textarea, [contenteditable="true"]';
+/** Portaled editors keep the cell current while they hold focus. */
+const PORTALED_EDITORS = '[role="dialog"], [role="listbox"]';
+
+export function DatabaseTable(props: {
+  name: string;
+  rows: DatabaseRow[];
+  columns: DatabaseViewColumn[];
+  titleColumnId?: string;
+  isUnsavedRow?: (rowId: string) => boolean;
+  onRowFocus?: (rowId: string | undefined) => void;
+  onCellFocus?: (cell: DatabaseCellFocus | undefined) => void;
+  remoteUsers?: DatabaseCellPresence[];
+  /** Scrolled into view and briefly tinted, e.g. the target of a relation. */
+  highlightRowId?: string;
+  sort: readonly SortKey[];
+  /** Each column's width in pixels; unset ones take the default. */
+  widths: Record<string, number | null>;
+  onResizeColumn?: (columnId: string, width: number) => void;
+  canEdit: boolean;
+  pending: boolean;
+  addColumn: JSX.Element;
+  emptyState?: JSX.Element;
+  controlsRef?: (controls: DatabaseTableControls) => void;
+  renderCell: (
+    row: Accessor<DatabaseRow>,
+    column: Accessor<DatabaseViewColumn>,
+    options?: GridCellEditorOptions
+  ) => JSX.Element;
+  getRowTitle: (row: DatabaseRow) => string;
+  onOpen: (rowId: string) => void;
+  onDuplicate?: (rowId: string) => Promise<boolean>;
+  onRequestDelete?: (rowId: string) => void;
+  relationTables?: { id: string; name: string }[];
+  columnCasts?: DatabaseColumnCastsSource;
+  onChangeColumnType?: (
+    columnId: string,
+    change: DatabaseColumnTypeChange
+  ) => DatabaseSchemaChange;
+  onConvertColumn?: (
+    columnId: string,
+    conversion: DatabaseColumnConversion
+  ) => DatabaseSchemaChange<string>;
+  onDeleteColumn?: (columnId: string) => DatabaseSchemaChange;
+  onReorderColumn?: (
+    columnId: string,
+    targetId: string,
+    edge: 'before' | 'after'
+  ) => Promise<void>;
+  onRenameColumn?: (
+    columnId: string,
+    name: string,
+    previousName: string
+  ) => DatabaseSchemaChange;
+  onSort: (columnId: string, direction: 'asc' | 'desc' | null) => void;
+  onMove?: (columnId: string, direction: 'left' | 'right') => void;
+  onInsertColumn?: (columnId: string, side: 'left' | 'right') => void;
+}) {
+  let scrollContainer!: HTMLDivElement;
+  let gridElement!: HTMLDivElement;
+  const columnReorder = createHorizontalReorder({
+    order: () => props.columns.map((column) => column.id),
+    getViewport: () => scrollContainer,
+    enabled: () => props.canEdit,
+    boundaryInViewport: true,
+    previewMarker: 'data-column-drag-preview',
+    indicatorLeft: (boundary) =>
+      boundary - gridElement.getBoundingClientRect().left,
+    onDrop: (columnId, targetId, edge) =>
+      void props.onReorderColumn?.(columnId, targetId, edge),
+  });
+  const headerRenames = new Map<string, () => void>();
+  let requestedHeader: string | undefined;
+  const renameRequestedHeader = () => {
+    const rename = requestedHeader
+      ? headerRenames.get(requestedHeader)
+      : undefined;
+    if (rename) {
+      requestedHeader = undefined;
+      queueMicrotask(rename);
+    }
+  };
+  const controls = new Map<string, Map<string, GridCellControl>>();
+  let pendingEdit: { rowId: string; columnId: string } | undefined;
+  const control = (rowId: string, columnId: string) =>
+    controls.get(rowId)?.get(columnId);
+  const editRequestedCell = () => {
+    if (!pendingEdit || !props.canEdit) return;
+    const editor = control(pendingEdit.rowId, pendingEdit.columnId);
+    if (!editor) return;
+    pendingEdit = undefined;
+    editor.edit();
+  };
+  props.controlsRef?.({
+    editCell: (rowId, columnId) => {
+      pendingEdit = { rowId, columnId };
+      editRequestedCell();
+    },
+    renameColumn: (columnId) => {
+      requestedHeader = columnId;
+      renameRequestedHeader();
+    },
+  });
+  const register = (
+    rowId: string,
+    columnId: string,
+    editor: GridCellControl | undefined
+  ) => {
+    if (!editor) {
+      const row = controls.get(rowId);
+      row?.delete(columnId);
+      if (!row?.size) controls.delete(rowId);
+      return;
+    }
+    let row = controls.get(rowId);
+    if (!row) {
+      row = new Map();
+      controls.set(rowId, row);
+    }
+    row.set(columnId, editor);
+    editRequestedCell();
+  };
+  const navigate = (rowId: string, columnId: string, direction: 1 | -1) => {
+    if (!props.canEdit) return false;
+    const columns = props.columns.filter(canEditCell);
+    const rowIndex = props.rows.findIndex((row) => row.rowId === rowId);
+    const columnIndex = columns.findIndex((column) => column.id === columnId);
+    if (rowIndex < 0 || columnIndex < 0 || !columns.length) return false;
+    const nextIndex = rowIndex * columns.length + columnIndex + direction;
+    if (nextIndex < 0 || nextIndex >= props.rows.length * columns.length)
+      return false;
+    const row = props.rows[Math.floor(nextIndex / columns.length)];
+    const column = columns[nextIndex % columns.length];
+    pendingEdit = { rowId: row.rowId, columnId: column.id };
+    editRequestedCell();
+    return true;
+  };
+  const navigateRow = (rowId: string, columnId: string, direction: 1 | -1) => {
+    if (!props.canEdit) return false;
+    const column = props.columns.find((candidate) => candidate.id === columnId);
+    const rowIndex = props.rows.findIndex((row) => row.rowId === rowId);
+    const row = props.rows[rowIndex + direction];
+    if (rowIndex < 0 || !row || !column || !canEditCell(column)) return false;
+    pendingEdit = { rowId: row.rowId, columnId };
+    editRequestedCell();
+    return true;
+  };
+  let announcedCell: DatabaseCellFocus | undefined;
+  const announceCell = (cell: DatabaseCellFocus | undefined) => {
+    if (
+      cell?.rowId === announcedCell?.rowId &&
+      cell?.columnId === announcedCell?.columnId &&
+      cell?.editing === announcedCell?.editing
+    )
+      return;
+    announcedCell = cell;
+    props.onCellFocus?.(cell);
+  };
+  const cellAt = (
+    target: EventTarget | null
+  ): DatabaseCellFocus | undefined => {
+    if (!(target instanceof HTMLElement)) return undefined;
+    const cell = target.closest<HTMLElement>('[data-grid-cell]');
+    const rowId =
+      cell?.closest<HTMLElement>('[data-grid-row-id]')?.dataset.gridRowId;
+    if (!cell || !rowId) return undefined;
+    const column = props.columns[Number(cell.dataset.gridColumn) - 1];
+    return {
+      rowId,
+      columnId: column?.id,
+      editing: target.matches(EDITOR_FIELDS),
+    };
+  };
+  const presenceAt = (rowId: string, columnId: string) =>
+    props.remoteUsers?.filter(
+      (user) => user.rowId === rowId && user.columnId === columnId
+    ) ?? [];
+  const [resizing, setResizing] = createSignal<{
+    columnId: string;
+    width: number;
+  }>();
+  const widthOf = (columnId: string) =>
+    resizing()?.columnId === columnId
+      ? resizing()?.width
+      : (props.widths[columnId] ?? undefined);
+  // Every row lays out on this one track list.
+  const template = createMemo(
+    () =>
+      `2.75rem ${props.columns
+        .map((column, index) => {
+          const width = widthOf(column.id);
+          if (width !== undefined) return `${width}px`;
+          return index === 0
+            ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))'
+            : '12rem';
+        })
+        .join(' ')} ${props.canEdit ? '8.75rem' : ''}`
+  );
+  function moveFocus(event: KeyboardEvent) {
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.keyCode === 229 ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey
+    )
+      return;
+    const target = event.target;
+    if (
+      !(target instanceof HTMLElement) ||
+      target.closest(
+        'input:not([type="checkbox"]), textarea, [contenteditable="true"], [role="menu"]'
+      )
+    )
+      return;
+    const cell = target.closest<HTMLElement>('[data-grid-cell]');
+    const grid = cell?.closest<HTMLElement>('[data-grid]');
+    if (!cell || !grid) return;
+    if (
+      event.key === 'ContextMenu' ||
+      (event.shiftKey && event.key === 'F10')
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const bounds = cell.getBoundingClientRect();
+      target.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: bounds.left + 8,
+          clientY: bounds.bottom,
+        })
+      );
+      return;
+    }
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [-1, 0],
+      ArrowDown: [1, 0],
+      ArrowLeft: [0, -1],
+      ArrowRight: [0, 1],
+    };
+    const delta = deltas[event.key];
+    if (!delta) return;
+    const rowIndex = Number(cell.dataset.gridRow) + delta[0];
+    const columnIndex = Number(cell.dataset.gridColumn) + delta[1];
+    const next = grid.querySelector<HTMLElement>(
+      `[data-grid-row="${rowIndex}"][data-grid-column="${columnIndex}"]`
+    );
+    event.preventDefault();
+    event.stopPropagation();
+    if (!next) return;
+    const row = props.rows[rowIndex];
+    const column = props.columns[columnIndex - 1];
+    const nextControl =
+      row && column ? control(row.rowId, column.id) : undefined;
+    // Stepping down onto the new-record row starts typing there, like a spreadsheet.
+    if (
+      nextControl &&
+      delta[0] === 1 &&
+      props.canEdit &&
+      column &&
+      canEditCell(column) &&
+      props.isUnsavedRow?.(row.rowId)
+    )
+      nextControl.edit();
+    else if (nextControl) nextControl.focus();
+    else
+      (
+        next.querySelector<HTMLElement>('button, input, [tabindex]') ?? next
+      ).focus();
+  }
+  // One menu for every row: right-click (or a long press) picks its row and cell.
+  const [contextTarget, setContextTarget] = createSignal<{
+    rowId: string;
+    columnId?: string;
+  }>();
+  const contextRowId = () => contextTarget()?.rowId ?? '';
+  const rowButtons = new Map<string, HTMLButtonElement>();
+  let afterClose: (() => void) | undefined;
+  const deferAction = (action: () => void) => {
+    afterClose = action;
+  };
+  const contextField = () =>
+    props.columns.find((column) => column.id === contextTarget()?.columnId);
+  const renameField = () =>
+    props.columns.find(
+      (column) => column.id === props.titleColumnId && canEditCell(column)
+    );
+  /** Note the row and cell a context menu opens for; false when it is not for a row. */
+  const captureContext = (target: EventTarget | null): boolean => {
+    if (
+      !(target instanceof HTMLElement) ||
+      target.closest(
+        'input:not([type="checkbox"]), textarea, [contenteditable="true"]'
+      )
+    )
+      return false;
+    const rowId =
+      target.closest<HTMLElement>('[data-grid-row-id]')?.dataset.gridRowId;
+    if (!rowId) return false;
+    setContextTarget({ rowId, columnId: cellAt(target)?.columnId });
+    return true;
+  };
+  return (
+    <DragDropProvider
+      collisionDetector={columnReorder.collisionDetector}
+      onDragStart={columnReorder.onDragStart}
+      onDragEnd={columnReorder.onDragEnd}
+    >
+      <DragSessionSensors
+        getViewport={() => scrollContainer}
+        axis="x"
+        onCancel={columnReorder.cancel}
+      />
+      <div
+        ref={scrollContainer}
+        class="@container/database-grid min-h-0 flex-1 overflow-auto overscroll-x-none"
+      >
+        <div
+          ref={(grid) => {
+            gridElement = grid;
+            // Closed select triggers also use arrows. The grid owns those keys
+            // until an editor or its menu has opened.
+            const navigateArrows = (event: KeyboardEvent) => {
+              if (event.key.startsWith('Arrow')) moveFocus(event);
+            };
+            grid.addEventListener('keydown', navigateArrows, true);
+            onCleanup(() =>
+              grid.removeEventListener('keydown', navigateArrows, true)
+            );
+          }}
+          role="grid"
+          aria-label={props.name}
+          aria-rowcount={props.rows.length + 1}
+          aria-colcount={props.columns.length + 1 + Number(props.canEdit)}
+          data-grid
+          class="relative flex min-h-full min-w-fit flex-col"
+          onKeyDown={moveFocus}
+          onFocusIn={(event) => {
+            const rowId =
+              event.target instanceof HTMLElement
+                ? event.target.closest<HTMLElement>('[data-grid-row-id]')
+                    ?.dataset.gridRowId
+                : undefined;
+            if (rowId) props.onRowFocus?.(rowId);
+            announceCell(cellAt(event.target));
+          }}
+          onFocusOut={(event) => {
+            const grid = event.currentTarget;
+            queueMicrotask(() => {
+              const active = document.activeElement;
+              if (
+                !(active instanceof HTMLElement) ||
+                active === document.body ||
+                grid.contains(active) ||
+                active.closest('[role="menu"]')
+              )
+                return;
+              props.onRowFocus?.(undefined);
+              if (active.closest(PORTALED_EDITORS) && announcedCell)
+                announceCell({ ...announcedCell, editing: true });
+              else announceCell(undefined);
+            });
+          }}
+        >
+          <div
+            role="row"
+            aria-rowindex={1}
+            class="sticky top-0 z-1 grid min-h-10 border-b border-edge-muted bg-panel"
+            style={{ 'grid-template-columns': template() }}
+          >
+            <div
+              role="columnheader"
+              aria-label="Open record"
+              class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/50 bg-panel text-[10px] text-ink-placeholder"
+            >
+              #
+            </div>
+            <Key each={props.columns} by="id">
+              {(column, index) => (
+                <DraggableColumnHeader
+                  registerRename={(rename) => {
+                    if (rename) headerRenames.set(column().id, rename);
+                    else headerRenames.delete(column().id);
+                    renameRequestedHeader();
+                  }}
+                  canDrag={props.canEdit && !!props.onReorderColumn}
+                  onDragStart={columnReorder.start}
+                  relationTables={props.relationTables}
+                  columnCasts={props.columnCasts}
+                  onChangeType={props.onChangeColumnType}
+                  onConvert={props.onConvertColumn}
+                  onDelete={props.onDeleteColumn}
+                  column={column()}
+                  sortDirection={sortDirection(props.sort, column().id)}
+                  resizeHandle={
+                    props.onResizeColumn ? (
+                      <ColumnResizeHandle
+                        label={`Resize ${column().name}`}
+                        onPreview={(width) =>
+                          setResizing({ columnId: column().id, width })
+                        }
+                        onCommit={(width) => {
+                          setResizing(undefined);
+                          props.onResizeColumn?.(column().id, width);
+                        }}
+                      />
+                    ) : undefined
+                  }
+                  canRename={props.canEdit}
+                  onRename={props.onRenameColumn}
+                  onSort={props.onSort}
+                  onMove={props.onMove}
+                  onInsert={props.onInsertColumn}
+                  canMoveLeft={index() > 0}
+                  canMoveRight={index() < props.columns.length - 1}
+                />
+              )}
+            </Key>
+            <Show when={props.canEdit}>
+              <div
+                role="columnheader"
+                class="flex items-center justify-start px-2"
+              >
+                {props.addColumn}
+              </div>
+            </Show>
+          </div>
+          <ContextMenu>
+            <ContextMenu.Trigger as="div" class="contents">
+              <div
+                class="contents"
+                // Runs before the menu's own handler: it picks the row and
+                // cell the menu is for, or lets the browser's menu through.
+                onContextMenu={(event) => {
+                  if (!captureContext(event.target)) event.stopPropagation();
+                }}
+                onPointerDown={(event) => {
+                  if (event.pointerType !== 'mouse')
+                    captureContext(event.target);
+                }}
+              >
+                <Key each={props.rows} by="rowId">
+                  {(row, index) => {
+                    const highlighted = () =>
+                      props.highlightRowId === row().rowId;
+                    return (
+                      <div
+                        ref={(element: HTMLElement) => {
+                          createEffect(
+                            on(highlighted, (isHighlighted) => {
+                              if (!isHighlighted) return;
+                              element.scrollIntoView({ block: 'nearest' });
+                              const first = props.columns[0];
+                              if (first)
+                                control(row().rowId, first.id)?.focus();
+                            })
+                          );
+                        }}
+                        role="row"
+                        data-grid-row-id={row().rowId}
+                        data-highlighted={highlighted() ? '' : undefined}
+                        aria-rowindex={index() + 2}
+                        // Off-screen rows skip style, layout and paint; they stay
+                        // in the DOM, the accessibility tree and find-in-page.
+                        class="group grid min-h-10 border-b border-edge-muted/60 transition-colors duration-700 [contain-intrinsic-size:auto_41px] [content-visibility:auto] hover:bg-hover/50"
+                        classList={{ 'bg-accent/15': highlighted() }}
+                        style={{ 'grid-template-columns': template() }}
+                      >
+                        <div
+                          role="gridcell"
+                          aria-colindex={1}
+                          tabindex={-1}
+                          // Opaque so cells scrolled beneath it stay hidden; the
+                          // overlay repeats the row's hover and highlight tint.
+                          class="sticky left-0 z-1 flex items-center justify-center border-r border-edge-muted/40 bg-panel outline-none before:pointer-events-none before:absolute before:inset-0 before:transition-colors before:duration-700 group-hover:before:bg-hover/50 group-data-highlighted:before:bg-accent/15 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                          data-grid-cell
+                          data-grid-row={index()}
+                          data-grid-column={0}
+                        >
+                          <Show
+                            when={!props.isUnsavedRow?.(row().rowId)}
+                            fallback={
+                              <span class="text-[10px] tabular-nums text-ink-placeholder">
+                                {index() + 1}
+                              </span>
+                            }
+                          >
+                            <button
+                              ref={(button) => {
+                                rowButtons.set(row().rowId, button);
+                                onCleanup(() => {
+                                  if (rowButtons.get(row().rowId) === button)
+                                    rowButtons.delete(row().rowId);
+                                });
+                              }}
+                              type="button"
+                              class="relative grid size-7 place-items-center rounded text-[10px] tabular-nums text-ink-placeholder outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ink/50"
+                              aria-label={`Open ${props.getRowTitle(row())}`}
+                              title="Open record"
+                              onClick={() => props.onOpen(row().rowId)}
+                            >
+                              <span class="group-hover:opacity-0 group-focus-within:opacity-0">
+                                {index() + 1}
+                              </span>
+                              <ArrowSquareOutIcon class="absolute size-3.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" />
+                            </button>
+                          </Show>
+                        </div>
+                        <Key each={props.columns} by="id">
+                          {(column, columnIndex) => {
+                            const presence = () =>
+                              presenceAt(row().rowId, column().id);
+                            return (
+                              <div
+                                role="gridcell"
+                                aria-colindex={columnIndex() + 2}
+                                tabindex={-1}
+                                class="relative min-w-0 border-r border-edge-muted/40 px-0.5 py-0.5 outline-none focus-within:ring-1 focus-within:ring-inset focus-within:ring-ink/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ink/50"
+                                data-grid-cell
+                                data-grid-row={index()}
+                                data-grid-column={columnIndex() + 1}
+                                data-remote-users={
+                                  presence().length
+                                    ? presence()
+                                        .map((user) => user.userId)
+                                        .join(' ')
+                                    : undefined
+                                }
+                                style={presenceOutline(presence()[0])}
+                              >
+                                {props.renderCell(row, column, {
+                                  onReady: (editor) =>
+                                    register(row().rowId, column().id, editor),
+                                  onNavigate: (direction) =>
+                                    navigate(
+                                      row().rowId,
+                                      column().id,
+                                      direction
+                                    ),
+                                  onNavigateRow: (direction) =>
+                                    navigateRow(
+                                      row().rowId,
+                                      column().id,
+                                      direction
+                                    ),
+                                })}
+                                <Show when={presence().length}>
+                                  <span class="pointer-events-none absolute -top-px right-0 z-1 flex gap-px">
+                                    <For each={presence()}>
+                                      {(user) => <PresenceTag user={user} />}
+                                    </For>
+                                  </span>
+                                </Show>
+                              </div>
+                            );
+                          }}
+                        </Key>
+                        <Show when={props.canEdit}>
+                          <div role="gridcell" />
+                        </Show>
+                      </div>
+                    );
+                  }}
+                </Key>
+              </div>
+            </ContextMenu.Trigger>
+            <ContextMenu.Portal>
+              <ContextMenuContent
+                class="min-w-44"
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  const action = afterClose;
+                  afterClose = undefined;
+                  queueMicrotask(() => {
+                    if (action) {
+                      action();
+                      return;
+                    }
+                    const target = contextTarget();
+                    if (!target) return;
+                    const columnId = target.columnId;
+                    const cell = columnId
+                      ? control(target.rowId, columnId)
+                      : undefined;
+                    if (cell) cell.focus();
+                    else rowButtons.get(target.rowId)?.focus();
+                  });
+                }}
+              >
+                <Show
+                  when={
+                    props.canEdit &&
+                    contextField() &&
+                    canEditCell(contextField()!)
+                  }
+                >
+                  <MenuItem
+                    closeOnSelect
+                    icon={PencilIcon}
+                    text="Edit cell"
+                    onClick={() =>
+                      deferAction(() =>
+                        control(
+                          contextRowId(),
+                          contextTarget()!.columnId!
+                        )?.edit()
+                      )
+                    }
+                  />
+                </Show>
+                <Show when={!props.isUnsavedRow?.(contextRowId())}>
+                  <MenuItem
+                    closeOnSelect
+                    icon={ArrowSquareOutIcon}
+                    text="Open record"
+                    onClick={() =>
+                      deferAction(() => props.onOpen(contextRowId()))
+                    }
+                  />
+                  <Show
+                    when={
+                      props.canEdit &&
+                      renameField() &&
+                      contextTarget()?.columnId !== renameField()?.id
+                    }
+                  >
+                    <MenuItem
+                      closeOnSelect
+                      icon={PencilIcon}
+                      text="Rename"
+                      onClick={() =>
+                        deferAction(() =>
+                          control(contextRowId(), renameField()!.id)?.edit()
+                        )
+                      }
+                    />
+                  </Show>
+                  <Show when={props.canEdit && props.onDuplicate}>
+                    <MenuItem
+                      closeOnSelect
+                      icon={CopyIcon}
+                      text="Duplicate"
+                      disabled={props.pending}
+                      onClick={() =>
+                        deferAction(() => {
+                          void props.onDuplicate?.(contextRowId());
+                        })
+                      }
+                    />
+                  </Show>
+                  <Show when={props.canEdit && props.onRequestDelete}>
+                    <MenuSeparator />
+                    <MenuItem
+                      closeOnSelect
+                      icon={TrashIcon}
+                      text="Delete record"
+                      class="text-failure"
+                      disabled={props.pending}
+                      onClick={() =>
+                        deferAction(() =>
+                          props.onRequestDelete?.(contextRowId())
+                        )
+                      }
+                    />
+                  </Show>
+                </Show>
+              </ContextMenuContent>
+            </ContextMenu.Portal>
+          </ContextMenu>
+          <Show when={props.rows.length === 0}>{props.emptyState}</Show>
+          <div
+            aria-hidden="true"
+            class="grid min-h-40 flex-1"
+            data-empty-grid
+            style={{
+              'grid-template-columns': template(),
+              'background-image':
+                'repeating-linear-gradient(to bottom, transparent 0px, transparent 39px, color-mix(in srgb, var(--color-edge-muted) 60%, transparent) 39px, color-mix(in srgb, var(--color-edge-muted) 60%, transparent) 40px)',
+            }}
+          >
+            <div class="border-r border-edge-muted/40" />
+            <For each={props.columns}>
+              {() => <div class="border-r border-edge-muted/40" />}
+            </For>
+            <Show when={props.canEdit}>
+              <div />
+            </Show>
+          </div>
+          <Show when={columnReorder.drop()}>
+            {(drop) => (
+              <InsertionLine
+                drop={drop()}
+                class="inset-y-0"
+                data-column-drop-indicator
+              />
+            )}
+          </Show>
+        </div>
+      </div>
+      <DragOverlay
+        class="pointer-events-none select-none bg-panel shadow-md"
+        style={{ 'z-index': 1000 }}
+      >
+        {columnReorder.preview()}
+      </DragOverlay>
+    </DragDropProvider>
+  );
+}
+
+/** Same color for the same viewer on every client's grid. */
+function presenceColor(userId: string) {
+  return `var(--color-${getHashedPaletteColor(userId)}, var(--color-pink))`;
+}
+
+function presenceOutline(
+  user: DatabaseCellPresence | undefined
+): JSX.CSSProperties | undefined {
+  if (!user) return undefined;
+  return {
+    outline: `2px ${user.editing ? 'dashed' : 'solid'} ${presenceColor(user.userId)}`,
+    'outline-offset': '-2px',
+  };
+}
+
+/** First name when known, else initials from the user's email. */
+function presenceName(userId: string) {
+  const macroId = tryMacroId(userId);
+  const { firstName, lastName } = getDisplayNameParts(macroId);
+  return (
+    firstName ||
+    getInitials(firstName, lastName, macroId ? macroIdToEmail(macroId) : userId)
+  );
+}
+
+function PresenceTag(props: { user: DatabaseCellPresence }) {
+  const label = () =>
+    `${presenceName(props.user.userId)} is ${props.user.editing ? 'editing' : 'here'}`;
+  return (
+    <span
+      role="note"
+      aria-label={label()}
+      title={label()}
+      class="max-w-24 truncate rounded-bl px-1 text-[10px] leading-4 font-medium text-surface"
+      style={{ 'background-color': presenceColor(props.user.userId) }}
+    >
+      {presenceName(props.user.userId)}
+    </span>
+  );
+}
+
+function sortDirection(
+  sort: readonly SortKey[],
+  columnId: string
+): 'asc' | 'desc' | undefined {
+  const key = sort.find((entry) => entry.column === columnId);
+  if (!key) return undefined;
+  return key.direction === 'ascending' ? 'asc' : 'desc';
+}
+
+const MIN_COLUMN_WIDTH = 80;
+
+/** A header's right edge: drag it to set the column's width. */
+function ColumnResizeHandle(props: {
+  label: string;
+  onPreview: (width: number) => void;
+  onCommit: (width: number) => void;
+}) {
+  let start: { x: number; width: number } | undefined;
+  const widthAt = (origin: { x: number; width: number }, event: PointerEvent) =>
+    Math.max(
+      MIN_COLUMN_WIDTH,
+      Math.round(origin.width + event.clientX - origin.x)
+    );
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={props.label}
+      class="absolute top-0 right-0 z-1 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const header = event.currentTarget.parentElement;
+        start = {
+          x: event.clientX,
+          width: header?.getBoundingClientRect().width ?? MIN_COLUMN_WIDTH,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (start) props.onPreview(widthAt(start, event));
+      }}
+      onPointerUp={(event) => {
+        if (!start) return;
+        props.onCommit(widthAt(start, event));
+        start = undefined;
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onDblClick={(event) => event.stopPropagation()}
+    />
+  );
+}
+
+function DraggableColumnHeader(
+  props: DatabaseColumnHeaderProps & {
+    canDrag: boolean;
+    onDragStart: (event: MouseEvent) => void;
+  }
+) {
+  const item = createReorderItem(props.column.id, {
+    canDrag: () => props.canDrag,
+    ignore: 'button, input',
+    start: (event) => props.onDragStart(event),
+  });
+  return (
+    <DatabaseColumnHeader
+      {...props}
+      headerRef={item.ref}
+      dragHandle={props.canDrag ? { onMouseDown: item.onMouseDown } : undefined}
+      dragging={item.dragging()}
+    />
+  );
+}

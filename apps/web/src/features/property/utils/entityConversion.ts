@@ -59,7 +59,14 @@ export function entityTypeToItemType(type: EntityType): ItemType | undefined {
     .with('CHAT', () => 'chat')
     .with('CALL_RECORD', () => 'call')
     .with('THREAD', () => 'email')
-    .with('COMPANY', 'USER', 'CALENDAR_EVENT', 'INITIATIVE', () => undefined)
+    .with(
+      'COMPANY',
+      'USER',
+      'CALENDAR_EVENT',
+      'INITIATIVE',
+      'DATABASE_ROW',
+      () => undefined
+    )
     .exhaustive();
 }
 
@@ -99,6 +106,9 @@ export function macroEntityToPropertyEntityType(
     .with({ type: 'calendar_event' }, () => {
       // CALENDAR_EVENT is not a property-editing target on the frontend yet.
       throw new Error('calendar events do not support properties');
+    })
+    .with({ type: 'database' }, () => {
+      throw new Error('databases do not support properties');
     })
     .exhaustive();
 }

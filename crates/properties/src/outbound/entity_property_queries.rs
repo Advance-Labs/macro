@@ -5,8 +5,10 @@ mod test;
 
 use models_properties::service::{entity_property::EntityProperty, property_value::PropertyValue};
 use models_properties::{EntityReference, EntityType};
-use sqlx::{Pool, Postgres};
+use sqlx::{PgExecutor, Pool, Postgres};
 use uuid::Uuid;
+
+use super::query_error::PropertyQueryError;
 
 use crate::domain::model::{
     EntityPropertyMutationSnapshot, EntityPropertyOptionSelection, EntityPropertyOptionUpdate,
@@ -24,7 +26,7 @@ pub(super) struct EntityPropertyMutationRow {
 }
 
 impl EntityPropertyMutationRow {
-    pub(super) fn into_snapshot(self) -> anyhow::Result<EntityPropertyMutationSnapshot> {
+    pub(super) fn into_snapshot(self) -> Result<EntityPropertyMutationSnapshot, serde_json::Error> {
         let value = match self.value {
             Some(value) if !value.is_null() => Some(serde_json::from_value(value)?),
             Some(_) | None => None,
@@ -51,6 +53,42 @@ impl EntityPropertyMutationRow {
     }
 }
 
+/// What entities of one type hold, inside a caller's transaction: every
+/// property with a value, or only those of `definitions` when given.
+/// Undecodable values are left out.
+pub async fn entity_values_in_transaction(
+    tx: &mut sqlx::PgConnection,
+    entity_type: EntityType,
+    entity_ids: &[String],
+    definitions: Option<&[Uuid]>,
+) -> Result<Vec<(String, Uuid, PropertyValue)>, PropertyQueryError> {
+    if entity_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT entity_id, property_definition_id, values as "values: serde_json::Value"
+        FROM entity_properties
+        WHERE entity_type = $1 AND entity_id = ANY($2)
+          AND ($3::uuid[] IS NULL OR property_definition_id = ANY($3))
+          AND values IS NOT NULL
+        "#,
+        entity_type as EntityType,
+        entity_ids,
+        definitions as Option<&[Uuid]>,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let value = row.values.filter(|value| !value.is_null())?;
+            let value = serde_json::from_value(value).ok()?;
+            Some((row.entity_id, row.property_definition_id, value))
+        })
+        .collect())
+}
+
 /// Upsert an entity property value (insert or update).
 /// If the property doesn't exist, it will be created and attached to the entity.
 /// If it exists, the value will be updated. The returned snapshot carries the
@@ -62,7 +100,7 @@ pub async fn upsert_entity_property(
     entity_type: EntityType,
     property_definition_id: Uuid,
     value: Option<PropertyValue>,
-) -> anyhow::Result<EntityPropertyMutationSnapshot> {
+) -> Result<EntityPropertyMutationSnapshot, PropertyQueryError> {
     let mut tx = pool.begin().await?;
     let snapshot = upsert_entity_property_in_transaction(
         &mut tx,
@@ -76,13 +114,16 @@ pub async fn upsert_entity_property(
     Ok(snapshot)
 }
 
-async fn upsert_entity_property_in_transaction(
+/// [`upsert_entity_property`] inside a caller's transaction, so the write
+/// commits or rolls back with the caller's other statements. The serializing
+/// locks are held until that transaction ends.
+pub async fn upsert_entity_property_in_transaction(
     tx: &mut sqlx::PgConnection,
     entity_id: &str,
     entity_type: EntityType,
     property_definition_id: Uuid,
     value: Option<PropertyValue>,
-) -> anyhow::Result<EntityPropertyMutationSnapshot> {
+) -> Result<EntityPropertyMutationSnapshot, PropertyQueryError> {
     // Serialize first assignments even when no row exists to lock yet. Keep
     // this separate from the UPSERT so its statement snapshot starts after
     // the preceding writer commits, rather than before waiting for that row.
@@ -154,7 +195,7 @@ async fn upsert_entity_property_in_transaction(
 
     tracing::debug!("successfully upserted entity property");
 
-    row.into_snapshot()
+    Ok(row.into_snapshot()?)
 }
 
 /// Atomically add one option to a multi-select entity property value, creating
@@ -218,7 +259,7 @@ pub async fn add_entity_property_option(
     .fetch_one(pool)
     .await?;
 
-    row.into_snapshot()
+    Ok(row.into_snapshot()?)
 }
 
 /// Atomically remove one option from a multi-select entity property value. A
@@ -276,8 +317,9 @@ pub async fn remove_entity_property_option(
     .fetch_optional(pool)
     .await?;
 
-    row.map(EntityPropertyMutationRow::into_snapshot)
-        .transpose()
+    Ok(row
+        .map(EntityPropertyMutationRow::into_snapshot)
+        .transpose()?)
 }
 
 /// Apply option deltas to several of an entity's multi-select property values in
@@ -468,9 +510,9 @@ pub async fn delete_entity_property(
 }
 
 /// Deletes all properties attached to an entity.
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(skip(executor))]
 pub async fn delete_entity_properties(
-    pool: &Pool<Postgres>,
+    executor: impl PgExecutor<'_>,
     entity_reference: &EntityReference,
 ) -> anyhow::Result<()> {
     sqlx::query!(
@@ -478,7 +520,7 @@ pub async fn delete_entity_properties(
         entity_reference.entity_id,
         entity_reference.entity_type as _,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
 
     Ok(())
