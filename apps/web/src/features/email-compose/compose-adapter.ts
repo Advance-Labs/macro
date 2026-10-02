@@ -1,3 +1,4 @@
+import { saveLocalDraft, resumeLocalDraft, forgetLocalDraft, readLocalDraft, recordLocalAttachment } from '@queries/email/local-drafts';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useHasPaidAccess } from '@core/auth';
 import {
@@ -254,6 +255,9 @@ export function createEmailComposeContext(
       reportError,
     },
     drafts: {
+      get saveLocalDraft() { return queueActive() ? (input: import('@queries/email/local-drafts').LocalDraftInput) => saveLocalDraft({ ...input, inboxId: input.inboxId ?? primaryId(), senderEmail: inboxSource.inboxes().find((inbox) => inbox.id === (input.inboxId ?? primaryId()))?.email_address ?? viewerEmail() }) : undefined; },
+      get retryDraft() { return queueActive() ? resumeLocalDraft : undefined; },
+      get forgetDraft() { return queueActive() ? forgetLocalDraft : undefined; },
       get readDraft() {
         return queueActive() ? readEmailDraft : undefined;
       },
@@ -268,11 +272,13 @@ export function createEmailComposeContext(
       }) {
         const handles = queueHandles(input);
         if (handles) {
-          const senderLinkId = inboxId ?? primaryId() ?? '';
+          if (!(await readLocalDraft(handles.draftId))) await saveLocalDraft({ ...input, clientHandles: handles, inboxId: inboxId ?? primaryId(), attachments: [] });
+          const local = await readLocalDraft(handles.draftId);
+          const senderLinkId = local?.inboxId ?? inboxId ?? primaryId() ?? '';
           const outcome = await saveEmailDraftQueued({
-            args: queuedDraftSaveArgs({
-              draft: input.draft,
-              handles,
+            args: { ...queuedDraftSaveArgs({
+              draft: local?.content ?? input.draft,
+              handles: local ? { draftId: local.draftId, threadId: local.threadId ?? handles.threadId } : handles,
               senderLinkId,
               senderAccount: accounts.isSuccess
                 ? accounts.data?.links.find((link) => link.id === senderLinkId)
@@ -282,7 +288,7 @@ export function createEmailComposeContext(
                   ?.email_address ??
                 viewerEmail() ??
                 '',
-            }),
+            }), localRevision: local?.revision },
             completingThread,
             previousThreadId,
           });
@@ -300,7 +306,7 @@ export function createEmailComposeContext(
                 };
           return saved;
         }
-        const { clientHandles: _clientHandles, ...restInput } = input;
+        const { clientHandles: _clientHandles, localRevision: _localRevision, ...restInput } = input;
         const result = await save.mutateAsync({
           ...restInput,
           linkId: headerId(inboxId),
@@ -376,12 +382,17 @@ export function createEmailComposeContext(
     },
     delivery: {
       async sendMessage({ completingThread, inboxId, ...input }) {
+        if (queueActive() && input.message.db_id) {
+          const local = await readLocalDraft(input.message.db_id);
+          if (local && (local.acknowledgedRevision < local.revision || ['failed', 'unconfirmed', 'delete-failed', 'deleting'].includes(local.status) || local.attachments.some((attachment) => attachment.type === 'local' && !attachment.uploaded))) throw new Error('Save the latest draft and attachments before sending');
+        }
         const result = await send.mutateAsync({
           ...input,
           linkId: headerId(inboxId),
           skipSoupRefetch: completingThread,
         });
         try {
+          if (queueActive() && input.message.db_id) await forgetLocalDraft(input.message.db_id);
           if (result.message.db_id)
             publishDraftLifecycleChange(
               result.message.db_id,
@@ -459,6 +470,9 @@ export function createEmailComposeContext(
           ...input,
           draftID: draftId,
           linkId: headerId(inboxId),
+          onAttachmentAdded: async (file, id) => { if (queueActive()) await recordLocalAttachment(draftId, file, id, false); input.onAttachmentAdded?.(file, id); },
+          onAttachmentUploaded: async (file, id) => { if (queueActive()) await recordLocalAttachment(draftId, file, id, true); },
+          onAttachmentUploadFailed: (file) => { if (queueActive()) void recordLocalAttachment(draftId, file, undefined, false).catch(reportError); input.onAttachmentUploadFailed?.(file); },
         }),
       addForwardedAttachments: ({ draftId, attachments, inboxId }) =>
         forward.mutateAsync({

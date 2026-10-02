@@ -73,6 +73,12 @@ export function createAttachmentPersistence(options: {
       const uploadGeneration = generation;
       const stillCurrent = () =>
         uploadGeneration === generation && options.draftId() === draftId;
+      for (const attachment of options.attachments.list()) {
+        if (attachment.type !== 'local' || !attachment.uploadPending || !attachment.attachmentId) continue;
+        await options.services.removeAttachment({ draftId, attachmentId: attachment.attachmentId, inboxId: inbox.inboxId });
+        if (!stillCurrent()) return;
+        options.attachments.clearAttachmentId(attachment.file);
+      }
       const attachments = options.attachments
         .list()
         .filter(

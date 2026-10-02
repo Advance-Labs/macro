@@ -1,3 +1,4 @@
+import { DraftSyncStatus } from '../components/draft-sync-status';
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
 import {
@@ -65,6 +66,8 @@ export function EmailComposeView(props: EmailComposeViewProps) {
           {...props}
           draft={saved()?.draft ?? props.draft}
           draftPersistence={saved()?.persistence}
+          localDraft={saved()?.local}
+          localAttachments={saved()?.attachments}
         />
       </Show>
     </Show>
@@ -72,7 +75,7 @@ export function EmailComposeView(props: EmailComposeViewProps) {
 }
 
 function LoadedEmailComposeView(
-  props: EmailComposeViewProps & { draftPersistence?: 'committed' | 'queued' }
+  props: EmailComposeViewProps & Pick<EmailComposerOptions, 'draftPersistence' | 'localDraft' | 'localAttachments'>
 ) {
   const composeContext = props.context;
   const state = createEmailComposer({
@@ -91,6 +94,8 @@ function LoadedEmailComposeView(
     draft: props.draft,
     draftId: props.draftId,
     draftPersistence: props.draftPersistence,
+    localDraft: props.localDraft,
+    localAttachments: props.localAttachments,
     recipientOptions: props.recipientOptions,
     onRecipientsChange: props.onRecipientsChange,
     initialTo: props.initialTo,
@@ -167,13 +172,15 @@ function LoadedEmailComposeView(
     });
   }
 
-  const leaveCompose = () => {
+  const leaveCompose = async () => {
+    await state.flushLocal();
     setDraftBackMenuOpen(false);
     props.host?.goBack?.();
   };
 
   return (
     <ComposeProvider value={ctxValue}>
+      <DraftSyncStatus drafts={composeContext.drafts} draftId={state.draftId()} retry={state.retryDraft} discard={deleteDraftAndReset} />
       <Show when={!composeContext.presentation.isMobile()}>
         <SplitHeaderLeft>
           <StaticSplitLabel

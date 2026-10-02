@@ -165,6 +165,7 @@ function withResultMetadata(
 }
 
 type QueueAttemptContext = {
+  mutation?: ClaimedMutation;
   transactionId: string;
   leaseOwner: string;
   leaseGeneration: string;
@@ -437,6 +438,12 @@ function mutationErrorCode(
 }
 
 export interface NormalizedCacheExchangeOptions {
+  /** Complete durable client migrations before any queued request is sent. */
+  prepareMutationQueue?: () => Promise<void>;
+  /** False discards obsolete client intent without sending it to the server. */
+  beforeMutationAttempt?: (mutation: ClaimedMutation) => Promise<boolean>;
+  /** Persist domain recovery state for a replayed result, including when its UI is closed. */
+  onMutationAttemptResult?: (mutation: ClaimedMutation, result: OperationResult, retry: boolean) => Promise<void>;
   /** Domain-specific deletions inferred from a successful server response. */
   deletedRecordKeys?: (result: OperationResult) => string[];
   /** Return true to transfer a committed query refresh to an active reader's queue.
@@ -831,6 +838,17 @@ export function normalizedCacheExchange(
       async function routeClaimedMutation(
         claimed: ClaimedMutation
       ): Promise<void> {
+        if (options.prepareMutationQueue) {
+          attemptInFlight = true;
+          try { await options.prepareMutationQueue(); }
+          finally { attemptInFlight = false; }
+        }
+        if (options.beforeMutationAttempt && !(await options.beforeMutationAttempt(claimed))) {
+          await host.rollbackOptimisticWrite(claimed.transactionId, { owner: queueOwner, generation: claimed.leaseGeneration }, 'Obsolete local intent', 'LOCAL_SUPERSEDED');
+          resolveLiveOperationsAsQueued();
+          scheduleDrain();
+          return;
+        }
         deferredUntil = undefined;
         // A superseded create can already exist on the server. Replay it to
         // recover its identity before sending the newer edit or discard.
@@ -859,6 +877,7 @@ export function normalizedCacheExchange(
         }
         attemptInFlight = true;
         const attempt: QueueAttemptContext = {
+          mutation: claimed,
           transactionId: claimed.transactionId,
           leaseOwner: queueOwner,
           leaseGeneration: claimed.leaseGeneration,
@@ -935,6 +954,7 @@ export function normalizedCacheExchange(
         drainRunning = true;
         drainRequested = false;
         try {
+          if (options.prepareMutationQueue) await options.prepareMutationQueue();
           const now = Date.now();
           // A wakeup probes immediately, but must retain a future retry
           // deadline if the durable head is not eligible yet. Consume expired
@@ -972,6 +992,21 @@ export function normalizedCacheExchange(
           drainRunning = false;
           if (drainRequested) scheduleDrain();
         }
+      }
+
+      async function recordAttemptResult(attempt: QueueAttemptContext, result: OperationResult, retry: boolean): Promise<void> {
+        if (!attempt.mutation || !options.onMutationAttemptResult) return;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            options.onMutationAttemptResult(attempt.mutation, result, retry),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error('Mutation bookkeeping timed out')), 2_000);
+            }),
+          ]);
+        } catch (error) {
+          try { options.onCacheError?.(error, result.operation); } catch { /* Diagnostics cannot retain a failed queue head. */ }
+        } finally { if (timer !== undefined) clearTimeout(timer); }
       }
 
       function revalidateAfterSettlement(
@@ -1122,6 +1157,7 @@ export function normalizedCacheExchange(
           linkPatches: optimistic.linkPatches,
           revalidations: optimistic.revalidations,
           identityBindings: optimistic.identityBindings,
+          clientMetadata: optimistic.clientMetadata,
         };
         const now = Date.now();
         const claim = {
@@ -1482,6 +1518,7 @@ export function normalizedCacheExchange(
                     options.onCacheError?.(error, op);
                   }
                 }
+                await recordAttemptResult(attempt, result, retry);
                 if (retry) {
                   retryAt = Date.now() + retryDelayMs(attempt.attemptCount);
                   const deferred = await host.deferOptimisticWrite(
@@ -1518,6 +1555,7 @@ export function normalizedCacheExchange(
                   }
                 }
               } else {
+                await recordAttemptResult(attempt, result, false);
                 const committed = await host.commitOptimisticWrite(
                   attempt.transactionId,
                   claim,

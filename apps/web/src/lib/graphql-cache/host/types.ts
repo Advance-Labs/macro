@@ -1,3 +1,4 @@
+import type { MutationInspection } from '../protocol';
 import type { IdentityBindingWire } from '../protocol';
 /**
  * Transport-agnostic cache host interface consumed by the urql exchange and
@@ -74,6 +75,8 @@ export interface CacheWriteArgs extends Omit<CacheReadArgs, 'priority'> {
 export interface EnqueueOptimisticMutationArgs extends CacheWriteArgs {
   /** Caller-supplied RFC UUID used for explicit safe coalescing. */
   uuid: string;
+  /** Opaque durable client correlation; never included in GraphQL variables. */
+  clientMetadata?: Record<string, unknown>;
   identityBindings?: IdentityBindingWire[];
   linkPatches?: OptimisticLinkPatchWire[];
   /** Revalidations for relevant cached fields that could not be patched. */
@@ -142,6 +145,8 @@ export interface CacheHost {
   ): Promise<CachedQueryVariantWire[]>;
   /** Enumerates and materializes cached query field variants. */
   inspectQuery(args: InspectQueryArgs): Promise<CachedQueryInstanceWire[]>;
+  /** Read-only queue snapshots; their lease values do not authorize settlement. */
+  inspectMutations?(): Promise<MutationInspection[]>;
   /** Claims the oldest runnable mutation; later entries are never skipped. */
   claimNextMutation(
     owner: string,

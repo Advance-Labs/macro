@@ -1,3 +1,4 @@
+import type { MutationInspection } from '../protocol';
 /**
  * Tauri CacheHost: talks to the native cache engine living in the Tauri
  * host process (graphql_cache_plugin) over invoke commands. The host
@@ -379,6 +380,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
           linkPatches: args.linkPatches,
           revalidations: args.revalidations,
           identityBindings: args.identityBindings,
+        clientMetadata: args.clientMetadata,
           createdAtMs: claim.nowMs,
           owner: claim.owner,
           nowMs: claim.nowMs,
@@ -417,6 +419,10 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       );
     },
 
+    async inspectMutations() {
+      await ready;
+      return await request<MutationInspection[]>('graphql_cache_inspect_mutations', {});
+    },
     async claimNextMutation(
       owner: string,
       nowMs: number,

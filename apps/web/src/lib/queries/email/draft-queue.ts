@@ -1,3 +1,4 @@
+import { beginDraftAttempt, draftSyncPaused, localDraftMessage, localDraftStore, readLocalDraft, restoreLocalAttachments } from './local-drafts';
 import { toast } from '@core/component/Toast/Toast';
 import {
   enableGraphqlSoup,
@@ -37,6 +38,8 @@ import { fetchAndCacheThread, type ThreadQueryTransport } from './thread';
 
 /** Read content and persistence state together, including resolved local handles. */
 export async function readEmailDraft(draftId: string) {
+  const local = await readLocalDraft(draftId);
+  if (local && local.status !== 'deleting') return { draft: localDraftMessage(local), persistence: local.status === 'synced' ? 'committed' as const : 'queued' as const, mutationUuid: local.key, local, attachments: await restoreLocalAttachments(local) };
   const host = getGraphqlCacheHost();
   if (!host) return;
   const result = await readRecordsByKeys(
@@ -72,6 +75,7 @@ export function watchEmailDrafts(
   getGraphqlSoupClient();
   const host = getGraphqlCacheHost();
   const cache = host?.onCacheChanged(() => changed());
+  const local = localDraftStore.subscribe(() => changed());
   const settlement = host?.onMutationSettled((result) => {
     const code =
       result.status === 'permanently-failed'
@@ -84,6 +88,7 @@ export function watchEmailDrafts(
     });
   });
   return () => {
+    local();
     cache?.();
     settlement?.();
   };
@@ -204,6 +209,9 @@ export async function saveEmailDraftQueued(input: {
   completingThread?: boolean;
   previousThreadId?: string;
 }): Promise<QueuedDraftSave> {
+  const local = await readLocalDraft(String(input.args.draftId));
+  if (local && draftSyncPaused(local)) return { kind: 'rejected', code: draftFailureCode(local.errorCode) };
+  const attempt = local ? await beginDraftAttempt({ ...local, revision: input.args.localRevision ?? local.revision }, 'save') : undefined;
   const cached = await readCachedDraftAndThread(
     String(input.args.draftId),
     input.args.threadDbId
@@ -211,6 +219,7 @@ export async function saveEmailDraftQueued(input: {
   const outcome = await executeGraphqlSaveEmailDraft(getGraphqlSoupClient(), {
     ...input.args,
     ...cached,
+    ...(local ? { draftId: local.draftId, clientMetadata: attempt } : {}),
     mutationUuid:
       cached.mutationUuid ??
       input.args.mutationUuid ??
@@ -261,11 +270,14 @@ export async function deleteEmailDraftQueued(input: {
   threadId: string;
   completingThread?: boolean;
 }): Promise<QueuedDraftDelete> {
+  const local = await readLocalDraft(input.draftId);
+  const attempt = local ? await beginDraftAttempt(local, 'delete') : undefined;
   const cached = await readCachedDraftAndThread(input.draftId, input.threadId);
   const outcome = await executeGraphqlDeleteEmailDraft(getGraphqlSoupClient(), {
     existingThread: cached.existingThread,
     mutationUuid: cached.mutationUuid ?? input.draftId,
-    draftId: String(cached.draftId),
+    draftId: local?.draftId ?? String(cached.draftId),
+    clientMetadata: attempt,
     threadDbId: cached.threadDbId,
   });
   if (outcome.kind === 'failed') {

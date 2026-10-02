@@ -1,3 +1,4 @@
+import type { MutationInspection } from '../protocol';
 import type { IdentityBindingWire } from '../protocol';
 /**
  * Typed surface of the generated wasm package (`cache-wasm`), loaded
@@ -116,6 +117,7 @@ export interface CacheEngine {
     data: unknown,
     identity: string | undefined
   ): Promise<CacheEngineHydrationResult>;
+  inspectMutations(): Promise<MutationInspection[]>;
   enqueueOptimisticMutation(
     originOpId: string | undefined,
     uuid: string,
@@ -129,7 +131,8 @@ export interface CacheEngine {
     createdAtMs: number,
     leaseOwner: string,
     nowMs: number,
-    leaseExpiresAtMs: number
+    leaseExpiresAtMs: number,
+    clientMetadata?: Record<string, unknown>
   ): Promise<EnqueueOptimisticMutationResult>;
   inspectQueryVariants(
     query: string,

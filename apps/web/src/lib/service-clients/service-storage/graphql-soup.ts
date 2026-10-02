@@ -1,3 +1,4 @@
+import { localDraftQueueLifecycle } from '@queries/email/local-drafts';
 import { toast } from '@core/component/Toast/Toast';
 import {
   ENABLE_BEARER_TOKEN_AUTH,
@@ -508,6 +509,7 @@ export function getGraphqlSoupClient(): Client {
         preferGetMethod: false,
         exchanges: [
           normalizedCacheExchange(host, {
+            ...localDraftQueueLifecycle(host),
             deletedRecordKeys: emailCacheDeletionKeys,
             onCacheError: (error, operation) => {
               // Initialization failure already reports before retiring the host;

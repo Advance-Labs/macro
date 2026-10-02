@@ -110,6 +110,8 @@ export type ReplyComposerOptions = {
   replyingTo: Accessor<EmailMessage | undefined>;
   isEditingExisting?: boolean;
   draft?: EmailMessage;
+  localDraft?: import('../core/local-draft').LocalDraft;
+  localAttachments?: DraftFormAttachment[];
   preloadedHtml?: string;
   /** Seed identity of the draft this composer mounted from — becomes part of
    * the form-state cache key so a remount on a newer draft version gets a
@@ -263,6 +265,8 @@ export function createReplyComposer(
           }
         : undefined
   );
+  if (props.localAttachments) { form.attachments.clear(); for (const attachment of props.localAttachments) form.attachments.add(attachment); }
+  if (props.localDraft && ['failed', 'unconfirmed', 'delete-failed'].includes(props.localDraft.status)) session.dispatch({ type: 'rejected', epoch: session.epoch(), code: 'INTERNAL' });
   const savedDraftId = session.draftId;
   const savedDraftThreadId = session.threadId;
   observeDraftIdentity(
@@ -271,7 +275,8 @@ export function createReplyComposer(
     props.notices,
     () => {
       if (scheduleBlocked() || schedule.state().type === 'scheduled') return;
-      detachFromObsoleteDraft('Saving your edits as a new draft.');
+      if (props.drafts.retryDraft) { void persistence.retry().then(() => autosave.save()).catch(props.notices.reportError); }
+      else detachFromObsoleteDraft('Saving your edits as a new draft.');
     },
     handleAlreadySent
   );
@@ -615,6 +620,8 @@ export function createReplyComposer(
   const autosave = createDraftAutosave({
     capture: captureSave,
     persist: persistDraft,
+    saveLocalSnapshot: async (snapshot) => { if (snapshot.generation !== identityVersion) return; await persistence.saveLocally({ draft: snapshot.draft ? { ...snapshot.draft, thread_db_id: snapshot.thread?.db_id, provider_thread_id: snapshot.thread?.provider_id } : null, inboxId: snapshot.inboxId, attachments: [...form.attachments.list()] }); },
+    onLocalError: (error) => props.notices.feedback.failure('Draft could not be saved on this device', { subtext: String(error), persistent: true }),
     paused: () =>
       submitting() ||
       pendingDeletion() ||
@@ -1142,7 +1149,7 @@ export function createReplyComposer(
       terminalState()
     )
       return;
-    if (await refuseAttachmentsOffline(props.connectivity, props.notices))
+    if (!props.drafts.saveLocalDraft && await refuseAttachmentsOffline(props.connectivity, props.notices))
       return;
     const currentAttachments = form.attachments.list();
 
@@ -1356,6 +1363,8 @@ export function createReplyComposer(
   };
 
   return {
+    retryDraft: async () => { await persistence.retry(); await autosave.save(); },
+    flushLocal: autosave.flushLocal,
     onContentChange: handleChange,
     handleUserMention,
     scrollContainer,

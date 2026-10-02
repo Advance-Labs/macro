@@ -1,3 +1,6 @@
+import { clearLocalDrafts, flushLocalDrafts, listLocalDrafts } from '@queries/email/local-drafts';
+import { confirmDialog } from '@ui';
+import { getOwner } from 'solid-js';
 import { clearMcpAuthAttempts } from '@app/features/settings/mcp-auth-attempt';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { SERVER_HOSTS } from '@core/constant/servers';
@@ -53,15 +56,19 @@ export async function clearLocalAuthSession() {
 
   // Queued mutations are user intent; never allow them to replay under a
   // subsequent account sharing this anonymous device cache scope.
-  await Promise.all([documentContextsCleared, clearRegisteredCaches()]);
+  await Promise.all([documentContextsCleared, clearRegisteredCaches(), clearLocalDrafts()]);
   clearMcpAuthAttempts();
 }
 
 export function useLogout() {
   const analytics = useAnalytics();
   const navigate = useNavigate();
+  const owner = getOwner();
 
   return createCallback(async () => {
+    await flushLocalDrafts();
+    const unsynced = (await listLocalDrafts()).filter((draft) => draft.status !== 'synced');
+    if (unsynced.length && !(await confirmDialog({ title: 'Sign out and remove local drafts?', body: `${unsynced.length} draft(s) have changes saved only on this device. Signing out removes those changes and their pending attachments.`, confirmLabel: 'Sign out', }, { owner }))) return;
     clearPostLoginRedirect();
     // Must run before the session is torn down — the unregister call is
     // authenticated. Time-boxed so a hung request can't block logout.

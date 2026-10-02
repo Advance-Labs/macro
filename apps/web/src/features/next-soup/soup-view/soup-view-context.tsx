@@ -1,3 +1,4 @@
+import { createLocalDraftSource, localDraftEntities } from '@queries/email/local-draft-source';
 import {
   entityMatchesTagFilter,
   isListViewID,
@@ -1043,13 +1044,15 @@ export const createSoupViewState = (props: SoupViewContextProviderProps) => {
   const itemsSource = () =>
     usesReminderCollection() ? reminderSource : soupItemsSource;
 
+  const localDrafts = createLocalDraftSource();
+  const localDraftRows = () => localDraftEntities(localDrafts.drafts()).map((entity) => attachNotifications(entity)) as SoupEntity[];
   const items = createMemo<SoupEntity[]>(
     (prev) => {
       const searching = search.isSearching();
 
       if (!searching) {
         const data = itemsSource().data();
-        const extras = config().additionalEntities?.() ?? [];
+        const extras = [...(config().additionalEntities?.() ?? []), ...localDraftEntities(localDrafts.drafts())];
         const extraEntities = extras.map((e) =>
           isWithNotification(e) ? e : attachNotifications(e)
         ) as SoupEntity[];
@@ -1072,13 +1075,16 @@ export const createSoupViewState = (props: SoupViewContextProviderProps) => {
 
         if (extraEntities.length === 0) return base;
 
-        return [...extraEntities, ...base];
+        const extraIds = new Set(extraEntities.map((entity) => `${entity.type}:${entity.id}`));
+        return [...extraEntities, ...base.filter((entity) => !extraIds.has(`${entity.type}:${entity.id}`))];
       }
 
       const local = search.localFuzzyResults();
       const service = search.serviceSearchResults();
 
-      const merged: SoupEntity[] = [...service, ...local];
+      const needle = search.searchText().toLowerCase();
+      const recovery = localDraftRows().filter((entity) => entity.name.toLowerCase().includes(needle));
+      const merged: SoupEntity[] = [...recovery, ...service, ...local];
 
       if (
         merged.length === 0 &&

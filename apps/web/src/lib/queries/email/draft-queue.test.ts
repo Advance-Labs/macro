@@ -288,3 +288,5 @@ it('retains a sent record mutation handle without returning editable content', a
     mutationUuid: handle,
   });
 });
+
+vi.mock('./local-drafts', () => ({ readLocalDraft: vi.fn(async () => undefined), localDraftMessage: vi.fn(), restoreLocalAttachments: vi.fn(), beginDraftAttempt: vi.fn(), draftSyncPaused: vi.fn(), localDraftStore: { subscribe: vi.fn(() => () => {}) } }));

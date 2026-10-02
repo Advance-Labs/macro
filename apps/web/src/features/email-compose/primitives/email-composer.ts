@@ -99,6 +99,8 @@ export type EmailComposerOptions = {
   recipientName(id: string): string;
   host?: EmailComposeHost;
   draft?: EmailMessage;
+  localDraft?: import('../core/local-draft').LocalDraft;
+  localAttachments?: DraftFormAttachment[];
   /** Identity for a composer reopened from a local undo snapshot. */
   draftId?: string;
   draftPersistence?: 'committed' | 'queued';
@@ -140,6 +142,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     form.setSelectedInbox(props.initialInboxId);
   }
 
+  if (props.localAttachments) { form.attachments.clear(); for (const attachment of props.localAttachments) form.attachments.add(attachment); }
   const primaryInboxId = props.accounts.primaryId;
   const link = createMemo(() => {
     const inboxes = props.accounts.inboxes();
@@ -183,6 +186,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
         }
       : undefined
   );
+  if (props.localDraft && ['failed', 'unconfirmed', 'delete-failed'].includes(props.localDraft.status)) session.dispatch({ type: 'rejected', epoch: session.epoch(), code: 'INTERNAL' });
   const currentDraftId = session.draftId;
   const currentThreadId = session.threadId;
   observeDraftIdentity(
@@ -191,7 +195,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
     props.notices,
     () => {
       if (persistencePaused()) return;
-      detachFromObsoleteDraft('Saving your edits as a new draft.');
+      if (props.drafts.retryDraft) { void persistence.retry().then(() => autosave.save()).catch(props.notices.reportError); }
+      else detachFromObsoleteDraft('Saving your edits as a new draft.');
     },
     handleAlreadySent
   );
@@ -396,6 +401,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
       revision: editVersion,
     }),
     persist: persistDraft,
+    saveLocalSnapshot: async (snapshot) => { if (snapshot.generation !== identityVersion) return; await persistence.saveLocally({ draft: snapshot.draft, inboxId: snapshot.inboxId, attachments: [...form.attachments.list()] }); },
+    onLocalError: (error) => props.notices.feedback.failure('Draft could not be saved on this device', { subtext: String(error), persistent: true }),
     paused: persistencePaused,
   });
 
@@ -464,7 +471,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
   const handleAddAttachments = async (attachments: DraftFormAttachment[]) => {
     if (persistencePaused()) return;
-    if (await refuseAttachmentsOffline(props.connectivity, props.notices))
+    if (!props.drafts.saveLocalDraft && await refuseAttachmentsOffline(props.connectivity, props.notices))
       return;
     for (const attachment of attachments) {
       form.attachments.add(attachment);
@@ -477,6 +484,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     editVersion += 1;
     setDraftDirty(true);
     attachmentPersistence.remove(attachment);
+    autosave.schedule();
   };
 
   // --- Content change ---
@@ -1109,6 +1117,9 @@ export function createEmailComposer(props: EmailComposerOptions) {
     hasPaidAccess,
   };
   return {
+    draftId: currentDraftId,
+    retryDraft: async () => { await persistence.retry(); await autosave.save(); },
+    flushLocal: autosave.flushLocal,
     context: ctxValue,
     editor,
     previewName,

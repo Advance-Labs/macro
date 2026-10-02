@@ -1,3 +1,5 @@
+import { DraftSyncStatus } from '../components/draft-sync-status';
+import { decodeBase64Utf8 } from '../core/decode-base64';
 import { EmailAttachmentPill } from '@app/features/email-message/components/attachment-pill';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
 import { FileDropOverlay } from '@core/component/FileDropOverlay';
@@ -18,7 +20,7 @@ import { isIOS } from '@solid-primitives/platform';
 import { Button, cn, SendButton, Surface, Tooltip } from '@ui';
 import type { LexicalEditor } from 'lexical';
 import { $getRoot } from 'lexical';
-import { createSignal, For, onMount, Show } from 'solid-js';
+import { createResource, createSignal, For, onMount, Show } from 'solid-js';
 import { createAttachmentViewer } from '../components/attachment-viewer';
 import { EmailDateSelector } from '../components/email-date-selector';
 import {
@@ -61,6 +63,17 @@ type ReplyInputViewProps = Omit<
   mobileDrawer?: { onClose: () => void };
 };
 export function ReplyInputView(props: ReplyInputViewProps) {
+  const initialId = props.draft?.db_id;
+  const read = props.context.drafts.readDraft;
+  const [saved, { refetch }] = createResource(() => read && initialId, async (id) => await read!(id));
+  return <Show when={!saved.loading} fallback={<div role="status">Loading draft…</div>}>
+    <Show when={!saved.error} fallback={<div role="alert">Unable to load local draft. <button onClick={() => void refetch()}>Retry</button></div>}>
+      <LoadedReplyInputView {...props} draft={saved()?.draft ?? props.draft} localDraft={saved()?.local} localAttachments={saved()?.attachments} preloadedHtml={saved()?.draft?.body_html_sanitized ? decodeBase64Utf8(saved()!.draft!.body_html_sanitized!) ?? undefined : props.preloadedHtml} />
+    </Show>
+  </Show>;
+}
+
+function LoadedReplyInputView(props: ReplyInputViewProps) {
   const composeContext = props.context;
   const ctx = props.session;
   const [isDragging, setIsDragging] = createSignal<boolean>();
@@ -85,6 +98,8 @@ export function ReplyInputView(props: ReplyInputViewProps) {
       replyingTo: props.replyingTo,
       isEditingExisting: props.isEditingExisting,
       draft: props.draft,
+      localDraft: props.localDraft,
+      localAttachments: props.localAttachments,
       preloadedHtml: props.preloadedHtml,
       formSeed: props.formSeed,
       onEngaged: props.onEngaged,
@@ -328,6 +343,7 @@ export function ReplyInputView(props: ReplyInputViewProps) {
 
   return (
     <>
+      <DraftSyncStatus drafts={composeContext.drafts} draftId={state.savedDraftId()} retry={state.retryDraft} discard={state.deleteDraftAndReset} />
       <Surface
         class={cn(
           'relative flex flex-col flex-1 max-w-full min-h-0',
