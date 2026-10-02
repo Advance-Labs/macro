@@ -29,7 +29,6 @@ export type ReviewHost = {
   /** Select a revision and clear citation/thread keys; routing may settle later. */
   selectRevision: (revision: number) => void;
   openLink: (url: string) => boolean;
-  copyLink: (url: string) => Promise<void>;
 };
 export const ReviewHostContext = createContext<ReviewHost>();
 export function useReviewHost() {

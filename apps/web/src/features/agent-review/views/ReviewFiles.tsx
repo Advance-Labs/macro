@@ -28,7 +28,6 @@ type Props = {
   renderDiscussion: (at: CodeLocation) => JSX.Element;
   onSelect: (at: CodeLocation) => void;
   onComment: (at: CodeLocation) => void;
-  onCopy: (at: CodeLocation) => void;
   readOnly: boolean;
 };
 
@@ -314,7 +313,6 @@ function ReviewFile(
                 renderDiscussion={props.renderDiscussion}
                 onSelect={props.onSelect}
                 onComment={props.onComment}
-                onCopy={props.onCopy}
                 readOnly={props.readOnly}
                 search={
                   props.target?.path === props.entry.path ? props.search : ''

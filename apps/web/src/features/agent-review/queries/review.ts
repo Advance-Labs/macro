@@ -1,10 +1,7 @@
 import { throwOnErr } from '@core/util/result';
 import { subscribeAgentSessionUpdated } from '@queries/agent-session/session-metadata-sync';
 import { queryReadyGate } from '@queries/gate';
-import type {
-  Comment,
-  Location,
-} from '@service-agent-harness/generated/schemas';
+import type { Comment } from '@service-agent-harness/generated/schemas';
 import { agentReviewClient } from '@service-agent-harness/reviews';
 import {
   queryOptions,
@@ -120,8 +117,6 @@ export function createReviewSource(
     onSuccess: invalidate,
     retry: false,
   }));
-  const link = (number: number, location: Location) =>
-    throwOnErr(() => agentReviewClient.link(session()!, number, location));
   return {
     manifest: {
       value: () =>
@@ -144,7 +139,6 @@ export function createReviewSource(
     capture: () => capture.mutateAsync(),
     comment: (input) => comment.mutateAsync(input),
     resolve: (input) => resolve.mutateAsync(input),
-    link,
   };
 }
 export function createReviewFile(

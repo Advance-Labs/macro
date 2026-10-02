@@ -635,7 +635,6 @@ export default function ReviewWorkspace() {
                   onSelect={model.select}
                   onComment={model.begin}
                   readOnly={!host.canEdit()}
-                  onCopy={(at) => void model.copy(at)}
                 />
               </Show>
               <Show when={!files().length}>

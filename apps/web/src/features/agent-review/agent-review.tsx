@@ -65,7 +65,6 @@ export function AgentReviewProvider(props: ParentProps) {
     show: () => update({ open: true }, true),
     back: () => update({ open: false }, true),
     selectRevision: (revision) => update({ revision, target: '', thread: '' }),
-    copyLink: (href) => navigator.clipboard.writeText(href),
     openLink: (href) => {
       let url: URL;
       try {

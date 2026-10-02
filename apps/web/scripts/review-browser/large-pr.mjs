@@ -94,7 +94,7 @@ try {
   await code
     .getByRole('button', { name: 'Select new line 14', exact: true })
     .click({ modifiers: ['Shift'] });
-  await root.getByRole('toolbar', {name:'Selected code'}).getByRole('button', {name:'Comment', exact:true}).click();
+  await root.getByRole('button', {name:'Ask agent', exact:true}).click();
   h.failNextCommentResponse();
   const comment =
     `Browser check ${Date.now()}: add only a short explanatory comment above this import block. Keep behavior unchanged. Refresh the review and reply in this thread with a link to the updated code.`;

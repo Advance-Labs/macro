@@ -42,7 +42,6 @@ export function ReviewCode(props: {
   discussions: CodeLocation[];
   renderDiscussion: (location: CodeLocation) => JSX.Element;
   onSelect: (location: CodeLocation) => void;
-  onCopy: (location: CodeLocation) => void;
   onComment?: (location: CodeLocation) => void;
   readOnly?: boolean;
   search: string;
@@ -63,19 +62,24 @@ export function ReviewCode(props: {
       props.target?.path === props.file.path ? props.target : undefined
     )
   );
-  const selectionContext = () => `${navigation()}:${props.target?.path ?? ''}`;
+  const selectionContext = createMemo(
+    () => `${navigation()}:${props.target?.path ?? ''}`
+  );
   const [picked, setPicked] = createWritableMemo<CodeLocation | undefined>(
     on(selectionContext, (): CodeLocation | undefined => undefined)
   );
   const [showActions, setShowActions] = createWritableMemo(
     on(selectionContext, () => false)
   );
+  const [selectionAnchor, setSelectionAnchor] = createSignal<HTMLElement>();
   const [dismissed, setDismissed] = createWritableMemo(
     on(selectionContext, () => false)
   );
   const clearSelection = () => {
+    scroll.focus({ preventScroll: true });
     setPicked(undefined);
     setShowActions(false);
+    setSelectionAnchor(undefined);
     setDismissed(true);
   };
   const pick = (at: CodeLocation) => {
@@ -256,6 +260,38 @@ export function ReviewCode(props: {
     },
     overscan: 14,
   });
+  // Rows are replaced as the window moves. Resolve the chip against the current
+  // rendered selection, never a DOM node retained from a previous window.
+  createEffect(
+    on([picked, showActions], ([at, showing]) => {
+      setSelectionAnchor(undefined);
+      if (!at || !showing) return;
+      const updateAnchor = () => {
+        const bounds = viewport().getBoundingClientRect();
+        const candidates = [
+          ...scroll.querySelectorAll<HTMLElement>('[data-review-line]'),
+        ].filter((element) => {
+          const line = Number(element.dataset.reviewLine);
+          return (
+            element.dataset.reviewSide === at.side &&
+            line >= at.line &&
+            line <= (at.endLine ?? at.line)
+          );
+        });
+        const visible = candidates.find((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.bottom > bounds.top && rect.top < bounds.bottom;
+        });
+        // Keep an overscanned reference so the shared floating directive can
+        // track it returning into view without another row being mounted.
+        setSelectionAnchor(visible ?? candidates[0]);
+      };
+      const observer = new MutationObserver(updateAnchor);
+      observer.observe(scroll, { childList: true, subtree: true });
+      updateAnchor();
+      onCleanup(() => observer.disconnect());
+    })
+  );
   // The file window compensates changes above the active file. Only its own
   // line window may adjust the shared viewport, avoiding a double adjustment.
   createEffect(() => {
@@ -714,16 +750,23 @@ export function ReviewCode(props: {
           </For>
         </div>
       </div>
-      <Show when={showActions() && picked()}>
-        {(at) => {
-          const toolbar = () => (
+      <Show
+        when={
+          props.active !== false &&
+          !props.readOnly &&
+          showActions() &&
+          picked() &&
+          selectionAnchor()
+        }
+      >
+        {(anchor) => {
+          const chip = () => (
             <ReviewSelection
-              location={at()}
+              anchor={anchor()}
               disabled={props.disabled}
-              readOnly={props.readOnly}
-              onCopy={() => props.onCopy(at())}
               onComment={() => {
-                props.onComment?.(at());
+                const location = picked();
+                if (location) props.onComment?.(location);
                 setShowActions(false);
               }}
               onDismiss={clearSelection}
@@ -731,10 +774,10 @@ export function ReviewCode(props: {
           );
           return props.viewport ? (
             <Portal mount={props.viewport.element.parentElement!}>
-              {toolbar()}
+              {chip()}
             </Portal>
           ) : (
-            toolbar()
+            chip()
           );
         }}
       </Show>
