@@ -2727,7 +2727,7 @@ describe('normalizedCacheExchange', () => {
       expect(host.rollbacks).toEqual(['txn-1']);
       expect(optimisticMutationDispositionOf(results[0])).toMatchObject({
         kind: 'permanently-failed',
-        transactionId: 'txn-1',
+        error: results[0]?.error,
       });
       expect(results[0]?.error?.graphQLErrors[0]?.extensions.code).toBe(
         'LOCAL_RECOVERY_FAILED'
