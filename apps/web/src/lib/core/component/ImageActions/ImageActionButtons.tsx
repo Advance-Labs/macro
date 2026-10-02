@@ -11,20 +11,20 @@ type ImageActionButtonsProps = {
 
 /** Copy + download buttons for a single image, driven by `createImageActions`. */
 export function ImageActionButtons(props: ImageActionButtonsProps) {
-  const actions = () => props.actions;
   const size = () => props.size ?? 'icon-md';
-  const disabled = () => actions().isBusy() || actions().isPrefetching();
+  const disabled = () =>
+    props.actions.isBusy() || props.actions.isPrefetching();
 
   return (
     <>
       <Button
         variant="ghost"
         size={size()}
-        onClick={actions().copyToClipboard}
+        onClick={() => props.actions.copyToClipboard()}
         disabled={disabled()}
         label="Copy image"
       >
-        {actions().isCopying() ? (
+        {props.actions.isCopying() ? (
           <Spinner class="animate-spin" />
         ) : (
           <ClipboardIcon />
@@ -33,11 +33,11 @@ export function ImageActionButtons(props: ImageActionButtonsProps) {
       <Button
         variant="ghost"
         size={size()}
-        onClick={actions().downloadImage}
+        onClick={() => props.actions.downloadImage()}
         disabled={disabled()}
         label="Download image"
       >
-        {actions().isDownloading() ? (
+        {props.actions.isDownloading() ? (
           <Spinner class="animate-spin" />
         ) : (
           <DownloadIcon />
