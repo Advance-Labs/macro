@@ -328,6 +328,71 @@ where
         })
     }
 
+    #[tracing::instrument(skip_all, fields(row_count = row_ids.len()))]
+    async fn generate_database_row_view_access_receipts(
+        &self,
+        user_id: &MacroUserId<Lowercase<'_>>,
+        row_ids: &[String],
+    ) -> HashMap<String, Result<EntityAccessReceipt<ViewAccessLevel>, AccessError>> {
+        let mut receipts = HashMap::with_capacity(row_ids.len());
+        let mut valid_ids = Vec::with_capacity(row_ids.len());
+        for row_id in row_ids {
+            match Uuid::parse_str(row_id) {
+                Ok(id) => valid_ids.push((row_id, id)),
+                Err(_) => {
+                    receipts.insert(
+                        row_id.clone(),
+                        Err(AccessError::BadRequest("Invalid database row ID format")),
+                    );
+                }
+            }
+        }
+        if valid_ids.is_empty() {
+            return receipts;
+        }
+        let levels = match self
+            .repo
+            .get_database_rows_access(
+                &valid_ids.iter().map(|(_, id)| *id).collect::<Vec<_>>(),
+                user_id,
+            )
+            .await
+        {
+            Ok(levels) => levels,
+            Err(error) => {
+                tracing::error!(?error, "bulk database row access check failed");
+                for (row_id, _) in valid_ids {
+                    receipts.insert(
+                        row_id.clone(),
+                        Err(AccessError::internal(
+                            "bulk database row access check failed",
+                        )),
+                    );
+                }
+                return receipts;
+            }
+        };
+        for (row_id, id) in valid_ids {
+            let receipt = levels
+                .get(&id)
+                .ok_or(AccessError::Unauthorized)
+                .and_then(|level| {
+                    EntityAccessReceipt::try_new_authenticated_user(
+                        MacroUserIdStr(user_id.clone().into_owned()),
+                        Entity {
+                            entity_id: row_id.clone(),
+                            entity_type: EntityType::DatabaseRow,
+                        },
+                        EntityPermission::AccessLevel {
+                            access_level: *level,
+                        },
+                    )
+                });
+            receipts.insert(row_id.clone(), receipt);
+        }
+        receipts
+    }
+
     async fn generate_email_thread_view_access_receipts(
         &self,
         user_id: &MacroUserId<Lowercase<'_>>,

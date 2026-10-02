@@ -8,6 +8,8 @@ use crate::{domain::models::AccessLevel, outbound::pg_access_repo::queries::Sour
 #[cfg(feature = "explain_binary")]
 use model_entity::EntityType;
 use sqlx::PgPool;
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[cfg(test)]
 mod test;
@@ -17,7 +19,7 @@ mod test;
 #[tracing::instrument(err, skip(pool, source_ids))]
 pub async fn get_database_row_access(
     pool: &PgPool,
-    row_id: &uuid::Uuid,
+    row_id: &Uuid,
     source_ids: &SourceIds,
 ) -> Result<Option<AccessLevel>, sqlx::Error> {
     if source_ids.0.is_empty() {
@@ -44,12 +46,48 @@ pub async fn get_database_row_access(
     super::database_access::highest_access_level(&all_level_strings)
 }
 
+/// Highest database grant for each requested row, using the caller's shared sources.
+#[tracing::instrument(err, skip_all, fields(row_count = row_ids.len()))]
+pub async fn get_database_rows_access(
+    pool: &PgPool,
+    row_ids: &[Uuid],
+    source_ids: &SourceIds,
+) -> Result<HashMap<Uuid, AccessLevel>, sqlx::Error> {
+    let mut highest: HashMap<Uuid, AccessLevel> = HashMap::new();
+    if row_ids.is_empty() || source_ids.0.is_empty() {
+        return Ok(highest);
+    }
+    let rows = sqlx::query!(
+        r#"
+        SELECT r.id, ea.access_level AS "access_level!: AccessLevel"
+        FROM database_rows r
+        JOIN database_tables t ON t.id = r.table_id
+        JOIN databases d ON d.id = t.database_id
+        JOIN entity_access ea ON ea.entity_id = d.id
+        WHERE r.id = ANY($1)
+        AND ea.entity_type = 'database'
+        AND ea.source_id = ANY($2)
+        "#,
+        row_ids,
+        &source_ids.0,
+    )
+    .fetch_all(pool)
+    .await?;
+    for row in rows {
+        highest
+            .entry(row.id)
+            .and_modify(|level| *level = (*level).max(row.access_level))
+            .or_insert(row.access_level);
+    }
+    Ok(highest)
+}
+
 /// The database a row's table belongs to.
 #[tracing::instrument(err, skip(pool))]
 pub async fn get_database_row_database(
     pool: &PgPool,
-    row_id: &uuid::Uuid,
-) -> Result<Option<uuid::Uuid>, sqlx::Error> {
+    row_id: &Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
     sqlx::query_scalar!(
         r#"
         SELECT t.database_id
@@ -68,7 +106,7 @@ pub async fn get_database_row_database(
 #[tracing::instrument(err, skip(pool, source_ids))]
 pub async fn explain_database_row_access(
     pool: &PgPool,
-    row_id: &uuid::Uuid,
+    row_id: &Uuid,
     source_ids: &SourceIds,
 ) -> Result<Vec<AccessGrant>, sqlx::Error> {
     let Some(database_id) = get_database_row_database(pool, row_id).await? else {

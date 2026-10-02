@@ -205,15 +205,36 @@ where
 
         // Mint a view receipt per entity; entities the caller cannot view are
         // skipped and keep their empty property list.
-        let receipts = load_view_receipts(keys, |key| {
-            self.entity_access_service
-                .generate_entity_access_receipt::<ViewAccessLevel>(
-                    user_id,
-                    None,
-                    &key.entity_id,
-                    key.entity_type,
-                )
-        })
+        let receipts = async {
+            let (row_keys, other_keys): (Vec<_>, Vec<_>) = keys
+                .iter()
+                .cloned()
+                .partition(|key| key.entity_type == model_entity::EntityType::DatabaseRow);
+            let row_ids = row_keys
+                .iter()
+                .map(|key| key.entity_id.to_string())
+                .collect::<Vec<_>>();
+            let mut receipts = self
+                .entity_access_service
+                .generate_database_row_view_access_receipts(user_id, &row_ids)
+                .await
+                .into_values()
+                .filter_map(Result::ok)
+                .collect::<Vec<_>>();
+            receipts.extend(
+                load_view_receipts(&other_keys, |key| {
+                    self.entity_access_service
+                        .generate_entity_access_receipt::<ViewAccessLevel>(
+                            user_id,
+                            None,
+                            &key.entity_id,
+                            key.entity_type,
+                        )
+                })
+                .await,
+            );
+            receipts
+        }
         .instrument(tracing::info_span!(
             "graphql_properties.authorize",
             entity_count = keys.len()

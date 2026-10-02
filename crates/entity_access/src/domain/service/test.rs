@@ -36,6 +36,7 @@ struct MockRepo {
     database_access: Arc<Mutex<Option<AccessLevel>>>,
     database_access_list: Arc<Mutex<Vec<(Uuid, AccessLevel)>>>,
     database_row_access: Arc<Mutex<Option<AccessLevel>>>,
+    database_row_access_calls: Arc<AtomicUsize>,
     reminder_access: Arc<Mutex<Option<AccessLevel>>>,
     team_entity_access: Arc<Mutex<Option<AccessLevel>>>,
     team_entity_access_calls: Arc<AtomicUsize>,
@@ -82,6 +83,7 @@ impl MockRepo {
             database_access: Arc::new(Mutex::new(None)),
             database_access_list: Arc::new(Mutex::new(Vec::new())),
             database_row_access: Arc::new(Mutex::new(None)),
+            database_row_access_calls: Arc::default(),
             reminder_access: Arc::new(Mutex::new(None)),
             team_entity_access: Arc::new(Mutex::new(None)),
             team_entity_access_calls: Arc::new(AtomicUsize::new(0)),
@@ -398,7 +400,23 @@ impl AccessRepository for MockRepo {
         _row_id: &str,
         _user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> Result<Option<AccessLevel>, AccessError> {
+        self.database_row_access_calls
+            .fetch_add(1, Ordering::SeqCst);
         Ok(*self.database_row_access.lock().await)
+    }
+
+    async fn get_database_rows_access(
+        &self,
+        row_ids: &[Uuid],
+        _user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<HashMap<Uuid, AccessLevel>, AccessError> {
+        self.database_row_access_calls
+            .fetch_add(1, Ordering::SeqCst);
+        let level = *self.database_row_access.lock().await;
+        Ok(row_ids
+            .iter()
+            .filter_map(|id| level.map(|level| (*id, level)))
+            .collect())
     }
 
     async fn get_scheduled_action_access(
@@ -2587,4 +2605,53 @@ async fn channel_call_recipients_still_use_channel_membership() {
         .await
         .unwrap();
     assert_eq!(users, vec![member]);
+}
+
+#[tokio::test]
+async fn database_row_receipts_share_the_access_lookup() {
+    let repo = MockRepo::new().with_database_row_access(AccessLevel::Edit);
+    let calls = repo.database_row_access_calls.clone();
+    let service = EntityAccessServiceImpl::new(repo);
+    let user_id = test_user_id();
+    let row_ids = vec![
+        "0198a805-3e22-75b2-97eb-d9c6b91accb1".to_string(),
+        "0198a805-3e22-75b2-97eb-d9c6b91accb2".to_string(),
+        "invalid".to_string(),
+    ];
+    let receipts = service
+        .generate_database_row_view_access_receipts(&user_id, &row_ids)
+        .await;
+    assert_eq!(receipts.len(), 3);
+    for row_id in &row_ids[..2] {
+        let receipt = receipts[row_id].as_ref().unwrap();
+        assert_eq!(receipt.entity().entity_id, *row_id);
+        assert_eq!(receipt.entity().entity_type, EntityType::DatabaseRow);
+        assert!(matches!(
+            receipt.entity_permission(),
+            EntityPermission::AccessLevel {
+                access_level: AccessLevel::Edit
+            }
+        ));
+    }
+    assert!(matches!(
+        receipts["invalid"],
+        Err(AccessError::BadRequest(_))
+    ));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn database_row_receipts_deny_rows_without_a_grant() {
+    let service = EntityAccessServiceImpl::new(MockRepo::new());
+    let user_id = test_user_id();
+    let receipts = service
+        .generate_database_row_view_access_receipts(
+            &user_id,
+            &["0198a805-3e22-75b2-97eb-d9c6b91accb1".to_string()],
+        )
+        .await;
+    assert!(matches!(
+        receipts["0198a805-3e22-75b2-97eb-d9c6b91accb1"],
+        Err(AccessError::Unauthorized)
+    ));
 }

@@ -51,7 +51,7 @@ async fn source_ids(pool: &PgPool, email: &str) -> SourceIds {
 )]
 async fn row_access_is_the_highest_grant_on_its_database(pool: PgPool) {
     let (database_id, row_id) = insert_row(&pool).await;
-    let (other_database_id, _) = insert_row(&pool).await;
+    let (other_database_id, other_row_id) = insert_row(&pool).await;
     sqlx::query!(
         r#"
         INSERT INTO entity_access (entity_id, entity_type, source_id, source_type, access_level)
@@ -77,7 +77,30 @@ async fn row_access_is_the_highest_grant_on_its_database(pool: PgPool) {
         Some(AccessLevel::Edit)
     );
 
+    let missing_row_id = Uuid::now_v7();
+    assert_eq!(
+        get_database_rows_access(&pool, &[row_id, other_row_id, missing_row_id], &member)
+            .await
+            .unwrap(),
+        std::collections::HashMap::from([
+            (row_id, AccessLevel::Edit),
+            (other_row_id, AccessLevel::Owner)
+        ])
+    );
+    assert!(
+        get_database_rows_access(&pool, &[], &member)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
     let outsider = source_ids(&pool, "noteam@team.com").await;
+    assert!(
+        get_database_rows_access(&pool, &[row_id, other_row_id], &outsider)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         get_database_row_access(&pool, &row_id, &outsider)
             .await

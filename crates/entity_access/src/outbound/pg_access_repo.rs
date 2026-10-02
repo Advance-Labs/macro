@@ -339,6 +339,28 @@ impl AccessRepository for PgAccessRepository {
         .await?)
     }
 
+    #[tracing::instrument(err, skip_all, fields(row_count = row_ids.len()))]
+    async fn get_database_rows_access(
+        &self,
+        row_ids: &[Uuid],
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> Result<std::collections::HashMap<Uuid, AccessLevel>, AccessError> {
+        if row_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let source_ids = queries::get_user_source_ids(&self.pool, Some(user_id))
+            .await
+            .map_err(anyhow_access_error)?;
+        Ok(
+            queries::database_row_access::get_database_rows_access(
+                &self.pool,
+                row_ids,
+                &source_ids,
+            )
+            .await?,
+        )
+    }
+
     async fn get_scheduled_action_access(
         &self,
         scheduled_action_id: &str,

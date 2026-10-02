@@ -126,6 +126,13 @@ pub trait AccessRepository: Clone + Send + Sync + 'static {
         user_id: Option<&MacroUserId<Lowercase<'_>>>,
     ) -> impl Future<Output = Result<Option<AccessLevel>, AccessError>> + Send;
 
+    /// Highest grant on each requested row's database. Rows without grants are omitted.
+    fn get_database_rows_access(
+        &self,
+        row_ids: &[Uuid],
+        user_id: &MacroUserId<Lowercase<'_>>,
+    ) -> impl Future<Output = Result<HashMap<Uuid, AccessLevel>, AccessError>> + Send;
+
     /// Get the access level a user has for a reminder.
     ///
     /// A reminder is never shared, so this is ownership and nothing else:
@@ -387,6 +394,34 @@ pub trait EntityAccessService: Clone + Send + Sync + 'static {
                         user_org_id,
                         thread_id,
                         EntityType::EmailThread,
+                    )
+                    .await,
+                );
+            }
+            receipts
+        }
+    }
+
+    /// Mint view receipts for database rows. Implementations may share access
+    /// lookups; the default delegates to the single-entity authorization path.
+    fn generate_database_row_view_access_receipts<'a>(
+        &'a self,
+        user_id: &'a MacroUserId<Lowercase<'_>>,
+        row_ids: &'a [String],
+    ) -> impl Future<
+        Output = HashMap<String, Result<EntityAccessReceipt<ViewAccessLevel>, AccessError>>,
+    > + Send
+    + 'a {
+        async move {
+            let mut receipts = HashMap::with_capacity(row_ids.len());
+            for row_id in row_ids {
+                receipts.insert(
+                    row_id.clone(),
+                    self.generate_entity_access_receipt::<ViewAccessLevel>(
+                        user_id,
+                        None,
+                        row_id,
+                        EntityType::DatabaseRow,
                     )
                     .await,
                 );
