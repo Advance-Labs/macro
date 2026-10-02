@@ -611,6 +611,8 @@ pub async fn graphql_cache_clear<R: Runtime>(
 
 /// Reads durable queue entries without claiming or modifying them.
 #[tauri::command]
-pub async fn graphql_cache_inspect_mutations(state: State<'_, CacheState>) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
+pub async fn graphql_cache_inspect_mutations(
+    state: State<'_, CacheState>,
+) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
     engine_handle(&state)?.inspect_mutations().await
 }

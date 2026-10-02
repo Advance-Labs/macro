@@ -293,7 +293,10 @@ impl TryFrom<ClaimedMutation> for ClaimedMutationWire {
 
     fn try_from(claimed: ClaimedMutation) -> Result<Self, Self::Error> {
         let requires_confirmation = claimed.queued.requires_confirmation();
-        let client_metadata = cache_core::queue::decode_optimistic_source(&claimed.queued.optimistic.optimistic_data_json)?.client_metadata;
+        let client_metadata = cache_core::queue::decode_optimistic_source(
+            &claimed.queued.optimistic.optimistic_data_json,
+        )?
+        .client_metadata;
         let request = claimed.queued.mutation.request;
         Ok(Self {
             client_metadata,
@@ -748,9 +751,15 @@ impl EngineHandle {
     }
 
     /// Reads queued operations without acquiring their leases.
-    pub async fn inspect_mutations(&self) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
+    pub async fn inspect_mutations(
+        &self,
+    ) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
         let state = self.inner.lock().await;
-        state.engine.inspect_mutations().await.map_err(|error| error.to_string())
+        state
+            .engine
+            .inspect_mutations()
+            .await
+            .map_err(|error| error.to_string())
     }
 
     /// Claims the strict mutation queue head when it is runnable.
