@@ -5,25 +5,26 @@ use std::collections::{HashMap, HashSet};
 
 use models_databases::position::{key_between, keys_between};
 use models_databases::views::{
-    CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewLayout, ViewPosition,
-    ViewQuery, arrange_lane, check, place_card,
+    CardPosition, DatabaseView, LaneKey, NewView, RequestedLayout, SchemaColumn, ViewId,
+    ViewLayout, ViewPosition, ViewQuery, arrange_lane, check, check_lane, place_card,
 };
 use models_databases::{ColumnId, OptionId, TakenId, ViewChange};
 use models_properties::service::property_value::PropertyValue;
 
-use super::{Planner, refuse, refuse_taken};
-use crate::domain::catalog::{ColumnEntry, TableEntry, schema_columns};
+use super::{Place, Planner, refuse, refuse_taken};
+use crate::domain::catalog::{TableEntry, schema_columns};
+use crate::domain::journal::cell_value;
 use crate::domain::models::{DatabaseError, Position, PropertyDefinitionId, RowId, TableId, Write};
 use crate::domain::service::{same_name, validate_name};
 
 /// Where one board's cards are: each row of its table with its lane (the
-/// option its grouping cell holds) and, when it was placed in that lane, its
-/// key there.
+/// option or person its grouping cell holds) and, when it was placed in
+/// that lane, its key there.
 #[derive(Debug, Clone)]
 pub(super) struct Board {
     /// The definition of the column the board was loaded grouped by.
     pub(super) grouping: PropertyDefinitionId,
-    pub(super) cards: HashMap<RowId, (Option<OptionId>, Option<Position>)>,
+    pub(super) cards: HashMap<RowId, (LaneKey, Option<Position>)>,
 }
 
 impl Board {
@@ -39,12 +40,7 @@ impl Board {
         let cards = rows
             .iter()
             .map(|row| {
-                let lane = match cells.get(row) {
-                    Some(PropertyValue::SelectOption(options)) => {
-                        options.first().copied().map(OptionId::from_uuid)
-                    }
-                    _ => None,
-                };
+                let lane = LaneKey::of_cell(cells.get(row).and_then(cell_value).as_ref());
                 let position = positions
                     .iter()
                     .find(|placed| placed.row == *row && placed.lane == lane)
@@ -56,11 +52,11 @@ impl Board {
     }
 
     /// One lane's cards other than `except`, in board order.
-    fn lane(&self, lane: Option<OptionId>, except: RowId) -> Vec<(RowId, Option<Position>)> {
+    fn lane(&self, lane: &LaneKey, except: RowId) -> Vec<(RowId, Option<Position>)> {
         let mut cards: Vec<(RowId, Option<Position>)> = self
             .cards
             .iter()
-            .filter(|(row, (card_lane, _))| **row != except && *card_lane == lane)
+            .filter(|(row, (card_lane, _))| **row != except && card_lane == lane)
             .map(|(row, (_, position))| (*row, position.clone()))
             .collect();
         arrange_lane(&mut cards);
@@ -72,7 +68,7 @@ impl Board {
 /// neighbour.
 struct CardMove {
     row: RowId,
-    lane: Option<OptionId>,
+    lane: LaneKey,
     before: Option<RowId>,
     after: Option<RowId>,
 }
@@ -166,7 +162,7 @@ impl Planner {
                 current?,
                 CardMove {
                     row: *row,
-                    lane: *lane,
+                    lane: lane.clone(),
                     before: *before,
                     after: *after,
                 },
@@ -261,21 +257,27 @@ impl Planner {
                 ),
             ));
         }
-        let column = grouping_column(entry, group_by)
+        let column = entry
+            .columns
+            .iter()
+            .find(|column| column.column.id == group_by)
             .ok_or_else(|| refuse(index, None, Some(group_by), "no such column in this table"))?;
-        if let Some(option) = lane
-            && !self
-                .labels_of(&column.definition)
-                .iter()
-                .any(|(id, _)| *id == option)
-        {
-            return Err(refuse(
-                index,
-                None,
-                Some(group_by),
-                format!("no option {option} on \"{}\"", column.name()),
-            ));
-        }
+        let grouping = self
+            .schema_of(entry)
+            .into_iter()
+            .find(|schema| schema.id == group_by)
+            .ok_or_else(|| refuse(index, None, Some(group_by), "no such column in this table"))?;
+        check_lane(&grouping, &lane)
+            .map_err(|problem| refuse(index, None, Some(group_by), problem.to_string()))?;
+        let cell = self.value(
+            Place {
+                op: index,
+                row: None,
+                column: group_by,
+            },
+            column,
+            &lane.cell(),
+        )?;
         let definition = column.definition.definition.id;
         let state = self
             .boards
@@ -297,15 +299,17 @@ impl Planner {
                 format!("no row {row} in this table"),
             ));
         }
-        let placed = place_card(&state.lane(lane, row), row, before, after)
+        let placed = place_card(&state.lane(&lane, row), row, before, after)
             .map_err(|error| refuse(index, None, None, error.to_string()))?;
         let positions: Vec<CardPosition> = placed
             .into_iter()
             .map(|(card, position)| {
-                state.cards.insert(card, (lane, Some(position.clone())));
+                state
+                    .cards
+                    .insert(card, (lane.clone(), Some(position.clone())));
                 CardPosition {
                     row: card,
-                    lane,
+                    lane: lane.clone(),
                     position,
                 }
             })
@@ -315,10 +319,7 @@ impl Planner {
             view_id: view,
             row,
             positions,
-            cell: (
-                definition,
-                lane.map(|option| PropertyValue::SelectOption(vec![option.into_uuid()])),
-            ),
+            cell: (definition, cell),
         })
     }
 
@@ -390,6 +391,14 @@ impl Planner {
         query: &ViewQuery,
         layout: &ViewLayout,
     ) -> Result<(), DatabaseError> {
+        let columns = self.schema_of(entry);
+        check(query, layout, &columns)
+            .map_err(|problem| refuse(index, None, None, problem.to_string()))
+    }
+
+    /// A table's columns as a view's checks see them, with the options the
+    /// ops so far leave them.
+    fn schema_of(&mut self, entry: &TableEntry) -> Vec<SchemaColumn> {
         let mut columns = schema_columns(entry);
         for (column, schema) in entry.columns.iter().zip(&mut columns) {
             if !schema.options.is_empty() || column.takes_options() {
@@ -400,8 +409,7 @@ impl Planner {
                     .collect();
             }
         }
-        check(query, layout, &columns)
-            .map_err(|problem| refuse(index, None, None, problem.to_string()))
+        columns
     }
 
     /// The views of the tables binding `definition` that name `option`,
@@ -457,15 +465,4 @@ fn stored_layout(
                 "the table has no column to title a board's cards by",
             )
         })
-}
-
-/// The column a board groups by.
-fn grouping_column(
-    entry: &TableEntry,
-    group_by: models_databases::ColumnId,
-) -> Option<&ColumnEntry> {
-    entry
-        .columns
-        .iter()
-        .find(|column| column.column.id == group_by)
 }

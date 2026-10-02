@@ -3,6 +3,7 @@
 use super::*;
 use crate::domain::journal::{Before, RowImage, cell_value, row_cells};
 use crate::domain::models::{ChangeId, CommittedChange};
+use models_databases::views::LaneKey;
 
 /// A first value settles the columns it landed in, as the cell store does in
 /// its transaction.
@@ -480,7 +481,7 @@ pub(super) fn apply_in_world(
                     .collect();
                 for board in boards {
                     if let Some(placed) = world.positions.get_mut(&board) {
-                        placed.retain(|card| card.lane != Some(*option_id));
+                        placed.retain(|card| card.lane != LaneKey::Option(*option_id));
                     }
                 }
                 let Some(definition) = world.definitions.get_mut(definition_id) else {

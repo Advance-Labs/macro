@@ -115,15 +115,23 @@ describe('database board view', () => {
     };
     engine.board.mockReturnValue({
       lanes: [
-        { option: 'done', hidden: false, cards: ['first', 'last'] },
-        { option: 'todo', hidden: false, cards: ['moving'] },
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first', 'last'],
+        },
+        {
+          key: { kind: 'option', id: 'todo' },
+          hidden: false,
+          cards: ['moving'],
+        },
       ],
     });
     engine.keyBetween.mockReturnValue('a0V');
     const [positions, setPositions] = createSignal<CardPosition[]>([
-      { row: 'first', lane: 'done', position: 'a0' },
-      { row: 'last', lane: 'done', position: 'a1' },
-      { row: 'moving', lane: 'todo', position: 'a0' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
+      { row: 'last', lane: { kind: 'option', id: 'done' }, position: 'a1' },
+      { row: 'moving', lane: { kind: 'option', id: 'todo' }, position: 'a0' },
     ]);
     let answer: (moved: CardMoved) => void = () => {};
     const move = vi.fn(
@@ -197,9 +205,9 @@ describe('database board view', () => {
       view,
       outcome,
       [
-        { row: 'first', lane: 'done', position: 'a0' },
-        { row: 'last', lane: 'done', position: 'a1' },
-        { row: 'moving', lane: 'todo', position: 'a0' },
+        { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
+        { row: 'last', lane: { kind: 'option', id: 'done' }, position: 'a1' },
+        { row: 'moving', lane: { kind: 'option', id: 'todo' }, position: 'a0' },
       ]
     );
     fireEvent.mouseDown(card, { button: 0, clientX: 560, clientY: 80 });
@@ -207,27 +215,37 @@ describe('database board view', () => {
     fireEvent.mouseUp(document, { button: 0, clientX: 30, clientY: 150 });
     expect(move).toHaveBeenCalledWith(view, {
       row: 'moving',
-      lane: 'done',
+      lane: { kind: 'option', id: 'done' },
       before: 'first',
       after: 'last',
     });
     expect(engine.keyBetween).toHaveBeenCalledWith('a0', 'a1');
     expect(positions()).toEqual([
-      { row: 'first', lane: 'done', position: 'a0' },
-      { row: 'last', lane: 'done', position: 'a1' },
-      { row: 'moving', lane: 'done', position: 'a0V' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
+      { row: 'last', lane: { kind: 'option', id: 'done' }, position: 'a1' },
+      { row: 'moving', lane: { kind: 'option', id: 'done' }, position: 'a0V' },
     ]);
     expect(cardsIn('Done')).toEqual(['first', 'moving', 'last']);
     expect(cardsIn('To do')).toEqual([]);
     answer({
-      positions: [{ row: 'moving', lane: 'done', position: 'a0G' }],
+      positions: [
+        {
+          row: 'moving',
+          lane: { kind: 'option', id: 'done' },
+          position: 'a0G',
+        },
+      ],
       tableVersion: 8,
     });
     await waitFor(() =>
       expect(positions()).toEqual([
-        { row: 'first', lane: 'done', position: 'a0' },
-        { row: 'last', lane: 'done', position: 'a1' },
-        { row: 'moving', lane: 'done', position: 'a0G' },
+        { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
+        { row: 'last', lane: { kind: 'option', id: 'done' }, position: 'a1' },
+        {
+          row: 'moving',
+          lane: { kind: 'option', id: 'done' },
+          position: 'a0G',
+        },
       ])
     );
     expect(cardsIn('Done')).toEqual(['first', 'moving', 'last']);
@@ -283,14 +301,26 @@ describe('database board view', () => {
       outcome === fresh
         ? {
             lanes: [
-              { option: 'done', hidden: false, cards: ['moving', 'first'] },
-              { option: 'todo', hidden: false, cards: [] },
+              {
+                key: { kind: 'option', id: 'done' },
+                hidden: false,
+                cards: ['moving', 'first'],
+              },
+              { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
             ],
           }
         : {
             lanes: [
-              { option: 'done', hidden: false, cards: ['first'] },
-              { option: 'todo', hidden: false, cards: ['moving'] },
+              {
+                key: { kind: 'option', id: 'done' },
+                hidden: false,
+                cards: ['first'],
+              },
+              {
+                key: { kind: 'option', id: 'todo' },
+                hidden: false,
+                cards: ['moving'],
+              },
             ],
           }
     );
@@ -299,11 +329,17 @@ describe('database board view', () => {
       { outcome: before, version: 7 }
     );
     const [positions, setPositions] = createSignal<CardPosition[]>([
-      { row: 'first', lane: 'done', position: 'a0' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
     ]);
     const move = vi.fn(() =>
       okAsync<CardMoved, DatabaseOpFailure>({
-        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        positions: [
+          {
+            row: 'moving',
+            lane: { kind: 'option', id: 'done' },
+            position: 'a1',
+          },
+        ],
         tableVersion: 8,
       })
     );
@@ -375,8 +411,8 @@ describe('database board view', () => {
     });
     await waitFor(() =>
       expect(positions()).toEqual([
-        { row: 'first', lane: 'done', position: 'a0' },
-        { row: 'moving', lane: 'done', position: 'a1' },
+        { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
+        { row: 'moving', lane: { kind: 'option', id: 'done' }, position: 'a1' },
       ])
     );
     expect(cardsIn('Done')).toEqual(['first', 'moving']);
@@ -419,13 +455,21 @@ describe('database board view', () => {
     };
     engine.board.mockReturnValue({
       lanes: [
-        { option: 'done', hidden: false, cards: ['first'] },
-        { option: 'todo', hidden: false, cards: ['moving'] },
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first'],
+        },
+        {
+          key: { kind: 'option', id: 'todo' },
+          hidden: false,
+          cards: ['moving'],
+        },
       ],
     });
     engine.keyBetween.mockReturnValue('a1');
     const [positions, setPositions] = createSignal<CardPosition[]>([
-      { row: 'first', lane: 'done', position: 'a0' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
     ]);
     const move = vi.fn(() =>
       errAsync<CardMoved, DatabaseOpFailure>({
@@ -497,7 +541,7 @@ describe('database board view', () => {
     await waitFor(() =>
       expect(move).toHaveBeenCalledWith(view, {
         row: 'moving',
-        lane: 'done',
+        lane: { kind: 'option', id: 'done' },
         before: 'first',
         after: null,
       })
@@ -544,17 +588,31 @@ describe('database board view', () => {
     };
     engine.board.mockReturnValue({
       lanes: [
-        { option: 'done', hidden: false, cards: ['first'] },
-        { option: 'todo', hidden: false, cards: ['moving'] },
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first'],
+        },
+        {
+          key: { kind: 'option', id: 'todo' },
+          hidden: false,
+          cards: ['moving'],
+        },
       ],
     });
     engine.keyBetween.mockReturnValue('a1');
     const [positions, setPositions] = createSignal<CardPosition[]>([
-      { row: 'first', lane: 'done', position: 'a0' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
     ]);
     const move = vi.fn(() =>
       okAsync<CardMoved, DatabaseOpFailure>({
-        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        positions: [
+          {
+            row: 'moving',
+            lane: { kind: 'option', id: 'done' },
+            position: 'a1',
+          },
+        ],
         tableVersion: 4,
       })
     );
@@ -635,7 +693,7 @@ describe('database board view', () => {
     });
     expect(move).toHaveBeenCalledWith(view, {
       row: 'moving',
-      lane: 'done',
+      lane: { kind: 'option', id: 'done' },
       before: 'first',
       after: null,
     });
@@ -679,17 +737,31 @@ describe('database board view', () => {
     };
     engine.board.mockReturnValue({
       lanes: [
-        { option: 'done', hidden: false, cards: ['first'] },
-        { option: 'todo', hidden: false, cards: ['moving'] },
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first'],
+        },
+        {
+          key: { kind: 'option', id: 'todo' },
+          hidden: false,
+          cards: ['moving'],
+        },
       ],
     });
     const [positions, setPositions] = createSignal<CardPosition[]>([
-      { row: 'first', lane: 'done', position: 'a0' },
+      { row: 'first', lane: { kind: 'option', id: 'done' }, position: 'a0' },
     ]);
     const setPositionsSpy = vi.fn(setPositions);
     const move = vi.fn(() =>
       okAsync<CardMoved, DatabaseOpFailure>({
-        positions: [{ row: 'moving', lane: 'done', position: 'a1' }],
+        positions: [
+          {
+            row: 'moving',
+            lane: { kind: 'option', id: 'done' },
+            position: 'a1',
+          },
+        ],
         tableVersion: 4,
       })
     );
@@ -794,7 +866,13 @@ describe('database board view', () => {
       changesApplied: 0,
     };
     engine.board.mockReturnValue({
-      lanes: [{ option: 'done', hidden: false, cards: ['first'] }],
+      lanes: [
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first'],
+        },
+      ],
     });
     loadEngine.mockRejectedValueOnce(new Error('Failed to fetch wasm'));
     render(() => (
@@ -898,7 +976,13 @@ describe('database board view', () => {
       changesApplied: 0,
     };
     engine.board.mockReturnValue({
-      lanes: [{ option: 'done', hidden: false, cards: ['first'] }],
+      lanes: [
+        {
+          key: { kind: 'option', id: 'done' },
+          hidden: false,
+          cards: ['first'],
+        },
+      ],
     });
     const [places, setPlaces] = createSignal<BoardPositionsState>({
       kind: 'loading',

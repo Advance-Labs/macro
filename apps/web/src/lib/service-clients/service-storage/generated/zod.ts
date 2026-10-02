@@ -5011,7 +5011,7 @@ export const getDatabaseResponse = zod
                             groupBy: zod
                               .uuid()
                               .describe(
-                                'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                                'The single-select or single-person column whose values are the\nlanes; moving a card to another lane sets this column.'
                               ),
                             hideEmptyLanes: zod
                               .boolean()
@@ -5027,11 +5027,42 @@ export const getDatabaseResponse = zod
                                       .boolean()
                                       .optional()
                                       .describe('Whether it is hidden.'),
-                                    option: zod
-                                      .uuid()
-                                      .nullable()
+                                    key: zod
+                                      .union([
+                                        zod
+                                          .object({
+                                            id: zod
+                                              .uuid()
+                                              .describe(
+                                                "The cards holding this option of the board's select column."
+                                              ),
+                                            kind: zod.enum(['option']),
+                                          })
+                                          .describe(
+                                            "The cards holding this option of the board's select column."
+                                          ),
+                                        zod
+                                          .object({
+                                            id: zod
+                                              .string()
+                                              .describe(
+                                                "The cards naming this person in the board's person column."
+                                              ),
+                                            kind: zod.enum(['user']),
+                                          })
+                                          .describe(
+                                            "The cards naming this person in the board's person column."
+                                          ),
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['none']),
+                                          })
+                                          .describe(
+                                            'The cards whose grouping cell is empty.'
+                                          ),
+                                      ])
                                       .describe(
-                                        'The option the lane holds the cards of; `null` for cards without one.'
+                                        "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                       ),
                                   })
                                   .describe(
@@ -5039,7 +5070,7 @@ export const getDatabaseResponse = zod
                                   )
                               )
                               .describe(
-                                "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                                "How lanes show, in display order. A lane left out shows after the\nlisted ones: the lane of empty cells first, then options in the\ncolumn's order, or people by id."
                               ),
                             title: zod
                               .uuid()
@@ -5048,7 +5079,7 @@ export const getDatabaseResponse = zod
                               ),
                           })
                           .describe(
-                            'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                            'Cards in lanes: one lane per option of a single-select column, or\none per person a single-person column names, plus one for cards\nwith an empty cell. A multi-valued column cannot group a board: a\ncard is in exactly one lane, so a card in several would need a place\nin each.'
                           ),
                       ])
                       .describe('How a view draws its rows.'),
@@ -6592,7 +6623,7 @@ export const applyDatabaseOpsBody = zod
                                     groupBy: zod
                                       .uuid()
                                       .describe(
-                                        'The single-select column whose options are the lanes.'
+                                        'The single-select or single-person column whose values are the\nlanes.'
                                       ),
                                     hideEmptyLanes: zod
                                       .boolean()
@@ -6610,11 +6641,42 @@ export const applyDatabaseOpsBody = zod
                                               .describe(
                                                 'Whether it is hidden.'
                                               ),
-                                            option: zod
-                                              .uuid()
-                                              .nullable()
+                                            key: zod
+                                              .union([
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .uuid()
+                                                      .describe(
+                                                        "The cards holding this option of the board's select column."
+                                                      ),
+                                                    kind: zod.enum(['option']),
+                                                  })
+                                                  .describe(
+                                                    "The cards holding this option of the board's select column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .string()
+                                                      .describe(
+                                                        "The cards naming this person in the board's person column."
+                                                      ),
+                                                    kind: zod.enum(['user']),
+                                                  })
+                                                  .describe(
+                                                    "The cards naming this person in the board's person column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    kind: zod.enum(['none']),
+                                                  })
+                                                  .describe(
+                                                    'The cards whose grouping cell is empty.'
+                                                  ),
+                                              ])
                                               .describe(
-                                                'The option the lane holds the cards of; `null` for cards without one.'
+                                                "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                               ),
                                           })
                                           .describe(
@@ -6632,7 +6694,7 @@ export const applyDatabaseOpsBody = zod
                                       ),
                                   })
                                   .describe(
-                                    'Cards in lanes, one lane per option of a single-select column plus\none for cards without one.'
+                                    'Cards in lanes, one per option of a single-select column or per\nperson of a single-person column, plus one for empty cells.'
                                   ),
                               ])
                               .describe(
@@ -6935,7 +6997,7 @@ export const applyDatabaseOpsBody = zod
                                 groupBy: zod
                                   .uuid()
                                   .describe(
-                                    'The single-select column whose options are the lanes.'
+                                    'The single-select or single-person column whose values are the\nlanes.'
                                   ),
                                 hideEmptyLanes: zod
                                   .boolean()
@@ -6951,11 +7013,42 @@ export const applyDatabaseOpsBody = zod
                                           .boolean()
                                           .optional()
                                           .describe('Whether it is hidden.'),
-                                        option: zod
-                                          .uuid()
-                                          .nullable()
+                                        key: zod
+                                          .union([
+                                            zod
+                                              .object({
+                                                id: zod
+                                                  .uuid()
+                                                  .describe(
+                                                    "The cards holding this option of the board's select column."
+                                                  ),
+                                                kind: zod.enum(['option']),
+                                              })
+                                              .describe(
+                                                "The cards holding this option of the board's select column."
+                                              ),
+                                            zod
+                                              .object({
+                                                id: zod
+                                                  .string()
+                                                  .describe(
+                                                    "The cards naming this person in the board's person column."
+                                                  ),
+                                                kind: zod.enum(['user']),
+                                              })
+                                              .describe(
+                                                "The cards naming this person in the board's person column."
+                                              ),
+                                            zod
+                                              .object({
+                                                kind: zod.enum(['none']),
+                                              })
+                                              .describe(
+                                                'The cards whose grouping cell is empty.'
+                                              ),
+                                          ])
                                           .describe(
-                                            'The option the lane holds the cards of; `null` for cards without one.'
+                                            "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                           ),
                                       })
                                       .describe(
@@ -6973,7 +7066,7 @@ export const applyDatabaseOpsBody = zod
                                   ),
                               })
                               .describe(
-                                'Cards in lanes, one lane per option of a single-select column plus\none for cards without one.'
+                                'Cards in lanes, one per option of a single-select column or per\nperson of a single-person column, plus one for empty cells.'
                               ),
                           ])
                           .optional()
@@ -7238,15 +7331,46 @@ export const applyDatabaseOpsBody = zod
                           ),
                         kind: zod.enum(['move_card']),
                         lane: zod
-                          .uuid()
-                          .nullable()
+                          .union([
+                            zod
+                              .object({
+                                id: zod
+                                  .uuid()
+                                  .describe(
+                                    "The cards holding this option of the board's select column."
+                                  ),
+                                kind: zod.enum(['option']),
+                              })
+                              .describe(
+                                "The cards holding this option of the board's select column."
+                              ),
+                            zod
+                              .object({
+                                id: zod
+                                  .string()
+                                  .describe(
+                                    "The cards naming this person in the board's person column."
+                                  ),
+                                kind: zod.enum(['user']),
+                              })
+                              .describe(
+                                "The cards naming this person in the board's person column."
+                              ),
+                            zod
+                              .object({
+                                kind: zod.enum(['none']),
+                              })
+                              .describe(
+                                'The cards whose grouping cell is empty.'
+                              ),
+                          ])
                           .describe(
-                            "The lane it goes to: an option of the board's column, or `null`\nfor the lane of cards without one."
+                            "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                           ),
                         row: zod.uuid().describe("The card's row."),
                       })
                       .describe(
-                        "Move one of the board's cards: into a lane, which sets the row's\ngrouping cell to the lane's option (or empties it for the lane\nwithout one), and to a place there, between two of its cards. Only\nan unsorted board's cards move by hand."
+                        "Move one of the board's cards: into a lane, which sets the row's\ngrouping cell to the lane's option or person (or empties it for the\nlane of empty cells), and to a place there, between two of its\ncards. Only an unsorted board's cards move by hand."
                       ),
                   ])
                   .describe('A change to one view.'),
@@ -7530,7 +7654,7 @@ export const applyDatabaseOpsResponse = zod
                                     groupBy: zod
                                       .uuid()
                                       .describe(
-                                        'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                                        'The single-select or single-person column whose values are the\nlanes; moving a card to another lane sets this column.'
                                       ),
                                     hideEmptyLanes: zod
                                       .boolean()
@@ -7548,11 +7672,42 @@ export const applyDatabaseOpsResponse = zod
                                               .describe(
                                                 'Whether it is hidden.'
                                               ),
-                                            option: zod
-                                              .uuid()
-                                              .nullable()
+                                            key: zod
+                                              .union([
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .uuid()
+                                                      .describe(
+                                                        "The cards holding this option of the board's select column."
+                                                      ),
+                                                    kind: zod.enum(['option']),
+                                                  })
+                                                  .describe(
+                                                    "The cards holding this option of the board's select column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .string()
+                                                      .describe(
+                                                        "The cards naming this person in the board's person column."
+                                                      ),
+                                                    kind: zod.enum(['user']),
+                                                  })
+                                                  .describe(
+                                                    "The cards naming this person in the board's person column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    kind: zod.enum(['none']),
+                                                  })
+                                                  .describe(
+                                                    'The cards whose grouping cell is empty.'
+                                                  ),
+                                              ])
                                               .describe(
-                                                'The option the lane holds the cards of; `null` for cards without one.'
+                                                "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                               ),
                                           })
                                           .describe(
@@ -7560,7 +7715,7 @@ export const applyDatabaseOpsResponse = zod
                                           )
                                       )
                                       .describe(
-                                        "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                                        "How lanes show, in display order. A lane left out shows after the\nlisted ones: the lane of empty cells first, then options in the\ncolumn's order, or people by id."
                                       ),
                                     title: zod
                                       .uuid()
@@ -7569,7 +7724,7 @@ export const applyDatabaseOpsResponse = zod
                                       ),
                                   })
                                   .describe(
-                                    'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                                    'Cards in lanes: one lane per option of a single-select column, or\none per person a single-person column names, plus one for cards\nwith an empty cell. A multi-valued column cannot group a board: a\ncard is in exactly one lane, so a card in several would need a place\nin each.'
                                   ),
                               ])
                               .describe('How a view draws its rows.'),
@@ -7887,7 +8042,7 @@ export const applyDatabaseOpsResponse = zod
                                     groupBy: zod
                                       .uuid()
                                       .describe(
-                                        'The single-select column whose options are the lanes; moving a\ncard to another lane sets this column.'
+                                        'The single-select or single-person column whose values are the\nlanes; moving a card to another lane sets this column.'
                                       ),
                                     hideEmptyLanes: zod
                                       .boolean()
@@ -7905,11 +8060,42 @@ export const applyDatabaseOpsResponse = zod
                                               .describe(
                                                 'Whether it is hidden.'
                                               ),
-                                            option: zod
-                                              .uuid()
-                                              .nullable()
+                                            key: zod
+                                              .union([
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .uuid()
+                                                      .describe(
+                                                        "The cards holding this option of the board's select column."
+                                                      ),
+                                                    kind: zod.enum(['option']),
+                                                  })
+                                                  .describe(
+                                                    "The cards holding this option of the board's select column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    id: zod
+                                                      .string()
+                                                      .describe(
+                                                        "The cards naming this person in the board's person column."
+                                                      ),
+                                                    kind: zod.enum(['user']),
+                                                  })
+                                                  .describe(
+                                                    "The cards naming this person in the board's person column."
+                                                  ),
+                                                zod
+                                                  .object({
+                                                    kind: zod.enum(['none']),
+                                                  })
+                                                  .describe(
+                                                    'The cards whose grouping cell is empty.'
+                                                  ),
+                                              ])
                                               .describe(
-                                                'The option the lane holds the cards of; `null` for cards without one.'
+                                                "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                               ),
                                           })
                                           .describe(
@@ -7917,7 +8103,7 @@ export const applyDatabaseOpsResponse = zod
                                           )
                                       )
                                       .describe(
-                                        "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                                        "How lanes show, in display order. A lane left out shows after the\nlisted ones: the lane of empty cells first, then options in the\ncolumn's order, or people by id."
                                       ),
                                     title: zod
                                       .uuid()
@@ -7926,7 +8112,7 @@ export const applyDatabaseOpsResponse = zod
                                       ),
                                   })
                                   .describe(
-                                    'Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.'
+                                    'Cards in lanes: one lane per option of a single-select column, or\none per person a single-person column names, plus one for cards\nwith an empty cell. A multi-valued column cannot group a board: a\ncard is in exactly one lane, so a card in several would need a place\nin each.'
                                   ),
                               ])
                               .describe('How a view draws its rows.'),
@@ -8204,10 +8390,41 @@ export const applyDatabaseOpsResponse = zod
                             zod
                               .object({
                                 lane: zod
-                                  .uuid()
-                                  .nullable()
+                                  .union([
+                                    zod
+                                      .object({
+                                        id: zod
+                                          .uuid()
+                                          .describe(
+                                            "The cards holding this option of the board's select column."
+                                          ),
+                                        kind: zod.enum(['option']),
+                                      })
+                                      .describe(
+                                        "The cards holding this option of the board's select column."
+                                      ),
+                                    zod
+                                      .object({
+                                        id: zod
+                                          .string()
+                                          .describe(
+                                            "The cards naming this person in the board's person column."
+                                          ),
+                                        kind: zod.enum(['user']),
+                                      })
+                                      .describe(
+                                        "The cards naming this person in the board's person column."
+                                      ),
+                                    zod
+                                      .object({
+                                        kind: zod.enum(['none']),
+                                      })
+                                      .describe(
+                                        'The cards whose grouping cell is empty.'
+                                      ),
+                                  ])
                                   .describe(
-                                    "The lane: an option of the board's column, `null` for the lane of\ncards without one."
+                                    "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
                                   ),
                                 position: zod
                                   .string()
@@ -9436,10 +9653,39 @@ export const getDatabaseViewPositionsResponse = zod
         zod
           .object({
             lane: zod
-              .uuid()
-              .nullable()
+              .union([
+                zod
+                  .object({
+                    id: zod
+                      .uuid()
+                      .describe(
+                        "The cards holding this option of the board's select column."
+                      ),
+                    kind: zod.enum(['option']),
+                  })
+                  .describe(
+                    "The cards holding this option of the board's select column."
+                  ),
+                zod
+                  .object({
+                    id: zod
+                      .string()
+                      .describe(
+                        "The cards naming this person in the board's person column."
+                      ),
+                    kind: zod.enum(['user']),
+                  })
+                  .describe(
+                    "The cards naming this person in the board's person column."
+                  ),
+                zod
+                  .object({
+                    kind: zod.enum(['none']),
+                  })
+                  .describe('The cards whose grouping cell is empty.'),
+              ])
               .describe(
-                "The lane: an option of the board's column, `null` for the lane of\ncards without one."
+                "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
               ),
             position: zod.string().describe("The card's key in that lane."),
             row: zod.uuid().describe("The card's row."),

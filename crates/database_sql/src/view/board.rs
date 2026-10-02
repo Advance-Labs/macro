@@ -3,9 +3,11 @@
 #[cfg(test)]
 mod test;
 
+use models_databases::RowId;
 use models_databases::position::Position;
-use models_databases::views::{CardPosition, DatabaseView, ViewLayout, ViewProblem, arrange_lane};
-use models_databases::{OptionId, RowId};
+use models_databases::views::{
+    CardPosition, DatabaseView, Lane, LaneKey, ViewLayout, ViewProblem, arrange_lane,
+};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -27,8 +29,8 @@ pub struct Board {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct BoardLane {
-    /// The option whose cards the lane holds; `null` for cards without one.
-    pub option: Option<OptionId>,
+    /// The lane: an option, a person, or the lane of empty cells.
+    pub key: LaneKey,
     /// Whether the lane is hidden: by the layout, or for being empty.
     pub hidden: bool,
     /// The cards' rows, in display order.
@@ -55,37 +57,25 @@ pub fn board(
         return Err(ViewProblem::NotABoard);
     };
     let grouping = placed(table, *group_by);
-    let ColumnKind::Select { options, .. } = &grouping.kind else {
-        unreachable!("the view check makes a board's column a single select");
-    };
     let cell_index = outcome
         .columns
         .iter()
         .position(|column| column.column == Some(grouping.id))
         .ok_or(ViewProblem::UnknownColumn { column: *group_by })?;
+    let card_lanes: Vec<LaneKey> = outcome
+        .rows
+        .iter()
+        .map(|cells| lane_of(cells.get(cell_index).and_then(Option::as_ref)))
+        .collect();
 
-    let mut order: Vec<Option<OptionId>> = listed.iter().map(|lane| lane.option).collect();
-    let unlisted = std::iter::once(None)
-        .chain(options.iter().map(|option| Some(option.id)))
-        .filter(|lane| !order.contains(lane))
-        .collect::<Vec<_>>();
-    order.extend(unlisted);
-
+    let order = lane_order(&grouping.kind, listed, &card_lanes);
     let mut cards: Vec<Vec<RowId>> = vec![Vec::new(); order.len()];
-    for (row, cells) in outcome.row_ids.iter().zip(&outcome.rows) {
-        let lane = match cells.get(cell_index) {
-            Some(Some(Cell::Options(ids))) => match ids.as_slice() {
-                [only] => order.iter().position(|lane| *lane == Some(*only)),
-                _ => None,
-            },
-            _ => None,
-        }
-        .unwrap_or_else(|| {
-            order
-                .iter()
-                .position(Option::is_none)
-                .expect("every board has the lane of cards without an option")
-        });
+    for (row, lane) in outcome.row_ids.iter().zip(&card_lanes) {
+        let lane = order
+            .iter()
+            .position(|key| key == lane)
+            .or_else(|| order.iter().position(|key| *key == LaneKey::None))
+            .expect("every board has the lane of empty cells");
         cards[lane].push(*row);
     }
 
@@ -93,17 +83,15 @@ pub fn board(
     let lanes = order
         .into_iter()
         .zip(cards)
-        .map(|(option, cards)| {
+        .map(|(key, cards)| {
             let cards = if sorted {
                 cards
             } else {
-                arranged(option, cards, positions)
+                arranged(&key, cards, positions)
             };
-            let hidden_by_layout = listed
-                .iter()
-                .any(|lane| lane.option == option && lane.hidden);
+            let hidden_by_layout = listed.iter().any(|lane| lane.key == key && lane.hidden);
             BoardLane {
-                option,
+                key,
                 hidden: hidden_by_layout || (*hide_empty_lanes && cards.is_empty()),
                 cards,
             }
@@ -115,17 +103,70 @@ pub fn board(
 /// One lane's cards in hand-arranged order. A stored position counts only
 /// in the lane it was stored for: a card whose cell has since changed has no
 /// place in its new lane yet.
-fn arranged(lane: Option<OptionId>, cards: Vec<RowId>, positions: &[CardPosition]) -> Vec<RowId> {
+fn arranged(lane: &LaneKey, cards: Vec<RowId>, positions: &[CardPosition]) -> Vec<RowId> {
     let mut placed: Vec<(RowId, Option<Position>)> = cards
         .into_iter()
         .map(|row| {
             let position = positions
                 .iter()
-                .find(|stored| stored.row == row && stored.lane == lane)
+                .find(|stored| stored.row == row && stored.lane == *lane)
                 .map(|stored| stored.position.clone());
             (row, position)
         })
         .collect();
     arrange_lane(&mut placed);
     placed.into_iter().map(|(row, _)| row).collect()
+}
+
+/// The lane a card's grouping cell puts it in: a single select's one
+/// option, a single person column's one person, or the lane of empty cells.
+fn lane_of(cell: Option<&Cell>) -> LaneKey {
+    match cell {
+        Some(Cell::Options(options)) => match options.as_slice() {
+            [only] => LaneKey::Option(*only),
+            _ => LaneKey::None,
+        },
+        Some(Cell::Entities(references)) => match references.as_slice() {
+            [only] => LaneKey::person(only),
+            _ => LaneKey::None,
+        },
+        _ => LaneKey::None,
+    }
+}
+
+/// Every lane of the board in display order: the listed lanes first, then
+/// the lane of empty cells, then a select's options in the column's order,
+/// or the people the cards name by id. A person's lane shows only while a
+/// card names them, listed or not.
+fn lane_order(grouping: &ColumnKind, listed: &[Lane], card_lanes: &[LaneKey]) -> Vec<LaneKey> {
+    let lanes: Vec<LaneKey> = match grouping {
+        ColumnKind::Select { options, .. } => std::iter::once(LaneKey::None)
+            .chain(options.iter().map(|option| LaneKey::Option(option.id)))
+            .collect(),
+        _ => {
+            let mut people: Vec<String> = card_lanes
+                .iter()
+                .filter_map(|lane| match lane {
+                    LaneKey::User(user) => Some(user.to_string()),
+                    LaneKey::Option(_) | LaneKey::None => None,
+                })
+                .collect();
+            people.sort();
+            people.dedup();
+            std::iter::once(LaneKey::None)
+                .chain(people.iter().map(|person| LaneKey::person(person)))
+                .collect()
+        }
+    };
+    let mut order: Vec<LaneKey> = listed
+        .iter()
+        .map(|lane| lane.key.clone())
+        .filter(|key| lanes.contains(key))
+        .collect();
+    let unlisted: Vec<LaneKey> = lanes
+        .into_iter()
+        .filter(|lane| !order.contains(lane))
+        .collect();
+    order.extend(unlisted);
+    order
 }

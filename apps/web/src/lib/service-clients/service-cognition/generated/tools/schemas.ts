@@ -3007,6 +3007,18 @@ export const DeleteColumnResponse = z.object({
   warning: z.union([z.string(), z.null()]).optional(),
 });
 
+export const DeleteDatabaseView = z.object({
+  databaseId: z.string().uuid(),
+  viewId: z.string().uuid(),
+});
+
+export const DeletedDatabaseView = z.object({
+  databaseId: z.string().uuid(),
+  tableId: z.string().uuid(),
+  viewId: z.string().uuid(),
+  name: z.string(),
+});
+
 export const DeleteImportEntity = z.object({ id: z.string().uuid() });
 
 export const DeleteImportEntityResponse = z.object({
@@ -7745,7 +7757,29 @@ export const SaveDatabaseView = z.object({
         title: z.union([z.string().uuid(), z.null()]).optional(),
         lanes: z.array(
           z.object({
-            option: z.union([z.string().uuid(), z.null()]).optional(),
+            key: z.any().superRefine((x, ctx) => {
+              const schemas = [
+                z.object({ kind: z.literal('option'), id: z.string().uuid() }),
+                z.object({ kind: z.literal('user'), id: z.string() }),
+                z.object({ kind: z.literal('none') }),
+              ];
+              const errors = schemas.reduce<z.ZodError[]>(
+                (errors, schema) =>
+                  ((result) =>
+                    result.error ? [...errors, result.error] : errors)(
+                    schema.safeParse(x)
+                  ),
+                []
+              );
+              if (schemas.length - errors.length !== 1) {
+                ctx.addIssue({
+                  path: ctx.path,
+                  code: 'invalid_union',
+                  unionErrors: errors,
+                  message: 'Invalid input: Should pass single schema',
+                });
+              }
+            }),
             hidden: z.boolean().optional(),
           })
         ),

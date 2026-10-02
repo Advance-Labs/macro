@@ -52,12 +52,24 @@ export function isOptionColumn(
   );
 }
 
-/** A board groups by a single select, so each card has one lane. */
-export function isBoardGroupColumn(column: DatabaseViewColumn): boolean {
+/** A single-person column: its cells name at most one person. */
+export function isPersonColumn(column: DatabaseViewColumn): boolean {
   return (
     !column.relation &&
     !column.isMultiSelect &&
-    (column.dataType === 'SELECT_STRING' || column.dataType === 'SELECT_NUMBER')
+    column.dataType === 'ENTITY' &&
+    column.specificEntityType === 'USER'
+  );
+}
+
+/** A board groups by a single select or a single person, so each card has one lane. */
+export function isBoardGroupColumn(column: DatabaseViewColumn): boolean {
+  return (
+    isPersonColumn(column) ||
+    (!column.relation &&
+      !column.isMultiSelect &&
+      (column.dataType === 'SELECT_STRING' ||
+        column.dataType === 'SELECT_NUMBER'))
   );
 }
 

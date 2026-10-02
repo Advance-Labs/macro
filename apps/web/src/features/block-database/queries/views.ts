@@ -1,7 +1,13 @@
 /** A table's typed views and a board's card places, written as ops and shown in the cached detail ahead of the answer. */
 
+import type { DatabaseOp } from '@core/database-sql/generated/types';
 import { throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
+import {
+  applyDatabaseOps,
+  applyDatabaseTableVersions,
+  invalidateDatabase,
+} from '@queries/storage/databases';
 import { storageServiceClient } from '@service-storage/client';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
@@ -9,13 +15,19 @@ import type { NewView } from '@service-storage/generated/schemas/newView';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import type { ViewQuery } from '@service-storage/generated/schemas/viewQuery';
 import { useQuery } from '@tanstack/solid-query';
-import { ResultAsync } from 'neverthrow';
+import { errAsync, okAsync, ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
 import { v7 as uuidv7 } from 'uuid';
+import {
+  boardWithStatusColumn,
+  type MintedStatusColumn,
+  newBoardWithStatusColumn,
+} from '../core/board-grouping';
 import type { CardMove } from '../core/board-moves';
+import type { DatabaseViewColumn } from '../core/database-view';
 import { createKeyedSerializer } from '../core/keyed-serializer';
 import type { DatabaseOpFailure } from '../core/write-failure';
-import { applyOp, patchViews } from './detail-cache';
+import { applyOp, isResult, patchViews } from './detail-cache';
 import { databaseViewKeys } from './keys';
 
 const writes = createKeyedSerializer();
@@ -60,6 +72,90 @@ export function createDatabaseView(
     ]);
     return created;
   });
+}
+
+/** Ids for a new Status column and its options, minted here. */
+function mintStatusColumn(): MintedStatusColumn {
+  return { column: uuidv7(), options: [uuidv7(), uuidv7(), uuidv7()] };
+}
+
+/**
+ * Apply a batch that adds a column and then creates or changes a view, as
+ * one write. The answered view replaces or joins the cached views, and the
+ * detail is read again for the column.
+ */
+function applyColumnAndView(
+  databaseId: string,
+  tableId: string,
+  orderKey: string,
+  ops: DatabaseOp[]
+): ResultAsync<DatabaseView, DatabaseOpFailure> {
+  return inOrder(orderKey, () =>
+    applyDatabaseOps(databaseId, ops)
+      .mapErr((error): DatabaseOpFailure => ({ kind: 'ops', error }))
+      .andThen((results) => {
+        const result = results.at(-1);
+        if (
+          !isResult(result, 'view', 'created') &&
+          !isResult(result, 'view', 'updated')
+        )
+          return errAsync<DatabaseView, DatabaseOpFailure>({
+            kind: 'unexpected-result',
+          });
+        applyDatabaseTableVersions(databaseId, {
+          [tableId]: result.tableVersion,
+        });
+        return okAsync(result.change.view);
+      })
+      .orElse((failure) => {
+        void invalidateDatabase(databaseId);
+        return errAsync(failure);
+      })
+  ).map(async (view) => {
+    await patchViews(databaseId, tableId, (views) =>
+      views.some((existing) => existing.id === view.id)
+        ? views.map((existing) => (existing.id === view.id ? view : existing))
+        : [...views, view]
+    );
+    await invalidateDatabase(databaseId);
+    return view;
+  });
+}
+
+/** Add a board grouped by a new Status column, the column and the board in one batch. */
+export function createBoardWithStatusColumn(params: {
+  databaseId: string;
+  tableId: string;
+  name: string;
+  query: ViewQuery;
+  columns: readonly DatabaseViewColumn[];
+}): ResultAsync<DatabaseView, DatabaseOpFailure> {
+  return applyColumnAndView(
+    params.databaseId,
+    params.tableId,
+    viewListKey(params.tableId),
+    newBoardWithStatusColumn({
+      tableId: params.tableId,
+      viewId: uuidv7(),
+      name: params.name,
+      query: params.query,
+      columns: params.columns,
+      status: mintStatusColumn(),
+    })
+  );
+}
+
+/** Lay a view out as a board grouped by a new Status column, the column and the change in one batch. */
+export function showAsBoardWithStatusColumn(
+  view: DatabaseView,
+  columns: readonly DatabaseViewColumn[]
+): ResultAsync<DatabaseView, DatabaseOpFailure> {
+  return applyColumnAndView(
+    view.databaseId,
+    view.tableId,
+    view.id,
+    boardWithStatusColumn({ view, columns, status: mintStatusColumn() })
+  );
 }
 
 export type ViewChange = {

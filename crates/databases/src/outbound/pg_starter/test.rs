@@ -1,5 +1,6 @@
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
+use models_databases::views::LaneKey;
 use models_databases::views::{Lane, ViewLayout, ViewQuery};
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
 
@@ -117,7 +118,7 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
                     lanes: stages
                         .iter()
                         .map(|option| Lane {
-                            option: Some(OptionId::from_uuid(*option)),
+                            key: LaneKey::Option(OptionId::from_uuid(*option)),
                             hidden: false,
                         })
                         .collect(),

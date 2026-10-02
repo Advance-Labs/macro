@@ -134,13 +134,11 @@ function HiddenLanesItem(props: BoardMenuItemProps) {
             {(lane) => (
               <Dropdown.Item
                 onSelect={() =>
-                  props.onChange(
-                    withLaneHidden(props.layout, lane.option, false)
-                  )
+                  props.onChange(withLaneHidden(props.layout, lane.key, false))
                 }
               >
                 <span class="truncate">
-                  Show {laneLabel(shown().column, lane.option)}
+                  Show {laneLabel(shown().column, lane.key)}
                 </span>
               </Dropdown.Item>
             )}

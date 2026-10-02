@@ -3,10 +3,12 @@
 //! views that refer to it.
 
 use models_databases::views::{
-    CardPosition, Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, Lane, NewView,
-    NumberOperator, RequestedLayout, SetOperator, SortDirection, SortKey, ViewColumn, ViewLayout,
-    ViewPosition, ViewQuery,
+    CardPosition, Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, Lane, LaneKey,
+    NewView, NumberOperator, RequestedLayout, SetOperator, SortDirection, SortKey, ViewColumn,
+    ViewLayout, ViewPosition, ViewQuery,
 };
+
+use models_databases::{EntityKind, EntityRef};
 
 use super::*;
 
@@ -225,8 +227,8 @@ async fn a_view_is_refused_when_it_does_not_fit_its_table() {
                     hide_empty_lanes: false,
                 },
             ),
-            "a board is grouped by a single-select column, so each card has one lane; \"Name\" \
-             is not one"
+            "a board is grouped by a single-select or single-person column, so each card has one \
+             lane; \"Name\" is neither"
                 .to_string(),
         ),
     ];
@@ -263,7 +265,7 @@ async fn an_update_changes_what_it_names_and_a_regrouped_board_forgets_its_cards
         stages.id,
         vec![CardPosition {
             row: seeded.row_id,
-            lane: None,
+            lane: LaneKey::None,
             position: "80".parse::<Position>().unwrap(),
         }],
     );
@@ -407,7 +409,7 @@ async fn a_deleted_view_takes_its_card_places_with_it() {
         stages.id,
         vec![CardPosition {
             row: seeded.row_id,
-            lane: None,
+            lane: LaneKey::None,
             position: "80".parse::<Position>().unwrap(),
         }],
     );
@@ -457,7 +459,7 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
                 view: stages.id,
                 change: ViewChange::MoveCard {
                     row: sam,
-                    lane: Some(declined),
+                    lane: LaneKey::Option(declined),
                     before: None,
                     after: Some(robin),
                 },
@@ -475,7 +477,7 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
             change: ViewResult::CardMoved {
                 positions: vec![CardPosition {
                     row: sam,
-                    lane: Some(declined),
+                    lane: LaneKey::Option(declined),
                     position: "80".parse::<Position>().unwrap(),
                 }],
             },
@@ -496,7 +498,7 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
                 view: stages.id,
                 change: ViewChange::MoveCard {
                     row: sam,
-                    lane: None,
+                    lane: LaneKey::None,
                     before: None,
                     after: None,
                 },
@@ -505,6 +507,254 @@ async fn moving_a_card_to_another_lane_sets_its_cell_and_places_it_there() {
         .await
         .unwrap();
     assert_eq!(cell(&seeded.world, sam, status), None);
+}
+
+/// A person column naming Sam in Sam's row, holding several people when
+/// `multi`; answers the column.
+async fn person_column(seeded: &Seeded, name: &str, multi: bool) -> ColumnId {
+    let host = ColumnId::new();
+    seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![
+                DatabaseOp::Column {
+                    table: seeded.table_id,
+                    column: host,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: name.into(),
+                            kind: ColumnKind::Entity {
+                                target: EntityKind::User,
+                                multi,
+                            },
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::Rows {
+                    table: seeded.table_id,
+                    change: RowsChange::Update {
+                        changes: RowChanges::Uniform {
+                            rows: vec![seeded.row_id],
+                            cells: vec![CellWrite {
+                                column: host,
+                                value: CellValue::Entities(vec![EntityRef {
+                                    entity_type: EntityKind::User,
+                                    entity_id: "macro|sam@macro.com".into(),
+                                }]),
+                            }],
+                        },
+                    },
+                },
+            ]),
+        )
+        .await
+        .unwrap();
+    host
+}
+
+#[tokio::test]
+async fn moving_a_card_to_a_persons_lane_makes_them_its_person() {
+    let seeded = seeded().await;
+    let [sam, alex, _robin] = three_guests(&seeded).await;
+    let host = person_column(&seeded, "Host", false).await;
+    let by_host = create_view(
+        &seeded,
+        "By host",
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: host,
+            title: seeded.name_column.id,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        },
+    )
+    .await;
+    let definition = seeded
+        .world
+        .lock()
+        .unwrap()
+        .columns
+        .iter()
+        .find(|column| column.id == host)
+        .unwrap()
+        .property_definition_id;
+    let sams_lane = LaneKey::User("macro|sam@macro.com".try_into().unwrap());
+
+    let results = seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::View {
+                table: seeded.table_id,
+                view: by_host.id,
+                change: ViewChange::MoveCard {
+                    row: alex,
+                    lane: sams_lane.clone(),
+                    before: Some(sam),
+                    after: None,
+                },
+            }]),
+        )
+        .await
+        .unwrap();
+
+    let [
+        OpResult::View {
+            change: ViewResult::CardMoved { positions },
+            ..
+        },
+    ] = results.as_slice()
+    else {
+        panic!("expected a moved card, got {results:?}");
+    };
+    assert_eq!(
+        positions,
+        &vec![
+            CardPosition {
+                row: sam,
+                lane: sams_lane.clone(),
+                position: "7f80".parse::<Position>().unwrap(),
+            },
+            CardPosition {
+                row: alex,
+                lane: sams_lane.clone(),
+                position: "80".parse::<Position>().unwrap(),
+            },
+        ]
+    );
+    assert_eq!(
+        cell(&seeded.world, alex, definition),
+        Some(PropertyValue::EntityRef(vec![
+            models_properties::shared::EntityReference {
+                entity_id: "macro|sam@macro.com".into(),
+                entity_type: PropertyEntityType::User,
+                specific_message_id: None,
+            }
+        ]))
+    );
+
+    seeded
+        .service
+        .apply_ops(
+            edit(seeded.database_id),
+            viewer(OWNER),
+            OpBatch::from(vec![DatabaseOp::View {
+                table: seeded.table_id,
+                view: by_host.id,
+                change: ViewChange::MoveCard {
+                    row: sam,
+                    lane: LaneKey::None,
+                    before: None,
+                    after: None,
+                },
+            }]),
+        )
+        .await
+        .unwrap();
+    assert_eq!(cell(&seeded.world, sam, definition), None);
+}
+
+#[tokio::test]
+async fn a_board_takes_only_lanes_its_column_groups_by() {
+    let seeded = seeded().await;
+    let host = person_column(&seeded, "Host", false).await;
+    let helpers = person_column(&seeded, "Helpers", true).await;
+    let by_host = create_view(
+        &seeded,
+        "By host",
+        ViewQuery::default(),
+        ViewLayout::Board {
+            group_by: host,
+            title: seeded.name_column.id,
+            lanes: vec![],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        },
+    )
+    .await;
+    let going = option_id(
+        &seeded.world,
+        seeded.status_column.property_definition_id,
+        "Going",
+    );
+    let stages = create_view(&seeded, "Stages", ViewQuery::default(), board(&seeded)).await;
+    let move_to = |view: ViewId, lane: LaneKey| DatabaseOp::View {
+        table: seeded.table_id,
+        view,
+        change: ViewChange::MoveCard {
+            row: seeded.row_id,
+            lane,
+            before: None,
+            after: None,
+        },
+    };
+    let cases = [
+        (
+            DatabaseOp::View {
+                table: seeded.table_id,
+                view: ViewId::new(),
+                change: ViewChange::Create {
+                    view: NewView {
+                        name: "By helpers".into(),
+                        query: ViewQuery::default(),
+                        layout: ViewLayout::Board {
+                            group_by: helpers,
+                            title: seeded.name_column.id,
+                            lanes: vec![],
+                            card_fields: vec![],
+                            hide_empty_lanes: false,
+                        }
+                        .into(),
+                    },
+                },
+            },
+            None,
+            "a board is grouped by a single-select or single-person column, so each card has one \
+             lane; \"Helpers\" is neither",
+        ),
+        (
+            move_to(by_host.id, LaneKey::Option(going)),
+            Some(host),
+            "\"Host\" groups the board by person; a lane names a person, or no one",
+        ),
+        (
+            move_to(
+                stages.id,
+                LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+            ),
+            Some(seeded.status_column.id),
+            "\"Status\" groups the board by option; a lane names one of its options, or none",
+        ),
+    ];
+    for (op, column, reason) in cases {
+        let error = seeded
+            .service
+            .apply_ops(
+                edit(seeded.database_id),
+                viewer(OWNER),
+                OpBatch::from(vec![op]),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(
+            refusal(error),
+            OpRefusal {
+                op: 0,
+                row: None,
+                column,
+                taken: None,
+                reason: reason.to_string(),
+            },
+            "{reason}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -550,7 +800,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                     view: stages.id,
                     change: ViewChange::MoveCard {
                         row: sam,
-                        lane: Some(going),
+                        lane: LaneKey::Option(going),
                         before: Some(alex),
                         after: Some(extra),
                     },
@@ -560,7 +810,7 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
                     view: stages.id,
                     change: ViewChange::MoveCard {
                         row: extra,
-                        lane: Some(going),
+                        lane: LaneKey::Option(going),
                         before: None,
                         after: Some(alex),
                     },
@@ -585,18 +835,18 @@ async fn moving_a_card_within_its_lane_places_the_unplaced_cards_before_it() {
             vec![
                 CardPosition {
                     row: alex,
-                    lane: Some(going),
+                    lane: LaneKey::Option(going),
                     position: "7f80".parse::<Position>().unwrap(),
                 },
                 CardPosition {
                     row: sam,
-                    lane: Some(going),
+                    lane: LaneKey::Option(going),
                     position: "80".parse::<Position>().unwrap(),
                 },
             ],
             vec![CardPosition {
                 row: extra,
-                lane: Some(going),
+                lane: LaneKey::Option(going),
                 position: "7e80".parse::<Position>().unwrap(),
             }],
         ]
@@ -635,7 +885,7 @@ async fn a_sorted_board_keeps_its_cards_in_the_sorts_order() {
         view,
         change: ViewChange::MoveCard {
             row: seeded.row_id,
-            lane: None,
+            lane: LaneKey::None,
             before: None,
             after: None,
         },
@@ -696,7 +946,7 @@ async fn a_card_moves_only_next_to_cards_of_its_new_lane() {
                 view: stages.id,
                 change: ViewChange::MoveCard {
                     row: sam,
-                    lane: Some(going),
+                    lane: LaneKey::Option(going),
                     before: Some(robin),
                     after: None,
                 },
@@ -1078,11 +1328,11 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
             title: seeded.name_column.id,
             lanes: vec![
                 Lane {
-                    option: Some(going),
+                    key: LaneKey::Option(going),
                     hidden: false,
                 },
                 Lane {
-                    option: Some(declined),
+                    key: LaneKey::Option(declined),
                     hidden: true,
                 },
             ],
@@ -1095,7 +1345,7 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
         stages.id,
         vec![CardPosition {
             row: seeded.row_id,
-            lane: Some(going),
+            lane: LaneKey::Option(going),
             position: "80".parse::<Position>().unwrap(),
         }],
     );
@@ -1138,7 +1388,7 @@ async fn removing_an_option_takes_it_out_of_views_lanes_and_card_places() {
             group_by: seeded.status_column.id,
             title: seeded.name_column.id,
             lanes: vec![Lane {
-                option: Some(declined),
+                key: LaneKey::Option(declined),
                 hidden: true,
             }],
             card_fields: vec![],
@@ -1238,7 +1488,7 @@ async fn a_boards_card_places_read_back_for_its_database_alone() {
     let stages = create_view(&seeded, "Stages", ViewQuery::default(), board(&seeded)).await;
     let placed = vec![CardPosition {
         row: seeded.row_id,
-        lane: None,
+        lane: LaneKey::None,
         position: "80".parse::<Position>().unwrap(),
     }];
     seeded

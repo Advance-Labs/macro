@@ -2,14 +2,15 @@
  * A dragged card as the `move_card` op names it and as it shows before the
  * answer; placement mirrors `models_databases::views::lanes::place_card`.
  */
-import type { Board } from '@core/database-sql/generated/types';
+import type { Board, LaneKey } from '@core/database-sql/generated/types';
 import type { CardPosition } from '@service-storage/generated/schemas/cardPosition';
 import { err, ok, Result } from 'neverthrow';
+import { sameLane } from './views';
 
 /** A card's move: `before` is the card it lands right after, `after` the one right before it. */
 export type CardMove = {
   row: string;
-  lane: string | null;
+  lane: LaneKey;
   before: string | null;
   after: string | null;
 };
@@ -20,8 +21,9 @@ type KeyBetween = (before: string | null, after: string | null) => string;
 /** One lane's cards as the board shows them, with the place stored for that lane. */
 type LaneCard = { row: string; position: string | null };
 
-function cardsOf(board: Board, lane: string | null): string[] {
-  return board.lanes.find((entry) => entry.option === lane)?.cards ?? [];
+/** The cards a lane of the board shows, in order. */
+export function cardsOf(board: Board, lane: LaneKey): string[] {
+  return board.lanes.find((entry) => sameLane(entry.key, lane))?.cards ?? [];
 }
 
 /**
@@ -31,7 +33,7 @@ function cardsOf(board: Board, lane: string | null): string[] {
 export function cardMove(
   board: Board,
   row: string,
-  lane: string | null,
+  lane: LaneKey,
   next: string | undefined
 ): CardMove | undefined {
   const shown = cardsOf(board, lane);
@@ -48,7 +50,7 @@ export function cardMove(
 export function laneCards(
   board: Board,
   positions: readonly CardPosition[],
-  lane: string | null,
+  lane: LaneKey,
   except: string
 ): LaneCard[] {
   return cardsOf(board, lane)
@@ -56,8 +58,9 @@ export function laneCards(
     .map((row) => ({
       row,
       position:
-        positions.find((placed) => placed.row === row && placed.lane === lane)
-          ?.position ?? null,
+        positions.find(
+          (placed) => placed.row === row && sameLane(placed.lane, lane)
+        )?.position ?? null,
     }));
 }
 
@@ -146,7 +149,7 @@ export function withMovedCards(
     (current, move) => ({
       lanes: current.lanes.map((lane) => {
         const cards = lane.cards.filter((card) => card !== move.row);
-        if (lane.option !== move.lane) return { ...lane, cards };
+        if (!sameLane(lane.key, move.lane)) return { ...lane, cards };
         const upper = move.before === null ? -1 : cards.indexOf(move.before);
         const lower = move.after === null ? -1 : cards.indexOf(move.after);
         const index =

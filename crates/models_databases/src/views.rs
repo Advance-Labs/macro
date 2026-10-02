@@ -2,6 +2,7 @@
 //! table or board layout), referring to everything by id.
 
 mod check;
+mod lane_key;
 mod lanes;
 #[cfg(test)]
 mod test;
@@ -12,7 +13,8 @@ use crate::position::Position;
 use chrono::{DateTime, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
 
-pub use check::{SchemaColumn, ValueKind, ViewProblem, check};
+pub use check::{SchemaColumn, ValueKind, ViewProblem, check, check_lane};
+pub use lane_key::LaneKey;
 pub use lanes::{PlacementError, arrange_lane, place_card};
 
 /// When a view is written: now, to the microsecond, as a stored timestamp
@@ -326,14 +328,15 @@ pub enum ViewLayout {
         /// after the listed ones, in the table's order.
         columns: Vec<ViewColumn>,
     },
-    /// Cards in lanes, one lane per option of a single-select column plus
-    /// one for cards without one. A multi-select column cannot group a
-    /// board: a card is in exactly one lane, so a card in several would need
-    /// a place in each.
+    /// Cards in lanes: one lane per option of a single-select column, or
+    /// one per person a single-person column names, plus one for cards
+    /// with an empty cell. A multi-valued column cannot group a board: a
+    /// card is in exactly one lane, so a card in several would need a place
+    /// in each.
     #[serde(rename_all = "camelCase")]
     Board {
-        /// The single-select column whose options are the lanes; moving a
-        /// card to another lane sets this column.
+        /// The single-select or single-person column whose values are the
+        /// lanes; moving a card to another lane sets this column.
         #[schema(value_type = Uuid)]
         group_by: ColumnId,
         /// The column a card is titled by, of any type. Removing it titles
@@ -341,8 +344,8 @@ pub enum ViewLayout {
         #[schema(value_type = Uuid)]
         title: ColumnId,
         /// How lanes show, in display order. A lane left out shows after the
-        /// listed ones, options in the column's order; the lane of cards
-        /// without an option first.
+        /// listed ones: the lane of empty cells first, then options in the
+        /// column's order, or people by id.
         lanes: Vec<Lane>,
         /// The columns a card shows under its title, in order.
         #[schema(value_type = Vec<Uuid>)]
@@ -363,11 +366,12 @@ pub enum RequestedLayout {
         /// after the listed ones, in the table's order.
         columns: Vec<ViewColumn>,
     },
-    /// Cards in lanes, one lane per option of a single-select column plus
-    /// one for cards without one.
+    /// Cards in lanes, one per option of a single-select column or per
+    /// person of a single-person column, plus one for empty cells.
     #[serde(rename_all = "camelCase")]
     Board {
-        /// The single-select column whose options are the lanes.
+        /// The single-select or single-person column whose values are the
+        /// lanes.
         #[schema(value_type = Uuid)]
         group_by: ColumnId,
         /// The column a card is titled by. Left out, a board keeps the
@@ -449,9 +453,8 @@ pub struct ViewColumn {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Lane {
-    /// The option the lane holds the cards of; `null` for cards without one.
-    #[schema(required = true, value_type = Option<Uuid>)]
-    pub option: Option<OptionId>,
+    /// The lane.
+    pub key: LaneKey,
     /// Whether it is hidden.
     #[serde(default)]
     pub hidden: bool,
@@ -467,10 +470,8 @@ pub struct CardPosition {
     /// The card's row.
     #[schema(value_type = Uuid)]
     pub row: RowId,
-    /// The lane: an option of the board's column, `null` for the lane of
-    /// cards without one.
-    #[schema(required = true, value_type = Option<Uuid>)]
-    pub lane: Option<OptionId>,
+    /// The lane.
+    pub lane: LaneKey,
     /// The card's key in that lane.
     #[schema(value_type = String)]
     pub position: Position,
@@ -646,7 +647,7 @@ impl ViewLayout {
                 title: *title,
                 lanes: lanes
                     .iter()
-                    .filter(|lane| lane.option != Some(option))
+                    .filter(|lane| lane.key != LaneKey::Option(option))
                     .cloned()
                     .collect(),
                 card_fields: card_fields.clone(),

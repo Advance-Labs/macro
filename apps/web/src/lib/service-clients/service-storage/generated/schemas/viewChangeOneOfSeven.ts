@@ -4,16 +4,17 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+
+import type { LaneKey } from './laneKey';
 import type { ViewChangeOneOfSevenAfter } from './viewChangeOneOfSevenAfter';
 import type { ViewChangeOneOfSevenBefore } from './viewChangeOneOfSevenBefore';
 import type { ViewChangeOneOfSevenKind } from './viewChangeOneOfSevenKind';
-import type { ViewChangeOneOfSevenLane } from './viewChangeOneOfSevenLane';
 
 /**
  * Move one of the board's cards: into a lane, which sets the row's
-grouping cell to the lane's option (or empties it for the lane
-without one), and to a place there, between two of its cards. Only
-an unsorted board's cards move by hand.
+grouping cell to the lane's option or person (or empties it for the
+lane of empty cells), and to a place there, between two of its
+cards. Only an unsorted board's cards move by hand.
  */
 export type ViewChangeOneOfSeven = {
   /** The card that ends up just after it, if any. Given with `before`,
@@ -24,9 +25,9 @@ goes to the end of the lane. */
 one), if any. */
   before?: ViewChangeOneOfSevenBefore;
   kind: ViewChangeOneOfSevenKind;
-  /** The lane it goes to: an option of the board's column, or `null`
-for the lane of cards without one. */
-  lane: ViewChangeOneOfSevenLane;
+  /** The lane it goes to: an option of a select board's column, a
+person for a board grouped by people, or the lane of empty cells. */
+  lane: LaneKey;
   /** The card's row. */
   row: string;
 };

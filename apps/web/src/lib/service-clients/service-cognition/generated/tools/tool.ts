@@ -90,6 +90,10 @@ type ToolParserMap = {
     call: types.DeleteColumn;
     response: types.DeleteColumnResponse;
   };
+  DeleteDatabaseView: {
+    call: types.DeleteDatabaseView;
+    response: types.DeletedDatabaseView;
+  };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;
     response: types.DeleteImportEntityResponse;
@@ -449,6 +453,10 @@ const toolParserMap = {
   DeleteColumn: {
     call: schemas.DeleteColumn,
     response: schemas.DeleteColumnResponse,
+  },
+  DeleteDatabaseView: {
+    call: schemas.DeleteDatabaseView,
+    response: schemas.DeletedDatabaseView,
   },
   DeleteImportEntity: {
     call: schemas.DeleteImportEntity,
@@ -850,6 +858,10 @@ type ToolDataMap = {
   DeleteColumn: {
     call: types.DeleteColumn;
     response: types.DeleteColumnResponse;
+  };
+  DeleteDatabaseView: {
+    call: types.DeleteDatabaseView;
+    response: types.DeletedDatabaseView;
   };
   DeleteImportEntity: {
     call: types.DeleteImportEntity;

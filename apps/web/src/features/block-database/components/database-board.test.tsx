@@ -1,3 +1,4 @@
+import type { LaneKey } from '@core/database-sql/generated/types';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import {
   cleanup,
@@ -24,6 +25,91 @@ afterEach(() => {
 });
 
 describe('database board', () => {
+  it('draws a lane per person and moves a card to another person', async () => {
+    const owner: DatabaseViewColumn = {
+      id: 'owner',
+      name: 'Owner',
+      dataType: 'ENTITY',
+      specificEntityType: 'USER',
+      isMultiSelect: false,
+      options: [],
+      writable: true,
+    };
+    const onMove = vi.fn();
+    render(() => (
+      <DatabaseBoard
+        rows={[
+          {
+            rowId: 'launch',
+            cells: { title: 'Launch project', owner: 'macro|sam@macro.com' },
+          },
+          { rowId: 'loose', cells: { title: 'Loose end', owner: null } },
+        ]}
+        columns={[
+          {
+            id: 'title',
+            name: 'Name',
+            dataType: 'STRING',
+            isMultiSelect: false,
+            options: [],
+            writable: true,
+          },
+          owner,
+        ]}
+        board={{
+          lanes: [
+            { key: { kind: 'none' }, hidden: false, cards: ['loose'] },
+            {
+              key: { kind: 'user', id: 'macro|ana@macro.com' },
+              hidden: false,
+              cards: [],
+            },
+            {
+              key: { kind: 'user', id: 'macro|sam@macro.com' },
+              hidden: false,
+              cards: ['launch'],
+            },
+          ],
+        }}
+        layout={{
+          kind: 'board',
+          title: 'title',
+          groupBy: 'owner',
+          lanes: [],
+          cardFields: [],
+          hideEmptyLanes: false,
+        }}
+        groupColumn={owner}
+        canEdit
+        rowPending={() => false}
+        onOpen={vi.fn()}
+        onMove={onMove}
+        onCreate={vi.fn(async () => true)}
+      />
+    ));
+
+    expect(
+      screen
+        .getAllByRole('region')
+        .map((lane) => lane.getAttribute('aria-label'))
+    ).toEqual(['No owner lane', 'ana@macro.com lane', 'sam@macro.com lane']);
+    expect(screen.queryByRole('button', { name: 'New group' })).toBeNull();
+    const trigger = screen.getByRole('button', { name: 'Move Launch project' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.keyDown(
+      await screen.findByRole('menuitem', { name: 'ana@macro.com' }),
+      { key: 'Enter' }
+    );
+    await waitFor(() =>
+      expect(onMove).toHaveBeenCalledWith(
+        'launch',
+        { kind: 'user', id: 'macro|ana@macro.com' },
+        undefined
+      )
+    );
+  });
+
   it('draws the lanes the board lays out, in its order, and leaves hidden lanes out', () => {
     const status: DatabaseViewColumn = {
       id: 'status',
@@ -63,10 +149,18 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: ['launch'] },
-            { option: 'archived', hidden: true, cards: ['old'] },
-            { option: null, hidden: false, cards: ['unassigned'] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch'],
+            },
+            {
+              key: { kind: 'option', id: 'archived' },
+              hidden: true,
+              cards: ['old'],
+            },
+            { key: { kind: 'none' }, hidden: false, cards: ['unassigned'] },
           ],
         }}
         layout={{
@@ -174,7 +268,13 @@ describe('database board', () => {
           },
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: ['launch'] }],
+          lanes: [
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch'],
+            },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -249,7 +349,11 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'todo', hidden: false, cards: ['launch', 'unowned'] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch', 'unowned'],
+            },
           ],
         }}
         layout={{
@@ -324,7 +428,11 @@ describe('database board', () => {
             writable: true,
           },
         ]}
-        board={{ lanes: [{ option: 'todo', hidden: false, cards: [] }] }}
+        board={{
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
+        }}
         layout={{
           kind: 'board',
           groupBy: 'status',
@@ -346,7 +454,7 @@ describe('database board', () => {
     expect(within(lane).queryByRole('textbox')).toBeNull();
     fireEvent.click(within(lane).getByRole('button', { name: 'Add record' }));
     expect(onCreate).toHaveBeenCalledExactlyOnceWith(
-      'todo',
+      { kind: 'option', id: 'todo' },
       '',
       expect.any(String),
       { open: true }
@@ -387,9 +495,13 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: null, hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: ['launch'] },
-            { option: 'done', hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch'],
+            },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -415,7 +527,11 @@ describe('database board', () => {
       key: 'Enter',
     });
     await waitFor(() =>
-      expect(onMove).toHaveBeenCalledWith('launch', 'done', undefined)
+      expect(onMove).toHaveBeenCalledWith(
+        'launch',
+        { kind: 'option', id: 'done' },
+        undefined
+      )
     );
     await waitFor(() =>
       expect(screen.getByRole('status').textContent).toBe(
@@ -429,7 +545,11 @@ describe('database board', () => {
       { key: 'Enter' }
     );
     await waitFor(() =>
-      expect(onMove).toHaveBeenLastCalledWith('launch', null, undefined)
+      expect(onMove).toHaveBeenLastCalledWith(
+        'launch',
+        { kind: 'none' },
+        undefined
+      )
     );
   });
 
@@ -459,8 +579,8 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: null, hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -487,7 +607,9 @@ describe('database board', () => {
       await screen.findByRole('menuitem', { name: 'Hide lane' }),
       { key: 'Enter' }
     );
-    await waitFor(() => expect(onHideLane).toHaveBeenCalledWith('todo'));
+    await waitFor(() =>
+      expect(onHideLane).toHaveBeenCalledWith({ kind: 'option', id: 'todo' })
+    );
     expect(
       screen.queryByRole('menuitemcheckbox', { name: 'Hide empty lanes' })
     ).toBeNull();
@@ -500,7 +622,9 @@ describe('database board', () => {
       await screen.findByRole('menuitem', { name: 'Hide lane' }),
       { key: 'Enter' }
     );
-    await waitFor(() => expect(onHideLane).toHaveBeenLastCalledWith(null));
+    await waitFor(() =>
+      expect(onHideLane).toHaveBeenLastCalledWith({ kind: 'none' })
+    );
   });
 
   it('turns hiding empty lanes on from a lane menu, checked as the layout has it', async () => {
@@ -528,7 +652,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -583,7 +709,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -641,8 +769,8 @@ describe('database board', () => {
           ]}
           board={{
             lanes: [
-              { option: null, hidden: false, cards: [] },
-              { option: 'todo', hidden: false, cards: [] },
+              { key: { kind: 'none' }, hidden: false, cards: [] },
+              { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
             ],
           }}
           layout={{
@@ -701,7 +829,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -752,9 +882,9 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
-            { option: null, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -781,7 +911,11 @@ describe('database board', () => {
         altKey: true,
       }
     );
-    expect(onLaneOrderChange).toHaveBeenCalledWith(['todo', 'done', null]);
+    expect(onLaneOrderChange).toHaveBeenCalledWith([
+      { kind: 'option', id: 'todo' },
+      { kind: 'option', id: 'done' },
+      { kind: 'none' },
+    ]);
     expect(onMove).not.toHaveBeenCalled();
   });
 
@@ -820,7 +954,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -884,7 +1020,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'todo', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -942,7 +1080,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1001,8 +1141,8 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'two', hidden: false, cards: [] },
-            { option: null, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'two' }, hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -1065,8 +1205,8 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'todo', hidden: false, cards: [] },
-            { option: 'done', hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -1094,7 +1234,7 @@ describe('database board', () => {
     fireEvent.input(first, { target: { value: 'First idea' } });
     fireEvent.keyDown(first, { key: 'Enter' });
     expect(onCreate).toHaveBeenCalledWith(
-      'done',
+      { kind: 'option', id: 'done' },
       'First idea',
       expect.any(String)
     );
@@ -1107,7 +1247,7 @@ describe('database board', () => {
     fireEvent.input(next, { target: { value: 'Second idea' } });
     fireEvent.keyDown(next, { key: 'Enter' });
     expect(onCreate).toHaveBeenLastCalledWith(
-      'done',
+      { kind: 'option', id: 'done' },
       'Second idea',
       expect.any(String)
     );
@@ -1145,8 +1285,8 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: null, hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
+            { key: { kind: 'none' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -1174,7 +1314,7 @@ describe('database board', () => {
     fireEvent.input(input, { target: { value: 'Loose idea' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onCreate).toHaveBeenCalledWith(
-      null,
+      { kind: 'none' },
       'Loose idea',
       expect.any(String)
     );
@@ -1205,7 +1345,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1229,7 +1371,7 @@ describe('database board', () => {
     fireEvent.input(input, { target: { value: 'Needs detail' } });
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
     expect(onCreate).toHaveBeenCalledWith(
-      'done',
+      { kind: 'option', id: 'done' },
       'Needs detail',
       expect.any(String),
       { open: true }
@@ -1262,7 +1404,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1319,7 +1463,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1347,7 +1493,7 @@ describe('database board', () => {
     fireEvent.input(input, { target: { value: 'Typed then left' } });
     fireEvent.blur(input);
     expect(onCreate).toHaveBeenCalledWith(
-      'done',
+      { kind: 'option', id: 'done' },
       'Typed then left',
       expect.any(String)
     );
@@ -1387,8 +1533,12 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'todo', hidden: false, cards: ['launch'] },
-            { option: 'done', hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch'],
+            },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -1453,7 +1603,13 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: cards() }],
+          lanes: [
+            {
+              key: { kind: 'option', id: 'done' },
+              hidden: false,
+              cards: cards(),
+            },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1493,7 +1649,7 @@ describe('database board', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(
-        'done',
+        { kind: 'option', id: 'done' },
         'Remember this draft',
         expect.any(String)
       )
@@ -1519,7 +1675,7 @@ describe('database board', () => {
     const [pending, setPending] = createSignal(new Set<string>());
     let complete: (saved: boolean) => void = () => {};
     const onCreate = vi.fn(
-      (_lane: string | null, _title: string, intentId: string) => {
+      (_lane: LaneKey, _title: string, intentId: string) => {
         setPending((ids) => new Set(ids).add(intentId));
         return new Promise<boolean>((resolve) => {
           complete = (saved) => {
@@ -1546,7 +1702,9 @@ describe('database board', () => {
           status,
         ]}
         board={{
-          lanes: [{ option: 'done', hidden: false, cards: [] }],
+          lanes: [
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+          ],
         }}
         layout={{
           kind: 'board',
@@ -1620,8 +1778,8 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'done', hidden: false, cards: [] },
-            { option: 'todo', hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
+            { key: { kind: 'option', id: 'todo' }, hidden: false, cards: [] },
           ],
         }}
         layout={{
@@ -1686,8 +1844,12 @@ describe('database board', () => {
         ]}
         board={{
           lanes: [
-            { option: 'todo', hidden: false, cards: ['launch'] },
-            { option: 'done', hidden: false, cards: [] },
+            {
+              key: { kind: 'option', id: 'todo' },
+              hidden: false,
+              cards: ['launch'],
+            },
+            { key: { kind: 'option', id: 'done' }, hidden: false, cards: [] },
           ],
         }}
         layout={{

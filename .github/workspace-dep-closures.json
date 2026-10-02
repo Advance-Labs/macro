@@ -8441,6 +8441,8 @@
       "crates/workspace-hack"
     ],
     "models_databases": [
+      "crates/cowlike",
+      "crates/macro_user_id",
       "crates/macro_uuid",
       "crates/models_databases"
     ],

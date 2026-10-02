@@ -18502,9 +18502,8 @@
         "required": ["row", "lane", "position"],
         "properties": {
           "lane": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "The lane: an option of the board's column, `null` for the lane of\ncards without one."
+            "$ref": "#/components/schemas/LaneKey",
+            "description": "The lane."
           },
           "position": {
             "type": "string",
@@ -26521,18 +26520,64 @@
       "Lane": {
         "type": "object",
         "description": "How one lane shows in a board layout.",
-        "required": ["option"],
+        "required": ["key"],
         "properties": {
           "hidden": {
             "type": "boolean",
             "description": "Whether it is hidden."
           },
-          "option": {
-            "type": ["string", "null"],
-            "format": "uuid",
-            "description": "The option the lane holds the cards of; `null` for cards without one."
+          "key": {
+            "$ref": "#/components/schemas/LaneKey",
+            "description": "The lane."
           }
         }
+      },
+      "LaneKey": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The cards holding this option of the board's select column.",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The cards holding this option of the board's select column."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["option"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The cards naming this person in the board's person column.",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The cards naming this person in the board's person column."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["user"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The cards whose grouping cell is empty.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["none"]
+              }
+            }
+          }
+        ],
+        "description": "A lane of a board, named by what its cards' grouping cells hold: one\noption of a select, one person, or nothing."
       },
       "LatestMessage": {
         "type": "object",
@@ -30033,7 +30078,7 @@
           },
           {
             "type": "object",
-            "description": "Cards in lanes, one lane per option of a single-select column plus\none for cards without one.",
+            "description": "Cards in lanes, one per option of a single-select column or per\nperson of a single-person column, plus one for empty cells.",
             "required": [
               "groupBy",
               "lanes",
@@ -30053,7 +30098,7 @@
               "groupBy": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The single-select column whose options are the lanes."
+                "description": "The single-select or single-person column whose values are the\nlanes."
               },
               "hideEmptyLanes": {
                 "type": "boolean",
@@ -34851,7 +34896,7 @@
           },
           {
             "type": "object",
-            "description": "Move one of the board's cards: into a lane, which sets the row's\ngrouping cell to the lane's option (or empties it for the lane\nwithout one), and to a place there, between two of its cards. Only\nan unsorted board's cards move by hand.",
+            "description": "Move one of the board's cards: into a lane, which sets the row's\ngrouping cell to the lane's option or person (or empties it for the\nlane of empty cells), and to a place there, between two of its\ncards. Only an unsorted board's cards move by hand.",
             "required": ["row", "lane", "kind"],
             "properties": {
               "after": {
@@ -34869,9 +34914,8 @@
                 "enum": ["move_card"]
               },
               "lane": {
-                "type": ["string", "null"],
-                "format": "uuid",
-                "description": "The lane it goes to: an option of the board's column, or `null`\nfor the lane of cards without one."
+                "$ref": "#/components/schemas/LaneKey",
+                "description": "The lane it goes to: an option of a select board's column, a\nperson for a board grouped by people, or the lane of empty cells."
               },
               "row": {
                 "type": "string",
@@ -34923,7 +34967,7 @@
           },
           {
             "type": "object",
-            "description": "Cards in lanes, one lane per option of a single-select column plus\none for cards without one. A multi-select column cannot group a\nboard: a card is in exactly one lane, so a card in several would need\na place in each.",
+            "description": "Cards in lanes: one lane per option of a single-select column, or\none per person a single-person column names, plus one for cards\nwith an empty cell. A multi-valued column cannot group a board: a\ncard is in exactly one lane, so a card in several would need a place\nin each.",
             "required": [
               "groupBy",
               "title",
@@ -34944,7 +34988,7 @@
               "groupBy": {
                 "type": "string",
                 "format": "uuid",
-                "description": "The single-select column whose options are the lanes; moving a\ncard to another lane sets this column."
+                "description": "The single-select or single-person column whose values are the\nlanes; moving a card to another lane sets this column."
               },
               "hideEmptyLanes": {
                 "type": "boolean",
@@ -34959,7 +35003,7 @@
                 "items": {
                   "$ref": "#/components/schemas/Lane"
                 },
-                "description": "How lanes show, in display order. A lane left out shows after the\nlisted ones, options in the column's order; the lane of cards\nwithout an option first."
+                "description": "How lanes show, in display order. A lane left out shows after the\nlisted ones: the lane of empty cells first, then options in the\ncolumn's order, or people by id."
               },
               "title": {
                 "type": "string",

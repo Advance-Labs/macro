@@ -81,6 +81,15 @@ describe('database tool output contracts', () => {
         created: true,
       },
     },
+    {
+      name: 'DeleteDatabaseView',
+      json: {
+        databaseId,
+        tableId,
+        viewId: columnId,
+        name: 'All tickets',
+      },
+    },
   ];
   it.each(examples)(
     'parses $name with omitted empty optional metadata',

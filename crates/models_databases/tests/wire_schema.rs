@@ -6,9 +6,9 @@
 use chrono::{TimeZone, Utc};
 use models_databases::views::{
     CardPosition, Conjunction, DatabaseView, DateOperator, FilterCondition, FilterGroup,
-    FilterNode, FilterTest, Lane, NewView, NumberOperator, PresenceOperator, RequestedLayout,
-    SetOperator, SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout, ViewPosition,
-    ViewQuery,
+    FilterNode, FilterTest, Lane, LaneKey, NewView, NumberOperator, PresenceOperator,
+    RequestedLayout, SetOperator, SortDirection, SortKey, TextOperator, ViewColumn, ViewLayout,
+    ViewPosition, ViewQuery,
 };
 use models_databases::{
     CellValue, CellWrite, ColumnChange, ColumnId, ColumnKind, ColumnResult, DatabaseId, DatabaseOp,
@@ -90,11 +90,11 @@ fn board() -> ViewLayout {
         title: NAME,
         lanes: vec![
             Lane {
-                option: Some(DONE),
+                key: LaneKey::Option(DONE),
                 hidden: false,
             },
             Lane {
-                option: None,
+                key: LaneKey::None,
                 hidden: true,
             },
         ],
@@ -295,19 +295,25 @@ fn ops() -> Vec<DatabaseOp> {
         view(ViewChange::Delete),
         view(ViewChange::MoveCard {
             row: ROW,
-            lane: Some(DONE),
+            lane: LaneKey::Option(DONE),
             before: Some(OTHER_ROW),
             after: None,
         }),
         view(ViewChange::MoveCard {
             row: ROW,
-            lane: None,
+            lane: LaneKey::None,
             before: None,
             after: Some(OTHER_ROW),
         }),
         view(ViewChange::MoveCard {
             row: ROW,
-            lane: None,
+            lane: LaneKey::None,
+            before: None,
+            after: None,
+        }),
+        view(ViewChange::MoveCard {
+            row: ROW,
+            lane: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
             before: None,
             after: None,
         }),
@@ -419,12 +425,12 @@ fn results() -> Vec<OpResult> {
             positions: vec![
                 CardPosition {
                     row: ROW,
-                    lane: Some(DONE),
+                    lane: LaneKey::Option(DONE),
                     position: "80".parse().unwrap(),
                 },
                 CardPosition {
                     row: OTHER_ROW,
-                    lane: None,
+                    lane: LaneKey::None,
                     position: "8180".parse().unwrap(),
                 },
             ],

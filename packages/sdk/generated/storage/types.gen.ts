@@ -2057,10 +2057,9 @@ export type CallTokenResponse = {
  */
 export type CardPosition = {
     /**
-     * The lane: an option of the board's column, `null` for the lane of
-     * cards without one.
+     * The lane.
      */
-    lane: string | null;
+    lane: LaneKey;
     /**
      * The card's key in that lane.
      */
@@ -7059,9 +7058,29 @@ export type Lane = {
      */
     hidden?: boolean;
     /**
-     * The option the lane holds the cards of; `null` for cards without one.
+     * The lane.
      */
-    option: string | null;
+    key: LaneKey;
+};
+
+/**
+ * A lane of a board, named by what its cards' grouping cells hold: one
+ * option of a select, one person, or nothing.
+ */
+export type LaneKey = {
+    /**
+     * The cards holding this option of the board's select column.
+     */
+    id: string;
+    kind: 'option';
+} | {
+    /**
+     * The cards naming this person in the board's person column.
+     */
+    id: string;
+    kind: 'user';
+} | {
+    kind: 'none';
 };
 
 /**
@@ -9107,7 +9126,8 @@ export type RequestedLayout = {
      */
     cardFields: Array<string>;
     /**
-     * The single-select column whose options are the lanes.
+     * The single-select or single-person column whose values are the
+     * lanes.
      */
     groupBy: string;
     /**
@@ -12277,10 +12297,10 @@ export type ViewChange = {
     before?: string | null;
     kind: 'move_card';
     /**
-     * The lane it goes to: an option of the board's column, or `null`
-     * for the lane of cards without one.
+     * The lane it goes to: an option of a select board's column, a
+     * person for a board grouped by people, or the lane of empty cells.
      */
-    lane: string | null;
+    lane: LaneKey;
     /**
      * The card's row.
      */
@@ -12317,8 +12337,8 @@ export type ViewLayout = {
      */
     cardFields: Array<string>;
     /**
-     * The single-select column whose options are the lanes; moving a
-     * card to another lane sets this column.
+     * The single-select or single-person column whose values are the
+     * lanes; moving a card to another lane sets this column.
      */
     groupBy: string;
     /**
@@ -12328,8 +12348,8 @@ export type ViewLayout = {
     kind: 'board';
     /**
      * How lanes show, in display order. A lane left out shows after the
-     * listed ones, options in the column's order; the lane of cards
-     * without an option first.
+     * listed ones: the lane of empty cells first, then options in the
+     * column's order, or people by id.
      */
     lanes: Array<Lane>;
     /**

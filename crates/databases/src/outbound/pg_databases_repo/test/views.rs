@@ -3,11 +3,11 @@
 
 use models_databases::position::{Position, key_between, keys_between};
 use models_databases::views::{
-    CardPosition, Lane, NewView, RequestedLayout, ViewId, ViewLayout, ViewQuery,
+    CardPosition, Lane, LaneKey, NewView, RequestedLayout, ViewId, ViewLayout, ViewQuery,
 };
 use models_databases::{
-    CellValue, CellWrite, ColumnChange, DatabaseOp, NewOption, OpResult, OptionId, OptionRef,
-    RowId, RowsChange, RowsResult, ViewChange, ViewResult,
+    CellValue, CellWrite, ColumnChange, ColumnKind, DatabaseOp, NewColumn, NewOption, OpResult,
+    OptionId, OptionRef, RowId, RowsChange, RowsResult, ViewChange, ViewResult,
 };
 use models_properties::service::property_value::PropertyValue;
 use properties::outbound::properties_pg_repo::PropertiesPgRepo;
@@ -169,11 +169,11 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                             title: Some(guests.name),
                             lanes: vec![
                                 Lane {
-                                    option: Some(maybe),
+                                    key: LaneKey::Option(maybe),
                                     hidden: false,
                                 },
                                 Lane {
-                                    option: Some(going),
+                                    key: LaneKey::Option(going),
                                     hidden: false,
                                 },
                             ],
@@ -211,7 +211,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
                 view: board.id,
                 change: ViewChange::MoveCard {
                     row: rows[2],
-                    lane: Some(maybe),
+                    lane: LaneKey::Option(maybe),
                     before: Some(rows[1]),
                     after: None,
                 },
@@ -226,12 +226,12 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         vec![
             CardPosition {
                 row: rows[1],
-                lane: Some(maybe),
+                lane: LaneKey::Option(maybe),
                 position: "7f80".parse::<Position>().unwrap(),
             },
             CardPosition {
                 row: rows[2],
-                lane: Some(maybe),
+                lane: LaneKey::Option(maybe),
                 position: "80".parse::<Position>().unwrap(),
             },
         ]
@@ -260,7 +260,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
         repo.view_positions(board.id).await.unwrap(),
         vec![CardPosition {
             row: rows[2],
-            lane: Some(maybe),
+            lane: LaneKey::Option(maybe),
             position: "80".parse::<Position>().unwrap(),
         }]
     );
@@ -285,7 +285,7 @@ async fn a_board_and_its_card_places_round_trip_and_go_with_their_rows(pool: PgP
             group_by: guests.status,
             title: guests.name,
             lanes: vec![Lane {
-                option: Some(going),
+                key: LaneKey::Option(going),
                 hidden: false,
             }],
             card_fields: vec![guests.name],
@@ -394,4 +394,205 @@ async fn version_of(pool: &PgPool, table_id: TableId) -> TableVersion {
         .table_versions(&[table_id])
         .await
         .unwrap()[&table_id]
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_board_stored_by_an_earlier_build_reads_with_its_card_places(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let [going, declined] = insert_statuses(&pool, &guests, &["Going", "Going"]).await[..] else {
+        panic!("two guests");
+    };
+    let going_option = sqlx::query_scalar!(
+        "SELECT id FROM property_options WHERE property_definition_id = $1",
+        guests.status_definition,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let board = ViewId::new();
+    sqlx::query!(
+        r#"INSERT INTO database_views (id, database_id, table_id, name, position, query, layout)
+           VALUES ($1, $2, $3, 'By status', '80', '{"filter": null, "sort": []}',
+                   jsonb_build_object(
+                       'kind', 'board',
+                       'groupBy', $4::uuid,
+                       'lanes', jsonb_build_array(
+                           jsonb_build_object('option', $5::uuid, 'hidden', true),
+                           jsonb_build_object('option', null)
+                       ),
+                       'cardFields', jsonb_build_array(),
+                       'hideEmptyLanes', false
+                   ))"#,
+        board.into_uuid(),
+        guests.database_id.into_uuid(),
+        guests.table_id.into_uuid(),
+        guests.status.into_uuid(),
+        going_option,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query!(
+        r#"INSERT INTO database_view_positions (view_id, row_id, lane, position)
+           VALUES ($1, $2, $3, '80'), ($1, $4, '', '80')"#,
+        board.into_uuid(),
+        going.into_uuid(),
+        going_option.to_string(),
+        declined.into_uuid(),
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let detail = service(&pool)
+        .get_database(super::journal::view_as(USER, guests.database_id))
+        .await
+        .unwrap();
+    let positions = service(&pool)
+        .view_positions(super::journal::view_as(USER, guests.database_id), board)
+        .await
+        .unwrap();
+
+    let going_lane = LaneKey::Option(OptionId::from_uuid(going_option));
+    assert_eq!(
+        detail.tables[0]
+            .views
+            .iter()
+            .find(|view| view.id == board)
+            .unwrap()
+            .layout,
+        ViewLayout::Board {
+            group_by: guests.status,
+            title: guests.name,
+            lanes: vec![
+                Lane {
+                    key: going_lane.clone(),
+                    hidden: true,
+                },
+                Lane {
+                    key: LaneKey::None,
+                    hidden: false,
+                },
+            ],
+            card_fields: vec![],
+            hide_empty_lanes: false,
+        }
+    );
+    // Places read back by stored lane: the empty lane's `''` sorts first.
+    assert_eq!(
+        positions,
+        vec![
+            CardPosition {
+                row: declined,
+                lane: LaneKey::None,
+                position: "80".parse().unwrap(),
+            },
+            CardPosition {
+                row: going,
+                lane: going_lane,
+                position: "80".parse().unwrap(),
+            },
+        ]
+    );
+    assert!(
+        service(&pool)
+            .database_details(viewer())
+            .await
+            .unwrap()
+            .iter()
+            .any(|database| database.database.id == guests.database_id)
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_card_moved_to_a_persons_lane_is_stored_under_them(pool: PgPool) {
+    let guests = guests(&pool).await;
+    let [sam] = insert_statuses(&pool, &guests, &["Going"]).await[..] else {
+        panic!("one guest");
+    };
+    let host = ColumnId::new();
+    let board = ViewId::new();
+    service(&pool)
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![
+                DatabaseOp::Column {
+                    table: guests.table_id,
+                    column: host,
+                    change: ColumnChange::Create {
+                        definition: NewColumn::New {
+                            name: "Host".into(),
+                            kind: ColumnKind::Entity {
+                                target: models_databases::EntityKind::User,
+                                multi: false,
+                            },
+                            options: vec![],
+                            infer_type: false,
+                        },
+                        after: None,
+                    },
+                },
+                DatabaseOp::View {
+                    table: guests.table_id,
+                    view: board,
+                    change: ViewChange::Create {
+                        view: NewView {
+                            name: "By host".into(),
+                            query: ViewQuery::default(),
+                            layout: RequestedLayout::Board {
+                                group_by: host,
+                                title: None,
+                                lanes: vec![],
+                                card_fields: vec![],
+                                hide_empty_lanes: false,
+                            },
+                        },
+                    },
+                },
+            ]
+            .into(),
+        )
+        .await
+        .unwrap();
+    service(&pool)
+        .apply_ops(
+            edit(guests.database_id),
+            viewer(),
+            vec![DatabaseOp::View {
+                table: guests.table_id,
+                view: board,
+                change: ViewChange::MoveCard {
+                    row: sam,
+                    lane: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+                    before: None,
+                    after: None,
+                },
+            }]
+            .into(),
+        )
+        .await
+        .unwrap();
+
+    let stored = sqlx::query_scalar!(
+        "SELECT lane FROM database_view_positions WHERE view_id = $1",
+        board.into_uuid(),
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let positions = service(&pool)
+        .view_positions(super::journal::view_as(USER, guests.database_id), board)
+        .await
+        .unwrap();
+
+    assert_eq!(stored, vec!["user:macro|sam@macro.com".to_string()]);
+    assert_eq!(
+        positions,
+        vec![CardPosition {
+            row: sam,
+            lane: LaneKey::User("macro|sam@macro.com".try_into().unwrap()),
+            position: "80".parse().unwrap(),
+        }]
+    );
 }

@@ -53,13 +53,15 @@ vi.mock('@core/database-sql/wasm-module', () => ({
         );
         const board: Board = {
           lanes: layout.lanes.map((lane) => ({
-            option: lane.option,
+            key: lane.key,
             hidden: !!lane.hidden,
             cards: outcome.rowIds.filter((_rowId, index) => {
               const cell = outcome.rows[index][group];
               const option =
                 cell?.type === 'options' ? (cell.value[0] ?? null) : null;
-              return option === lane.option;
+              return lane.key.kind === 'option'
+                ? option === lane.key.id
+                : option === null;
             }),
           })),
         };
@@ -99,8 +101,8 @@ const statusBoard: DatabaseView = {
     title: 'title',
     groupBy: 'status',
     lanes: [
-      { option: 'done', hidden: false },
-      { option: 'todo', hidden: false },
+      { key: { kind: 'option', id: 'done' }, hidden: false },
+      { key: { kind: 'option', id: 'todo' }, hidden: false },
     ],
     cardFields: [],
     hideEmptyLanes: false,
@@ -1534,7 +1536,9 @@ describe('database table view', () => {
               kind: 'board',
               title: 'title',
               groupBy: 'group',
-              lanes: [{ option: option.id, hidden: false }],
+              lanes: [
+                { key: { kind: 'option', id: option.id }, hidden: false },
+              ],
               cardFields: [],
               hideEmptyLanes: false,
             },

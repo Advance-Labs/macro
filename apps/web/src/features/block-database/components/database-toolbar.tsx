@@ -1,4 +1,8 @@
-import { ContextMenuContent, MenuItem } from '@core/component/ContextMenu';
+import {
+  ContextMenuContent,
+  MenuItem,
+  SubTrigger,
+} from '@core/component/ContextMenu';
 import { ContextMenu } from '@kobalte/core/context-menu';
 import FunnelIcon from '@phosphor/funnel.svg';
 import KanbanIcon from '@phosphor/kanban.svg';
@@ -18,9 +22,10 @@ import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Tooltip } from '@ui/components/Tooltip';
 import type { ResultAsync } from 'neverthrow';
-import { createSignal, type JSX, Show } from 'solid-js';
+import { createSignal, For, type JSX, Show } from 'solid-js';
+import type { BoardGrouping } from '../core/board-grouping';
 import type { DatabaseViewColumn } from '../core/database-view';
-import { movedViewOrder } from '../core/views';
+import { boardGroupColumns, movedViewOrder } from '../core/views';
 import {
   type DatabaseOpFailure,
   databaseOpMessage,
@@ -31,6 +36,11 @@ import { createInlineRename } from './inline-rename';
 import { type NewView, NewViewDialog } from './new-view-dialog';
 import { SortPanel } from './sort-panel';
 import { ToolbarPopover } from './view-control-popover';
+
+/** A layout a stored view can be switched to from its tab's menu. */
+export type ShownLayout =
+  | { kind: 'table' }
+  | { kind: 'board'; groupBy: BoardGrouping };
 
 type DatabaseToolbarProps = {
   columns: DatabaseViewColumn[];
@@ -50,6 +60,11 @@ type DatabaseToolbarProps = {
     name: string
   ) => ResultAsync<void, DatabaseOpFailure>;
   onDeleteView: (view: DatabaseView) => ResultAsync<void, DatabaseOpFailure>;
+  /** Lay a stored view out as a table, or as a board grouped as chosen. */
+  onShowViewAs: (
+    view: DatabaseView,
+    layout: ShownLayout
+  ) => ResultAsync<void, DatabaseOpFailure>;
   /** Every stored view of the table, in its new order. */
   onReorderViews: (order: string[]) => void;
   onCreateRecord?: () => void;
@@ -154,6 +169,17 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
                       onDelete={() => {
                         setViewError('');
                         setDeleting({ view: view() });
+                      }}
+                      columns={props.columns}
+                      onShowAs={(shown) => {
+                        setViewError('');
+                        void props
+                          .onShowViewAs(view(), shown)
+                          .mapErr((failure) =>
+                            setViewError(
+                              databaseOpMessage(failure, 'this view')
+                            )
+                          );
                       }}
                     />
                   )}
@@ -286,6 +312,8 @@ function ViewTab(props: {
   onSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
+  columns: DatabaseViewColumn[];
+  onShowAs: (layout: ShownLayout) => void;
 }) {
   const sortable = createSortable(props.view.id);
   return (
@@ -370,6 +398,53 @@ function ViewTab(props: {
                   shortcut="F2"
                   onClick={props.onRename}
                 />
+                <Show
+                  when={props.view.layout.kind === 'board'}
+                  fallback={
+                    <ContextMenu.Sub>
+                      <SubTrigger text="Show as board" />
+                      <ContextMenuContent submenu class="min-w-44">
+                        <For
+                          each={boardGroupColumns(props.columns)}
+                          fallback={
+                            <MenuItem
+                              text="Create a Status column"
+                              closeOnSelect
+                              onClick={() =>
+                                props.onShowAs({
+                                  kind: 'board',
+                                  groupBy: { kind: 'new-status' },
+                                })
+                              }
+                            />
+                          }
+                        >
+                          {(column) => (
+                            <MenuItem
+                              text={`Group by ${column.name}`}
+                              closeOnSelect
+                              onClick={() =>
+                                props.onShowAs({
+                                  kind: 'board',
+                                  groupBy: {
+                                    kind: 'column',
+                                    columnId: column.id,
+                                  },
+                                })
+                              }
+                            />
+                          )}
+                        </For>
+                      </ContextMenuContent>
+                    </ContextMenu.Sub>
+                  }
+                >
+                  <MenuItem
+                    text="Show as table"
+                    closeOnSelect
+                    onClick={() => props.onShowAs({ kind: 'table' })}
+                  />
+                </Show>
                 <MenuItem
                   text="Delete view"
                   closeOnSelect

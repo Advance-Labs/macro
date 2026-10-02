@@ -40,7 +40,7 @@ Each structure tool returns the refreshed schema.
 - `AddColumn`, `RenameColumn`, `DeleteColumn` and `ReorderColumns` do the same for columns. `AddColumn` takes `specificEntityType` for an entity column (`USER` for a person column).
 - `AddColumnOptions` adds labels to a select or tag column; a write naming a label the column lacks is refused.
 - `ChangeColumnType` converts a column to one of its `safeTypes` or `checkedTypes`. Values that don't fit, and multi-valued cells that a single-valued type would truncate, refuse the change with counts and examples: fix them with UPDATE, or add a new column.
-- `SaveDatabaseView` saves a shared table or board view of one table (filter, sort, layout) by column and option ids, never names; saving under an existing view's name replaces it. A board groups its cards into lanes by a single-select column; no other column type can group one. A card's title is a column, the first by default. Views change presentation, never records, and cannot save charts.
+- `SaveDatabaseView` saves a shared table or board view of one table (filter, sort, layout) by column and option ids, never names; saving under an existing view's name replaces it. A board groups its cards into lanes by a single-select or single-person column; no other column type can group one. A card's title is a column, the first by default; `title` names it. Views change presentation, never records, and cannot save charts. `DeleteDatabaseView` deletes a view by its id, for everyone; only when the user asked for that view to go.
 
 ## Rows
 

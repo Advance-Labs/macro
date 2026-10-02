@@ -6,8 +6,9 @@ use std::collections::HashSet;
 use serde::Serialize;
 
 use crate::cast::CastKind;
+use crate::ops::EntityKind;
 
-use super::{FilterTest, SetOperator, ViewLayout, ViewQuery};
+use super::{FilterTest, LaneKey, SetOperator, ViewLayout, ViewQuery};
 use crate::ids::{ColumnId, OptionId, TableId};
 
 /// What a view's checks need to know of one column of its table.
@@ -17,6 +18,8 @@ pub struct SchemaColumn {
     pub id: ColumnId,
     /// Its name, for messages.
     pub name: String,
+    /// What it holds, as the cast rule reads it.
+    pub kind: CastKind,
     /// The kind of value it holds.
     pub values: ValueKind,
     /// Whether a cell holds several values.
@@ -40,6 +43,7 @@ impl SchemaColumn {
         SchemaColumn {
             id,
             name,
+            kind,
             values,
             multi,
             options: if values == ValueKind::Options {
@@ -141,15 +145,72 @@ pub enum ViewProblem {
     /// A board was asked of a view laid out as a table.
     #[error("the view is not a board")]
     NotABoard,
-    /// A board is grouped by a column that is not a single select.
+    /// A board is grouped by a column that is neither a single select nor
+    /// a single person.
     #[error(
-        "a board is grouped by a single-select column, so each card has one lane; \"{column}\" \
-         is not one"
+        "a board is grouped by a single-select or single-person column, so each card has one \
+         lane; \"{column}\" is neither"
     )]
-    BoardNeedsSingleSelect {
+    BoardCannotGroupBy {
         /// The column's name.
         column: String,
     },
+    /// A lane names an option on a board grouped by people, or a person on
+    /// one grouped by options.
+    #[error("{}", lane_misfit(column, *people))]
+    LaneDoesNotFit {
+        /// The grouping column's name.
+        column: String,
+        /// Whether the column groups the board by people.
+        people: bool,
+    },
+}
+
+fn lane_misfit(column: &str, people: bool) -> String {
+    if people {
+        format!("\"{column}\" groups the board by person; a lane names a person, or no one")
+    } else {
+        format!("\"{column}\" groups the board by option; a lane names one of its options, or none")
+    }
+}
+
+/// What a board's lanes are drawn from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Grouping {
+    /// The options of a single select.
+    Options,
+    /// The people a single-person column names.
+    People,
+}
+
+fn grouping(column: &SchemaColumn) -> Result<Grouping, ViewProblem> {
+    match column.kind {
+        CastKind::Select { multi: false } => Ok(Grouping::Options),
+        CastKind::Entity {
+            target: EntityKind::User,
+            multi: false,
+        } => Ok(Grouping::People),
+        _ => Err(ViewProblem::BoardCannotGroupBy {
+            column: column.name.clone(),
+        }),
+    }
+}
+
+/// Check that `lane` is a lane of a board grouped by `grouping_column`: the
+/// column groups a board, and the lane names one of its options, a person
+/// for a person column, or nothing.
+pub fn check_lane(grouping_column: &SchemaColumn, lane: &LaneKey) -> Result<(), ViewProblem> {
+    let grouping = grouping(grouping_column)?;
+    match (grouping, lane) {
+        (_, LaneKey::None) | (Grouping::People, LaneKey::User(_)) => Ok(()),
+        (Grouping::Options, LaneKey::Option(option)) => known_option(grouping_column, *option),
+        (Grouping::Options, LaneKey::User(_)) | (Grouping::People, LaneKey::Option(_)) => {
+            Err(ViewProblem::LaneDoesNotFit {
+                column: grouping_column.name.clone(),
+                people: grouping == Grouping::People,
+            })
+        }
+    }
 }
 
 fn operator_misfit(column: &str, multi: bool) -> String {
@@ -188,20 +249,14 @@ pub fn check(
             ..
         } => {
             column(*title)?;
-            let grouping = column(*group_by)?;
-            if grouping.values != ValueKind::Options || grouping.multi {
-                return Err(ViewProblem::BoardNeedsSingleSelect {
-                    column: grouping.name.clone(),
-                });
-            }
+            let grouping_column = column(*group_by)?;
+            grouping(grouping_column)?;
             let mut listed = HashSet::new();
             for lane in lanes {
-                if !listed.insert(lane.option) {
+                if !listed.insert(&lane.key) {
                     return Err(ViewProblem::RepeatedLane);
                 }
-                if let Some(option) = lane.option {
-                    known_option(grouping, option)?;
-                }
+                check_lane(grouping_column, &lane.key)?;
             }
             distinct(card_fields.iter().copied(), &column)?;
         }

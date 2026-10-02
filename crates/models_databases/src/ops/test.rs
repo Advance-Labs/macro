@@ -3,6 +3,7 @@ use serde_json::json;
 
 use super::*;
 use crate::ids::PropertyId;
+use crate::views::LaneKey;
 use uuid::Uuid;
 
 const TABLE: TableId = TableId::from_uuid(Uuid::from_u128(0x7ab1));
@@ -468,14 +469,19 @@ fn view_ops_read_their_table_view_and_card_from_json() {
             "kind": "view",
             "table": TABLE,
             "view": view,
-            "change": {"kind": "move_card", "row": SAM, "lane": lane, "before": ALEX},
+            "change": {
+                "kind": "move_card",
+                "row": SAM,
+                "lane": {"kind": "option", "id": lane},
+                "before": ALEX,
+            },
         })),
         DatabaseOp::View {
             table: TABLE,
             view,
             change: ViewChange::MoveCard {
                 row: SAM,
-                lane: Some(lane),
+                lane: LaneKey::Option(lane),
                 before: Some(ALEX),
                 after: None,
             },

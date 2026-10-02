@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use macro_event_broker::MacroEventBroker;
 use models_databases::OptionId;
 use models_databases::position::{Position, PositionError, keys_between};
-use models_databases::views::{Lane, ViewLayout, ViewQuery};
+use models_databases::views::{Lane, LaneKey, ViewLayout, ViewQuery};
 use serde::Serialize;
 
 use super::events::{Attribution, DatabaseCreatedMetadata, DatabaseMacroEvent};
@@ -108,7 +108,7 @@ impl StarterBlueprint {
                     lanes: stage_options
                         .iter()
                         .map(|option| Lane {
-                            option: Some(*option),
+                            key: LaneKey::Option(*option),
                             hidden: false,
                         })
                         .collect(),

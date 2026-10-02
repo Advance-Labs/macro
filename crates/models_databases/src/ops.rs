@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::ids::{ColumnId, DatabaseId, OptionId, PropertyId, RowId, TableId, TableVersion};
 use crate::views::{
-    CardPosition, DatabaseView, NewView, RequestedLayout, ViewId, ViewPosition, ViewQuery,
+    CardPosition, DatabaseView, LaneKey, NewView, RequestedLayout, ViewId, ViewPosition, ViewQuery,
 };
 
 /// One write to a database: its tables, columns, options, rows or views,
@@ -263,17 +263,16 @@ pub enum ViewChange {
     /// Remove the view, with where its cards were.
     Delete,
     /// Move one of the board's cards: into a lane, which sets the row's
-    /// grouping cell to the lane's option (or empties it for the lane
-    /// without one), and to a place there, between two of its cards. Only
-    /// an unsorted board's cards move by hand.
+    /// grouping cell to the lane's option or person (or empties it for the
+    /// lane of empty cells), and to a place there, between two of its
+    /// cards. Only an unsorted board's cards move by hand.
     MoveCard {
         /// The card's row.
         #[schema(value_type = Uuid)]
         row: RowId,
-        /// The lane it goes to: an option of the board's column, or `null`
-        /// for the lane of cards without one.
-        #[schema(required = true, value_type = Option<Uuid>)]
-        lane: Option<OptionId>,
+        /// The lane it goes to: an option of a select board's column, a
+        /// person for a board grouped by people, or the lane of empty cells.
+        lane: LaneKey,
         /// The card that ends up just before it (it lands right after this
         /// one), if any.
         #[serde(default)]

@@ -1053,7 +1053,7 @@ describe('Database', () => {
         title: columnId,
         cardFields: [columnId],
         hideEmptyLanes: false,
-        lanes: [{ option: optionId }],
+        lanes: [{ key: { kind: 'option', id: optionId } }],
       },
       createdAt: '2026-10-01T00:00:00Z',
       updatedAt: '2026-10-01T00:00:00Z',
@@ -1063,7 +1063,13 @@ describe('Database', () => {
       urls.push(request.url);
       if (request.url.endsWith('/positions'))
         return Response.json({
-          positions: [{ row: rowId, lane: optionId, position: 'a0' }],
+          positions: [
+            {
+              row: rowId,
+              lane: { kind: 'option', id: optionId },
+              position: 'a0',
+            },
+          ],
         });
       return Response.json({
         database: { id: databaseId, name: 'Support' },
@@ -1091,11 +1097,11 @@ describe('Database', () => {
       title: columnId,
       cardFields: [columnId],
       hideEmptyLanes: false,
-      lanes: [{ option: optionId }],
+      lanes: [{ key: { kind: 'option', id: optionId } }],
     });
     await expect(view.query()).resolves.toEqual({ filter: null, sort: [] });
     expect(await view.positions()).toEqual([
-      { row: rowId, lane: optionId, position: 'a0' },
+      { row: rowId, lane: { kind: 'option', id: optionId }, position: 'a0' },
     ]);
     expect(urls).toEqual([
       `${host}/databases/${databaseId}`,

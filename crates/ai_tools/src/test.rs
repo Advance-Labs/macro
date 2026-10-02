@@ -61,6 +61,7 @@ fn database_only_toolset_exposes_exactly_its_database_capabilities() {
         "DeleteColumn",
         "ReorderColumns",
         "SaveDatabaseView",
+        "DeleteDatabaseView",
         "SaveDatabaseQuery",
     ]
     .into_iter()

@@ -29,7 +29,9 @@ describe('board card title picker', () => {
               kind: 'board',
               groupBy: 'status',
               title: 'name',
-              lanes: [{ option: 'option-done', hidden: true }],
+              lanes: [
+                { key: { kind: 'option', id: 'option-done' }, hidden: true },
+              ],
               cardFields: ['owner'],
               hideEmptyLanes: true,
             }}
@@ -89,7 +91,7 @@ describe('board card title picker', () => {
       kind: 'board',
       groupBy: 'status',
       title: 'owner',
-      lanes: [{ option: 'option-done', hidden: true }],
+      lanes: [{ key: { kind: 'option', id: 'option-done' }, hidden: true }],
       cardFields: ['owner'],
       hideEmptyLanes: true,
     });

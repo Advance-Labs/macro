@@ -12122,6 +12122,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fractional_index",
+ "macro_user_id",
  "macro_uuid",
  "schemars 1.2.1",
  "serde",

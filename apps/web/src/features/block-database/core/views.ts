@@ -1,9 +1,10 @@
 /** A table's typed views as the grid and board draw them, and the layouts new views start with. */
-import type { FilterNode } from '@core/database-sql/generated/types';
+import type { FilterNode, LaneKey } from '@core/database-sql/generated/types';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import type { ViewColumn } from '@service-storage/generated/schemas/viewColumn';
 import type { ViewLayout } from '@service-storage/generated/schemas/viewLayout';
 import { err, ok, type Result } from 'neverthrow';
+import { match } from 'ts-pattern';
 import { type DatabaseViewColumn, isBoardGroupColumn } from './database-view';
 import { moveBeside } from './move-beside';
 import { titleColumn } from './table';
@@ -105,7 +106,7 @@ export function allRecordsView(table: {
   };
 }
 
-/** The single selects a board can group by. */
+/** The single selects and single-person columns a board can group by. */
 export function boardGroupColumns(
   columns: readonly DatabaseViewColumn[]
 ): DatabaseViewColumn[] {
@@ -135,15 +136,59 @@ export function boardLayout(
   };
 }
 
-/** What a board lane is called: its option's label, or `No <column>` for cards without one. */
+/** A lane as one string: for keyed lists, drop targets and comparing lanes. */
+export function laneId(lane: LaneKey): string {
+  return match(lane)
+    .with({ kind: 'option' }, ({ id }) => `option:${id}`)
+    .with({ kind: 'user' }, ({ id }) => `user:${id}`)
+    .with({ kind: 'none' }, () => 'no-option')
+    .exhaustive();
+}
+
+/** Whether two lane keys name the same lane. */
+export function sameLane(left: LaneKey, right: LaneKey): boolean {
+  return laneId(left) === laneId(right);
+}
+
+/** A person's lane is named by their email, the part of their user id after `macro|`. */
+function personLabel(userId: string): string {
+  const separator = userId.indexOf('|');
+  return separator < 0 ? userId : userId.slice(separator + 1);
+}
+
+/**
+ * What a board lane is called: its option's label, its person, or
+ * `No <column>` for cards with an empty cell.
+ */
 export function laneLabel(
   groupColumn: DatabaseViewColumn,
-  option: string | null
+  lane: LaneKey
 ): string {
-  return (
-    groupColumn.options.find((entry) => entry.id === option)?.label ??
-    `No ${groupColumn.name.toLocaleLowerCase()}`
-  );
+  const empty = `No ${groupColumn.name.toLocaleLowerCase()}`;
+  return match(lane)
+    .with(
+      { kind: 'option' },
+      ({ id }) =>
+        groupColumn.options.find((entry) => entry.id === id)?.label ?? empty
+    )
+    .with({ kind: 'user' }, ({ id }) => personLabel(id))
+    .with({ kind: 'none' }, () => empty)
+    .exhaustive();
+}
+
+/** The grid value a card created in `lane` starts with in the grouping column. */
+export function laneValue(
+  groupColumn: DatabaseViewColumn,
+  lane: LaneKey
+): string | undefined {
+  return match(lane)
+    .with(
+      { kind: 'option' },
+      ({ id }) => groupColumn.options.find((option) => option.id === id)?.label
+    )
+    .with({ kind: 'user' }, ({ id }) => id)
+    .with({ kind: 'none' }, () => undefined)
+    .exhaustive();
 }
 
 type BoardLayout = Extract<ViewLayout, { kind: 'board' }>;
@@ -159,14 +204,14 @@ export function cardTitleColumn(
 /** The board with its lanes in `order`, keeping each lane's hidden flag. */
 export function withLaneOrder(
   layout: BoardLayout,
-  order: readonly (string | null)[]
+  order: readonly LaneKey[]
 ): BoardLayout {
   return {
     ...layout,
-    lanes: order.map((option) => ({
-      option,
+    lanes: order.map((key) => ({
+      key,
       hidden: layout.lanes.some(
-        (lane) => lane.option === option && lane.hidden
+        (lane) => sameLane(lane.key, key) && !!lane.hidden
       ),
     })),
   };
@@ -175,17 +220,17 @@ export function withLaneOrder(
 /** The board with one lane hidden or shown; the lanes it lists keep their order. */
 export function withLaneHidden(
   layout: BoardLayout,
-  option: string | null,
+  key: LaneKey,
   hidden: boolean
 ): BoardLayout {
-  const listed = layout.lanes.some((lane) => lane.option === option);
+  const listed = layout.lanes.some((lane) => sameLane(lane.key, key));
   return {
     ...layout,
     lanes: listed
       ? layout.lanes.map((lane) =>
-          lane.option === option ? { ...lane, hidden } : lane
+          sameLane(lane.key, key) ? { ...lane, hidden } : lane
         )
-      : [...layout.lanes, { option, hidden }],
+      : [...layout.lanes, { key, hidden }],
   };
 }
 
