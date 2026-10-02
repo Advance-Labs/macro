@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use super::{PgDatabasesRepoError, uuids};
 use crate::domain::journal::{
-    ChangeInverse, JournalActor, JournalEntry, JournaledRowChange, StoredChange,
+    ChangeInverse, ChangeRecord, ColumnTouch, JournalActor, JournalEntry, JournaledRowChange,
+    RowTouch, StoredChange,
 };
 use crate::domain::models::{
     ChangeId, ColumnId, CommittedChange, DatabaseId, RowId, TableId, TableVersion,
@@ -246,4 +247,132 @@ pub(crate) fn by_row<Value>(
         }
     }
     rows
+}
+
+/// One change by id, in a database, with what it touched.
+pub(crate) async fn change(
+    connection: &mut PgConnection,
+    database_id: DatabaseId,
+    change: ChangeId,
+) -> Result<Option<ChangeRecord>, PgDatabasesRepoError> {
+    let records = sqlx::query!(
+        r#"SELECT id, table_id, version, actor, acting_bot, at, ops, inverse
+           FROM database_changes WHERE id = $1 AND database_id = $2"#,
+        change.0,
+        database_id.into_uuid(),
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let changes = records
+        .into_iter()
+        .map(|record| {
+            Ok(StoredChange {
+                id: ChangeId(record.id),
+                table: TableId::from_uuid(record.table_id),
+                version: TableVersion(record.version),
+                actor: record.actor,
+                acting_bot: record.acting_bot,
+                at: record.at,
+                ops: serde_json::from_value(record.ops)?,
+                inverse: serde_json::from_value(record.inverse)?,
+            })
+        })
+        .collect::<Result<Vec<_>, PgDatabasesRepoError>>()?;
+    Ok(with_touches(connection, changes).await?.into_iter().next())
+}
+
+/// A table's changes after a version, oldest first, with what each touched.
+pub(crate) async fn changes_after(
+    connection: &mut PgConnection,
+    table: TableId,
+    version: TableVersion,
+) -> Result<Vec<ChangeRecord>, PgDatabasesRepoError> {
+    let records = sqlx::query!(
+        r#"SELECT id, table_id, version, actor, acting_bot, at, ops, inverse
+           FROM database_changes WHERE table_id = $1 AND version > $2
+           ORDER BY version"#,
+        table.into_uuid(),
+        version.0,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let changes = records
+        .into_iter()
+        .map(|record| {
+            Ok(StoredChange {
+                id: ChangeId(record.id),
+                table: TableId::from_uuid(record.table_id),
+                version: TableVersion(record.version),
+                actor: record.actor,
+                acting_bot: record.acting_bot,
+                at: record.at,
+                ops: serde_json::from_value(record.ops)?,
+                inverse: serde_json::from_value(record.inverse)?,
+            })
+        })
+        .collect::<Result<Vec<_>, PgDatabasesRepoError>>()?;
+    with_touches(connection, changes).await
+}
+
+/// The changes with the rows and columns each touched.
+async fn with_touches(
+    connection: &mut PgConnection,
+    changes: Vec<StoredChange>,
+) -> Result<Vec<ChangeRecord>, PgDatabasesRepoError> {
+    if changes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ids: Vec<i64> = changes.iter().map(|change| change.id.0).collect();
+    let rows = sqlx::query!(
+        "SELECT change_id, row_id, kind, columns FROM database_change_rows WHERE change_id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let columns = sqlx::query!(
+        "SELECT change_id, column_id, kind FROM database_change_columns WHERE change_id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let mut records: Vec<ChangeRecord> = changes
+        .into_iter()
+        .map(|change| ChangeRecord {
+            change,
+            rows: Vec::new(),
+            columns: Vec::new(),
+        })
+        .collect();
+    for row in rows {
+        let kind = row
+            .kind
+            .parse()
+            .map_err(|_| PgDatabasesRepoError::CorruptChangeKind(row.kind.clone()))?;
+        if let Some(record) = records
+            .iter_mut()
+            .find(|record| record.change.id.0 == row.change_id)
+        {
+            record.rows.push(RowTouch {
+                row: RowId::from_uuid(row.row_id),
+                kind,
+                columns: row.columns.into_iter().map(ColumnId::from_uuid).collect(),
+            });
+        }
+    }
+    for column in columns {
+        let kind = column
+            .kind
+            .parse()
+            .map_err(|_| PgDatabasesRepoError::CorruptChangeKind(column.kind.clone()))?;
+        if let Some(record) = records
+            .iter_mut()
+            .find(|record| record.change.id.0 == column.change_id)
+        {
+            record.columns.push(ColumnTouch {
+                column: ColumnId::from_uuid(column.column_id),
+                kind,
+            });
+        }
+    }
+    Ok(records)
 }

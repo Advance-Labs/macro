@@ -203,6 +203,24 @@ impl DatabasesService for FakeService {
         unimplemented!("no tool converts a column into a new one")
     }
 
+    async fn apply_ops_with_changes(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: crate::domain::models::Viewer,
+        _batch: crate::domain::models::OpBatch,
+    ) -> Result<crate::domain::models::AppliedOps, DatabaseError> {
+        unimplemented!("the toolset does not undo")
+    }
+
+    async fn undo_change(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: crate::domain::models::Viewer,
+        _change: crate::domain::models::ChangeId,
+    ) -> Result<crate::domain::journal::UndoOutcome, DatabaseError> {
+        unimplemented!("the toolset does not undo")
+    }
+
     async fn row_history(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

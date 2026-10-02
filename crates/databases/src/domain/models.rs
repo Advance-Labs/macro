@@ -387,8 +387,9 @@ pub enum Write {
         /// The version its cells were read at; `None` for a column of a
         /// table the batch created, which has no stored cells.
         read_version: Option<TableVersion>,
-        /// The definition to create.
-        definition: NewDefinition,
+        /// The definition to create; `None` to bind back one the column had
+        /// before, which still exists with its options.
+        definition: Option<NewDefinition>,
         /// The rebind and its converted cells.
         replacement: ColumnReplacement,
         /// The table's views whose filters tested the old values, without
@@ -703,6 +704,16 @@ pub struct CommittedChange {
     /// The journal's id of the change.
     #[schema(value_type = i64)]
     pub change: ChangeId,
+}
+
+/// What a committed batch answers: a result per op, and the journal's change
+/// for each table version it produced.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppliedOps {
+    /// One result per op, in order.
+    pub results: Vec<models_databases::OpResult>,
+    /// The journal's changes.
+    pub changes: Vec<CommittedChange>,
 }
 
 /// A batch of ops for one database and the versions its tables must be at.

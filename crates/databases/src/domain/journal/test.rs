@@ -628,14 +628,14 @@ fn a_type_change_is_undone_by_the_old_type_with_the_old_definition_and_cells() {
     let write = Write::ReplaceColumn {
         table_id: GUESTS,
         read_version: Some(TableVersion(7)),
-        definition: NewDefinition {
+        definition: Some(NewDefinition {
             id: Uuid::from_u128(0xe8),
             name: "Extra guests".into(),
             data_type: models_properties::shared::DataType::String,
             is_multi_select: false,
             specific_entity_type: None,
             options: Vec::new(),
-        },
+        }),
         replacement: ColumnReplacement {
             column: Column {
                 id: PLUS_ONES,

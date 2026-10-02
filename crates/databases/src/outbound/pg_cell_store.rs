@@ -498,8 +498,10 @@ where
                 views,
                 ..
             } => {
-                self.create_definition(transaction, database_id, definition)
-                    .await?;
+                if let Some(definition) = definition {
+                    self.create_definition(transaction, database_id, definition)
+                        .await?;
+                }
                 if !schema::rebind_column(transaction, *table_id, replacement).await? {
                     return refused(WritesOutcome::MissingColumn { write: index });
                 }

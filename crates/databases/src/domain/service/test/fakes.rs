@@ -368,6 +368,35 @@ impl DatabasesRepo for FakeRepo {
         self.0.lock().unwrap().queries.push(saved.clone());
         Ok(saved)
     }
+    async fn change(
+        &self,
+        database_id: DatabaseId,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<Option<crate::domain::journal::ChangeRecord>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .find(|journaled| journaled.id == change && journaled.entry.database_id == database_id)
+            .map(Self::record))
+    }
+
+    async fn changes_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::ChangeRecord>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .filter(|journaled| {
+                journaled.entry.table == table_id && journaled.entry.version > version
+            })
+            .map(Self::record)
+            .collect())
+    }
+
     async fn row_history(
         &self,
         database_id: DatabaseId,
@@ -391,6 +420,23 @@ impl DatabasesRepo for FakeRepo {
 }
 
 impl FakeRepo {
+    fn record(change: &JournaledChange) -> crate::domain::journal::ChangeRecord {
+        crate::domain::journal::ChangeRecord {
+            change: crate::domain::journal::StoredChange {
+                id: change.id,
+                table: change.entry.table,
+                version: change.entry.version,
+                actor: Some(change.actor.clone()),
+                acting_bot: None,
+                at: chrono::DateTime::UNIX_EPOCH,
+                ops: change.entry.ops.clone(),
+                inverse: change.entry.inverse.clone(),
+            },
+            rows: change.entry.rows.clone(),
+            columns: change.entry.columns.clone(),
+        }
+    }
+
     fn history(
         world: &World,
         database_id: DatabaseId,

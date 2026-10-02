@@ -308,7 +308,9 @@ pub(super) fn apply_in_world(
                 if !rewrite_views(world, views) {
                     return Ok(WritesOutcome::MissingView { write: index });
                 }
-                store_definition(world, writes.database_id, definition);
+                if let Some(definition) = definition {
+                    store_definition(world, writes.database_id, definition);
+                }
                 drop_column_cells(world, *table_id, replacement.column.property_definition_id);
                 for (row, value) in &replacement.values {
                     world

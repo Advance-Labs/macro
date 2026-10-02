@@ -50,6 +50,7 @@ mod saved_queries;
 mod schema_ops;
 mod sharing;
 mod tables;
+mod undo;
 mod views;
 
 use fakes::*;

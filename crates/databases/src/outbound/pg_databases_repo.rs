@@ -546,6 +546,26 @@ where
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn change(
+        &self,
+        database_id: DatabaseId,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<Option<crate::domain::journal::ChangeRecord>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::change(&mut connection, database_id, change).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn changes_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::ChangeRecord>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::changes_after(&mut connection, table_id, version).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn row_history(
         &self,
         database_id: DatabaseId,

@@ -4,6 +4,7 @@
 //! everything here is pure.
 
 mod entries;
+mod guard;
 mod invert;
 #[cfg(test)]
 mod test;
@@ -22,6 +23,7 @@ use models_properties::service::property_value::PropertyValue;
 use serde::{Deserialize, Serialize};
 
 pub use entries::{entries, reads};
+pub use guard::{Current, Guarded, SkippedCell, UndoRefusal, guard};
 pub use invert::{Planned, invert};
 
 use crate::domain::catalog::entity_kind;
@@ -63,6 +65,27 @@ impl CellImage {
     /// One row's cells; `None` when it has none here.
     pub fn row(&self, row: RowId) -> Option<&BTreeMap<ColumnId, CellValue>> {
         self.cells.get(&row)
+    }
+}
+
+/// What an undo batch puts back that ops alone cannot: the ids and positions
+/// of the rows its inserts restore, and the definitions its type changes
+/// bind back, each by the op's index in the batch.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Restoration {
+    /// The rows each row insert puts back.
+    pub rows: BTreeMap<usize, Vec<RestoredRow>>,
+    /// The definition each type change binds back.
+    pub rebinds: BTreeMap<usize, PropertyDefinitionId>,
+}
+
+impl ChangeInverse {
+    /// What applying the inverse's ops puts back beyond them.
+    pub fn restoration(&self) -> Restoration {
+        Restoration {
+            rows: self.restored_rows.clone(),
+            rebinds: self.rebinds.clone(),
+        }
     }
 }
 
@@ -577,4 +600,44 @@ pub fn row_history(row: RowId, changes: Vec<JournaledRowChange>) -> Vec<RowHisto
             }
         })
         .collect()
+}
+
+/// One change with the rows and columns it touched, as an undo reads the
+/// journal.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChangeRecord {
+    /// The change.
+    pub change: StoredChange,
+    /// The rows it touched.
+    pub rows: Vec<RowTouch>,
+    /// The columns it touched.
+    pub columns: Vec<ColumnTouch>,
+}
+
+/// What undoing a change did.
+#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UndoOutcome {
+    /// Everything the change did is undone.
+    Reverted {
+        /// The journal's changes the undo made, one per table version; undo
+        /// one of them to redo.
+        changes: Vec<crate::domain::models::CommittedChange>,
+    },
+    /// Some cells were changed by someone since, and were left alone; the
+    /// rest is undone. With no changes, nothing was left to undo.
+    Partial {
+        /// The cells left alone, each with who changed it.
+        skipped: Vec<SkippedCell>,
+        /// The journal's changes the undo made.
+        changes: Vec<crate::domain::models::CommittedChange>,
+    },
+    /// Nothing was undone.
+    Refused {
+        /// Why.
+        reason: UndoRefusal,
+        /// Whose change stands in the way, when one does.
+        #[schema(required = true)]
+        by: Option<String>,
+    },
 }

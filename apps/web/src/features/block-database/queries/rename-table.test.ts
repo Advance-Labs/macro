@@ -39,6 +39,7 @@ const answer: ApplyOpsResponse = {
       change: { kind: 'renamed' },
     },
   ],
+  changes: [],
 };
 const detail: DatabaseDetail = {
   database: {

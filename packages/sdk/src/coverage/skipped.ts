@@ -357,6 +357,9 @@ export const storageExcluded = [
   'shareDatabaseAwareness',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
+  // The web app's Ctrl+Z over the viewer's own session edits; the SDK's
+  // applyOps does not surface the journal changes an undo names.
+  'undoDatabaseChange',
   'uploadExtractFolderHandler',
   'uploadFolderHandler',
   'upsertHistoryHandler',

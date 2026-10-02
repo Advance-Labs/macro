@@ -49,7 +49,7 @@ impl Planner {
                             .collect())
                     })
                     .collect::<Result<Vec<_>, DatabaseError>>()?;
-                let restored = self.restored_rows.remove(&index).unwrap_or_default();
+                let restored = self.restoration.rows.remove(&index).unwrap_or_default();
                 if !restored.is_empty() && restored.len() != rows.len() {
                     return Err(refuse(
                         index,

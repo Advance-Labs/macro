@@ -21,10 +21,8 @@ use models_properties::service::property_definition_with_options::PropertyDefini
 
 use super::*;
 use crate::domain::catalog::ColumnEntry;
-use std::collections::BTreeMap;
-
-use crate::domain::journal::{JournalPlan, RestoredRow};
-use crate::domain::models::CommittedChange;
+use crate::domain::journal::{JournalPlan, Restoration};
+use crate::domain::models::{AppliedOps, CommittedChange};
 use crate::domain::models::{
     DatabaseView, OpBatch, OpRefusal, PropertyDefinitionId, RowId, ViewId, Write, Writes,
     WritesOutcome,
@@ -53,24 +51,24 @@ where
         viewer: Viewer,
         batch: OpBatch,
     ) -> Result<Vec<OpResult>, DatabaseError> {
-        self.apply_batch(&receipt, &viewer, &batch, &BTreeMap::new())
+        self.apply_batch(&receipt, &viewer, &batch, &Restoration::default())
             .await
             .map(|applied| applied.results)
     }
 
-    /// Apply a batch, putting the rows `restored_rows` names back under
-    /// their ids and positions: each entry is the index of a row insert of
-    /// the batch, and the rows it puts back, one per inserted row.
+    /// Apply a batch as an undo does: its row inserts put rows back under
+    /// the ids and positions `restoration` gives them, and its type changes
+    /// bind columns back to the definitions it names.
     pub(crate) async fn apply_batch(
         &self,
         receipt: &EntityAccessReceipt<EditAccessLevel>,
         viewer: &Viewer,
         batch: &OpBatch,
-        restored_rows: &BTreeMap<usize, Vec<RestoredRow>>,
-    ) -> Result<AppliedBatch, DatabaseError> {
+        restoration: &Restoration,
+    ) -> Result<AppliedOps, DatabaseError> {
         for _ in 0..MAX_PLANNING_ATTEMPTS {
             if let Some(applied) = self
-                .plan_and_apply(receipt, viewer, batch, restored_rows)
+                .plan_and_apply(receipt, viewer, batch, restoration)
                 .await?
             {
                 return Ok(applied);
@@ -87,8 +85,8 @@ where
         receipt: &EntityAccessReceipt<EditAccessLevel>,
         viewer: &Viewer,
         batch: &OpBatch,
-        restored_rows: &BTreeMap<usize, Vec<RestoredRow>>,
-    ) -> Result<Option<AppliedBatch>, DatabaseError> {
+        restoration: &Restoration,
+    ) -> Result<Option<AppliedOps>, DatabaseError> {
         let OpBatch { ops, base_versions } = batch;
         let ops = ops.as_slice();
         let database_id = receipt_database_id(receipt)?;
@@ -111,7 +109,18 @@ where
         }
         let attribution = receipt_attribution(receipt);
 
-        let found = self.found_for(&entries, viewer, ops).await?;
+        let mut found = self.found_for(&entries, viewer, ops).await?;
+        let rebound: Vec<PropertyDefinitionId> = restoration.rebinds.values().copied().collect();
+        if !rebound.is_empty() {
+            found.rebound = self
+                .definitions
+                .definitions(&rebound)
+                .await
+                .map_err(repository_error)?
+                .into_iter()
+                .map(|definition| (definition.definition.id, definition))
+                .collect();
+        }
         let editable = self
             .editable_shared_definitions(&entries, &found, database_id, viewer, ops)
             .await?;
@@ -131,7 +140,7 @@ where
             written_tables: HashSet::new(),
             created_tables: HashSet::new(),
             changed_options: HashSet::new(),
-            restored_rows: restored_rows.clone(),
+            restoration: restoration.clone(),
         };
         let writes = ops
             .iter()
@@ -181,7 +190,7 @@ where
         }));
         self.publish(attribution, &changes).await;
         let journaled = committed.changes.clone();
-        Ok(Some(AppliedBatch {
+        Ok(Some(AppliedOps {
             results: op_results(&entries, ops, &writes, committed)?,
             changes: journaled,
         }))
@@ -494,16 +503,6 @@ struct Committed {
     table_versions: HashMap<TableId, TableVersion>,
     /// The journal's change for each table version.
     changes: Vec<CommittedChange>,
-}
-
-/// What a committed batch answers: a result per op, and the journal's
-/// change for each table version it produced.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct AppliedBatch {
-    /// One result per op, in order.
-    pub(crate) results: Vec<OpResult>,
-    /// The journal's changes.
-    pub(crate) changes: Vec<CommittedChange>,
 }
 
 /// What the cell store committed, or the op its refusal points at.
@@ -855,6 +854,8 @@ struct Found {
     relation_targets: HashMap<DatabaseId, Option<Vec<TableId>>>,
     /// The stored cells of each column the batch retypes.
     cells: HashMap<ColumnId, ColumnCells>,
+    /// The earlier definitions the batch binds columns back to.
+    rebound: HashMap<PropertyDefinitionId, PropertyDefinitionWithOptions>,
 }
 
 /// Turns ops into writes against one database's catalog, as the ops before
@@ -886,8 +887,8 @@ struct Planner {
     created_tables: HashSet<TableId>,
     /// The definitions whose options an op so far changed.
     changed_options: HashSet<PropertyDefinitionId>,
-    /// The rows each row insert of the batch puts back, by the op's index.
-    restored_rows: BTreeMap<usize, Vec<RestoredRow>>,
+    /// What the batch's row inserts put back and its type changes bind back.
+    restoration: Restoration,
 }
 
 /// Where in the batch a cell is: its op, the row's index within the op

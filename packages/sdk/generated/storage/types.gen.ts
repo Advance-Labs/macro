@@ -1196,6 +1196,11 @@ export type ApplyOpsRequest = {
  */
 export type ApplyOpsResponse = {
     /**
+     * The journal's change for each table version the batch produced: the
+     * ids `POST /databases/{id}/changes/{change}/undo` takes.
+     */
+    changes: Array<CommittedChange>;
+    /**
      * One result per op, in the order the ops were sent. Each is grouped as
      * its op is: the same outer `kind`, naming the same ids, with a
      * `change` saying what happened.
@@ -3716,6 +3721,25 @@ export type Comment = {
 export type CommentThread = {
     comments: Array<Comment>;
     thread: Thread;
+};
+
+/**
+ * One change a committed batch journaled: a table, the version the batch
+ * produced, and the journal's id for it.
+ */
+export type CommittedChange = {
+    /**
+     * The journal's id of the change.
+     */
+    change: number;
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * The version the batch produced.
+     */
+    version: TableVersion;
 };
 
 /**
@@ -10413,6 +10437,25 @@ export type SimpleMention = {
 };
 
 /**
+ * A cell an undo left alone, because someone changed it after the change
+ * being undone.
+ */
+export type SkippedCell = {
+    /**
+     * Who changed it since, from the journal; `null` when unknown.
+     */
+    by: string | null;
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * The row.
+     */
+    row: string;
+};
+
+/**
  * A channel visible to the caller that matches a smart tag rule.
  */
 export type SmartTagChannelMatch = {
@@ -12488,6 +12531,55 @@ export type TypingInput = {
      */
     thread_id?: string | null;
 };
+
+/**
+ * What undoing a change did.
+ */
+export type UndoChangeResponse = {
+    /**
+     * The outcome: reverted, partly reverted with the cells others changed
+     * since left alone, or refused with why and whose change stands in the
+     * way.
+     */
+    outcome: UndoOutcome;
+};
+
+/**
+ * What undoing a change did.
+ */
+export type UndoOutcome = {
+    /**
+     * The journal's changes the undo made, one per table version; undo
+     * one of them to redo.
+     */
+    changes: Array<CommittedChange>;
+    kind: 'reverted';
+} | {
+    /**
+     * The journal's changes the undo made.
+     */
+    changes: Array<CommittedChange>;
+    kind: 'partial';
+    /**
+     * The cells left alone, each with who changed it.
+     */
+    skipped: Array<SkippedCell>;
+} | {
+    /**
+     * Whose change stands in the way, when one does.
+     */
+    by: string | null;
+    kind: 'refused';
+    /**
+     * Why.
+     */
+    reason: UndoRefusal;
+};
+
+/**
+ * Why an undo was refused. Nothing was written.
+ */
+export type UndoRefusal = 'not_yours' | 'not_undoable' | 'row_edited_since' | 'column_written_since' | 'changed_since' | 'already_back';
 
 export type UnthreadedPdfUuidRequest = {
     attachmentType: 'highlight';
@@ -16465,6 +16557,50 @@ export type ShareDatabaseAwarenessResponses = {
 };
 
 export type ShareDatabaseAwarenessResponse = ShareDatabaseAwarenessResponses[keyof ShareDatabaseAwarenessResponses];
+
+export type UndoDatabaseChangeData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * The change's journal id
+         */
+        change: number;
+    };
+    query?: never;
+    url: '/databases/{id}/changes/{change}/undo';
+};
+
+export type UndoDatabaseChangeErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    /**
+     * No such change in this database
+     */
+    404: ErrorResponse;
+    /**
+     * The table kept moving under the undo
+     */
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UndoDatabaseChangeError = UndoDatabaseChangeErrors[keyof UndoDatabaseChangeErrors];
+
+export type UndoDatabaseChangeResponses = {
+    200: UndoChangeResponse;
+};
+
+export type UndoDatabaseChangeResponse = UndoDatabaseChangeResponses[keyof UndoDatabaseChangeResponses];
 
 export type ImportDatabaseTableData = {
     body: ImportTable;

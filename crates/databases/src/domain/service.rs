@@ -10,6 +10,7 @@ mod sharing;
 #[cfg(test)]
 mod test;
 mod transfer;
+mod undo;
 mod views;
 
 use std::collections::{HashMap, HashSet};
@@ -754,6 +755,32 @@ where
         batch: OpBatch,
     ) -> Result<Vec<models_databases::OpResult>, DatabaseError> {
         self.apply_database_ops(receipt, viewer, batch).await
+    }
+
+    #[tracing::instrument(skip(self, receipt, viewer, batch), err)]
+    async fn apply_ops_with_changes(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        batch: OpBatch,
+    ) -> Result<crate::domain::models::AppliedOps, DatabaseError> {
+        self.apply_batch(
+            &receipt,
+            &viewer,
+            &batch,
+            &crate::domain::journal::Restoration::default(),
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self, receipt, viewer), err)]
+    async fn undo_change(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<crate::domain::journal::UndoOutcome, DatabaseError> {
+        self.undo(receipt, viewer, change).await
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

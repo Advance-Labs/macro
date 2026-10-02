@@ -7184,6 +7184,117 @@ export const shareDatabaseAwarenessBody = zod
   );
 
 /**
+ * @summary Undo one of your own committed changes: its inverse applies as a new,
+journaled batch, under the table's lock, guarded against what others
+changed since. A cell someone changed since is left alone and listed; a
+row or column you added that someone else wrote since, or a name, option,
+order, view or card place changed since, refuses the undo. Others'
+changes always stay. Redo by undoing the undo's change.
+ */
+export const undoDatabaseChangeParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  change: zod.number().describe("The change's journal id"),
+});
+
+export const undoDatabaseChangeResponse = zod
+  .object({
+    outcome: zod
+      .union([
+        zod
+          .object({
+            changes: zod
+              .array(
+                zod
+                  .object({
+                    change: zod
+                      .number()
+                      .describe("The journal's id of the change."),
+                    table: zod.uuid().describe('The table.'),
+                    version: zod
+                      .number()
+                      .describe(
+                        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                      ),
+                  })
+                  .describe(
+                    "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+                  )
+              )
+              .describe(
+                "The journal's changes the undo made, one per table version; undo\none of them to redo."
+              ),
+            kind: zod.enum(['reverted']),
+          })
+          .describe('Everything the change did is undone.'),
+        zod
+          .object({
+            changes: zod
+              .array(
+                zod
+                  .object({
+                    change: zod
+                      .number()
+                      .describe("The journal's id of the change."),
+                    table: zod.uuid().describe('The table.'),
+                    version: zod
+                      .number()
+                      .describe(
+                        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                      ),
+                  })
+                  .describe(
+                    "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+                  )
+              )
+              .describe("The journal's changes the undo made."),
+            kind: zod.enum(['partial']),
+            skipped: zod
+              .array(
+                zod
+                  .object({
+                    by: zod
+                      .string()
+                      .nullable()
+                      .describe(
+                        'Who changed it since, from the journal; `null` when unknown.'
+                      ),
+                    column: zod.uuid().describe('The column.'),
+                    row: zod.uuid().describe('The row.'),
+                  })
+                  .describe(
+                    'A cell an undo left alone, because someone changed it after the change\nbeing undone.'
+                  )
+              )
+              .describe('The cells left alone, each with who changed it.'),
+          })
+          .describe(
+            'Some cells were changed by someone since, and were left alone; the\nrest is undone. With no changes, nothing was left to undo.'
+          ),
+        zod
+          .object({
+            by: zod
+              .string()
+              .nullable()
+              .describe('Whose change stands in the way, when one does.'),
+            kind: zod.enum(['refused']),
+            reason: zod
+              .enum([
+                'not_yours',
+                'not_undoable',
+                'row_edited_since',
+                'column_written_since',
+                'changed_since',
+                'already_back',
+              ])
+              .describe('Why an undo was refused. Nothing was written.'),
+          })
+          .describe('Nothing was undone.'),
+      ])
+      .describe('What undoing a change did.'),
+  })
+  .describe('What undoing a change did.');
+
+/**
  * @summary Import a new table and every row atomically; retries carry the same request ID.
  */
 export const importDatabaseTableParams = zod.object({
@@ -9037,6 +9148,25 @@ export const applyDatabaseOpsResponseResultsItemChangeViewLayoutColumnsItemWidth
 
 export const applyDatabaseOpsResponse = zod
   .object({
+    changes: zod
+      .array(
+        zod
+          .object({
+            change: zod.number().describe("The journal's id of the change."),
+            table: zod.uuid().describe('The table.'),
+            version: zod
+              .number()
+              .describe(
+                "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+              ),
+          })
+          .describe(
+            "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+          )
+      )
+      .describe(
+        "The journal's change for each table version the batch produced: the\nids `POST \/databases\/{id}\/changes\/{change}\/undo` takes."
+      ),
     results: zod
       .array(
         zod

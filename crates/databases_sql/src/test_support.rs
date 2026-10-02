@@ -124,6 +124,24 @@ pub(crate) fn sql(
 pub(crate) struct FakeDatabases(pub(crate) Shared);
 
 impl DatabasesService for FakeDatabases {
+    async fn apply_ops_with_changes(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: databases::domain::models::Viewer,
+        _batch: databases::domain::models::OpBatch,
+    ) -> Result<databases::domain::models::AppliedOps, DatabaseError> {
+        unimplemented!("the SQL adapter does not undo")
+    }
+
+    async fn undo_change(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: databases::domain::models::Viewer,
+        _change: databases::domain::models::ChangeId,
+    ) -> Result<databases::domain::journal::UndoOutcome, DatabaseError> {
+        unimplemented!("the SQL adapter does not undo")
+    }
+
     async fn row_history(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

@@ -247,6 +247,28 @@ impl DatabasesService for RecordingService {
         }
     }
 
+    async fn apply_ops_with_changes(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        batch: OpBatch,
+    ) -> Result<crate::domain::models::AppliedOps, DatabaseError> {
+        let results = self.apply_ops(receipt, viewer, batch).await?;
+        Ok(crate::domain::models::AppliedOps {
+            results,
+            changes: Vec::new(),
+        })
+    }
+
+    async fn undo_change(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: crate::domain::models::Viewer,
+        _change: crate::domain::models::ChangeId,
+    ) -> Result<crate::domain::journal::UndoOutcome, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+
     async fn row_history(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,

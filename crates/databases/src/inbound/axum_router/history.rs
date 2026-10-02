@@ -1,5 +1,5 @@
-use crate::domain::journal::RowHistoryEntry;
-use crate::domain::models::RowId;
+use crate::domain::journal::{RowHistoryEntry, UndoOutcome};
+use crate::domain::models::{ChangeId, RowId};
 
 use super::*;
 
@@ -61,4 +61,70 @@ where
         .row_history(access.entity_access_receipt, path.table_id, path.row_id)
         .await?;
     Ok(Json(RowHistoryResponse { changes }))
+}
+
+/// What undoing a change did.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoChangeResponse {
+    /// The outcome: reverted, partly reverted with the cells others changed
+    /// since left alone, or refused with why and whose change stands in the
+    /// way.
+    pub outcome: UndoOutcome,
+}
+
+/// Path params for a change's routes.
+#[derive(Debug, Deserialize)]
+pub struct ChangePath {
+    /// Database id.
+    pub id: DatabaseId,
+    /// The change's id in the journal, from an ops response.
+    pub change: i64,
+}
+
+/// Undo one of your own committed changes: its inverse applies as a new,
+/// journaled batch, under the table's lock, guarded against what others
+/// changed since. A cell someone changed since is left alone and listed; a
+/// row or column you added that someone else wrote since, or a name, option,
+/// order, view or card place changed since, refuses the undo. Others'
+/// changes always stay. Redo by undoing the undo's change.
+#[utoipa::path(
+    post,
+    tag = "databases",
+    operation_id = "undo_database_change",
+    path = "/databases/{id}/changes/{change}/undo",
+    params(
+        ("id" = Uuid, Path, description = "Database id"),
+        ("change" = i64, Path, description = "The change's journal id"),
+    ),
+    responses(
+        (status = 200, body = UndoChangeResponse),
+        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
+        (status = 403, description = "No edit access to the database", body = ErrorResponse),
+        (status = 404, description = "No such change in this database", body = ErrorResponse),
+        (status = 409, description = "The table kept moving under the undo", body = ErrorResponse),
+        (status = 500, body = ErrorResponse),
+    )
+)]
+#[tracing::instrument(err, skip_all)]
+pub async fn undo_change_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<EditAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    user: MacroAuthorizationExtractor<Authorization, UserOrInternal>,
+    Path(path): Path<ChangePath>,
+) -> Result<Json<UndoChangeResponse>, DatabaseError>
+where
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
+{
+    let outcome = state
+        .service
+        .undo_change(
+            access.entity_access_receipt,
+            viewer_of(&user),
+            ChangeId(path.change),
+        )
+        .await?;
+    Ok(Json(UndoChangeResponse { outcome }))
 }

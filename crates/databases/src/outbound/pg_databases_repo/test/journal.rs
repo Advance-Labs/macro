@@ -28,21 +28,21 @@ use crate::domain::ports::{CellStore, DatabasesRepo, DatabasesService};
 use crate::outbound::pg_cell_store::PgCellStore;
 use crate::outbound::pg_databases_repo::PgDatabasesRepo;
 
-const WOLF: &str = "macro|wolf@macro.com";
-const JULIA: &str = "macro|julia@macro.com";
+pub(super) const WOLF: &str = "macro|wolf@macro.com";
+pub(super) const JULIA: &str = "macro|julia@macro.com";
 
-fn user(id: &str) -> MacroUserIdStr<'static> {
+pub(super) fn user(id: &str) -> MacroUserIdStr<'static> {
     MacroUserIdStr::parse_from_str(id).unwrap().into_owned()
 }
 
-fn person(id: &str) -> Viewer {
+pub(super) fn person(id: &str) -> Viewer {
     Viewer {
         user_id: user(id),
         acting_bot: None,
     }
 }
 
-fn edit_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
+pub(super) fn edit_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<EditAccessLevel> {
     EntityAccessReceipt::try_new_authenticated_user(
         user(id),
         Entity {
@@ -56,7 +56,7 @@ fn edit_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<EditAccessL
     .unwrap()
 }
 
-fn view_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<ViewAccessLevel> {
+pub(super) fn view_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<ViewAccessLevel> {
     EntityAccessReceipt::try_new_authenticated_user(
         user(id),
         Entity {
@@ -72,19 +72,19 @@ fn view_as(id: &str, database_id: DatabaseId) -> EntityAccessReceipt<ViewAccessL
 
 /// Wolf's wedding database: `Guests(Name, RSVP[Yes, No, Maybe], Plus Ones)`,
 /// its two columns added in one batch, the journal's first change.
-struct Wedding {
-    database_id: DatabaseId,
-    table_id: TableId,
-    name: ColumnId,
-    rsvp: ColumnId,
-    plus_ones: ColumnId,
-    plus_ones_definition: uuid::Uuid,
-    yes: OptionId,
-    no: OptionId,
-    maybe: OptionId,
+pub(super) struct Wedding {
+    pub(super) database_id: DatabaseId,
+    pub(super) table_id: TableId,
+    pub(super) name: ColumnId,
+    pub(super) rsvp: ColumnId,
+    pub(super) plus_ones: ColumnId,
+    pub(super) plus_ones_definition: uuid::Uuid,
+    pub(super) yes: OptionId,
+    pub(super) no: OptionId,
+    pub(super) maybe: OptionId,
 }
 
-async fn wedding(pool: &PgPool) -> Wedding {
+pub(super) async fn wedding(pool: &PgPool) -> Wedding {
     insert_named_user(pool, WOLF).await;
     insert_named_user(pool, JULIA).await;
     let service = service(pool);
@@ -172,7 +172,7 @@ async fn wedding(pool: &PgPool) -> Wedding {
 }
 
 /// Step 1: Wolf inserts Maria (RSVP Yes, Plus Ones 1) and Omar (RSVP No).
-async fn insert_guests(pool: &PgPool, wedding: &Wedding) -> (RowId, RowId) {
+pub(super) async fn insert_guests(pool: &PgPool, wedding: &Wedding) -> (RowId, RowId) {
     let results = service(pool)
         .apply_ops(
             edit_as(WOLF, wedding.database_id),
@@ -225,7 +225,7 @@ async fn insert_guests(pool: &PgPool, wedding: &Wedding) -> (RowId, RowId) {
 }
 
 /// Step 2: Julia sets Maria's RSVP to Maybe.
-async fn julia_says_maybe(pool: &PgPool, wedding: &Wedding, maria: RowId) {
+pub(super) async fn julia_says_maybe(pool: &PgPool, wedding: &Wedding, maria: RowId) {
     service(pool)
         .apply_ops(
             edit_as(JULIA, wedding.database_id),
@@ -251,7 +251,7 @@ async fn julia_says_maybe(pool: &PgPool, wedding: &Wedding, maria: RowId) {
 }
 
 /// Step 3: Julia deletes Omar.
-async fn julia_deletes_omar(pool: &PgPool, wedding: &Wedding, omar: RowId) {
+pub(super) async fn julia_deletes_omar(pool: &PgPool, wedding: &Wedding, omar: RowId) {
     service(pool)
         .apply_ops(
             edit_as(JULIA, wedding.database_id),
@@ -267,7 +267,7 @@ async fn julia_deletes_omar(pool: &PgPool, wedding: &Wedding, omar: RowId) {
 }
 
 /// Step 4: Wolf deletes the Plus Ones column.
-async fn wolf_deletes_plus_ones(pool: &PgPool, wedding: &Wedding) {
+pub(super) async fn wolf_deletes_plus_ones(pool: &PgPool, wedding: &Wedding) {
     service(pool)
         .apply_ops(
             edit_as(WOLF, wedding.database_id),
@@ -684,12 +684,12 @@ async fn a_rows_history_reads_newest_first_even_after_the_row_is_deleted(pool: P
 /// The table as a reader sees it: its columns in order, each with its
 /// definition and name, and its rows in order with their cells.
 #[derive(Debug, PartialEq)]
-struct TableState {
-    columns: Vec<(ColumnId, uuid::Uuid, Option<String>)>,
-    rows: Vec<(RowId, String, BTreeMap<uuid::Uuid, serde_json::Value>)>,
+pub(super) struct TableState {
+    pub(super) columns: Vec<(ColumnId, uuid::Uuid, Option<String>)>,
+    pub(super) rows: Vec<(RowId, String, BTreeMap<uuid::Uuid, serde_json::Value>)>,
 }
 
-async fn table_state(pool: &PgPool, table: TableId) -> TableState {
+pub(super) async fn table_state(pool: &PgPool, table: TableId) -> TableState {
     let repo = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
     let columns = repo
         .columns_for_tables(&[table])
@@ -756,8 +756,8 @@ async fn applying_each_inverse_newest_first_puts_the_table_back_as_it_was(pool: 
             .apply_batch(
                 &edit_as(WOLF, wedding.database_id),
                 &person(WOLF),
-                &OpBatch::from(inverse.ops),
-                &inverse.restored_rows,
+                &OpBatch::from(inverse.ops.clone()),
+                &inverse.restoration(),
             )
             .await
             .unwrap();

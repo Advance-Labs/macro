@@ -8145,6 +8145,97 @@
         }
       }
     },
+    "/databases/{id}/changes/{change}/undo": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "Undo one of your own committed changes: its inverse applies as a new,\njournaled batch, under the table's lock, guarded against what others\nchanged since. A cell someone changed since is left alone and listed; a\nrow or column you added that someone else wrote since, or a name, option,\norder, view or card place changed since, refuses the undo. Others'\nchanges always stay. Redo by undoing the undo's change.",
+        "operationId": "undo_database_change",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "change",
+            "in": "path",
+            "description": "The change's journal id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoChangeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No edit access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such change in this database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The table kept moving under the undo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/import": {
       "post": {
         "tags": ["databases"],
@@ -18820,8 +18911,15 @@
       "ApplyOpsResponse": {
         "type": "object",
         "description": "What each op of a batch did.",
-        "required": ["results"],
+        "required": ["results", "changes"],
         "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommittedChange"
+            },
+            "description": "The journal's change for each table version the batch produced: the\nids `POST /databases/{id}/changes/{change}/undo` takes."
+          },
           "results": {
             "type": "array",
             "items": {
@@ -22592,6 +22690,27 @@
           },
           "thread": {
             "$ref": "#/components/schemas/Thread"
+          }
+        }
+      },
+      "CommittedChange": {
+        "type": "object",
+        "description": "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it.",
+        "required": ["table", "version", "change"],
+        "properties": {
+          "change": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The journal's id of the change."
+          },
+          "table": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The table."
+          },
+          "version": {
+            "$ref": "#/components/schemas/TableVersion",
+            "description": "The version the batch produced."
           }
         }
       },
@@ -33633,6 +33752,27 @@
           }
         }
       },
+      "SkippedCell": {
+        "type": "object",
+        "description": "A cell an undo left alone, because someone changed it after the change\nbeing undone.",
+        "required": ["row", "column", "by"],
+        "properties": {
+          "by": {
+            "type": ["string", "null"],
+            "description": "Who changed it since, from the journal; `null` when unknown."
+          },
+          "column": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column."
+          },
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
+          }
+        }
+      },
       "SmartTagChannelMatch": {
         "type": "object",
         "description": "A channel visible to the caller that matches a smart tag rule.",
@@ -36734,6 +36874,96 @@
             "description": "Root being replied to, absent for the parent composer."
           }
         }
+      },
+      "UndoChangeResponse": {
+        "type": "object",
+        "description": "What undoing a change did.",
+        "required": ["outcome"],
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/UndoOutcome",
+            "description": "The outcome: reverted, partly reverted with the cells others changed\nsince left alone, or refused with why and whose change stands in the\nway."
+          }
+        }
+      },
+      "UndoOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Everything the change did is undone.",
+            "required": ["changes", "kind"],
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommittedChange"
+                },
+                "description": "The journal's changes the undo made, one per table version; undo\none of them to redo."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["reverted"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Some cells were changed by someone since, and were left alone; the\nrest is undone. With no changes, nothing was left to undo.",
+            "required": ["skipped", "changes", "kind"],
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommittedChange"
+                },
+                "description": "The journal's changes the undo made."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["partial"]
+              },
+              "skipped": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SkippedCell"
+                },
+                "description": "The cells left alone, each with who changed it."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Nothing was undone.",
+            "required": ["reason", "by", "kind"],
+            "properties": {
+              "by": {
+                "type": ["string", "null"],
+                "description": "Whose change stands in the way, when one does."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["refused"]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/UndoRefusal",
+                "description": "Why."
+              }
+            }
+          }
+        ],
+        "description": "What undoing a change did."
+      },
+      "UndoRefusal": {
+        "type": "string",
+        "description": "Why an undo was refused. Nothing was written.",
+        "enum": [
+          "not_yours",
+          "not_undoable",
+          "row_edited_since",
+          "column_written_since",
+          "changed_since",
+          "already_back"
+        ]
       },
       "UnthreadedPdfUuidRequest": {
         "oneOf": [

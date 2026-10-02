@@ -79,7 +79,10 @@ use collab_surface::inbound::axum_router::{
 };
 use databases::domain::journal::{
     RowChangeKind as DatabaseRowChangeKind, RowHistoryEntry as DatabaseRowHistoryEntry,
+    SkippedCell as DatabaseSkippedCell, UndoOutcome as DatabaseUndoOutcome,
+    UndoRefusal as DatabaseUndoRefusal,
 };
+use databases::domain::models::CommittedChange as DatabaseCommittedChange;
 use databases::domain::models::{
     Awareness as DatabaseAwareness, Column as DatabaseColumn, ColumnConfig as DatabaseColumnConfig,
     ColumnDetail as DatabaseColumnDetail, Database, DatabaseDetail, ListedDatabase,
@@ -87,7 +90,10 @@ use databases::domain::models::{
     Table as DatabaseTable, TableDetail as DatabaseTableDetail,
     TableVersion as DatabaseTableVersion,
 };
-use databases::inbound::axum_router::history::RowHistoryResponse as DatabaseRowHistoryResponse;
+use databases::inbound::axum_router::history::{
+    RowHistoryResponse as DatabaseRowHistoryResponse,
+    UndoChangeResponse as DatabaseUndoChangeResponse,
+};
 use databases::inbound::axum_router::ops::{
     ApplyOpsRequest as DatabaseApplyOpsRequest, ApplyOpsResponse as DatabaseApplyOpsResponse,
     OpRefusalResponse as DatabaseOpRefusalResponse,
@@ -457,6 +463,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::ops::apply_ops_handler,
         databases::inbound::axum_router::views::view_positions_handler,
         databases::inbound::axum_router::history::row_history_handler,
+        databases::inbound::axum_router::history::undo_change_handler,
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
@@ -648,6 +655,11 @@ use utoipa::OpenApi;
             DatabaseRowHistoryResponse,
             DatabaseRowHistoryEntry,
             DatabaseRowChangeKind,
+            DatabaseUndoChangeResponse,
+            DatabaseUndoOutcome,
+            DatabaseUndoRefusal,
+            DatabaseSkippedCell,
+            DatabaseCommittedChange,
             DatabaseOp,
             DatabaseTableChange,
             DatabaseColumnChange,

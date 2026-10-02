@@ -28,6 +28,8 @@ mod sharing;
 mod tables;
 mod transfer;
 #[cfg(feature = "gateway")]
+mod undo;
+#[cfg(feature = "gateway")]
 mod views;
 
 const USER: &str = "macro|databases-a@macro.com";
