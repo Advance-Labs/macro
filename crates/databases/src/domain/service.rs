@@ -809,6 +809,33 @@ where
     }
 
     #[tracing::instrument(skip(self, receipt), err)]
+    async fn table_changes(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        since: TableVersion,
+    ) -> Result<crate::domain::journal::TableChanges, DatabaseError> {
+        let database_id = receipt_database_id(&receipt)?;
+        let held = self
+            .repository
+            .get_database(database_id)
+            .await
+            .map_err(repository_error)?
+            .filter(|(database, tables)| {
+                database.trashed_at.is_none() && tables.iter().any(|table| table.id == table_id)
+            });
+        if held.is_none() {
+            return Err(DatabaseError::NotFound);
+        }
+        let touches = self
+            .repository
+            .touches_after(table_id, since)
+            .await
+            .map_err(repository_error)?;
+        Ok(crate::domain::journal::table_changes(since, &touches))
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
     async fn share_awareness(
         &self,
         receipt: EntityAccessReceipt<ViewAccessLevel>,

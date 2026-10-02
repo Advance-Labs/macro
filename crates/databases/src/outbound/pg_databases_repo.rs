@@ -566,6 +566,16 @@ where
     }
 
     #[tracing::instrument(err, skip(self))]
+    async fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::VersionTouches>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::touches_after(&mut connection, table_id, version).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
     async fn row_history(
         &self,
         database_id: DatabaseId,

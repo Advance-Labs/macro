@@ -160,6 +160,10 @@ where
             post(history::undo_change_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
+            "/{id}/tables/{table_id}/changes",
+            get(history::table_changes_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
             "/{id}/tables/{table_id}/rows/{row_id}/history",
             get(history::row_history_handler::<Service, EntityAccess, Authorization>),
         )

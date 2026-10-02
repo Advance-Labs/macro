@@ -13,7 +13,8 @@ use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
 use crate::domain::journal::{
-    ChangeRecord, JournalActor, JournaledRowChange, RowHistoryEntry, UndoOutcome,
+    ChangeRecord, JournalActor, JournaledRowChange, RowHistoryEntry, TableChanges, UndoOutcome,
+    VersionTouches,
 };
 use crate::domain::models::{
     AppliedOps, Awareness, CardPosition, ChangeId, Column, ColumnCast, ColumnConversion, ColumnId,
@@ -150,6 +151,14 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         table_id: TableId,
         version: TableVersion,
     ) -> impl Future<Output = Result<Vec<ChangeRecord>, Self::Error>> + Send;
+
+    /// What each journaled version of a table after `version` touched,
+    /// oldest first.
+    fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> impl Future<Output = Result<Vec<VersionTouches>, Self::Error>> + Send;
 
     /// A row's journaled changes in one table of a database, newest first,
     /// the row's removal among them.
@@ -423,6 +432,17 @@ pub trait DatabasesService: Send + Sync + 'static {
         table_id: TableId,
         row_id: RowId,
     ) -> impl Future<Output = Result<Vec<RowHistoryEntry>, DatabaseError>> + Send;
+
+    /// What changed in one of the database's tables since a version: the
+    /// rows, each once as it stands now, and the columns. A reader holding
+    /// the table at that version reads just those rows, unless the shape
+    /// changed, the journal has a gap, or too many rows changed.
+    fn table_changes(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        since: TableVersion,
+    ) -> impl Future<Output = Result<TableChanges, DatabaseError>> + Send;
 
     /// Tell the database's other viewers where this viewer is; a relay
     /// failure is the caller's error.

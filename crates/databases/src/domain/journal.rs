@@ -641,3 +641,113 @@ pub enum UndoOutcome {
         by: Option<String>,
     },
 }
+
+/// Most rows a table's changes answer one by one; past it, a reader reads the
+/// table whole.
+pub const MAX_TOUCHED_ROWS: usize = 500;
+
+/// One version of a table's journal, with what it touched, as a refresh
+/// reads it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersionTouches {
+    /// The version the change produced.
+    pub version: TableVersion,
+    /// The rows it touched, and how.
+    pub rows: Vec<(RowId, RowChangeKind)>,
+    /// The columns it touched, and how.
+    pub columns: Vec<ColumnTouch>,
+}
+
+/// A row a table's changes since some version touched, and how it stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct TouchedRow {
+    /// The row.
+    #[schema(value_type = Uuid)]
+    pub row: RowId,
+    /// How it changed overall: added, written, or removed.
+    pub kind: RowChangeKind,
+}
+
+/// A column a table's changes since some version touched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct TouchedColumn {
+    /// The column.
+    #[schema(value_type = Uuid)]
+    pub column: ColumnId,
+    /// How.
+    pub kind: ColumnChangeKind,
+}
+
+/// What changed in a table since a version, for a reader holding it at
+/// that version.
+#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TableChanges {
+    /// The version the changes reach.
+    #[schema(value_type = i64)]
+    pub version: TableVersion,
+    /// Whether every version since is journaled; without it, read the table
+    /// whole.
+    pub complete: bool,
+    /// Whether more rows changed than are listed; then read the table whole.
+    pub truncated: bool,
+    /// The rows that changed, each once, as they stand now: a row added
+    /// and written is `insert`, one removed is `delete`, and one added and
+    /// removed since is left out.
+    pub rows: Vec<TouchedRow>,
+    /// The columns that changed; any of them means the table's shape moved.
+    pub columns: Vec<TouchedColumn>,
+}
+
+/// Fold a table's journal after `since`, oldest first, into what changed:
+/// each row once, as it stands now. It is complete when the versions run
+/// without a gap from `since`.
+pub fn table_changes(since: TableVersion, versions: &[VersionTouches]) -> TableChanges {
+    let mut expected = since.0;
+    let mut complete = true;
+    let mut rows: Vec<(RowId, Vec<RowChangeKind>)> = Vec::new();
+    let mut columns: Vec<TouchedColumn> = Vec::new();
+    for touches in versions {
+        if touches.version.0 != expected + 1 {
+            complete = false;
+        }
+        expected = touches.version.0;
+        for (row, kind) in &touches.rows {
+            match rows.iter_mut().find(|(held, _)| held == row) {
+                Some((_, kinds)) => kinds.push(*kind),
+                None => rows.push((*row, vec![*kind])),
+            }
+        }
+        for touch in &touches.columns {
+            let touched = TouchedColumn {
+                column: touch.column,
+                kind: touch.kind,
+            };
+            if !columns.contains(&touched) {
+                columns.push(touched);
+            }
+        }
+    }
+    let rows: Vec<TouchedRow> = rows
+        .into_iter()
+        .filter_map(|(row, kinds)| {
+            let inserted = kinds.first() == Some(&RowChangeKind::Insert);
+            let deleted = kinds.last() == Some(&RowChangeKind::Delete);
+            let kind = match (inserted, deleted) {
+                (true, true) => return None,
+                (_, true) => RowChangeKind::Delete,
+                (true, false) => RowChangeKind::Insert,
+                (false, false) => RowChangeKind::Update,
+            };
+            Some(TouchedRow { row, kind })
+        })
+        .collect();
+    let truncated = rows.len() > MAX_TOUCHED_ROWS;
+    TableChanges {
+        version: TableVersion(expected),
+        complete,
+        truncated,
+        rows: if truncated { Vec::new() } else { rows },
+        columns,
+    }
+}

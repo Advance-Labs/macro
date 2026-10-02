@@ -8585,6 +8585,97 @@
         }
       }
     },
+    "/databases/{id}/tables/{table_id}/changes": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "What changed in a table since a version, from the change journal: the\nrows that changed, each once as it stands now (`insert`, `update` or\n`delete`), and the columns. A reader holding the table at `since` reads\njust those rows; it reads the table whole when a column changed, the\njournal is not `complete`, or the rows are `truncated`.",
+        "operationId": "get_database_table_changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "description": "Table id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "The table version the reader last read.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableChanges"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/tables/{table_id}/columns/{column_id}/casts": {
       "get": {
         "tags": ["databases"],
@@ -22251,6 +22342,22 @@
           }
         ],
         "description": "A change to one column."
+      },
+      "ColumnChangeKind": {
+        "type": "string",
+        "description": "How a change touched a column.",
+        "enum": [
+          "create",
+          "rename",
+          "change_type",
+          "delete",
+          "add_options",
+          "update_option",
+          "delete_option",
+          "reorder",
+          "infer_type",
+          "related"
+        ]
       },
       "ColumnConfig": {
         "oneOf": [
@@ -36121,6 +36228,40 @@
           }
         }
       },
+      "TableChanges": {
+        "type": "object",
+        "description": "What changed in a table since a version, for a reader holding it at\nthat version.",
+        "required": ["version", "complete", "truncated", "rows", "columns"],
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TouchedColumn"
+            },
+            "description": "The columns that changed; any of them means the table's shape moved."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "Whether every version since is journaled; without it, read the table\nwhole."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TouchedRow"
+            },
+            "description": "The rows that changed, each once, as they stand now: a row added\nand written is `insert`, one removed is `delete`, and one added and\nremoved since is left out."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether more rows changed than are listed; then read the table whole."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The version the changes reach."
+          }
+        }
+      },
       "TableDetail": {
         "type": "object",
         "description": "One table with its columns and SQL name.",
@@ -36588,6 +36729,38 @@
           "user_id": {
             "type": "string",
             "description": "User who owns this discussion, including imported discussions."
+          }
+        }
+      },
+      "TouchedColumn": {
+        "type": "object",
+        "description": "A column a table's changes since some version touched.",
+        "required": ["column", "kind"],
+        "properties": {
+          "column": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ColumnChangeKind",
+            "description": "How."
+          }
+        }
+      },
+      "TouchedRow": {
+        "type": "object",
+        "description": "A row a table's changes since some version touched, and how it stands.",
+        "required": ["row", "kind"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RowChangeKind",
+            "description": "How it changed overall: added, written, or removed."
+          },
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
           }
         }
       },

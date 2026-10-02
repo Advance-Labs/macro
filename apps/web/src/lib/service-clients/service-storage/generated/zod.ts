@@ -10268,6 +10268,81 @@ export const updateDatabasePermissionsResponse = zod.object({
 });
 
 /**
+ * @summary What changed in a table since a version, from the change journal: the
+rows that changed, each once as it stands now (`insert`, `update` or
+`delete`), and the columns. A reader holding the table at `since` reads
+just those rows; it reads the table whole when a column changed, the
+journal is not `complete`, or the rows are `truncated`.
+ */
+export const getDatabaseTableChangesParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
+
+export const getDatabaseTableChangesQueryParams = zod.object({
+  since: zod.number().describe('The table version the reader last read.'),
+});
+
+export const getDatabaseTableChangesResponse = zod
+  .object({
+    columns: zod
+      .array(
+        zod
+          .object({
+            column: zod.uuid().describe('The column.'),
+            kind: zod
+              .enum([
+                'create',
+                'rename',
+                'change_type',
+                'delete',
+                'add_options',
+                'update_option',
+                'delete_option',
+                'reorder',
+                'infer_type',
+                'related',
+              ])
+              .describe('How a change touched a column.'),
+          })
+          .describe("A column a table's changes since some version touched.")
+      )
+      .describe(
+        "The columns that changed; any of them means the table's shape moved."
+      ),
+    complete: zod
+      .boolean()
+      .describe(
+        'Whether every version since is journaled; without it, read the table\nwhole.'
+      ),
+    rows: zod
+      .array(
+        zod
+          .object({
+            kind: zod
+              .enum(['insert', 'update', 'delete'])
+              .describe('How a change touched a row.'),
+            row: zod.uuid().describe('The row.'),
+          })
+          .describe(
+            "A row a table's changes since some version touched, and how it stands."
+          )
+      )
+      .describe(
+        'The rows that changed, each once, as they stand now: a row added\nand written is `insert`, one removed is `delete`, and one added and\nremoved since is left out.'
+      ),
+    truncated: zod
+      .boolean()
+      .describe(
+        'Whether more rows changed than are listed; then read the table whole.'
+      ),
+    version: zod.number().describe('The version the changes reach.'),
+  })
+  .describe(
+    'What changed in a table since a version, for a reader holding it at\nthat version.'
+  );
+
+/**
  * @summary What changing one column to each type of the type menu would do to its
 values: safe, checked (with how many values would not convert and a few
 of them), or never (with why). Changes nothing.

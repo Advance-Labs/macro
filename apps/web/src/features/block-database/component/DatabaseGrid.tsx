@@ -48,6 +48,7 @@ import { createDatabaseRelations } from '../queries/database-relations';
 import { useRelatedDatabaseSync } from '../queries/database-relations-sync';
 import { deleteDatabaseOption, updateDatabaseOption } from '../queries/options';
 import { renameDatabaseColumn } from '../queries/rename-column';
+import { tableChangesOf } from '../queries/table-changes';
 import { createDatabaseRowsSource, toViewColumn } from '../queries/table-rows';
 import {
   moveDatabaseCard,
@@ -186,6 +187,8 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       table,
       view: () => props.view,
       applyOps: (ops) => applyDatabaseOps(databaseId, ops),
+      changes: (readRows) =>
+        tableChangesOf({ databaseId, tableId: props.tableId, readRows }),
       onTableChanged: (listener) =>
         useDatabaseTableChanges((change) => {
           if (change.tableId !== props.tableId) return;

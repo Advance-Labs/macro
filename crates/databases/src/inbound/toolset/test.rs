@@ -221,6 +221,15 @@ impl DatabasesService for FakeService {
         unimplemented!("the toolset does not undo")
     }
 
+    async fn table_changes(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: crate::domain::models::TableId,
+        _since: crate::domain::models::TableVersion,
+    ) -> Result<crate::domain::journal::TableChanges, DatabaseError> {
+        unimplemented!("the toolset reads no table changes")
+    }
+
     async fn row_history(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

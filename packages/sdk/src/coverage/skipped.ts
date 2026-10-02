@@ -312,6 +312,8 @@ export const storageExcluded = [
   'getCollabSurface',
   // Storage for the web app's saved questions, not a user-facing surface.
   'getDatabaseQuery',
+  // The web grid's incremental refresh after a version ping, not a user-facing surface.
+  'getDatabaseTableChanges',
   'getDocumentListHandler',
   'getDocumentLocationV3',
   'getDocumentProcessingResult',

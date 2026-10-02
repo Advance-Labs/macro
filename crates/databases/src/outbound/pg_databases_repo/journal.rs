@@ -10,7 +10,7 @@ use uuid::Uuid;
 use super::{PgDatabasesRepoError, uuids};
 use crate::domain::journal::{
     ChangeInverse, ChangeRecord, ColumnTouch, JournalActor, JournalEntry, JournaledRowChange,
-    RowTouch, StoredChange,
+    RowTouch, StoredChange, VersionTouches,
 };
 use crate::domain::models::{
     ChangeId, ColumnId, CommittedChange, DatabaseId, RowId, TableId, TableVersion,
@@ -375,4 +375,68 @@ async fn with_touches(
         }
     }
     Ok(records)
+}
+
+/// What each version of a table after `version` touched, oldest first.
+pub(crate) async fn touches_after(
+    connection: &mut PgConnection,
+    table: TableId,
+    version: TableVersion,
+) -> Result<Vec<VersionTouches>, PgDatabasesRepoError> {
+    let changes = sqlx::query!(
+        r#"SELECT id, version FROM database_changes
+           WHERE table_id = $1 AND version > $2 ORDER BY version"#,
+        table.into_uuid(),
+        version.0,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let ids: Vec<i64> = changes.iter().map(|change| change.id).collect();
+    let rows = sqlx::query!(
+        "SELECT change_id, row_id, kind FROM database_change_rows WHERE change_id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let columns = sqlx::query!(
+        "SELECT change_id, column_id, kind FROM database_change_columns WHERE change_id = ANY($1)",
+        &ids,
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    let mut touches: Vec<(i64, VersionTouches)> = changes
+        .into_iter()
+        .map(|change| {
+            (
+                change.id,
+                VersionTouches {
+                    version: TableVersion(change.version),
+                    rows: Vec::new(),
+                    columns: Vec::new(),
+                },
+            )
+        })
+        .collect();
+    for row in rows {
+        let kind = row
+            .kind
+            .parse()
+            .map_err(|_| PgDatabasesRepoError::CorruptChangeKind(row.kind.clone()))?;
+        if let Some((_, held)) = touches.iter_mut().find(|(id, _)| *id == row.change_id) {
+            held.rows.push((RowId::from_uuid(row.row_id), kind));
+        }
+    }
+    for column in columns {
+        let kind = column
+            .kind
+            .parse()
+            .map_err(|_| PgDatabasesRepoError::CorruptChangeKind(column.kind.clone()))?;
+        if let Some((_, held)) = touches.iter_mut().find(|(id, _)| *id == column.change_id) {
+            held.columns.push(ColumnTouch {
+                column: ColumnId::from_uuid(column.column_id),
+                kind,
+            });
+        }
+    }
+    Ok(touches.into_iter().map(|(_, held)| held).collect())
 }

@@ -142,6 +142,15 @@ impl DatabasesService for FakeDatabases {
         unimplemented!("the SQL adapter does not undo")
     }
 
+    async fn table_changes(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: databases::domain::models::TableId,
+        _since: databases::domain::models::TableVersion,
+    ) -> Result<databases::domain::journal::TableChanges, DatabaseError> {
+        unimplemented!("the SQL adapter reads no table changes")
+    }
+
     async fn row_history(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

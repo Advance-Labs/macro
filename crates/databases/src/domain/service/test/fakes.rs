@@ -397,6 +397,31 @@ impl DatabasesRepo for FakeRepo {
             .collect())
     }
 
+    async fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::VersionTouches>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .filter(|journaled| {
+                journaled.entry.table == table_id && journaled.entry.version > version
+            })
+            .map(|journaled| crate::domain::journal::VersionTouches {
+                version: journaled.entry.version,
+                rows: journaled
+                    .entry
+                    .rows
+                    .iter()
+                    .map(|touch| (touch.row, touch.kind))
+                    .collect(),
+                columns: journaled.entry.columns.clone(),
+            })
+            .collect())
+    }
+
     async fn row_history(
         &self,
         database_id: DatabaseId,

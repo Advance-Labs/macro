@@ -269,6 +269,15 @@ impl DatabasesService for RecordingService {
         unimplemented!("{ONLY_OPS}")
     }
 
+    async fn table_changes(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: crate::domain::models::TableId,
+        _since: crate::domain::models::TableVersion,
+    ) -> Result<crate::domain::journal::TableChanges, DatabaseError> {
+        unimplemented!("{ONLY_OPS}")
+    }
+
     async fn row_history(
         &self,
         _: EntityAccessReceipt<ViewAccessLevel>,

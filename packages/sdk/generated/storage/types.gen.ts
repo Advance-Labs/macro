@@ -3513,6 +3513,11 @@ export type ColumnChange = {
 };
 
 /**
+ * How a change touched a column.
+ */
+export type ColumnChangeKind = 'create' | 'rename' | 'change_type' | 'delete' | 'add_options' | 'update_option' | 'delete_option' | 'reorder' | 'infer_type' | 'related';
+
+/**
  * A relation column: its cells reference rows of another table.
  */
 export type ColumnConfig = {
@@ -12046,6 +12051,36 @@ export type TableChanged = {
 };
 
 /**
+ * What changed in a table since a version, for a reader holding it at
+ * that version.
+ */
+export type TableChanges = {
+    /**
+     * The columns that changed; any of them means the table's shape moved.
+     */
+    columns: Array<TouchedColumn>;
+    /**
+     * Whether every version since is journaled; without it, read the table
+     * whole.
+     */
+    complete: boolean;
+    /**
+     * The rows that changed, each once, as they stand now: a row added
+     * and written is `insert`, one removed is `delete`, and one added and
+     * removed since is left out.
+     */
+    rows: Array<TouchedRow>;
+    /**
+     * Whether more rows changed than are listed; then read the table whole.
+     */
+    truncated: boolean;
+    /**
+     * The version the changes reach.
+     */
+    version: number;
+};
+
+/**
  * One table with its columns and SQL name.
  */
 export type TableDetail = {
@@ -12323,6 +12358,34 @@ export type ThreadState = {
      * User who owns this discussion, including imported discussions.
      */
     user_id: string;
+};
+
+/**
+ * A column a table's changes since some version touched.
+ */
+export type TouchedColumn = {
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * How.
+     */
+    kind: ColumnChangeKind;
+};
+
+/**
+ * A row a table's changes since some version touched, and how it stands.
+ */
+export type TouchedRow = {
+    /**
+     * How it changed overall: added, written, or removed.
+     */
+    kind: RowChangeKind;
+    /**
+     * The row.
+     */
+    row: string;
 };
 
 /**
@@ -16716,6 +16779,48 @@ export type UpdateDatabasePermissionsResponses = {
 };
 
 export type UpdateDatabasePermissionsResponse = UpdateDatabasePermissionsResponses[keyof UpdateDatabasePermissionsResponses];
+
+export type GetDatabaseTableChangesData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query: {
+        /**
+         * The table version the reader last read.
+         */
+        since: number;
+    };
+    url: '/databases/{id}/tables/{table_id}/changes';
+};
+
+export type GetDatabaseTableChangesErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseTableChangesError = GetDatabaseTableChangesErrors[keyof GetDatabaseTableChangesErrors];
+
+export type GetDatabaseTableChangesResponses = {
+    200: TableChanges;
+};
+
+export type GetDatabaseTableChangesResponse = GetDatabaseTableChangesResponses[keyof GetDatabaseTableChangesResponses];
 
 export type ListDatabaseColumnCastsData = {
     body?: never;

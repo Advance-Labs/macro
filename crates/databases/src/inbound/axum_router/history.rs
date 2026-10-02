@@ -1,4 +1,4 @@
-use crate::domain::journal::{RowHistoryEntry, UndoOutcome};
+use crate::domain::journal::{RowHistoryEntry, TableChanges, UndoOutcome};
 use crate::domain::models::{ChangeId, RowId};
 
 use super::*;
@@ -127,4 +127,66 @@ where
         )
         .await?;
     Ok(Json(UndoChangeResponse { outcome }))
+}
+
+/// Path params for a table's routes.
+#[derive(Debug, Deserialize)]
+pub struct TablePath {
+    /// Database id.
+    pub id: DatabaseId,
+    /// Table id.
+    pub table_id: TableId,
+}
+
+/// The version a reader holds a table at.
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ChangesSince {
+    /// The table version the reader last read.
+    pub since: i64,
+}
+
+/// What changed in a table since a version, from the change journal: the
+/// rows that changed, each once as it stands now (`insert`, `update` or
+/// `delete`), and the columns. A reader holding the table at `since` reads
+/// just those rows; it reads the table whole when a column changed, the
+/// journal is not `complete`, or the rows are `truncated`.
+#[utoipa::path(
+    get,
+    tag = "databases",
+    operation_id = "get_database_table_changes",
+    path = "/databases/{id}/tables/{table_id}/changes",
+    params(
+        ("id" = Uuid, Path, description = "Database id"),
+        ("table_id" = Uuid, Path, description = "Table id"),
+        ChangesSince,
+    ),
+    responses(
+        (status = 200, body = TableChanges),
+        (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
+        (status = 403, description = "No access to the database", body = ErrorResponse),
+        (status = 404, body = ErrorResponse),
+        (status = 500, body = ErrorResponse),
+    )
+)]
+#[tracing::instrument(err, skip_all)]
+pub async fn table_changes_handler<Service, EntityAccess, Authorization>(
+    access: DatabaseAccessLevelExtractor<ViewAccessLevel, EntityAccess, Authorization>,
+    State(state): State<DatabasesRouterState<Service, EntityAccess, Authorization>>,
+    Path(path): Path<TablePath>,
+    axum::extract::Query(query): axum::extract::Query<ChangesSince>,
+) -> Result<Json<TableChanges>, DatabaseError>
+where
+    Service: DatabasesService,
+    EntityAccess: EntityAccessService,
+    Authorization: MacroAuthorizationService,
+{
+    let changes = state
+        .service
+        .table_changes(
+            access.entity_access_receipt,
+            path.table_id,
+            TableVersion(query.since),
+        )
+        .await?;
+    Ok(Json(changes))
 }

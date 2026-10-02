@@ -1259,3 +1259,87 @@ fn what_a_batch_creates_and_removes_again_needs_no_inverse() {
 
     assert_eq!(inverse, ChangeInverse::default());
 }
+
+#[test]
+fn a_tables_changes_fold_each_row_once_as_it_stands_now() {
+    let walk_in = RowId::from_uuid(Uuid::from_u128(0xb9));
+    let versions = [
+        VersionTouches {
+            version: TableVersion(8),
+            rows: vec![
+                (MARIA, RowChangeKind::Insert),
+                (walk_in, RowChangeKind::Insert),
+            ],
+            columns: Vec::new(),
+        },
+        VersionTouches {
+            version: TableVersion(9),
+            rows: vec![
+                (MARIA, RowChangeKind::Update),
+                (OMAR, RowChangeKind::Update),
+            ],
+            columns: Vec::new(),
+        },
+        VersionTouches {
+            version: TableVersion(10),
+            rows: vec![
+                (walk_in, RowChangeKind::Delete),
+                (OMAR, RowChangeKind::Delete),
+            ],
+            columns: vec![ColumnTouch {
+                column: PLUS_ONES,
+                kind: ColumnChangeKind::Delete,
+            }],
+        },
+    ];
+
+    let changes = table_changes(TableVersion(7), &versions);
+
+    assert_eq!(
+        changes,
+        TableChanges {
+            version: TableVersion(10),
+            complete: true,
+            truncated: false,
+            rows: vec![
+                TouchedRow {
+                    row: MARIA,
+                    kind: RowChangeKind::Insert,
+                },
+                TouchedRow {
+                    row: OMAR,
+                    kind: RowChangeKind::Delete,
+                },
+            ],
+            columns: vec![TouchedColumn {
+                column: PLUS_ONES,
+                kind: ColumnChangeKind::Delete,
+            }],
+        }
+    );
+}
+
+#[test]
+fn a_gap_in_a_tables_journal_makes_its_changes_incomplete() {
+    let versions = [VersionTouches {
+        version: TableVersion(9),
+        rows: vec![(MARIA, RowChangeKind::Update)],
+        columns: Vec::new(),
+    }];
+
+    let changes = table_changes(TableVersion(7), &versions);
+
+    assert_eq!(
+        changes,
+        TableChanges {
+            version: TableVersion(9),
+            complete: false,
+            truncated: false,
+            rows: vec![TouchedRow {
+                row: MARIA,
+                kind: RowChangeKind::Update,
+            }],
+            columns: Vec::new(),
+        }
+    );
+}

@@ -15,6 +15,8 @@ use crate::outbound::pg_cell_store::PgCellStore;
 mod apply_ops;
 mod cell_triggers;
 #[cfg(feature = "gateway")]
+mod changes;
+#[cfg(feature = "gateway")]
 mod journal;
 #[cfg(feature = "gateway")]
 mod rename_column;

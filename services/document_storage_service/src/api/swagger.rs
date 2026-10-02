@@ -78,8 +78,10 @@ use collab_surface::inbound::axum_router::{
     CollabSurfaceResponse, CollabSurfaceTokenResponse, EnsureCollabSurfaceRequest,
 };
 use databases::domain::journal::{
-    RowChangeKind as DatabaseRowChangeKind, RowHistoryEntry as DatabaseRowHistoryEntry,
-    SkippedCell as DatabaseSkippedCell, UndoOutcome as DatabaseUndoOutcome,
+    ColumnChangeKind as DatabaseColumnChangeKind, RowChangeKind as DatabaseRowChangeKind,
+    RowHistoryEntry as DatabaseRowHistoryEntry, SkippedCell as DatabaseSkippedCell,
+    TableChanges as DatabaseTableChanges, TouchedColumn as DatabaseTouchedColumn,
+    TouchedRow as DatabaseTouchedRow, UndoOutcome as DatabaseUndoOutcome,
     UndoRefusal as DatabaseUndoRefusal,
 };
 use databases::domain::models::CommittedChange as DatabaseCommittedChange;
@@ -464,6 +466,7 @@ use utoipa::OpenApi;
         databases::inbound::axum_router::views::view_positions_handler,
         databases::inbound::axum_router::history::row_history_handler,
         databases::inbound::axum_router::history::undo_change_handler,
+        databases::inbound::axum_router::history::table_changes_handler,
         databases::inbound::axum_router::transfer::import_table_handler,
         databases::inbound::axum_router::sharing::get_permissions_handler,
         databases::inbound::axum_router::sharing::update_permissions_handler,
@@ -660,6 +663,10 @@ use utoipa::OpenApi;
             DatabaseUndoRefusal,
             DatabaseSkippedCell,
             DatabaseCommittedChange,
+            DatabaseTableChanges,
+            DatabaseTouchedRow,
+            DatabaseTouchedColumn,
+            DatabaseColumnChangeKind,
             DatabaseOp,
             DatabaseTableChange,
             DatabaseColumnChange,
