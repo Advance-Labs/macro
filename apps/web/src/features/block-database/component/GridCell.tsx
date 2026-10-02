@@ -849,8 +849,12 @@ function SelectCell(props: GridCellProps) {
       <Popover
         open={open()}
         onOpenChange={(value) => {
+          // A pick closes the picker without passing here; opening starts afresh.
+          if (value) {
+            setSearch('');
+            setError('');
+          }
           setOpen(value);
-          if (!value) setSearch('');
         }}
         placement="bottom-start"
         gutter={4}

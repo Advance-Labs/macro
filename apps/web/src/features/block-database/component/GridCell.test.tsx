@@ -892,6 +892,47 @@ describe('grid cell', () => {
     );
   });
 
+  it('opens the select picker again with an empty search after a pick', async () => {
+    const onWrite = vi.fn(async () => true);
+    const onAddOption = vi.fn(async () => true);
+    render(() => (
+      <GridCell
+        column={{
+          ...column,
+          name: 'Going',
+          dataType: 'SELECT_STRING',
+          options: [
+            { id: 'yes', label: 'Yes', color: null },
+            { id: 'no', label: 'No', color: null },
+          ],
+        }}
+        value={null}
+        canEdit
+        onWrite={onWrite}
+        onAddOption={onAddOption}
+      />
+    ));
+    await userEvent.click(screen.getByRole('button', { name: 'Going: Empty' }));
+    const first = await screen.findByRole('combobox', {
+      name: 'Search Going options',
+    });
+    await waitFor(() => expect(document.activeElement).toBe(first));
+    await userEvent.keyboard('Yes{Enter}');
+    await waitFor(() => expect(onWrite).toHaveBeenCalledExactlyOnceWith('Yes'));
+    await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Going: Empty' }));
+    const second = (await screen.findByRole('combobox', {
+      name: 'Search Going options',
+    })) as HTMLInputElement;
+    expect(second.value).toBe('');
+    await waitFor(() => expect(document.activeElement).toBe(second));
+    await userEvent.keyboard('Maybe');
+    expect(second.value).toBe('Maybe');
+    expect(screen.getByRole('option', { name: 'Create “Maybe”' })).toBeTruthy();
+    expect(onAddOption).not.toHaveBeenCalled();
+  });
+
   it('canonicalizes a new numeric option before saving its SQL label', async () => {
     const onAddOption = vi.fn(async () => true);
     render(() => (
