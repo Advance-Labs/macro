@@ -9,10 +9,12 @@ import ArrowLeftIcon from '@phosphor/arrow-left.svg';
 import ArrowRightIcon from '@phosphor/arrow-right.svg';
 import PlusIcon from '@phosphor/plus.svg';
 import TableIcon from '@phosphor/table.svg';
+import TrashIcon from '@phosphor/trash.svg';
 import { Key } from '@solid-primitives/keyed';
 import { createResizeObserver } from '@solid-primitives/resize-observer';
 import { DragDropProvider, DragOverlay } from '@thisbeyond/solid-dnd';
 import { Button } from '@ui/components/Button';
+import { DeleteDialog } from '@ui/components/DeleteDialog';
 import { Tooltip } from '@ui/components/Tooltip';
 import {
   createEffect,
@@ -48,7 +50,10 @@ export function TableNavigation(props: {
   ) => DatabaseSchemaChange;
   /** Persist a new tab order: every table id, left to right. */
   onReorder?: (tableIds: string[]) => void;
+  /** Delete a table the viewer confirmed; never offered for a database's only table. */
+  onDelete?: (tableId: string) => void;
 }) {
+  const [deleting, setDeleting] = createSignal<{ id: string; name: string }>();
   const [open, setOpen] = createSignal(false);
   const [tabRail, setTabRail] = createSignal<HTMLDivElement>();
   const renameErrorId = createUniqueId();
@@ -62,6 +67,8 @@ export function TableNavigation(props: {
   const canRename = () => props.canCreate && !!props.onRename;
   const canReorder = () =>
     props.canCreate && !!props.onReorder && props.tables.length > 1;
+  const canDelete = () =>
+    props.canCreate && !!props.onDelete && props.tables.length > 1;
   const moveTable = (
     tableId: string,
     targetId: string,
@@ -400,8 +407,40 @@ export function TableNavigation(props: {
               }}
             />
           </Show>
+          <Show when={props.onDelete}>
+            <MenuSeparator />
+            <MenuItem
+              text="Delete table"
+              icon={TrashIcon}
+              closeOnSelect
+              disabled={!canDelete()}
+              onClick={() => {
+                const target = menuTarget();
+                if (target && canDelete()) setDeleting({ ...target.table });
+              }}
+            />
+          </Show>
         </ContextMenuContent>
       </ContextMenu.Portal>
+      <DeleteDialog
+        open={!!deleting()}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(undefined);
+        }}
+        title="Delete table?"
+        deleteLabel="Delete table"
+        onDelete={() => {
+          const target = deleting();
+          setDeleting(undefined);
+          if (target && canDelete()) props.onDelete?.(target.id);
+        }}
+        body={
+          <p>
+            “{deleting()?.name}” will be deleted for everyone, with its columns,
+            records and views.
+          </p>
+        }
+      />
       <Show when={open()}>
         <CreateTableDialog
           existingNames={props.tables.map((table) => table.name)}

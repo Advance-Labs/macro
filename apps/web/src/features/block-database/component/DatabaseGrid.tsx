@@ -3,6 +3,7 @@ import { refreshInBackground } from '@queries/database-sql/create-database-sql-q
 import {
   applyDatabaseOps,
   applyDatabaseTableVersions,
+  onDatabaseTableAdvanced,
   useDatabaseDetailQuery,
 } from '@queries/storage/databases';
 import {
@@ -16,6 +17,7 @@ import {
   createSignal,
   For,
   type JSX,
+  onCleanup,
   Show,
   Suspense,
 } from 'solid-js';
@@ -189,13 +191,24 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       applyOps: (ops) => applyDatabaseOps(databaseId, ops),
       changes: (readRows) =>
         tableChangesOf({ databaseId, tableId: props.tableId, readRows }),
-      onTableChanged: (listener) =>
+      onTableChanged: (listener) => {
         useDatabaseTableChanges((change) => {
           if (change.tableId !== props.tableId) return;
           listener(change.version);
           if (props.stored && props.view.layout.kind === 'board')
             void refreshCardPositions(databaseId, props.view.id);
-        }),
+        });
+        // An undo or redo is read back as soon as it answers, ahead of its ping.
+        onCleanup(
+          onDatabaseTableAdvanced((change) => {
+            if (
+              change.databaseId === databaseId &&
+              change.tableId === props.tableId
+            )
+              listener(change.version);
+          })
+        );
+      },
       applyVersions: (versions) =>
         applyDatabaseTableVersions(databaseId, versions),
       addOption: (columnId, label) =>

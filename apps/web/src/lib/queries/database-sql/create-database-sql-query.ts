@@ -125,6 +125,10 @@ export interface DatabaseSqlQuery {
   loading: Accessor<boolean>;
   /** Read the statement's tables from the server again. */
   refresh: () => ResultAsync<DatabaseSqlRun, DatabaseSqlFailure>;
+  /** Whether a local cache backs the reads, so rows read into it can answer the statement. */
+  cached: () => boolean;
+  /** Answer the statement again from the local cache, as a cache change would, without waiting on one. */
+  answerFromCache: () => ResultAsync<DatabaseSqlRun, DatabaseSqlFailure>;
 }
 
 /** The app's GraphQL client and cache, and the contacts query for people. */
@@ -260,6 +264,12 @@ export function createDatabaseSqlQuery(
         return result;
       };
       return new ResultAsync(settle());
+    },
+    cached: () => capabilities.cacheHost() !== undefined,
+    answerFromCache: () => {
+      const current = untrack(statement);
+      if (!current) return okAsync({ landed: false });
+      return run(current, 'cache-first', true);
     },
   };
 }

@@ -253,3 +253,51 @@ describe('reordering tabs', () => {
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
   });
 });
+
+describe('deleting a table', () => {
+  it('asks first, then sends one delete op for that table and drops its tab', async () => {
+    fetch.mockResolvedValue(
+      ok({
+        results: [
+          { kind: 'table', table: 'budget', change: { kind: 'deleted' } },
+        ],
+        changes: [],
+      })
+    );
+    renderTabs();
+
+    await chooseMenuItem('Budget', 'Delete table');
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('“Budget”');
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete table' }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toMatch(/\/databases\/db\/ops$/);
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(
+      JSON.stringify({
+        ops: [{ kind: 'table', table: 'budget', change: { kind: 'delete' } }],
+      })
+    );
+    await waitFor(() => expect(tabNames()).toEqual(['Guests', 'Venues']));
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+  });
+
+  it('refuses to delete the only table', async () => {
+    queryClient.setQueryData(key, { ...detail, tables: [detail.tables[0]] });
+    renderTabs();
+
+    fireEvent.contextMenu(screen.getByRole('tab', { name: 'Guests' }), {
+      clientX: 100,
+      clientY: 40,
+    });
+    const item = await screen.findByRole('menuitem', { name: 'Delete table' });
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    fireEvent(item, new MouseEvent('pointerup', { button: 0, bubbles: true }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

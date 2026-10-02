@@ -1,3 +1,4 @@
+import type { CacheRevision } from '@app/lib/graphql-cache/protocol';
 import type {
   CellValue,
   DatabaseOp,
@@ -5,9 +6,14 @@ import type {
   Step,
   ViewQuery,
 } from '@core/database-sql/generated/types';
+import type { CacheHost } from '@graphql-cache/host/types';
 import { queryClient } from '@queries/client';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
-import { applyDatabaseTableVersions } from '@queries/storage/databases';
+import {
+  applyDatabaseTableVersions,
+  onDatabaseTableAdvanced,
+  undoDatabaseChange,
+} from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
@@ -31,6 +37,7 @@ import { createDatabaseRowsSource } from './table-rows';
 const transport = vi.hoisted(() => ({
   get: vi.fn(),
   inferColumnType: vi.fn(),
+  undoChange: vi.fn(),
 }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
@@ -265,6 +272,8 @@ function setup(
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseView>;
+    onTableChanged?: (listener: (version: number) => void) => void;
+    changes?: Parameters<typeof createDatabaseRowsSource>[0]['changes'];
   } = {}
 ) {
   const client = queryClient;
@@ -283,9 +292,12 @@ function setup(
       view: options.view ?? (() => allGuests),
       applyOps,
       read: options.read ?? engine().read,
-      onTableChanged: (listener) => {
-        tableChanged = listener;
-      },
+      changes: options.changes,
+      onTableChanged:
+        options.onTableChanged ??
+        ((listener) => {
+          tableChanged = listener;
+        }),
       applyVersions,
       addOption: options.addOption ?? (() => okAsync(undefined)),
     });
@@ -1218,6 +1230,153 @@ describe('accepted writes after switching tables', () => {
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);
+  });
+});
+
+describe("another writer's change", () => {
+  it('lands the new value with a full read when no local cache holds the rows', async () => {
+    let name = 'Ada';
+    const { read } = engine(() => guests([{ id: 'record', name }]));
+    const since = vi.fn((_version: number) =>
+      okAsync({
+        version: 7,
+        complete: true,
+        truncated: false,
+        rows: [{ row: 'record', kind: 'update' as const }],
+        columns: [],
+      })
+    );
+    const { source, tableChanged } = setup(detail(), vi.fn<ApplyOps>(), {
+      read,
+      changes: (readRows) => ({
+        since,
+        readRows,
+        forget: () => okAsync(undefined),
+      }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
+
+    name = 'Grace';
+    tableChanged(7);
+
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 7,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+    expect(since).not.toHaveBeenCalled();
+  });
+
+  it('reads just the changed rows into the cache, then answers the view from it', async () => {
+    let name = 'Ada';
+    const engineRead = engine(() => guests([{ id: 'record', name }]));
+    const host = {
+      // The view's rerun must not wait on a cache notification.
+      onCacheChanged: () => () => {},
+      entityFilter: async () => ({ kind: 'unsupported' as const }),
+      readRecordsByKeys: async () => ({
+        revision: 'revision-1' as CacheRevision,
+        records: [],
+      }),
+    } satisfies Pick<
+      CacheHost,
+      'onCacheChanged' | 'entityFilter' | 'readRecordsByKeys'
+    >;
+    const since = vi.fn((_version: number) =>
+      okAsync({
+        version: 7,
+        complete: true,
+        truncated: false,
+        rows: [{ row: 'record', kind: 'update' as const }],
+        columns: [],
+      })
+    );
+    const { source, tableChanged } = setup(detail(), vi.fn<ApplyOps>(), {
+      read: { ...engineRead.read, cacheHost: () => host },
+      changes: (readRows) => ({
+        since,
+        readRows,
+        forget: () => okAsync(undefined),
+      }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
+    const beforePing = engineRead.reads.length;
+
+    name = 'Grace';
+    tableChanged(7);
+
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 7,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+    expect(since).toHaveBeenCalledExactlyOnceWith(5);
+    expect(engineRead.reads.slice(beforePing)).toEqual([
+      `SELECT * FROM "guests" WHERE row_id IN ('record')`,
+      allGuests.query,
+    ]);
+  });
+});
+
+describe('an undo', () => {
+  it('reads the table again, so the snapshot holds the reverted value', async () => {
+    let name = 'Grace';
+    const { read } = engine(() => guests([{ id: 'record', name }]));
+    transport.undoChange.mockReturnValue(
+      okAsync({
+        outcome: {
+          kind: 'reverted',
+          changes: [{ change: 12, table: 'guests-table', version: 6 }],
+        },
+      })
+    );
+    const { source } = setup(detail(), vi.fn<ApplyOps>(), {
+      read,
+      onTableChanged: (listener) =>
+        onDatabaseTableAdvanced((change) => {
+          if (change.databaseId === 'db' && change.tableId === 'guests-table')
+            listener(change.version);
+        }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+
+    name = 'Ada';
+    const undone = await undoDatabaseChange('db', 11);
+
+    expect(undone.isOk()).toBe(true);
+    expect(transport.undoChange).toHaveBeenCalledExactlyOnceWith({
+      id: 'db',
+      change: 11,
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 6,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
   });
 });
 

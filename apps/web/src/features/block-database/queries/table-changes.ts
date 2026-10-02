@@ -17,13 +17,15 @@ export type TableChangesCapabilities = {
 
 /**
  * Catch a read held at `from` up to `version`: just the rows that changed, read by id in chunks
- * the engine narrows to `row_id IN (...)`, and removed rows dropped; anything else, or any
- * failure, is a full read. Answers the version reached.
+ * the engine narrows to `row_id IN (...)`, and removed rows dropped, then the open reads answered
+ * again from the cache; anything else, or any failure, is a full read. Answers the version reached.
  */
 export function refreshChangedRows<Failure>(params: {
   from: number;
   version: number;
   changes: TableChangesCapabilities;
+  /** Answer the open reads from the cache the rows were read into, as at this version. */
+  answerFromCache: (version: number) => ResultAsync<void, unknown>;
   fullRead: () => ResultAsync<void, Failure>;
 }): ResultAsync<number, Failure> {
   const full = () => params.fullRead().map(() => params.version);
@@ -41,6 +43,7 @@ export function refreshChangedRows<Failure>(params: {
             ? params.changes.forget(plan.removed)
             : okAsync(undefined)
         )
+        .andThen(() => params.answerFromCache(plan.version))
         .map(() => plan.version);
     })
     .orElse(full);
