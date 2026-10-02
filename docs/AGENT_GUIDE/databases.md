@@ -3,6 +3,8 @@
 Choose **Create → Database** to create a database and its first table with a Name
 column. **C → L** opens a new database with its title selected and ready to type.
 Enter saves the title and focuses A1, ready to type without another click.
+Creating from Home immediately shows the table tabs, **New table**, **Database
+actions**, and **AI**; no reload is needed to use them.
 Databases open at
 `/app/database/<uuid>`. A database contains tables; records belong to a table and
 its properties describe each record. The database name in the split header is an
