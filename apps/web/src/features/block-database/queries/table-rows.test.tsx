@@ -7,7 +7,11 @@ import type {
 } from '@core/database-sql/generated/types';
 import { queryClient } from '@queries/client';
 import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
-import { applyDatabaseTableVersions } from '@queries/storage/databases';
+import {
+  applyDatabaseTableVersions,
+  onDatabaseTableAdvanced,
+  undoDatabaseChange,
+} from '@queries/storage/databases';
 import { databasesKeys } from '@queries/storage/keys';
 import type { DatabaseOpsError } from '@service-storage/databases';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
@@ -31,6 +35,7 @@ import { createDatabaseRowsSource } from './table-rows';
 const transport = vi.hoisted(() => ({
   get: vi.fn(),
   inferColumnType: vi.fn(),
+  undoChange: vi.fn(),
 }));
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { databases: transport },
@@ -265,6 +270,7 @@ function setup(
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseView>;
+    onTableChanged?: (listener: (version: number) => void) => void;
   } = {}
 ) {
   const client = queryClient;
@@ -283,9 +289,11 @@ function setup(
       view: options.view ?? (() => allGuests),
       applyOps,
       read: options.read ?? engine().read,
-      onTableChanged: (listener) => {
-        tableChanged = listener;
-      },
+      onTableChanged:
+        options.onTableChanged ??
+        ((listener) => {
+          tableChanged = listener;
+        }),
       applyVersions,
       addOption: options.addOption ?? (() => okAsync(undefined)),
     });
@@ -1218,6 +1226,52 @@ describe('accepted writes after switching tables', () => {
     expect(source.snapshot()?.rows).toEqual([
       { rowId: 'record', cells: { name: 'Ada' } },
     ]);
+  });
+});
+
+describe('an undo', () => {
+  it('reads the table again, so the snapshot holds the reverted value', async () => {
+    let name = 'Grace';
+    const { read } = engine(() => guests([{ id: 'record', name }]));
+    transport.undoChange.mockReturnValue(
+      okAsync({
+        outcome: {
+          kind: 'reverted',
+          changes: [{ change: 12, table: 'guests-table', version: 6 }],
+        },
+      })
+    );
+    const { source } = setup(detail(), vi.fn<ApplyOps>(), {
+      read,
+      onTableChanged: (listener) =>
+        onDatabaseTableAdvanced((change) => {
+          if (change.databaseId === 'db' && change.tableId === 'guests-table')
+            listener(change.version);
+        }),
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 5,
+        rows: [{ rowId: 'record', cells: { name: 'Grace' } }],
+        retained: [],
+      })
+    );
+
+    name = 'Ada';
+    const undone = await undoDatabaseChange('db', 11);
+
+    expect(undone.isOk()).toBe(true);
+    expect(transport.undoChange).toHaveBeenCalledExactlyOnceWith({
+      id: 'db',
+      change: 11,
+    });
+    await waitFor(() =>
+      expect(source.snapshot()).toEqual({
+        version: 6,
+        rows: [{ rowId: 'record', cells: { name: 'Ada' } }],
+        retained: [],
+      })
+    );
   });
 });
 

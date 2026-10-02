@@ -151,10 +151,27 @@ export function applyDatabaseOps(
   );
 }
 
+/** A table version a request of this viewer's reported apart from an ops batch, such as an undo. */
+export type DatabaseTableAdvanced = {
+  databaseId: string;
+  tableId: string;
+  version: number;
+};
+
+const advancedListeners = new Set<(change: DatabaseTableAdvanced) => void>();
+
+/** Hear of every table version an undo or redo of this viewer's moved a table to; answers the unsubscribe. */
+export function onDatabaseTableAdvanced(
+  listener: (change: DatabaseTableAdvanced) => void
+): () => void {
+  advancedListeners.add(listener);
+  return () => advancedListeners.delete(listener);
+}
+
 /**
  * Undo one of the viewer's own changes by its journal id. The outcome says what reverted; the
  * changes it made carry their versions, folded into the cached schema, which is re-read for any
- * schema the undo put back.
+ * schema the undo put back, and announced to the open reads of each table, which read it again.
  */
 export function undoDatabaseChange(
   databaseId: string,
@@ -176,6 +193,9 @@ export function undoDatabaseChange(
         )
       );
       if (changes.length > 0) void invalidateDatabase(databaseId);
+      for (const { table, version } of changes)
+        for (const listener of advancedListeners)
+          listener({ databaseId, tableId: table, version });
       return outcome;
     });
 }
