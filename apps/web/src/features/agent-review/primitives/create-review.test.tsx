@@ -84,11 +84,6 @@ function setup(initial?: ReviewState, pinned?: number, withCitation = true) {
       url: 'https://macro.com/review',
     }),
     resolve: async () => {},
-    link: async () => ({
-      reviewId: 'review',
-      revision: 1,
-      url: 'https://macro.com/review',
-    }),
   };
   const host: ReviewHost = {
     createSource: () => source,
@@ -121,7 +116,6 @@ function setup(initial?: ReviewState, pinned?: number, withCitation = true) {
       setNavigation((n) => n + 1);
       return true;
     },
-    copyLink: async () => {},
   };
   return {
     host,

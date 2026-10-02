@@ -13,7 +13,9 @@ Use Bun dependencies and a web dev server owned by this worktree on port 3004.
 The scripts connect to the shared Chrome CDP endpoint on port 9222, create their
 own context, and close only that context. They proxy local Vite requests through
 the driver to avoid network emulation from other shared browser contexts.
-Set `REVIEW_BROWSER_ENDPOINT` to use a separate CDP browser.
+Set `REVIEW_BROWSER_ENDPOINT` to use a separate CDP browser. `REVIEW_ORIGIN`
+overrides the frontend origin; `REVIEW_STORAGE_STATE` accepts a private Playwright
+storage-state path when that frontend requires an authenticated local session.
 
 Fetch a disposable public checkout and both immutable PR commits. Fixtures used:
 
@@ -87,13 +89,13 @@ node apps/web/scripts/review-browser/revisions.mjs 7117
 
 This verifies immutable historical links, moved ranges, inline Markdown/bare-URL
 citations, repeated navigation to the same citation, Resolve/Reopen, responsive wrapped
-layout, read-only selection/copy, reload, and mobile. Repeat both scripts on port
+layout, read-only selection, reload, and mobile. Repeat both scripts on port
 7118. A lab restart intentionally discards review history, so rerun publication
 and phase one after restarting it.
 
 `node apps/web/scripts/review-browser/mobile.mjs 7118` opens a fresh touch viewport
 against the Rust review. It checks the default unified layout, dismissing the
-navigation drawer, file selection, deep line links, and preserving the session
+navigation drawer, file selection, asking about deep lines, and preserving the session
 draft on Back.
 
 Create a fresh disposable stress checkout with
@@ -105,7 +107,8 @@ the printed directory, base `HEAD`, and port `7119`, then run
 `src/large.ts`, a tab/CJK `src/wide.ts` ending in `HORIZONTAL_TAIL`, `image.png`,
 `empty.ts`, deleted `src/deleted.rs`, and `package-lock.json`. It publishes through
 the real MCP endpoint, checks folded context, deep search/jumps, mounted
-row count, sparse-change statistics, range citations, wrapped glyph bounds,
+row count, sparse-change statistics, range questions, selection-chip recovery after
+virtualized rows remount, wrapped glyph bounds,
 escaped HTML, and nonstandard file types. It also checks the expanded Full Diff
 tree, continuous scrolling across files, and stable source positioning when a
 preceding file changes height. The original design
@@ -124,7 +127,10 @@ search. Browser helpers `openFile` expand chapters and walk the virtualized tree
 remain under Other changes. Generated files start hidden behind a visibility chip;
 agents can add other hideable groups. Desktop modified files use aligned columns;
 new/deleted files use a centered single source. Mobile uses one column. Long lines
-wrap. Select code or gutters, then choose Comment from the selection toolbar.
+wrap. Select code or gutters, then choose the nearby **Ask agent** chip. Escape
+clears the selection. The mixed-language fixture's `walkthrough.mjs 7121` checks
+inline sidebar explanations, automatic section expansion, manual collapse, and
+the floating selection action on desktop and mobile.
 Comments appear below the selected side; an outside click dismisses an empty
 composer. **Full Diff** switches the sidebar to the complete repository tree,
 including files hidden from the walkthrough, with independent folder disclosure

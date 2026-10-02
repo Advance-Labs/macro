@@ -1,21 +1,25 @@
+import { floatWithElement } from '@core/component/LexicalMarkdown/directive/floatWithElement';
 import ChatIcon from '@phosphor/chat-circle.svg';
-import LinkIcon from '@phosphor/link.svg';
-import XIcon from '@phosphor/x.svg';
-import { Button } from '@ui';
-import type { CodeLocation } from '../core/model';
+
+false && floatWithElement;
 
 export function ReviewSelection(props: {
-  location: CodeLocation;
+  anchor: HTMLElement;
   disabled?: boolean;
-  readOnly?: boolean;
   onComment: () => void;
-  onCopy: () => void;
   onDismiss: () => void;
 }) {
   return (
-    <div
-      role="toolbar"
-      aria-label="Selected code"
+    <button
+      type="button"
+      class="absolute top-0 left-0 z-anchored-controls flex items-center gap-1.5 rounded-full border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-ink shadow-lg hover:overlay-hover disabled:opacity-50"
+      use:floatWithElement={{
+        element: () => props.anchor,
+        floatingOptions: { placement: 'top-start' },
+      }}
+      onPointerDown={(event) => event.preventDefault()}
+      disabled={props.disabled}
+      onClick={props.onComment}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -23,46 +27,9 @@ export function ReviewSelection(props: {
           props.onDismiss();
         }
       }}
-      class="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-1 rounded-lg border border-edge bg-panel p-1 shadow-md font-sans text-xs"
     >
-      <span class="whitespace-nowrap px-2 text-ink-muted tabular-nums">
-        L{props.location.line}
-        {props.location.endLine &&
-        props.location.endLine !== props.location.line
-          ? `–${props.location.endLine}`
-          : ''}
-      </span>
-      <Button
-        size="xs"
-        variant="ghost"
-        disabled={props.disabled || props.readOnly}
-        onClick={props.onComment}
-      >
-        <ChatIcon />
-        Comment
-      </Button>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        label={
-          props.location.endLine &&
-          props.location.endLine !== props.location.line
-            ? 'Copy link to selected range'
-            : 'Copy link to this line'
-        }
-        disabled={props.disabled}
-        onClick={props.onCopy}
-      >
-        <LinkIcon />
-      </Button>
-      <Button
-        size="icon-xs"
-        variant="ghost"
-        label="Clear selection"
-        onClick={props.onDismiss}
-      >
-        <XIcon />
-      </Button>
-    </div>
+      <ChatIcon class="size-3.5 shrink-0" />
+      Ask agent
+    </button>
   );
 }

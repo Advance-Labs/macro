@@ -52,7 +52,6 @@ export default function Integration() {
     back: () => update({ open: 'false' }),
     selectRevision: (revision) =>
       update({ revision: String(revision), target: '', thread: '' }),
-    copyLink: (url) => navigator.clipboard.writeText(url),
     openLink: (href) => {
       const url = new URL(href, window.location.href);
       if (url.searchParams.get('s0.review.open') !== 'true') return false;

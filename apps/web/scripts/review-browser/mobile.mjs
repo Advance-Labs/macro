@@ -32,14 +32,13 @@ try {
   await line.waitFor();
   await line.click();
   await root
-    .getByRole('button', { name: 'Copy link to this line', exact: true })
+    .getByRole('button', { name: 'Ask agent', exact: true })
     .click();
-  await root
-    .getByText('Link to this revision copied', { exact: true })
-    .waitFor();
+  await root.getByRole('textbox', { name: 'Comment on this code' }).waitFor();
+  await root.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert(
     (await root.getByRole('textbox', { name: 'Comment on this code' }).count()) === 0,
-    'Copying a citation left an empty composer open'
+    'Cancelling the question left an empty composer open'
   );
   assert(
     await root.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
@@ -65,7 +64,7 @@ try {
         'fresh mobile unified',
         'dismiss navigation',
         'file navigation',
-        'deep line link',
+        'ask about a deep line',
         'draft preservation',
       ],
     })

@@ -539,7 +539,6 @@ export default function AgentReviewGallery() {
               discussions={discussions()}
               renderDiscussion={renderDiscussion}
               onSelect={(target) => openComposer(target)}
-              onCopy={(target) => void copyLink(target)}
               search={search()}
             />
             <footer class="flex shrink-0 items-center gap-2 border-t border-edge-muted px-4 py-2.5 text-xs text-ink-subtle">

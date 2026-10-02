@@ -1,13 +1,16 @@
 import type { DiffFileKind } from '@app/components/diff-view/model/diff-file';
 import { StatusLetter } from '@app/components/diff-view/StatusLetter';
+import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
+import { channelTheme } from '@core/component/LexicalMarkdown/theme';
 import CollapseIcon from '@phosphor/arrows-in-line-vertical.svg';
 import CaretRightIcon from '@phosphor/caret-right.svg';
 import FileIcon from '@phosphor/file-code.svg';
 import FolderIcon from '@phosphor/folder.svg';
 import XIcon from '@phosphor/x.svg';
+import { createWritableMemo } from '@solid-primitives/memo';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import { Button, cn, Tabs } from '@ui';
-import { createMemo, createSignal, For, Show } from 'solid-js';
+import { createEffect, createMemo, For, on, Show } from 'solid-js';
 import {
   fileTree,
   fileTreeRows,
@@ -53,9 +56,25 @@ export function ReviewNavigation(props: {
   onClose?: () => void;
   active?: boolean;
 }) {
-  const [disclosures, setDisclosures] = createSignal<
+  const activeChapter = createMemo(() => props.chapter);
+  const [disclosures, setDisclosures] = createWritableMemo<
     ReadonlyMap<string, boolean>
-  >(new Map());
+  >(
+    on(
+      activeChapter,
+      (
+        chapter,
+        _previousChapter,
+        previous: ReadonlyMap<string, boolean> | undefined
+      ) =>
+        previous && props.activePath
+          ? new Map(previous).set(
+              chapter >= 0 ? `chapter:${chapter}` : 'other',
+              true
+            )
+          : (previous ?? new Map())
+    )
+  );
   let scroller!: HTMLDivElement;
   const groups = createMemo(() =>
     walkthroughTrees(props.chapters, props.walkthroughFiles ?? props.files)
@@ -93,7 +112,14 @@ export function ReviewNavigation(props: {
       return rows().length;
     },
     getScrollElement: () => scroller,
-    estimateSize: (index) => (rows()[index]?.kind === 'chapter' ? 36 : 24),
+    estimateSize: (index) => {
+      const row = rows()[index];
+      if (row?.kind !== 'chapter') return 24;
+      return row.chapter !== undefined &&
+        props.chapters[row.chapter]?.description
+        ? 112
+        : 36;
+    },
     getItemKey: (index) => rows()[index]?.key ?? index,
     overscan: 12,
   });
@@ -204,10 +230,19 @@ export function ReviewNavigation(props: {
                 const row = () => rows()[virtual.index];
                 return (
                   <div
+                    data-index={virtual.index}
                     class="absolute inset-x-0 top-0"
+                    ref={(element) =>
+                      createEffect(
+                        on(
+                          () => virtual.key,
+                          () => virtualizer.measureElement(element)
+                        )
+                      )
+                    }
                     style={{
                       transform: `translateY(${virtual.start}px)`,
-                      height: `${virtual.size}px`,
+                      height: row()?.kind === 'chapter' ? undefined : '24px',
                     }}
                   >
                     <Show when={row()}>
@@ -307,47 +342,78 @@ export function ReviewNavigation(props: {
                             }
                           >
                             {(group) => (
-                              <button
-                                type="button"
-                                title={group().title}
-                                aria-label={group().title}
-                                data-review-chapter={group().key}
-                                aria-expanded={!collapsed().has(group().key)}
-                                aria-current={
-                                  group().chapter === props.chapter
-                                    ? 'step'
-                                    : undefined
-                                }
-                                onClick={() => {
-                                  const opening = collapsed().has(group().key);
-                                  toggle(group().key);
-                                  const index = group().chapter;
-                                  if (
-                                    opening &&
-                                    index !== undefined &&
-                                    index !== props.chapter
-                                  )
-                                    props.onChapter(index);
-                                }}
+                              <div
                                 class={cn(
-                                  'my-0.5 flex h-8 w-full items-center gap-2 rounded px-2 text-left text-xs outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-edge-focus',
+                                  'my-0.5 rounded',
                                   group().chapter === props.chapter &&
                                     'bg-surface-2'
                                 )}
                               >
-                                <span class="min-w-0 flex-1 truncate font-medium">
-                                  {group().title}
-                                </span>
-                                <span class="shrink-0 text-[10px] tabular-nums text-ink-subtle">
-                                  {group().count}
-                                </span>
-                                <CaretRightIcon
-                                  class={cn(
-                                    'size-3 shrink-0 text-ink-subtle',
-                                    !collapsed().has(group().key) && 'rotate-90'
+                                <button
+                                  type="button"
+                                  title={group().title}
+                                  aria-label={group().title}
+                                  data-review-chapter={group().key}
+                                  aria-expanded={!collapsed().has(group().key)}
+                                  aria-current={
+                                    group().chapter === props.chapter
+                                      ? 'step'
+                                      : undefined
+                                  }
+                                  onClick={() => {
+                                    const opening = collapsed().has(
+                                      group().key
+                                    );
+                                    toggle(group().key);
+                                    const index = group().chapter;
+                                    if (
+                                      opening &&
+                                      index !== undefined &&
+                                      index !== props.chapter
+                                    )
+                                      props.onChapter(index);
+                                  }}
+                                  class="flex min-h-8 w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-edge-focus"
+                                >
+                                  <span class="min-w-0 flex-1 font-medium">
+                                    {group().title}
+                                  </span>
+                                  <span class="shrink-0 text-[10px] tabular-nums text-ink-subtle">
+                                    {group().count}
+                                  </span>
+                                  <CaretRightIcon
+                                    class={cn(
+                                      'size-3 shrink-0 text-ink-subtle',
+                                      !collapsed().has(group().key) &&
+                                        'rotate-90'
+                                    )}
+                                  />
+                                </button>
+                                <Show
+                                  when={
+                                    group().chapter !== undefined &&
+                                    props.chapters[group().chapter!]
+                                      ?.description
+                                  }
+                                >
+                                  {(description) => (
+                                    <div
+                                      data-review-chapter-description={
+                                        group().chapter
+                                      }
+                                      class="overflow-hidden px-2 pt-0.5 pb-3 text-xs leading-[18px] text-ink-muted break-words"
+                                    >
+                                      <StaticMarkdown
+                                        autoLink
+                                        markdown={description()}
+                                        theme={channelTheme}
+                                        target="internal"
+                                        lazy={false}
+                                      />
+                                    </div>
                                   )}
-                                />
-                              </button>
+                                </Show>
+                              </div>
                             )}
                           </Show>
                         );

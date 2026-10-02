@@ -35,6 +35,9 @@ try {
   await openFile('src/large.ts');
   await root.locator('[data-review-row]').first().waitFor({ timeout: 60000 });
   await openSearch(root);
+  // Search exposes the full source so scrolling away replaces the selected
+  // virtual rows without leaving this file or jumping across folded context.
+  await root.getByRole('textbox', { name: 'Find in file' }).fill('export const');
   const start = Date.now();
   await root.getByRole('spinbutton', { name: 'Go to line' }).fill('100000');
   await root.getByRole('spinbutton', { name: 'Go to line' }).press('Enter');
@@ -50,19 +53,33 @@ try {
   await code()
     .getByRole('button', { name: 'Select new line 100000', exact: true })
     .click({ modifiers: ['Shift'] });
-  await root
-    .getByRole('button', { name: 'Copy link to selected range', exact: true })
-    .first()
-    .click();
-  await root
-    .getByText('Link to this revision copied', { exact: true })
-    .waitFor();
+  const reader = root.locator('[data-review-scroll]');
+  const selectedTop = await reader.evaluate(el => el.scrollTop);
+  const selectedFile = await code().elementHandle();
+  const ask = root.getByRole('button', { name: 'Ask agent', exact: true });
+  await ask.waitFor();
+  await reader.evaluate(el => el.scrollTop = Math.max(0, el.scrollTop - 1200));
+  await page.waitForTimeout(250);
+  console.log(JSON.stringify({ stage: 'selection-window', before: selectedTop, after: await reader.evaluate(el => el.scrollTop), selectedRows: await code().locator('[data-selected]').count(), chipVisible: await ask.isVisible() }));
+  assert(!(await ask.isVisible()), 'Ask agent remained visible after its selected rows left the window');
+  await reader.evaluate((el, top) => el.scrollTop = top, selectedTop);
+  await page.waitForTimeout(300);
+  assert(await selectedFile.evaluate(el => el.isConnected), 'The file remounted while scrolling within it');
+  await ask.waitFor();
+  const selectedLine = code().locator('[data-review-side="new"][data-review-line="99999"]');
+  const selectedBounds = await selectedLine.boundingBox();
+  const actionBounds = await ask.boundingBox();
+  assert(Math.abs(actionBounds.y - selectedBounds.y) < 90, 'Ask agent did not follow the remounted selected row');
+  await root.getByRole('button', { name: 'Ask agent', exact: true }).click();
+  await root.getByRole('textbox', { name: 'Comment on this code' }).fill('Check the selected final two lines.');
+  await root.getByRole('button', { name: 'Comment', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('textarea[aria-label="Comment on this code"]'));
   const saved = (await h.api('/review')).review;
   assert(
     saved.anchors.some(
       (a) => a.original.line === 99999 && a.original.endLine === 100000
     ),
-    'Range citation lost its end line'
+    'Question lost its selected end line'
   );
   const large = saved.revisions
     .at(-1)
@@ -154,15 +171,12 @@ try {
   await code()
     .getByRole('button', { name: 'Select old line 1', exact: true })
     .click();
-  await root
-    .getByRole('button', { name: 'Copy link to this line', exact: true })
-    .click();
-  await root
-    .getByText('Link to this revision copied', { exact: true })
-    .waitFor();
+  await root.getByRole('button', { name: 'Ask agent', exact: true }).click();
+  await root.getByRole('textbox', { name: 'Comment on this code' }).waitFor();
+  await root.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert(
     (await root.getByRole('textbox', { name: 'Comment on this code' }).count()) === 0,
-    'Copying an old-side citation left an empty composer open'
+    'Cancelling an old-side question left an empty composer open'
   );
   await openFile('package-lock.json');
   const expand = code().getByRole('button', { name: 'Expand file', exact: true });
@@ -185,7 +199,6 @@ try {
   assert(await folder.getAttribute('aria-expanded') === 'false', 'Full Diff lost its folder disclosure state');
   await folder.click();
   await nav.getByRole('button', { name: 'src/deleted.rs', exact: true }).click();
-  const reader = root.locator('[data-review-scroll]');
   const bounds = await reader.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.wheel(0, 200);
@@ -221,15 +234,19 @@ try {
         'escaped HTML',
         'binary',
         'empty',
-        'deleted-old-side citation',
+        'deleted-old-side question',
         'generated',
         '100k virtualization',
+        'Ask agent follows remounted selection',
         'expanded Full Diff tree with retained disclosure',
         'continuous wheel scrolling across files',
         'single compensation for preceding file resize',
       ],
     })
   );
+} catch (error) {
+  await h.page.screenshot({ path: '/tmp/macro-review-public/stress-failure.png' }).catch(() => {});
+  throw error;
 } finally {
   await h.context.close();
 }

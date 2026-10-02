@@ -8,7 +8,7 @@ its draft. The agent's diff citations enter the same reader; links carry
 `sN.review.open`, `id`, `revision`, `target`, and optional `thread` search keys.
 
 The left navigation contains **Walkthrough**, **Full Diff**, **Threads**, and **History**. Each
-walkthrough chapter contains a file tree that starts collapsed. Click anywhere
+walkthrough chapter shows its explanation inline and contains a file tree that starts collapsed. Click anywhere
 on a chapter header to expand or collapse its tree; collapsing keeps the code
 viewport in place. Files show colored change status and green/red change bars
 with exact added/removed line counts on hover. Files outside the tour appear
@@ -27,6 +27,8 @@ Each view retains its own folder expansion and sidebar scroll position.
 The code pane scrolls continuously across files. Full Diff follows repository
 order; Walkthrough follows chapter order, then remaining visible files, without
 repeating files shared by chapters. The active file and chapter follow scrolling.
+Entering a different section expands its walkthrough tree. Manually collapsing
+the current section keeps it closed until you leave and return.
 Only nearby file bodies and code lines mount, so large comparisons stay usable.
 Threads and History retain the current reading order. New agent revisions update
 the same scroll surface; composing a comment still pauses revision following.
@@ -49,14 +51,14 @@ bottom edge to resize it; the focused divider also supports ArrowUp/Down,
 Home/End, and double-click reset to the content size.
 
 Drag over code or line numbers to select a region, or click a line number and
-Shift-click another. Clicking code also selects its line. A compact selection
-toolbar offers **Comment**, **Copy link**, and **Clear**. Comment opens a composer
+Shift-click another. Clicking code also selects its line. An **Ask agent** chip
+appears beside the selected lines. Escape clears the selection. **Ask agent** opens a composer
 below the selected side on desktop. Clicking outside an
 empty composer dismisses it; typed drafts stay open. Cmd/Ctrl+Enter sends and
 Escape cancels. Editors can comment; comments are sent to the agent in the same
 session. Agent replies appear
 inline and their code links are clickable. Resolve/Reopen belongs to the human.
-Viewers can select and copy citations. A failed/uncertain save offers a retry of
+Viewers can select code and follow citations. A failed/uncertain save offers a retry of
 the same message. Saved notes from the old changes panel can be recovered as drafts.
 
 The reader follows the latest revision automatically, pausing while a comment is

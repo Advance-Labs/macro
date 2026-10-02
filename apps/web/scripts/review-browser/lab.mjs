@@ -1,12 +1,14 @@
 import { chromium } from 'playwright';
 
 export async function lab(port, options = {}) {
+  const origin = process.env.REVIEW_ORIGIN || 'http://localhost:3004';
   const browser = await chromium.connectOverCDP(
     process.env.REVIEW_BROWSER_ENDPOINT || 'http://localhost:9222'
   );
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
     permissions: ['clipboard-read', 'clipboard-write'],
+    storageState: process.env.REVIEW_STORAGE_STATE,
     ...options,
   });
   const page = await context.newPage();
@@ -14,7 +16,11 @@ export async function lab(port, options = {}) {
   page.on('pageerror', (error) => errors.push(error.message));
   // Proxy local requests through the driver. This also isolates the test from
   // network emulation in other contexts of the shared CDP browser.
-  await page.route('http://localhost:3004/**', async (route) => {
+  await page.route(`${origin}/**`, async (route) => {
+    if (!/^\/(src|@fs|@id|@vite|node_modules)\//.test(new URL(route.request().url()).pathname)) {
+      await route.continue();
+      return;
+    }
     const response = await fetch(route.request().url());
     await route.fulfill({
       status: response.status,
@@ -74,7 +80,7 @@ export async function lab(port, options = {}) {
   };
   const open = async (query = '') => {
     await page.goto(
-      `http://localhost:3004/app/debug/agent-review-integration${query}`,
+      `${origin}/app/debug/agent-review-integration${query}`,
       { waitUntil: 'domcontentloaded', timeout: 60000 }
     );
     try {
@@ -90,7 +96,7 @@ export async function lab(port, options = {}) {
   return {
     context,
     page,
-    root: page.locator('[data-review-integration]'),
+    root: page.locator('[data-review-integration]:not(:has([inert])), [role="dialog"]:has(section[aria-label="Code review"])'),
     errors,
     writes,
     api,

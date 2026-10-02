@@ -156,7 +156,7 @@ try {
     path: `${directory}/revision-${port}-desktop.png`,
     timeout: 15000,
   });
-  // Reloadable read-only links still allow selection and citation, without mutation.
+  // Reloadable read-only links still allow selection, without mutation.
   const readOnly = new URL(href);
   readOnly.searchParams.set('s0.review.readonly', 'true');
   await h.open(readOnly.search);
@@ -178,13 +178,8 @@ try {
       .count()) === 0,
     'Viewer received an editor'
   );
-  await root
-    .getByRole('button', { name: /Copy link to (this line|selected range)/ })
-    .first()
-    .click();
-  await root
-    .getByText('Link to this revision copied', { exact: true })
-    .waitFor();
+  assert(await root.getByRole('button', { name: 'Ask agent', exact: true }).count() === 0,
+    'Viewer received an Ask agent action');
   await page.setViewportSize({ width: 390, height: 844 });
   await root.screenshot({
     path: `${directory}/revision-${port}-mobile.png`,

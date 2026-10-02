@@ -83,5 +83,4 @@ export type ReviewSource = {
   capture: () => Promise<ReviewLink>;
   comment: (input: NewComment) => Promise<ReviewLink>;
   resolve: (input: { thread: string; resolved: boolean }) => Promise<unknown>;
-  link: (revision: number, location: CodeLocation) => Promise<ReviewLink>;
 };

@@ -287,16 +287,6 @@ export function createReview(host: ReviewHost) {
       );
     }
   };
-  const copy = async (at: CodeLocation) => {
-    if (!ready()) return;
-    try {
-      const link = await source.link(currentRevision()!, at);
-      await host.copyLink(link.url);
-      setNotice('Link to this revision copied');
-    } catch (error) {
-      setNotice(errorMessage(error));
-    }
-  };
   const capture = async (silent = false) => {
     if (!host.canEdit() || source.capturing()) return;
     try {
@@ -353,7 +343,6 @@ export function createReview(host: ReviewHost) {
     observeFile,
     cancel,
     send,
-    copy,
     capture,
     resolve,
     notice,

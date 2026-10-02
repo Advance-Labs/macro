@@ -34,7 +34,9 @@ permissions, storage, Internal MCP, session queue, and realtime notifications.
   bodies use the existing query cache; changing the active file by scrolling
   does not issue another navigation or reset the viewport. Walkthrough orders
   files by chapter, deduplicates shared paths, and appends other visible changes.
-- Walkthrough chapters contain compact file trees, collapsed by default. The whole
+- Walkthrough chapters show their explanations inline above compact file trees,
+  collapsed by default. Scrolling into another section expands its tree; manual
+  collapse lasts until the reader leaves that section and returns. The whole
   header toggles the tree; collapsing preserves the code viewport. File rows use
   shared change-status letters and green/red bars with exact totals on hover.
   Files outside the tour remain under Other changes. Navigation is virtualized,
@@ -56,11 +58,13 @@ permissions, storage, Internal MCP, session queue, and realtime notifications.
   submodule, empty, and over-budget files stay listed.
 - Drag over code or gutters to select a region; Shift-click extends a selection.
   Clicking code also selects a line. The range highlights during drag; a compact
-  toolbar offers Comment, Copy link, and Clear. Comment opens the composer below
+  Ask agent chip floats beside the selected lines, using the shared floating
+  element directive and session reply-chip styling. Escape clears the selection.
+  Ask agent opens the composer below
   the selected side.
   Comments use the shared ComposerSurface and SendButton. Clicking outside an
   empty composer dismisses it; nonempty drafts remain. Cmd/Ctrl+Enter sends.
-  Viewers can copy citations; editors can comment, reply, and resolve/reopen.
+  Viewers can select code and follow citations; editors can comment, reply, and resolve/reopen.
 - Live reading follows newer revisions automatically, pausing during comment
   drafts and resuming afterward. History and citations stay pinned. Switching
   revisions keeps the reader mounted and disables writes while retained code is
