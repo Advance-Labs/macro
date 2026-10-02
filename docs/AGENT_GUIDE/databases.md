@@ -12,6 +12,10 @@ inline input for editors: click it to rename. Enter or leaving it saves; Escape
 cancels, and a failed rename shows a toast. Viewers without edit access see the
 split header's `viewer` badge instead.
 
+Reopening a loaded table or view shows its cached rows while a background read
+checks for changes. Wait for refreshing to finish before asserting server
+reconciliation; visible rows alone do not mean the network read has completed.
+
 **AI** in the split header opens an agent chat about the database. Its composer
 starts with a mention of the database; the schema and table guidance go to the
 agent privately as session instructions, so the sent bubble shows only what you

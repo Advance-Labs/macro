@@ -30,7 +30,7 @@ import {
   getGraphqlSoupClient,
 } from '@service-storage/graphql-soup';
 import type { Client, RequestPolicy } from '@urql/core';
-import { errAsync, okAsync, ResultAsync } from 'neverthrow';
+import { errAsync, ok, okAsync, ResultAsync } from 'neverthrow';
 import {
   type Accessor,
   batch,
@@ -166,7 +166,8 @@ export function createDatabaseSqlQuery(
   const run = (
     current: DatabaseSqlStatement,
     requestPolicy: RequestPolicy,
-    reconcile: boolean
+    reconcile: boolean,
+    reportFailure = true
   ): ResultAsync<DatabaseSqlRun, DatabaseSqlFailure> => {
     const generation = ++latest;
     const host = capabilities.cacheHost();
@@ -199,7 +200,7 @@ export function createDatabaseSqlQuery(
       )
       .orElse((failure) => {
         if (generation !== latest) return okAsync({ landed: false });
-        setError(failure);
+        if (reportFailure) setError(failure);
         return errAsync(failure);
       });
     const settle = async () => {
@@ -209,6 +210,34 @@ export function createDatabaseSqlQuery(
     };
     return new ResultAsync(settle());
   };
+
+  function trackNetwork(
+    reading: ResultAsync<DatabaseSqlRun, DatabaseSqlFailure>
+  ): ResultAsync<DatabaseSqlRun, DatabaseSqlFailure> {
+    networkRead = reading;
+    const settle = async () => {
+      const result = await reading;
+      if (networkRead === reading) networkRead = undefined;
+      return result;
+    };
+    return new ResultAsync(settle());
+  }
+
+  function openStatement(current: DatabaseSqlStatement): void {
+    if (!capabilities.cacheHost()) {
+      void trackNetwork(run(current, 'cache-and-network', false));
+      return;
+    }
+    // Only a complete cached answer is shown. A miss still reads the network.
+    const cached = run(current, 'cache-only', false, false);
+    const generation = latest;
+    const reconcile = async () => {
+      await cached;
+      if (generation !== latest) return ok({ landed: false });
+      return await run(current, 'network-only', false);
+    };
+    void trackNetwork(new ResultAsync(reconcile()));
+  }
 
   createEffect(
     on(statement, (current) => {
@@ -223,7 +252,7 @@ export function createDatabaseSqlQuery(
         });
         return;
       }
-      void run(current, 'cache-and-network', false);
+      openStatement(current);
     })
   );
 
@@ -256,14 +285,7 @@ export function createDatabaseSqlQuery(
     refresh: () => {
       const current = untrack(statement);
       if (!current) return okAsync({ landed: false });
-      const reading = run(current, 'network-only', false);
-      networkRead = reading;
-      const settle = async () => {
-        const result = await reading;
-        if (networkRead === reading) networkRead = undefined;
-        return result;
-      };
-      return new ResultAsync(settle());
+      return trackNetwork(run(current, 'network-only', false));
     },
     cached: () => capabilities.cacheHost() !== undefined,
     answerFromCache: () => {

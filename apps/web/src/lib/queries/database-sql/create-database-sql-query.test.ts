@@ -136,6 +136,84 @@ afterEach(() => {
 });
 
 describe('createDatabaseSqlQuery', () => {
+  it.each([true, false])(
+    'answers before the network only when cached rows exist (%s)',
+    async (cacheHit) => {
+      let finishNetwork: (() => void) | undefined;
+      const policies: string[] = [];
+      const exchange: Exchange = () => (incoming) =>
+        pipe(
+          incoming,
+          mergeMap((operation) => {
+            if (operation.kind === 'teardown') return empty;
+            const policy = operation.context.requestPolicy;
+            policies.push(policy);
+            const response = {
+              operation,
+              data: {
+                user: {
+                  id: 'macro|viewer@databases.test',
+                  emailLinks: [],
+                  soup: {
+                    items: policy === 'cache-only' ? [acme] : [globex],
+                    nextCursor: null,
+                  },
+                },
+              } satisfies SoupQuery,
+              stale: false,
+              hasNext: false,
+            };
+            if (policy === 'cache-only')
+              return fromValue(
+                cacheHit ? response : { ...response, data: undefined }
+              );
+            return fromPromise(
+              new Promise<typeof response>((resolve) => {
+                finishNetwork = () => resolve(response);
+              })
+            );
+          })
+        );
+      const client = createClient({
+        url: 'http://test.invalid/graphql',
+        exchanges: [exchange],
+      });
+      const query = createRoot((cleanup) => {
+        dispose = cleanup;
+        return createDatabaseSqlQuery(
+          () => ({ schema, sql: 'SELECT name FROM crm.deals' }),
+          {
+            client: () => client,
+            cacheHost: () => ({
+              onCacheChanged: () => () => {},
+              entityFilter: vi.fn(),
+              readRecordsByKeys: vi.fn(),
+            }),
+            people: async () => [],
+            catalog: async () => catalog,
+            open: names,
+          }
+        );
+      });
+      await vi.waitFor(() => expect(finishNetwork).toBeDefined());
+      if (cacheHit)
+        expect(query.outcome()?.rows).toEqual([
+          [{ type: 'text', value: 'Acme' }],
+        ]);
+      else expect(query.outcome()).toBeUndefined();
+      expect(query.error()).toBeUndefined();
+      expect(query.loading()).toBe(true);
+      expect(policies).toEqual(['cache-only', 'network-only']);
+      finishNetwork?.();
+      await vi.waitFor(() =>
+        expect(query.outcome()?.rows).toEqual([
+          [{ type: 'text', value: 'Globex' }],
+        ])
+      );
+      expect(query.loading()).toBe(false);
+    }
+  );
+
   it('shows a row the cache learns about without reading the network again', async () => {
     const requests: Operation[] = [];
     const exchange: Exchange = () => (incoming) =>
@@ -210,7 +288,7 @@ describe('createDatabaseSqlQuery', () => {
     );
     expect(
       requests.map((operation) => operation.context.requestPolicy)
-    ).toEqual(['cache-and-network']);
+    ).toEqual(['cache-only', 'network-only']);
 
     cacheChanged(revision);
 
@@ -220,7 +298,7 @@ describe('createDatabaseSqlQuery', () => {
         [{ type: 'text', value: 'Acme' }],
       ])
     );
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(entityFilter).toHaveBeenCalledWith({
       filters: requests[0]?.variables?.input.initial.filters,
       sortMethod: 'CREATED_AT',
