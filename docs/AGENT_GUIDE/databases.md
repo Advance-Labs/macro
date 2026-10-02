@@ -274,7 +274,8 @@ Creating or changing a record can make it fall outside the current
 filters. A saved-record notice offers **Open record** to inspect it without
 changing the view. Its record dialog explains why it is outside the view; you can
 continue editing there. The selected table and view are restored when reopening
-the database. Views and card places are typed data in the databases service
+or reloading the database, once the signed-in user's identity is available.
+Views and card places are typed data in the databases service
 (`TableDetail.views`, `GET /databases/{id}/views/{view_id}/positions`) changed
 through `POST /databases/{id}/ops` (`create_view`, `update_view`, `delete_view`,
 `reorder_views`, `move_card`); rows load by running the view in the browser's

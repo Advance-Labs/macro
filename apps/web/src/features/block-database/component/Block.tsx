@@ -1,7 +1,6 @@
 import { openChatWithInput } from '@app/features/chat/ChatWithAgentButton';
 import { toQuerySchema } from '@app/features/database-query/queries/query-source';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { makePersistedState } from '@app/lib/persistence';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
@@ -42,7 +41,6 @@ import {
   For,
   onCleanup,
   Show,
-  untrack,
 } from 'solid-js';
 import { match } from 'ts-pattern';
 import { DatabaseSearch } from '../components/database-search';
@@ -51,14 +49,11 @@ import { DatabaseToolbar } from '../components/database-toolbar';
 import type { NewView } from '../components/new-view-dialog';
 import { databaseChat } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
-import {
-  type DatabaseViewSelection,
-  readViewSelection,
-} from '../core/view-selection';
 import { allRecordsView, boardLayout } from '../core/views';
 import { databaseOpMessage } from '../core/write-failure';
 import { createDatabaseSearch } from '../primitives/database-search';
 import { createDatabaseUndo } from '../primitives/undo-controller';
+import { createDatabaseViewSelection } from '../primitives/view-selection';
 import { searchDatabase } from '../queries/database-search';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
@@ -84,23 +79,13 @@ const Block: Component = () => {
   let requestedRecord: DatabaseRelatedDestination | undefined;
   const canAutofocus = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
-  const userId = untrack(useUserId());
+  const userId = useUserId();
   const storage = createUserScopedStorage(
     `database-view-selection:${databaseId}`
   );
-  const [selection, setSelection] = makePersistedState(
-    createSignal<DatabaseViewSelection>({ views: {} }),
-    {
-      storages: {
-        restore: () => {
-          if (!userId) return;
-          return readViewSelection(storage.read(userId));
-        },
-        write: (value) => {
-          if (userId) storage.write(userId, JSON.stringify(value));
-        },
-      },
-    }
+  const [selection, setSelection] = createDatabaseViewSelection(
+    userId,
+    storage
   );
   useDatabaseTableChangedSync(() => databaseId);
   const detailQuery = useDatabaseDetailQuery(() => databaseId);
