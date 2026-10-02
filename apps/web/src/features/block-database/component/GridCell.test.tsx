@@ -1105,6 +1105,30 @@ describe('grid cell', () => {
       );
     });
 
+    it('opens the selector on click, returns focus on Escape and opens again', async () => {
+      render(() => (
+        <GridCell
+          column={date}
+          value={null}
+          canEdit
+          onWrite={vi.fn(async () => true)}
+          onAddOption={vi.fn(async () => true)}
+        />
+      ));
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Due: Empty. Click to edit' })
+      );
+      await screen.findByPlaceholderText('Set due...');
+      await userEvent.keyboard('{Escape}');
+      const trigger = screen.getByRole('button', {
+        name: 'Due: Empty. Click to edit',
+      });
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+      expect(screen.queryByPlaceholderText('Set due...')).toBeNull();
+      await userEvent.click(trigger);
+      expect(await screen.findByPlaceholderText('Set due...')).toBeTruthy();
+    });
+
     it('clears a date with Delete without opening the selector', () => {
       const onWrite = vi.fn(async () => true);
       render(() => (

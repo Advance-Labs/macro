@@ -1,9 +1,10 @@
 import { runDatabaseSql } from '@core/database-sql/driver';
 import { readTranscript, replay } from '@core/database-sql/tests/transcript';
 import type {
+  DatabaseRowFieldsFragment,
+  DatabaseRowsQuery,
   GroupSoupQuery,
-  SoupPropertyFieldsFragment,
-  SoupQuery,
+  SoupPropertyValueFieldsFragment,
 } from '@service-storage/graphql/generated/graphql';
 import { createClient, type Exchange, type Operation } from '@urql/core';
 import { describe, expect, it } from 'vitest';
@@ -24,7 +25,11 @@ const INITECH = '01990000-0000-7000-8000-00000000e003';
 const SAM = '01990000-0000-7000-8000-00000000f001';
 const NIL = '00000000-0000-0000-0000-000000000000';
 
-type SoupItem = SoupQuery['user']['soup']['items'][number];
+type SoupItem = DatabaseRowFieldsFragment;
+type RowProperty = Extract<
+  SoupItem,
+  { __typename: 'GraphqlSoupDatabaseRow' }
+>['properties'][number];
 
 /** Every Soup kind but rows, ruled out the way the app rules them out. */
 const everyOtherKindExcluded = {
@@ -42,42 +47,26 @@ const everyOtherKindExcluded = {
 
 function property(
   definition: string,
-  value: SoupPropertyFieldsFragment['value']
-): SoupPropertyFieldsFragment {
-  return {
-    id: `${definition}-value`,
-    propertyDefinitionId: definition,
-    displayName: definition,
-    dataType: 'STRING',
-    isMultiSelect: false,
-    specificEntityType: null,
-    isSystem: false,
-    isMetadata: false,
-    value,
-  };
+  value: SoupPropertyValueFieldsFragment
+): RowProperty {
+  return { id: `${definition}-value`, propertyDefinitionId: definition, value };
 }
 
 function row(
   id: string,
   table: string,
   position: string,
-  properties: SoupPropertyFieldsFragment[]
+  properties: RowProperty[]
 ): SoupItem {
   return {
     __typename: 'GraphqlSoupDatabaseRow',
     id,
     tableId: table,
-    databaseId: 'db000000-0000-0000-0000-000000000001',
     position,
     ownerId: 'macro|owner@databases.test',
-    creatorId: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     cacheProjection: null,
-    frecencyScore: null,
-    entityType: 'DATABASE_ROW',
-    displayName: null,
-    isFavorited: false,
     notifications: [],
     properties,
   };
@@ -138,19 +127,18 @@ const sam = row(SAM, PEOPLE, '80', [
   }),
 ]);
 
-function soupPage(items: SoupItem[], nextCursor: string | null): SoupQuery {
+function soupPage(
+  items: SoupItem[],
+  nextCursor: string | null
+): DatabaseRowsQuery {
   return {
-    user: {
-      id: 'macro|viewer@databases.test',
-      emailLinks: [],
-      soup: { items, nextCursor },
-    },
+    user: { id: 'macro|viewer@databases.test', soup: { items, nextCursor } },
   };
 }
 
 /** A client whose server answers each operation from `respond`, noting it. */
 function fakeClient(
-  respond: (operation: Operation) => SoupQuery | GroupSoupQuery
+  respond: (operation: Operation) => DatabaseRowsQuery | GroupSoupQuery
 ) {
   const operations: Operation[] = [];
   const exchange: Exchange = () => (incoming) =>
@@ -174,6 +162,13 @@ function fakeClient(
       exchanges: [exchange],
     }),
     variables: () => operations.map((operation) => operation.variables),
+    operationNames: () =>
+      operations.map(
+        (operation) =>
+          operation.query.definitions.find(
+            (definition) => definition.kind === 'OperationDefinition'
+          )?.name?.value
+      ),
   };
 }
 
@@ -197,6 +192,8 @@ describe('the GraphQL row source', () => {
     });
 
     expect(outcome._unsafeUnwrap()).toEqual(transcript.outcome);
+    // Rows only: the catalog already knows each column's name and type.
+    expect(server.operationNames()).toEqual(['DatabaseRows']);
     expect(server.variables()).toEqual([
       {
         input: {

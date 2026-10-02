@@ -68,7 +68,10 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
       );
   const active = () =>
     candidates()[Math.min(activeIndex(), Math.max(0, candidates().length - 1))];
+  // The picker mounts on first use; a closed cell is its button and chips.
+  const [mounted, setMounted] = createSignal(false);
   function begin(seed = '') {
+    setMounted(true);
     editorSession += 1;
     if (!saving() && !saveError()) setSelected(ids());
     setSearch(seed.replace(/^@/, ''));
@@ -159,18 +162,7 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
     props.onReady?.(undefined);
   });
   return (
-    <Popover
-      open={open()}
-      onOpenChange={(value) => {
-        if (!value) close(false);
-      }}
-      anchorRef={() => trigger}
-      placement="bottom-start"
-      gutter={4}
-      fitViewport
-      overlap
-      overflowPadding={8}
-    >
+    <>
       <div class="relative flex min-h-9 w-full min-w-0 items-center">
         {/*
           The trigger is the whole cell. The chips sit above it and let clicks
@@ -234,9 +226,11 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
                   >
                     <LinkIcon class="size-3 shrink-0 text-ink-muted" />
                     <span class="truncate">{name(id)}</span>
+                    {/* A native title: a styled tooltip per chip is a Kobalte root each. */}
                     <Button
                       size="icon-xs"
-                      label={`Open ${name(id)}`}
+                      aria-label={`Open ${name(id)}`}
+                      title={`Open ${name(id)}`}
                       class="pointer-events-auto shrink-0"
                       disabled={!available(id)}
                       onClick={() => openRecord(id)}
@@ -266,190 +260,211 @@ export function DatabaseRelationCell(props: DatabaseRelationCellProps) {
           </Show>
         </span>
       </div>
-      <Popover.Portal>
-        <Popover.Content
-          class="z-action-menu flex w-80 max-w-[calc(100vw-1.5rem)] min-h-0 flex-col overflow-hidden rounded-lg border border-edge bg-menu text-ink shadow-menu outline-none"
-          style={{
-            'max-height':
-              'min(30rem, var(--kb-popper-content-available-height, calc(100dvh - 1rem)))',
+      <Show when={mounted()}>
+        <Popover
+          open={open()}
+          onOpenChange={(value) => {
+            if (!value) close(false);
           }}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            input?.focus();
-          }}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-            close();
-          }}
+          anchorRef={() => trigger}
+          placement="bottom-start"
+          gutter={4}
+          fitViewport
+          overlap
+          overflowPadding={8}
         >
-          <Popover.Title class="sr-only">
-            {props.column.name} · {props.source.name()}
-          </Popover.Title>
-          <InputGroup
-            variant="bare"
-            class="shrink-0 rounded-none border-b border-b-edge-muted"
-          >
-            <InputGroup.Addon align="inline-start">
-              <SearchIcon class="size-4" />
-            </InputGroup.Addon>
-            <InputGroup.Input
-              ref={input}
-              role="combobox"
-              aria-label={`Search ${props.source.name()}`}
-              aria-autocomplete="list"
-              aria-expanded="true"
-              aria-controls={listId}
-              aria-activedescendant={
-                active() ? `${listId}-${active()!.id}` : undefined
-              }
-              placeholder={`Search ${props.source.name()}…`}
-              value={search()}
-              onInput={(event) => {
-                setSearch(event.currentTarget.value);
-                setActiveIndex(0);
+          <Popover.Portal>
+            <Popover.Content
+              class="z-action-menu flex w-80 max-w-[calc(100vw-1.5rem)] min-h-0 flex-col overflow-hidden rounded-lg border border-edge bg-menu text-ink shadow-menu outline-none"
+              style={{
+                'max-height':
+                  'min(30rem, var(--kb-popper-content-available-height, calc(100dvh - 1rem)))',
               }}
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.isComposing || event.keyCode === 229) return;
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                  event.preventDefault();
-                  const count = candidates().length;
-                  if (count) {
-                    setActiveIndex(
-                      (index) =>
-                        (index + (event.key === 'ArrowDown' ? 1 : -1) + count) %
-                        count
-                    );
-                    list
-                      ?.querySelector<HTMLElement>(
-                        `[data-relation-index="${activeIndex()}"]`
-                      )
-                      ?.scrollIntoView({ block: 'nearest' });
-                  }
-                } else if (event.key === 'Enter') {
-                  event.preventDefault();
-                  const row = active();
-                  if (row) {
-                    if (editable()) toggle(row.id);
-                    else openRecord(row.id);
-                  }
-                } else if (event.key === 'Tab') {
-                  event.preventDefault();
-                  void commitAndNavigate(event.shiftKey ? -1 : 1);
-                } else if (event.key === 'Escape') {
-                  event.preventDefault();
-                  close();
-                }
+              onOpenAutoFocus={(event) => {
+                event.preventDefault();
+                input?.focus();
               }}
-            />
-          </InputGroup>
-          <div class="min-h-0 overflow-y-auto overscroll-contain">
-            <Show when={selected().length}>
-              <div class="flex flex-wrap gap-1.5 border-b border-edge-muted p-2">
-                <For each={selected()}>
-                  {(id) => (
-                    <span class="inline-flex min-w-0 max-w-full items-center rounded border border-edge-muted bg-hover/60">
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        class="min-w-0 gap-1"
-                        disabled={!available(id)}
-                        title={`Open ${name(id)}`}
-                        onClick={() => openRecord(id)}
-                      >
-                        <span class="truncate">{name(id)}</span>
-                        <ArrowUpRightIcon class="size-3 shrink-0 text-ink-muted" />
-                      </Button>
-                      <Show when={editable()}>
-                        <Button
-                          size="icon-xs"
-                          label={`Remove ${name(id)}`}
-                          tooltipDisabled
-                          onClick={() => toggle(id)}
-                        >
-                          <XIcon class="size-3" />
-                        </Button>
-                      </Show>
-                    </span>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <div
-              ref={list}
-              id={listId}
-              role="listbox"
-              aria-label={props.source.name()}
-              aria-multiselectable="true"
-              class="p-1"
+              onCloseAutoFocus={(event) => event.preventDefault()}
+              onEscapeKeyDown={(event) => {
+                event.preventDefault();
+                close();
+              }}
             >
-              <For each={candidates()}>
-                {(row, index) => (
-                  <button
-                    type="button"
-                    role="option"
-                    tabIndex={-1}
-                    id={`${listId}-${row.id}`}
-                    data-relation-index={index()}
-                    aria-selected={selected().includes(row.id)}
-                    class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none"
-                    classList={{ 'bg-hover': active()?.id === row.id }}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onPointerDown={(event) => event.preventDefault()}
-                    onPointerMove={() => setActiveIndex(index())}
-                    onClick={() =>
-                      editable() ? toggle(row.id) : openRecord(row.id)
-                    }
-                  >
-                    <LinkIcon class="size-4 shrink-0 text-ink-muted" />
-                    <span class="min-w-0 flex-1 truncate">{row.name}</span>
-                    <Show when={selected().includes(row.id)}>
-                      <CheckIcon class="size-3.5 text-ink-muted" />
-                    </Show>
-                  </button>
-                )}
-              </For>
-            </div>
-            <Show when={!candidates().length && !props.source.error()}>
-              <p
-                role="status"
-                class="px-3 py-4 text-center text-xs text-ink-muted"
+              <Popover.Title class="sr-only">
+                {props.column.name} · {props.source.name()}
+              </Popover.Title>
+              <InputGroup
+                variant="bare"
+                class="shrink-0 rounded-none border-b border-b-edge-muted"
               >
-                {props.source.loading()
-                  ? 'Loading…'
-                  : search().trim()
-                    ? 'No matches'
-                    : 'No records yet'}
-              </p>
-            </Show>
-            <Show when={props.source.error() || loadError()}>
-              <div class="px-3 py-3 text-xs text-ink-muted">
-                <p role="alert">
-                  {props.source.error() ||
-                    'Related records could not be loaded.'}
-                </p>
-                <Button size="xs" class="mt-1" onClick={() => void refresh()}>
-                  Retry
+                <InputGroup.Addon align="inline-start">
+                  <SearchIcon class="size-4" />
+                </InputGroup.Addon>
+                <InputGroup.Input
+                  ref={input}
+                  role="combobox"
+                  aria-label={`Search ${props.source.name()}`}
+                  aria-autocomplete="list"
+                  aria-expanded="true"
+                  aria-controls={listId}
+                  aria-activedescendant={
+                    active() ? `${listId}-${active()!.id}` : undefined
+                  }
+                  placeholder={`Search ${props.source.name()}…`}
+                  value={search()}
+                  onInput={(event) => {
+                    setSearch(event.currentTarget.value);
+                    setActiveIndex(0);
+                  }}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
+                    if (event.isComposing || event.keyCode === 229) return;
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault();
+                      const count = candidates().length;
+                      if (count) {
+                        setActiveIndex(
+                          (index) =>
+                            (index +
+                              (event.key === 'ArrowDown' ? 1 : -1) +
+                              count) %
+                            count
+                        );
+                        list
+                          ?.querySelector<HTMLElement>(
+                            `[data-relation-index="${activeIndex()}"]`
+                          )
+                          ?.scrollIntoView({ block: 'nearest' });
+                      }
+                    } else if (event.key === 'Enter') {
+                      event.preventDefault();
+                      const row = active();
+                      if (row) {
+                        if (editable()) toggle(row.id);
+                        else openRecord(row.id);
+                      }
+                    } else if (event.key === 'Tab') {
+                      event.preventDefault();
+                      void commitAndNavigate(event.shiftKey ? -1 : 1);
+                    } else if (event.key === 'Escape') {
+                      event.preventDefault();
+                      close();
+                    }
+                  }}
+                />
+              </InputGroup>
+              <div class="min-h-0 overflow-y-auto overscroll-contain">
+                <Show when={selected().length}>
+                  <div class="flex flex-wrap gap-1.5 border-b border-edge-muted p-2">
+                    <For each={selected()}>
+                      {(id) => (
+                        <span class="inline-flex min-w-0 max-w-full items-center rounded border border-edge-muted bg-hover/60">
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            class="min-w-0 gap-1"
+                            disabled={!available(id)}
+                            title={`Open ${name(id)}`}
+                            onClick={() => openRecord(id)}
+                          >
+                            <span class="truncate">{name(id)}</span>
+                            <ArrowUpRightIcon class="size-3 shrink-0 text-ink-muted" />
+                          </Button>
+                          <Show when={editable()}>
+                            <Button
+                              size="icon-xs"
+                              label={`Remove ${name(id)}`}
+                              tooltipDisabled
+                              onClick={() => toggle(id)}
+                            >
+                              <XIcon class="size-3" />
+                            </Button>
+                          </Show>
+                        </span>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <div
+                  ref={list}
+                  id={listId}
+                  role="listbox"
+                  aria-label={props.source.name()}
+                  aria-multiselectable="true"
+                  class="p-1"
+                >
+                  <For each={candidates()}>
+                    {(row, index) => (
+                      <button
+                        type="button"
+                        role="option"
+                        tabIndex={-1}
+                        id={`${listId}-${row.id}`}
+                        data-relation-index={index()}
+                        aria-selected={selected().includes(row.id)}
+                        class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm outline-none"
+                        classList={{ 'bg-hover': active()?.id === row.id }}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onPointerDown={(event) => event.preventDefault()}
+                        onPointerMove={() => setActiveIndex(index())}
+                        onClick={() =>
+                          editable() ? toggle(row.id) : openRecord(row.id)
+                        }
+                      >
+                        <LinkIcon class="size-4 shrink-0 text-ink-muted" />
+                        <span class="min-w-0 flex-1 truncate">{row.name}</span>
+                        <Show when={selected().includes(row.id)}>
+                          <CheckIcon class="size-3.5 text-ink-muted" />
+                        </Show>
+                      </button>
+                    )}
+                  </For>
+                </div>
+                <Show when={!candidates().length && !props.source.error()}>
+                  <p
+                    role="status"
+                    class="px-3 py-4 text-center text-xs text-ink-muted"
+                  >
+                    {props.source.loading()
+                      ? 'Loading…'
+                      : search().trim()
+                        ? 'No matches'
+                        : 'No records yet'}
+                  </p>
+                </Show>
+                <Show when={props.source.error() || loadError()}>
+                  <div class="px-3 py-3 text-xs text-ink-muted">
+                    <p role="alert">
+                      {props.source.error() ||
+                        'Related records could not be loaded.'}
+                    </p>
+                    <Button
+                      size="xs"
+                      class="mt-1"
+                      onClick={() => void refresh()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                </Show>
+                <Show when={saveError()}>
+                  <p role="alert" class="px-3 py-2 text-xs text-failure-ink">
+                    This link could not be saved. Your selection is kept.
+                  </p>
+                </Show>
+              </div>
+              <div class="flex shrink-0 items-center justify-between gap-2 border-t border-edge-muted px-3 py-2 text-xs text-ink-muted">
+                <span class="truncate">
+                  {saving() ? 'Saving…' : props.source.name()}
+                </span>
+                <Button size="xs" onClick={() => void finish()}>
+                  {saveError() ? 'Retry' : 'Done'}
                 </Button>
               </div>
-            </Show>
-            <Show when={saveError()}>
-              <p role="alert" class="px-3 py-2 text-xs text-failure-ink">
-                This link could not be saved. Your selection is kept.
-              </p>
-            </Show>
-          </div>
-          <div class="flex shrink-0 items-center justify-between gap-2 border-t border-edge-muted px-3 py-2 text-xs text-ink-muted">
-            <span class="truncate">
-              {saving() ? 'Saving…' : props.source.name()}
-            </span>
-            <Button size="xs" onClick={() => void finish()}>
-              {saveError() ? 'Retry' : 'Done'}
-            </Button>
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover>
+      </Show>
+    </>
   );
 }
