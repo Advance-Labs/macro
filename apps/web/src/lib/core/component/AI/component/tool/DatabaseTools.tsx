@@ -395,6 +395,28 @@ const saveDatabaseViewHandler = createToolRenderer({
   },
 });
 
+const deleteDatabaseViewHandler = createToolRenderer({
+  name: 'DeleteDatabaseView',
+  handleResponse: async (ctx) => {
+    await invalidateDatabase(ctx.tool.data.databaseId);
+  },
+  render: (ctx) => (
+    <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">
+      <span class="min-w-0 truncate">
+        {ctx.response ? 'Deleted view' : 'Delete view'}
+        <Show when={ctx.response}>
+          {(response) => (
+            <>
+              {' '}
+              <span class="text-ink">{response().data.name}</span>
+            </>
+          )}
+        </Show>
+      </span>
+    </BaseTool>
+  ),
+});
+
 function schemaTable(
   schema: DatabaseSchema | null | undefined,
   tableId: string
@@ -604,6 +626,7 @@ export const databaseToolHandlers: DatabaseToolHandlerMap = {
   AddColumn: addColumnHandler,
   AddColumnOptions: addColumnOptionsHandler,
   SaveDatabaseView: saveDatabaseViewHandler,
+  DeleteDatabaseView: deleteDatabaseViewHandler,
   RenameDatabase: renameDatabaseHandler,
   DeleteTable: deleteTableHandler,
   RenameColumn: renameColumnHandler,

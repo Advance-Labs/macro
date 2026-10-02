@@ -9,6 +9,12 @@ fn every_tool_schema_is_valid() {
         "SaveDatabaseView"
     );
     assert_eq!(
+        generate_validated_input_schema::<DeleteDatabaseView>()
+            .expect("schema should validate")
+            .name,
+        "DeleteDatabaseView"
+    );
+    assert_eq!(
         generate_validated_input_schema::<ListDatabases>()
             .expect("schema should validate")
             .name,
@@ -116,10 +122,11 @@ fn toolset_builds_with_every_tool() {
         "DeleteColumn",
         "ReorderColumns",
         "SaveDatabaseView",
+        "DeleteDatabaseView",
     ] {
         assert!(toolset.tools.contains_key(name), "missing {name}");
     }
-    assert_eq!(toolset.tools.len(), 15);
+    assert_eq!(toolset.tools.len(), 16);
     assert!(
         toolset.user_tools.is_empty(),
         "database tools run in the loop, none are user-executed"

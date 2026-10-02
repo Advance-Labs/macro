@@ -136,6 +136,7 @@ fn every_mutating_database_tool_is_a_schema_change() {
         "AddColumn",
         "AddColumnOptions",
         "SaveDatabaseView",
+        "DeleteDatabaseView",
         "RenameDatabase",
         "RenameTable",
         "DeleteTable",

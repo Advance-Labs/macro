@@ -22,6 +22,7 @@ const DATABASE_TOOL_NAMES = [
   'AddColumn',
   'AddColumnOptions',
   'SaveDatabaseView',
+  'DeleteDatabaseView',
   'RenameDatabase',
   'DeleteTable',
   'RenameColumn',

@@ -7,6 +7,7 @@ mod change_column_type;
 mod create_database;
 mod create_table;
 mod delete_column;
+mod delete_database_view;
 mod delete_table;
 mod describe_database;
 mod list_databases;
@@ -61,6 +62,7 @@ pub use change_column_type::{ChangeColumnType, ChangeColumnTypeResponse};
 pub use create_database::{CreateDatabase, CreateDatabaseResponse};
 pub use create_table::{CreateTable, CreateTableResponse};
 pub use delete_column::{DeleteColumn, DeleteColumnResponse};
+pub use delete_database_view::{DeleteDatabaseView, DeletedDatabaseView};
 pub use delete_table::{DeleteTable, DeleteTableResponse};
 pub use describe_database::DescribeDatabase;
 pub use list_databases::{ListDatabases, ListDatabasesResponse};
@@ -256,6 +258,7 @@ where
         .add_tool::<DeleteColumn, DatabasesToolContext<Service, EntityAccess>>()
         .add_tool::<ReorderColumns, DatabasesToolContext<Service, EntityAccess>>()
         .add_tool::<SaveDatabaseView, DatabasesToolContext<Service, EntityAccess>>()
+        .add_tool::<DeleteDatabaseView, DatabasesToolContext<Service, EntityAccess>>()
 }
 
 /// Discovery for live document answers. No mutation tools.

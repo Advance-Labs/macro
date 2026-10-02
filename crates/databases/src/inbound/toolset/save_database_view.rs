@@ -35,9 +35,9 @@ rows. A board groups its cards into lanes by a single-select or single-person co
 lane per option, or per person its cards name, plus one for cards with an empty cell; no \
 other column type can group a board. A lane's `key` has a `kind`: `option` with the \
 option's `id`, `user` with the person's user `id`, or `none`. A card's title is a column, \
-the first by default. Saving under a name the table already has replaces that view, \
-so read `created` in the result. Views change presentation, never records, and cannot save \
-charts or SQL."
+the board's `title`, the first by default. Saving under a name the table already has \
+replaces that view, so read `created` in the result; DeleteDatabaseView removes a view. \
+Views change presentation, never records, and cannot save charts or SQL."
 )]
 pub struct SaveDatabaseView {
     /// Database id from ListDatabases.

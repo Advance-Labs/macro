@@ -372,6 +372,16 @@ impl DatabasesService for FakeService {
                         },
                     }
                 }
+                DatabaseOp::View {
+                    table,
+                    view,
+                    change: ViewChange::Delete,
+                } => OpResult::View {
+                    table,
+                    view,
+                    table_version,
+                    change: ViewResult::Deleted,
+                },
                 other => unimplemented!("the toolset sends no {other:?}"),
             })
             .collect())

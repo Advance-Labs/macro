@@ -152,6 +152,16 @@ describe('database schema tool activity', () => {
     expect(line(rendered)).toBe('Delete table from Launch');
   });
 
+  it('renders DeleteDatabaseView with the name of the view it deleted', () => {
+    const rendered = renderTool(
+      databaseToolHandlers.DeleteDatabaseView,
+      'DeleteDatabaseView',
+      { databaseId, viewId: 'view-1' },
+      { databaseId, tableId, viewId: 'view-1', name: 'Stages' }
+    );
+    expect(line(rendered)).toBe('Deleted view Stages');
+  });
+
   it('renders RenameColumn with its table', () => {
     const rendered = renderTool(
       databaseToolHandlers.RenameColumn,
@@ -337,6 +347,23 @@ describe('SaveDatabaseView', () => {
       isComplete: true,
     });
     expect(invalidateDatabase).toHaveBeenCalledExactlyOnceWith(databaseId);
+  });
+});
+
+describe('DeleteDatabaseView', () => {
+  it('rereads the database once the view is deleted', async () => {
+    await databaseToolHandlers.DeleteDatabaseView.handleResponse?.({
+      tool: {
+        id: 'tool-1',
+        name: 'DeleteDatabaseView',
+        data: { databaseId, tableId, viewId: 'view-1', name: 'Stages' },
+      },
+      chat_id: 'chat-1',
+      message_id: 'message-1',
+      part_index: 0,
+      isComplete: true,
+    });
+    expect(invalidateDatabase).toHaveBeenCalledWith(databaseId);
   });
 });
 

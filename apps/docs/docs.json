@@ -96,6 +96,7 @@
               "AI/mcp/tools/delete-bot",
               "AI/mcp/tools/delete-calendar-event",
               "AI/mcp/tools/delete-column",
+              "AI/mcp/tools/delete-database-view",
               "AI/mcp/tools/delete-import-entity",
               "AI/mcp/tools/delete-initiative",
               "AI/mcp/tools/delete-reminder",
