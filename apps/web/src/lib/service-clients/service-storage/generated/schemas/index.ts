@@ -963,6 +963,7 @@ export * from './inFlightTurnSummaryAnnouncementMessageId';
 export * from './inferColumnTypeOutcome';
 export * from './inferColumnTypeRequest';
 export * from './inferColumnTypeRequestSpecificEntityType';
+export * from './initialPropertyValue';
 export * from './initiativeDetail';
 export * from './initiativeFilters';
 export * from './initiativeFiltersDueAfter';
