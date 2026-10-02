@@ -199,7 +199,7 @@ function isResultOf<
 >(
   result: OpResult | undefined,
   kind: Kind,
-  change: Change,
+  change: Change
 ): result is OpResultOf<Kind, Change> {
   return (
     result?.kind === kind && 'change' in result && result.change.kind === change
@@ -212,7 +212,7 @@ function resultName(result: OpResult): string {
     .with({ kind: 'reorder_tables' }, ({ kind }) => kind)
     .with(
       { kind: P.union('table', 'column', 'rows', 'view') },
-      ({ kind, change }) => `${kind}.${change.kind}`,
+      ({ kind, change }) => `${kind}.${change.kind}`
     )
     .exhaustive();
 }
@@ -225,7 +225,7 @@ function soleResult<
   const [result] = results;
   if (results.length !== 1 || !isResultOf(result, kind, change))
     throw new MacroError(
-      `expected one ${kind}.${change} result, got ${results.map(resultName).join(', ') || 'none'}`,
+      `expected one ${kind}.${change} result, got ${results.map(resultName).join(', ') || 'none'}`
     );
   return result;
 }
@@ -240,7 +240,7 @@ function soleResult<
 export class Database extends MacroEntity<DatabaseDetail> {
   protected async fetch(): Promise<DatabaseDetail> {
     return unwrap(
-      await this.client.storage.getDatabase({ path: { id: this.id } }),
+      await this.client.storage.getDatabase({ path: { id: this.id } })
     );
   }
 
@@ -257,10 +257,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
   /** Create a database owned by the caller. */
   static async create(
     client: MacroClient,
-    options: { name: string },
+    options: { name: string }
   ): Promise<Database> {
     const record = unwrap(
-      await client.storage.createDatabase({ body: { name: options.name } }),
+      await client.storage.createDatabase({ body: { name: options.name } })
     );
     return new Database(client, record.id);
   }
@@ -284,19 +284,19 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /** The user who owns the database. */
   readonly owner = this.mappedField('database', (record) =>
-    User.byId(this.client, record.owner_id),
+    User.byId(this.client, record.owner_id)
   );
 
   /** When the database was created. */
   readonly createdAt = this.mappedField(
     'database',
-    (record) => record.created_at,
+    (record) => record.created_at
   );
 
   /** When the database was trashed, if it has been. */
   readonly trashedAt = this.mappedField(
     'database',
-    (record) => record.trashed_at ?? undefined,
+    (record) => record.trashed_at ?? undefined
   );
 
   /** The caller's access on the database. */
@@ -304,7 +304,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
 
   /** The database's tables, in tab order. */
   readonly tables = this.mappedField('tables', (tables) =>
-    tables.map((table) => DatabaseTable.byId(this, table.table.id)),
+    tables.map((table) => DatabaseTable.byId(this, table.table.id))
   );
 
   /** The table with the given display name, or `undefined` if there is none. */
@@ -325,7 +325,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         },
       ]),
       'table',
-      'created',
+      'created'
     );
     return DatabaseTable.byId(this, table);
   }
@@ -342,14 +342,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async applyOps(
     ops: DatabaseOp[],
-    options: ApplyOpsOptions = {},
+    options: ApplyOpsOptions = {}
   ): Promise<OpResult[]> {
     const body: ApplyOpsRequest = { ops };
     if (options.baseVersions !== undefined) {
       for (const { table } of options.baseVersions)
         this.assertOwns(`table ${table.id}`, table.database);
       body.baseVersions = Object.fromEntries(
-        options.baseVersions.map(({ table, version }) => [table.id, version]),
+        options.baseVersions.map(({ table, version }) => [table.id, version])
       );
     }
     const { results } = await this.mutate(async (client) => {
@@ -360,7 +360,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       if (outcome.error !== undefined && 'op' in outcome.error)
         throw new MacroOpRefusedError(
           outcome.response?.status ?? 0,
-          outcome.error,
+          outcome.error
         );
       return outcome;
     });
@@ -380,7 +380,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const [reordered] = results;
     if (results.length !== 1 || reordered?.kind !== 'reorder_tables')
       throw new MacroError(
-        `expected one reorder_tables result, got ${results.map(resultName).join(', ') || 'none'}`,
+        `expected one reorder_tables result, got ${results.map(resultName).join(', ') || 'none'}`
       );
     return reordered.tables.map(({ table }) => DatabaseTable.byId(this, table));
   }
@@ -397,7 +397,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         { kind: 'table', table: table.id, change: { kind: 'delete' } },
       ]),
       'table',
-      'deleted',
+      'deleted'
     );
   }
 
@@ -410,7 +410,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     return unwrap(
       await this.client.storage.listDatabaseColumnCasts({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
-      }),
+      })
     );
   }
 
@@ -420,7 +420,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const { positions } = unwrap(
       await this.client.storage.getDatabaseViewPositions({
         path: { id: this.id, view_id: view.id },
-      }),
+      })
     );
     return positions;
   }
@@ -434,7 +434,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     const { changes } = unwrap(
       await this.client.storage.getDatabaseRowHistory({
         path: { id: this.id, table_id: row.table.id, row_id: row.id },
-      }),
+      })
     );
     return changes;
   }
@@ -445,7 +445,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
       client.storage.importDatabaseTable({
         path: { id: this.id },
         body: request,
-      }),
+      })
     );
     return DatabaseTable.byId(this, table.id);
   }
@@ -455,19 +455,19 @@ export class Database extends MacroEntity<DatabaseDetail> {
     return unwrap(
       await this.client.storage.getDatabasePermissions({
         path: { id: this.id },
-      }),
+      })
     );
   }
 
   /** Add, replace, or remove recipient grants without transferring ownership. */
   updateSharePermissions(
-    request: UpdateSharePermissionRequestV2,
+    request: UpdateSharePermissionRequestV2
   ): Promise<SharePermissionV2> {
     return this.mutate((client) =>
       client.storage.updateDatabasePermissions({
         path: { id: this.id },
         body: request,
-      }),
+      })
     );
   }
 
@@ -479,7 +479,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async changeColumnType(
     column: DatabaseColumn,
-    options: ChangeColumnTypeOptions,
+    options: ChangeColumnTypeOptions
   ): Promise<OpResultOf<'column', 'type_changed'>> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     const version = await column.table.version();
@@ -493,10 +493,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
             change: { kind: 'change_type', to: columnKind(options.to) },
           },
         ],
-        { baseVersions: [{ table: column.table, version }] },
+        { baseVersions: [{ table: column.table, version }] }
       ),
       'column',
-      'type_changed',
+      'type_changed'
     );
   }
 
@@ -507,14 +507,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async columnConversion(
     column: DatabaseColumn,
-    to: ColumnType,
+    to: ColumnType
   ): Promise<ColumnConversion> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     return unwrap(
       await this.client.storage.convertDatabaseColumn({
         path: { id: this.id, table_id: column.table.id, column_id: column.id },
         body: { to: columnKind(to) },
-      }),
+      })
     );
   }
 
@@ -526,7 +526,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async convertColumnIntoNewColumn(
     column: DatabaseColumn,
-    options: ConvertIntoNewColumnOptions,
+    options: ConvertIntoNewColumnOptions
   ): Promise<DatabaseColumn> {
     const conversion = await this.columnConversion(column, options.to);
     const name =
@@ -569,7 +569,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
     });
     if (!isResultOf(created, 'column', 'created'))
       throw new MacroError(
-        `expected a column.created result, got ${created ? resultName(created) : 'none'}`,
+        `expected a column.created result, got ${created ? resultName(created) : 'none'}`
       );
     return DatabaseColumn.byId(column.table, created.column);
   }
@@ -591,10 +591,10 @@ export class Database extends MacroEntity<DatabaseDetail> {
             change: { kind: 'delete' },
           },
         ],
-        { baseVersions: [{ table: column.table, version }] },
+        { baseVersions: [{ table: column.table, version }] }
       ),
       'column',
-      'deleted',
+      'deleted'
     );
     return tableVersion;
   }
@@ -606,13 +606,13 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async reorderColumns(
     table: DatabaseTable,
-    columns: DatabaseColumn[],
+    columns: DatabaseColumn[]
   ): Promise<TableVersion> {
     this.assertOwns(`table ${table.id}`, table.database);
     for (const column of columns)
       if (column.table.id !== table.id)
         throw new MacroError(
-          `column ${column.id} does not belong to table ${table.id}`,
+          `column ${column.id} does not belong to table ${table.id}`
         );
     const version = await table.version();
     const { tableVersion } = soleResult(
@@ -627,14 +627,14 @@ export class Database extends MacroEntity<DatabaseDetail> {
             },
           },
         ],
-        { baseVersions: [{ table, version }] },
+        { baseVersions: [{ table, version }] }
       ),
       'table',
-      'columns_reordered',
+      'columns_reordered'
     );
     if (tableVersion === undefined)
       throw new MacroError(
-        `table ${table.id} reordered its columns without a version`,
+        `table ${table.id} reordered its columns without a version`
       );
     return tableVersion;
   }
@@ -655,7 +655,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         },
       ]),
       'table',
-      'renamed',
+      'renamed'
     );
     if (tableVersion === undefined)
       throw new MacroError(`table ${table.id} was renamed without a version`);
@@ -669,7 +669,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async renameColumn(
     column: DatabaseColumn,
-    name: string,
+    name: string
   ): Promise<TableVersion> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     const previousName = await column.name();
@@ -683,7 +683,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         },
       ]),
       'column',
-      'renamed',
+      'renamed'
     );
     return tableVersion;
   }
@@ -691,7 +691,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
   /** Adopt a first-value type only while the owned column is empty and inferable. */
   async inferColumnType(
     column: DatabaseColumn,
-    options: InferColumnTypeOptions,
+    options: InferColumnTypeOptions
   ): Promise<InferColumnTypeOutcome> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     return this.mutate((client) =>
@@ -704,7 +704,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
             ? { specificEntityType: options.specificEntityType }
             : {}),
         },
-      }),
+      })
     );
   }
 
@@ -714,12 +714,12 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async addColumn(
     table: DatabaseTable,
-    options: AddColumnOptions,
+    options: AddColumnOptions
   ): Promise<DatabaseColumn> {
     this.assertOwns(`table ${table.id}`, table.database);
     if (options.after !== undefined && options.after.table.id !== table.id)
       throw new MacroError(
-        `column ${options.after.id} does not belong to table ${table.id}`,
+        `column ${options.after.id} does not belong to table ${table.id}`
       );
     const definition: NewColumn =
       'property' in options
@@ -749,7 +749,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         },
       ]),
       'column',
-      'created',
+      'created'
     );
     return DatabaseColumn.byId(table, column);
   }
@@ -762,7 +762,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
    */
   async addColumnOptions(
     column: DatabaseColumn,
-    labels: string[],
+    labels: string[]
   ): Promise<OpResultOf<'column', 'options_added'>> {
     this.assertOwns(`column ${column.id}`, column.table.database);
     return soleResult(
@@ -775,7 +775,7 @@ export class Database extends MacroEntity<DatabaseDetail> {
         },
       ]),
       'column',
-      'options_added',
+      'options_added'
     );
   }
 }
