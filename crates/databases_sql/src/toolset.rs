@@ -1,5 +1,5 @@
-//! The SQL agent tools (QueryDatabase, its read-only twin, SaveDatabaseQuery):
-//! they convert the request, run it through [`DatabasesSql`] and render the answer.
+//! The SQL agent tools (QueryDatabase, SaveDatabaseQuery): they convert the
+//! request, run it through [`DatabasesSql`] and render the answer.
 
 mod query_database;
 mod save_database_query;
@@ -19,10 +19,10 @@ use soup::domain::ports::SoupService;
 use database_sql::run::RunError;
 
 use crate::service::{DatabasesSql, SqlError};
+use crate::view_only::ViewOnlyAccess;
 
 pub use query_database::{
-    QueryDatabase, QueryDatabaseDisplay, QueryDatabaseResponse, ReadOnlyQueryDatabase,
-    ToolTableVersion,
+    QueryDatabase, QueryDatabaseDisplay, QueryDatabaseResponse, ToolTableVersion,
 };
 pub use save_database_query::{SaveDatabaseQuery, SaveDatabaseQueryResponse, ToolChart};
 
@@ -61,6 +61,23 @@ impl<Databases, Access, Soup, Contacts> DatabasesSqlToolContext<Databases, Acces
         self
     }
 
+    /// The same tools over access capped at view, for a surface whose
+    /// answers must never write.
+    pub fn view_only(
+        &self,
+    ) -> DatabasesSqlToolContext<Databases, ViewOnlyAccess<Access>, Soup, Contacts>
+    where
+        Databases: DatabasesService,
+        Access: EntityAccessService,
+        Soup: SoupService,
+        Contacts: ContactsService,
+    {
+        DatabasesSqlToolContext {
+            sql: self.sql.view_only(),
+            actor: self.actor,
+        }
+    }
+
     /// The requesting user, with this context's agent acting for them.
     fn viewer(&self, user_id: &MacroUserIdStr<'static>) -> Viewer {
         Viewer {
@@ -83,19 +100,6 @@ where
     AsyncToolCollection::new()
         .add_tool::<QueryDatabase, DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>()
         .add_tool::<SaveDatabaseQuery, DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>()
-}
-
-/// The read-only QueryDatabase, for live document answers.
-pub fn databases_sql_read_only_toolset<Databases, Access, Soup, Contacts>()
--> AsyncToolCollection<DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>
-where
-    Databases: DatabasesService,
-    Access: EntityAccessService,
-    Soup: SoupService,
-    Contacts: ContactsService,
-{
-    AsyncToolCollection::new()
-        .add_tool::<ReadOnlyQueryDatabase, DatabasesSqlToolContext<Databases, Access, Soup, Contacts>>()
 }
 
 /// A SQL error in words the model can act on; the engine's message passes
@@ -135,10 +139,9 @@ fn sql_error(error: SqlError) -> ToolCallError {
                 "The write was refused, so nothing changed: {error}. Fix the statement and retry."
             )
         }
-        SqlError::ReadOnlyQuery | SqlError::TableReadOnly { .. } => format!(
-            "{error}. Writes need edit access to the table's database, and the read-only \
-             query tool never writes."
-        ),
+        SqlError::TableReadOnly { .. } => {
+            format!("{error}. Writes need edit access to the table's database.")
+        }
         SqlError::ChartColumnNotReturned { .. } | SqlError::ChartValueNotNumeric { .. } => format!(
             "{error}. Name chart columns as the SELECT names its results, with AS for an aggregate."
         ),

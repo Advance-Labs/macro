@@ -25,6 +25,7 @@ use crate::catalog::ViewerCatalog;
 use crate::ops_sink::{ReceiptOpsSink, ReceiptWriteError};
 use crate::outcome::{SqlOutcome, shape};
 use crate::row_source::{SoupRowSource, SoupSourceError};
+use crate::view_only::ViewOnlyAccess;
 
 /// SQL over the databases a viewer can reach. Reads go through Soup and the
 /// viewer's contacts; writes go through the databases service's ops.
@@ -90,9 +91,6 @@ pub enum SqlError {
         /// Why, in the service's words.
         reason: String,
     },
-    /// A read-only query was asked to write.
-    #[error("queries cannot change data")]
-    ReadOnlyQuery,
     /// A saved query must be a read.
     #[error("a saved query must be a SELECT; it cannot change data")]
     SavedQueryNotSelect,
@@ -170,12 +168,6 @@ fn refusal(row: &Option<usize>, reason: &str) -> String {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    ReadOnly,
-    ReadWrite,
-}
-
 impl<Databases, Access, Soup, Contacts> DatabasesSql<Databases, Access, Soup, Contacts>
 where
     Databases: DatabasesService,
@@ -198,29 +190,15 @@ where
         }
     }
 
-    /// Run one statement, a read or a write.
-    #[tracing::instrument(skip_all, err)]
-    pub async fn execute(
-        &self,
-        viewer: Viewer,
-        request: SqlRequest,
-    ) -> Result<SqlOutcome, SqlError> {
-        self.run(viewer, request, Mode::ReadWrite).await
-    }
-
-    /// Run one read; a write is refused before anything is read.
-    #[tracing::instrument(skip_all, err)]
-    pub async fn query(&self, viewer: Viewer, sql: String) -> Result<SqlOutcome, SqlError> {
-        self.run(
-            viewer,
-            SqlRequest {
-                sql,
-                scope: None,
-                base_versions: HashMap::new(),
-            },
-            Mode::ReadOnly,
-        )
-        .await
+    /// The same SQL over access capped at view: it reads what the viewer can
+    /// see, and every write is refused as the access check refuses a viewer.
+    pub fn view_only(&self) -> DatabasesSql<Databases, ViewOnlyAccess<Access>, Soup, Contacts> {
+        DatabasesSql {
+            databases: self.databases.clone(),
+            entity_access: Arc::new(ViewOnlyAccess((*self.entity_access).clone())),
+            soup: self.soup.clone(),
+            contacts: self.contacts.clone(),
+        }
     }
 
     /// Save a read as a question, scoped to `database_id`, once it compiles
@@ -260,11 +238,12 @@ where
             })
     }
 
-    async fn run(
+    /// Run one statement, a read or a write.
+    #[tracing::instrument(skip_all, err)]
+    pub async fn execute(
         &self,
         viewer: Viewer,
         request: SqlRequest,
-        mode: Mode,
     ) -> Result<SqlOutcome, SqlError> {
         if request.sql.len() > MAX_STATEMENT_LENGTH {
             return Err(SqlError::TooLong);
@@ -274,9 +253,6 @@ where
         let mut write_receipt = None;
         let mut written = None;
         if let Some(table) = written_table(&query) {
-            if mode == Mode::ReadOnly {
-                return Err(SqlError::ReadOnlyQuery);
-            }
             let (database, detail) = catalog
                 .table(table)
                 .ok_or(SqlError::WrittenTableNotInCatalog { table_id: table })?;

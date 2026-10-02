@@ -171,10 +171,6 @@ fn every_tool_schema_is_valid() {
             generate_validated_input_schema::<QueryDatabase>(),
         ),
         (
-            "QueryDatabase",
-            generate_validated_input_schema::<ReadOnlyQueryDatabase>(),
-        ),
-        (
             "SaveDatabaseQuery",
             generate_validated_input_schema::<SaveDatabaseQuery>(),
         ),
@@ -208,11 +204,6 @@ fn the_toolsets_build_with_their_tools() {
         assert!(toolset.tools.contains_key(name), "missing {name}");
     }
     assert!(toolset.user_tools.is_empty());
-
-    let read_only =
-        databases_sql_read_only_toolset::<FakeDatabases, FakeAccess, FakeSoup, FakeContacts>();
-    assert_eq!(read_only.tools.len(), 1);
-    assert!(read_only.tools.contains_key("QueryDatabase"));
 }
 
 #[tokio::test]
@@ -418,34 +409,39 @@ async fn a_view_grant_reads_as_read_only() {
 }
 
 #[tokio::test]
-async fn the_read_only_tool_never_writes_even_for_an_owner() {
+async fn over_view_only_access_the_tool_refuses_an_owners_write_and_still_reads() {
     let world = world();
-    let error = ReadOnlyQueryDatabase {
+    let error = QueryDatabase {
         sql: "DELETE FROM \"Guests\" WHERE \"Name\" = 'Maria'".into(),
+        database_id: Some(OFFSITE),
+        base_versions: None,
+        display: None,
     }
     .call(
-        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world)).view_only()),
         RequestContext::new(user(OWNER)),
     )
     .await
-    .expect_err("document answers never write");
+    .expect_err("view-only access never writes");
 
-    assert!(
-        error.description.contains("read-only"),
-        "{}",
-        error.description
+    assert_eq!(
+        error.description,
+        "table Guests is read-only. Writes need edit access to the table's database."
     );
     assert!(world.lock().unwrap().applied.is_empty());
 
-    let response = ReadOnlyQueryDatabase {
+    let response = QueryDatabase {
         sql: "SELECT COUNT(*) AS guests FROM \"Offsite\".\"Guests\"".into(),
+        database_id: None,
+        base_versions: None,
+        display: None,
     }
     .call(
-        ServiceContext(DatabasesSqlToolContext::new(sql(&world))),
+        ServiceContext(DatabasesSqlToolContext::new(sql(&world)).view_only()),
         RequestContext::new(user(OWNER)),
     )
     .await
-    .expect("document answers read");
+    .expect("view-only access reads");
     assert_eq!(
         response.results[0].rows,
         vec![vec![Some(database_sql::fold::Cell::Number(1.0))]]

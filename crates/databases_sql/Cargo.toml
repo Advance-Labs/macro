@@ -6,7 +6,7 @@ version = "0.1.0"
 
 [features]
 default = []
-# The SQL agent tools: QueryDatabase, its read-only twin and SaveDatabaseQuery.
+# The SQL agent tools: QueryDatabase and SaveDatabaseQuery.
 ai_tools = ["dep:ai_toolset", "dep:anyhow", "dep:async-trait", "dep:schemars"]
 
 [dependencies]

@@ -29,7 +29,7 @@ use channels::inbound::toolset::channel_toolset;
 use chat::inbound::toolset::chat_toolset;
 use crm::inbound::toolset::crm_toolset;
 use databases::inbound::toolset::{databases_read_only_toolset, databases_toolset};
-use databases_sql::toolset::{databases_sql_read_only_toolset, databases_sql_toolset};
+use databases_sql::toolset::{QueryDatabase, databases_sql_toolset};
 use display_results::DisplayResults;
 use documents::inbound::toolset::document_toolset;
 use email::inbound::toolset::{email_toolset, mcp_toolset as email_mcp_toolset};
@@ -74,10 +74,10 @@ pub use tool_context::{
     ToolPropertiesToolContext, ToolRemindersService, ToolRemindersToolContext, ToolServiceContext,
     ToolSkillService, ToolSkillToolContext, ToolSoupService, ToolSystemPropertiesService,
     ToolTableEventPublisher, ToolTeamService, ToolTeamToolContext, ToolUserEmailService,
-    build_activity_tool_context, build_bot_tool_context, build_calendar_tool_context,
-    build_channel_tool_context_with_dispatcher, build_channel_tool_context_with_side_effects,
-    build_channel_tool_context_without_side_effects, build_crm_tool_context,
-    build_databases_sql_tool_context, build_databases_tool_context,
+    ToolViewOnlyDatabasesSqlToolContext, build_activity_tool_context, build_bot_tool_context,
+    build_calendar_tool_context, build_channel_tool_context_with_dispatcher,
+    build_channel_tool_context_with_side_effects, build_channel_tool_context_without_side_effects,
+    build_crm_tool_context, build_databases_sql_tool_context, build_databases_tool_context,
     build_image_generation_tool_context, build_initiative_tool_context,
     build_message_service_with_side_effects, build_message_service_without_side_effects,
     build_project_tool_context, build_properties_service, build_properties_service_with_broker,
@@ -96,11 +96,13 @@ pub fn database_tools() -> AiToolSet {
         .add_subtoolset::<ToolDatabasesSqlToolContext>(databases_sql_toolset())
 }
 
-/// Discovery and enforced read-only SQL for automatically sourced document answers.
+/// Discovery and QueryDatabase for live document answers. The SQL tool is
+/// the one every host gets; here it runs over access capped at view, so the
+/// access check refuses its writes even for a user who could edit.
 pub fn database_read_only_tools() -> AiToolSet {
     AsyncToolCollection::new()
         .add_subtoolset::<ToolDatabasesToolContext>(databases_read_only_toolset())
-        .add_subtoolset::<ToolDatabasesSqlToolContext>(databases_sql_read_only_toolset())
+        .add_tool::<QueryDatabase, ToolViewOnlyDatabasesSqlToolContext>()
 }
 
 pub struct ToolSetWithPrompt {

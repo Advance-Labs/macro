@@ -32,8 +32,8 @@ use contacts::outbound::ingress::SqsContactsQueue;
 use contacts::outbound::repository::DbContactsRepository;
 use crm::inbound::toolset::CrmToolContext;
 use databases::inbound::toolset::DatabasesToolContext;
-use databases_sql::DatabasesSql;
 use databases_sql::toolset::DatabasesSqlToolContext;
+use databases_sql::{DatabasesSql, ViewOnlyAccess};
 use documents::{
     domain::ports::{TaskPropertiesPort, task_property_edit_receipt},
     inbound::toolset::DocumentToolContext,
@@ -1136,6 +1136,15 @@ pub type ToolDatabasesSqlToolContext = DatabasesSqlToolContext<
     ToolContactsService,
 >;
 
+/// The SQL tools' context with access capped at view, for document answers:
+/// the same QueryDatabase, whose writes the access check refuses.
+pub type ToolViewOnlyDatabasesSqlToolContext = DatabasesSqlToolContext<
+    ToolDatabasesService,
+    ViewOnlyAccess<ToolEntityAccessService>,
+    ToolSoupService,
+    ToolContactsService,
+>;
+
 /// Build the SQL tools' context over the schema tools' databases service
 /// and entity access, and the host's Soup.
 pub fn build_databases_sql_tool_context(
@@ -1675,6 +1684,12 @@ impl ToolServiceContext {
     pub fn with_actor_name(mut self, name: &str) -> Self {
         self.document_tool_context = self.document_tool_context.with_actor_name(name);
         self
+    }
+}
+
+impl FromRef<ToolServiceContext> for ToolViewOnlyDatabasesSqlToolContext {
+    fn from_ref(context: &ToolServiceContext) -> Self {
+        context.databases_sql_tool_context.view_only()
     }
 }
 
