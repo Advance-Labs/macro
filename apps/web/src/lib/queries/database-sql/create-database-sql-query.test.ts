@@ -19,7 +19,7 @@ import {
   type Operation,
 } from '@urql/core';
 import { ok } from 'neverthrow';
-import { createRoot, createSignal } from 'solid-js';
+import { createEffect, createRoot, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { empty, fromPromise, fromValue, mergeMap, pipe } from 'wonka';
 import {
@@ -141,6 +141,7 @@ describe('createDatabaseSqlQuery', () => {
     async (cacheHit) => {
       let finishNetwork: (() => void) | undefined;
       const policies: string[] = [];
+      const loadingStates: boolean[] = [];
       const exchange: Exchange = () => (incoming) =>
         pipe(
           incoming,
@@ -180,7 +181,7 @@ describe('createDatabaseSqlQuery', () => {
       });
       const query = createRoot((cleanup) => {
         dispose = cleanup;
-        return createDatabaseSqlQuery(
+        const query = createDatabaseSqlQuery(
           () => ({ schema, sql: 'SELECT name FROM crm.deals' }),
           {
             client: () => client,
@@ -194,6 +195,8 @@ describe('createDatabaseSqlQuery', () => {
             open: names,
           }
         );
+        createEffect(() => loadingStates.push(query.loading()));
+        return query;
       });
       await vi.waitFor(() => expect(finishNetwork).toBeDefined());
       if (cacheHit)
@@ -204,6 +207,7 @@ describe('createDatabaseSqlQuery', () => {
       expect(query.error()).toBeUndefined();
       expect(query.loading()).toBe(true);
       expect(policies).toEqual(['cache-only', 'network-only']);
+      expect(loadingStates).toEqual([true]);
       finishNetwork?.();
       await vi.waitFor(() =>
         expect(query.outcome()?.rows).toEqual([
@@ -211,6 +215,7 @@ describe('createDatabaseSqlQuery', () => {
         ])
       );
       expect(query.loading()).toBe(false);
+      expect(loadingStates).toEqual([true, false]);
     }
   );
 

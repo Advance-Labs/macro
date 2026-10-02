@@ -167,7 +167,7 @@ export function createDatabaseSqlQuery(
     current: DatabaseSqlStatement,
     requestPolicy: RequestPolicy,
     reconcile: boolean,
-    reportFailure = true
+    options: { reportFailure?: boolean; keepLoading?: boolean } = {}
   ): ResultAsync<DatabaseSqlRun, DatabaseSqlFailure> => {
     const generation = ++latest;
     const host = capabilities.cacheHost();
@@ -200,12 +200,12 @@ export function createDatabaseSqlQuery(
       )
       .orElse((failure) => {
         if (generation !== latest) return okAsync({ landed: false });
-        if (reportFailure) setError(failure);
+        if (options.reportFailure !== false) setError(failure);
         return errAsync(failure);
       });
     const settle = async () => {
       const result = await answered;
-      if (generation === latest) setLoading(false);
+      if (generation === latest && !options.keepLoading) setLoading(false);
       return result;
     };
     return new ResultAsync(settle());
@@ -229,7 +229,10 @@ export function createDatabaseSqlQuery(
       return;
     }
     // Only a complete cached answer is shown. A miss still reads the network.
-    const cached = run(current, 'cache-only', false, false);
+    const cached = run(current, 'cache-only', false, {
+      reportFailure: false,
+      keepLoading: true,
+    });
     const generation = latest;
     const reconcile = async () => {
       await cached;
