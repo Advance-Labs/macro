@@ -10,12 +10,15 @@ import type {
   DatabaseOpsError,
   DatabaseSchemaErrorCode,
 } from '@service-storage/databases';
+import type { CommittedChange } from '@service-storage/generated/schemas/committedChange';
 import type { DatabaseDetail } from '@service-storage/generated/schemas/databaseDetail';
 import type { ListedDatabase } from '@service-storage/generated/schemas/listedDatabase';
 import type { OpResult } from '@service-storage/generated/schemas/opResult';
+import type { UndoOutcome } from '@service-storage/generated/schemas/undoOutcome';
 import { useQueries, useQuery } from '@tanstack/solid-query';
 import { ResultAsync } from 'neverthrow';
 import type { Accessor } from 'solid-js';
+import { match, P } from 'ts-pattern';
 import { queryClient } from '../client';
 import { databasesKeys } from './keys';
 
@@ -105,6 +108,23 @@ export function fetchViewerDatabases(): ResultAsync<
   );
 }
 
+/** A batch the viewer committed in this session: its ops, and the journal's changes, which undo names. */
+export type CommittedDatabaseBatch = {
+  databaseId: string;
+  ops: DatabaseOp[];
+  changes: CommittedChange[];
+};
+
+const committedListeners = new Set<(batch: CommittedDatabaseBatch) => void>();
+
+/** Hear of every batch the viewer commits through {@link applyDatabaseOps}; answers the unsubscribe. */
+export function onDatabaseBatchCommitted(
+  listener: (batch: CommittedDatabaseBatch) => void
+): () => void {
+  committedListeners.add(listener);
+  return () => committedListeners.delete(listener);
+}
+
 /**
  * Apply ops to one database as the current viewer, together or not at all.
  * Each table `baseVersions` names must still be at that version, or the batch
@@ -121,10 +141,43 @@ export function applyDatabaseOps(
         id: databaseId,
         request: baseVersions ? { ops, baseVersions } : { ops },
       })
-      .map((response) => response.results)
+      .map((response) => {
+        for (const listener of committedListeners)
+          listener({ databaseId, ops, changes: response.changes });
+        return response.results;
+      })
       // A refused batch is one error: the first op the service could not apply.
       .mapErr(([refusal]) => refusal)
   );
+}
+
+/**
+ * Undo one of the viewer's own changes by its journal id. The outcome says what reverted; the
+ * changes it made carry their versions, folded into the cached schema, which is re-read for any
+ * schema the undo put back.
+ */
+export function undoDatabaseChange(
+  databaseId: string,
+  change: number
+): ResultAsync<UndoOutcome, ResultError[]> {
+  return storageServiceClient.databases
+    .undoChange({ id: databaseId, change })
+    .map(({ outcome }) => {
+      const changes = match(outcome)
+        .with(
+          { kind: P.union('reverted', 'partial') },
+          ({ changes }) => changes
+        )
+        .otherwise(() => []);
+      applyDatabaseTableVersions(
+        databaseId,
+        Object.fromEntries(
+          changes.map(({ table, version }) => [table, version])
+        )
+      );
+      if (changes.length > 0) void invalidateDatabase(databaseId);
+      return outcome;
+    });
 }
 
 /** Re-read one database's schema; open reads rerun only when their catalog changes. */

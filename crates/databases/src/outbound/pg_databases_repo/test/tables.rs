@@ -97,6 +97,7 @@ async fn a_deleted_database_is_not_found_rather_than_a_name_conflict_or_storage_
                 writes: vec![write],
                 related_rows: Vec::new(),
                 expected_versions: Vec::new(),
+                journal: crate::domain::journal::JournalPlan::default(),
             })
             .await
             .unwrap();

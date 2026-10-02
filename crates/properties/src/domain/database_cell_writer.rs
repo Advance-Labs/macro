@@ -1,8 +1,8 @@
 //! Transactional composition for database rows' cells, so a batch of writes
 //! commits or rolls back as one.
 
-use models_properties::EntityReference;
 use models_properties::service::property_value::PropertyValue;
+use models_properties::{EntityReference, EntityType};
 use uuid::Uuid;
 
 /// The transaction a database's writes share. The option and cell writers
@@ -26,4 +26,16 @@ pub trait DatabaseCellWriter: DatabaseWriteTransaction {
         property_definition_id: Uuid,
         value: Option<PropertyValue>,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+
+    /// What these entities of one type hold, read inside the transaction so
+    /// a use case sees what its own locks guard: each entity's properties
+    /// with a value, or only those of `definitions` when given, as
+    /// `(entity id, definition, value)`. An undecodable value is left out.
+    fn entity_values_in(
+        &self,
+        transaction: &mut Self::Transaction,
+        entity_type: EntityType,
+        entity_ids: &[String],
+        definitions: Option<&[Uuid]>,
+    ) -> impl Future<Output = Result<Vec<(String, Uuid, PropertyValue)>, Self::Err>> + Send;
 }

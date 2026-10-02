@@ -314,6 +314,8 @@ export const storageExcluded = [
   'getCollabSurface',
   // Storage for the web app's saved questions, not a user-facing surface.
   'getDatabaseQuery',
+  // The web grid's incremental refresh after a version ping, not a user-facing surface.
+  'getDatabaseTableChanges',
   'getDocumentListHandler',
   'getDocumentLocationV3',
   'getDocumentProcessingResult',
@@ -357,6 +359,9 @@ export const storageExcluded = [
   'shareDatabaseAwareness',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
+  // The web app's Ctrl+Z over the viewer's own session edits; the SDK's
+  // applyOps does not surface the journal changes an undo names.
+  'undoDatabaseChange',
   'uploadExtractFolderHandler',
   'uploadFolderHandler',
   'upsertHistoryHandler',

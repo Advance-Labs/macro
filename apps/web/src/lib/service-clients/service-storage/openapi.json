@@ -6540,6 +6540,97 @@
         }
       }
     },
+    "/databases/{id}/changes/{change}/undo": {
+      "post": {
+        "tags": ["databases"],
+        "summary": "Undo one of your own committed changes: its inverse applies as a new,\njournaled batch, under the table's lock, guarded against what others\nchanged since. A cell someone changed since is left alone and listed; a\nrow or column you added that someone else wrote since, or a name, option,\norder, view or card place changed since, refuses the undo. Others'\nchanges always stay. Redo by undoing the undo's change.",
+        "operationId": "undo_database_change",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "change",
+            "in": "path",
+            "description": "The change's journal id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoChangeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No edit access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such change in this database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The table kept moving under the undo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/import": {
       "post": {
         "tags": ["databases"],
@@ -6889,6 +6980,97 @@
         }
       }
     },
+    "/databases/{id}/tables/{table_id}/changes": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "What changed in a table since a version, from the change journal: the\nrows that changed, each once as it stands now (`insert`, `update` or\n`delete`), and the columns. A reader holding the table at `since` reads\njust those rows; it reads the table whole when a column changed, the\njournal is not `complete`, or the rows are `truncated`.",
+        "operationId": "get_database_table_changes",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "description": "Table id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "The table version the reader last read.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableChanges"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/databases/{id}/tables/{table_id}/columns/{column_id}/casts": {
       "get": {
         "tags": ["databases"],
@@ -7187,6 +7369,97 @@
             }
           },
           "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/databases/{id}/tables/{table_id}/rows/{row_id}/history": {
+      "get": {
+        "tags": ["databases"],
+        "summary": "A row's history, from the change journal: every committed change that\ntouched it, newest first, with who made it, when, and the values of the\ncolumns it touched before and after. It reads after the row is removed,\nso a removed row's last values stay readable.",
+        "operationId": "get_database_row_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Database id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "table_id",
+            "in": "path",
+            "description": "Table id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "row_id",
+            "in": "path",
+            "description": "Row id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RowHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No access to the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
             "description": "",
             "content": {
               "application/json": {
@@ -16645,8 +16918,15 @@
       "ApplyOpsResponse": {
         "type": "object",
         "description": "What each op of a batch did.",
-        "required": ["results"],
+        "required": ["results", "changes"],
         "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommittedChange"
+            },
+            "description": "The journal's change for each table version the batch produced: the\nids `POST /databases/{id}/changes/{change}/undo` takes."
+          },
           "results": {
             "type": "array",
             "items": {
@@ -19571,6 +19851,22 @@
         ],
         "description": "A change to one column."
       },
+      "ColumnChangeKind": {
+        "type": "string",
+        "description": "How a change touched a column.",
+        "enum": [
+          "create",
+          "rename",
+          "change_type",
+          "delete",
+          "add_options",
+          "update_option",
+          "delete_option",
+          "reorder",
+          "infer_type",
+          "related"
+        ]
+      },
       "ColumnConfig": {
         "oneOf": [
           {
@@ -19954,6 +20250,27 @@
           "identity": {
             "$ref": "#/components/schemas/SessionIdentity",
             "description": "The session."
+          }
+        }
+      },
+      "CommittedChange": {
+        "type": "object",
+        "description": "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it.",
+        "required": ["table", "version", "change"],
+        "properties": {
+          "change": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The journal's id of the change."
+          },
+          "table": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The table."
+          },
+          "version": {
+            "$ref": "#/components/schemas/TableVersion",
+            "description": "The version the batch produced."
           }
         }
       },
@@ -29798,6 +30115,11 @@
           }
         }
       },
+      "RowChangeKind": {
+        "type": "string",
+        "description": "How a change touched a row.",
+        "enum": ["insert", "update", "delete"]
+      },
       "RowChanges": {
         "oneOf": [
           {
@@ -29846,6 +30168,92 @@
           }
         ],
         "description": "Which rows an update writes, and with what."
+      },
+      "RowHistoryEntry": {
+        "type": "object",
+        "description": "One change of a row, as its history shows it.",
+        "required": [
+          "change",
+          "version",
+          "actor",
+          "actingBot",
+          "at",
+          "kind",
+          "columns",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "actingBot": {
+            "type": ["string", "null"],
+            "description": "The agent acting for them, if one was."
+          },
+          "actor": {
+            "type": ["string", "null"],
+            "description": "Who made it; `null` for an internal caller, or a removed user."
+          },
+          "after": {
+            "type": "object",
+            "description": "Those columns' values it wrote, by column id; a cell it emptied is\nleft out.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CellValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it committed."
+          },
+          "before": {
+            "type": "object",
+            "description": "Those columns' values before it, by column id; an empty cell is\nleft out.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CellValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "change": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The change's id in the journal."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The columns it wrote; for a removal, those the row had values in."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RowChangeKind",
+            "description": "How it touched the row."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The table version it produced."
+          }
+        }
+      },
+      "RowHistoryResponse": {
+        "type": "object",
+        "description": "A row's history.",
+        "required": ["changes"],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RowHistoryEntry"
+            },
+            "description": "Every committed change that touched the row, newest first: who made\nit, when, how, and the touched columns' values before and after."
+          }
+        }
       },
       "RowsChange": {
         "oneOf": [
@@ -30602,6 +31010,27 @@
           "entity_type": {
             "type": "string",
             "description": "Mentioned entity type."
+          }
+        }
+      },
+      "SkippedCell": {
+        "type": "object",
+        "description": "A cell an undo left alone, because someone changed it after the change\nbeing undone.",
+        "required": ["row", "column", "by"],
+        "properties": {
+          "by": {
+            "type": ["string", "null"],
+            "description": "Who changed it since, from the journal; `null` when unknown."
+          },
+          "column": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column."
+          },
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
           }
         }
       },
@@ -32953,6 +33382,40 @@
           }
         }
       },
+      "TableChanges": {
+        "type": "object",
+        "description": "What changed in a table since a version, for a reader holding it at\nthat version.",
+        "required": ["version", "complete", "truncated", "rows", "columns"],
+        "properties": {
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TouchedColumn"
+            },
+            "description": "The columns that changed; any of them means the table's shape moved."
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "Whether every version since is journaled; without it, read the table\nwhole."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TouchedRow"
+            },
+            "description": "The rows that changed, each once, as they stand now: a row added\nand written is `insert`, one removed is `delete`, and one added and\nremoved since is left out."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether more rows changed than are listed; then read the table whole."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The version the changes reach."
+          }
+        }
+      },
       "TableDetail": {
         "type": "object",
         "description": "One table with its columns and SQL name.",
@@ -33379,6 +33842,38 @@
           }
         }
       },
+      "TouchedColumn": {
+        "type": "object",
+        "description": "A column a table's changes since some version touched.",
+        "required": ["column", "kind"],
+        "properties": {
+          "column": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The column."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ColumnChangeKind",
+            "description": "How."
+          }
+        }
+      },
+      "TouchedRow": {
+        "type": "object",
+        "description": "A row a table's changes since some version touched, and how it stands.",
+        "required": ["row", "kind"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RowChangeKind",
+            "description": "How it changed overall: added, written, or removed."
+          },
+          "row": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The row."
+          }
+        }
+      },
       "TranscribeResponse": {
         "type": "object",
         "description": "Transcription result.",
@@ -33657,6 +34152,96 @@
             "description": "Root being replied to, absent for the parent composer."
           }
         }
+      },
+      "UndoChangeResponse": {
+        "type": "object",
+        "description": "What undoing a change did.",
+        "required": ["outcome"],
+        "properties": {
+          "outcome": {
+            "$ref": "#/components/schemas/UndoOutcome",
+            "description": "The outcome: reverted, partly reverted with the cells others changed\nsince left alone, or refused with why and whose change stands in the\nway."
+          }
+        }
+      },
+      "UndoOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Everything the change did is undone.",
+            "required": ["changes", "kind"],
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommittedChange"
+                },
+                "description": "The journal's changes the undo made, one per table version; undo\none of them to redo."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["reverted"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Some cells were changed by someone since, and were left alone; the\nrest is undone. With no changes, nothing was left to undo.",
+            "required": ["skipped", "changes", "kind"],
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommittedChange"
+                },
+                "description": "The journal's changes the undo made."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["partial"]
+              },
+              "skipped": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SkippedCell"
+                },
+                "description": "The cells left alone, each with who changed it."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Nothing was undone.",
+            "required": ["reason", "by", "kind"],
+            "properties": {
+              "by": {
+                "type": ["string", "null"],
+                "description": "Whose change stands in the way, when one does."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["refused"]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/UndoRefusal",
+                "description": "Why."
+              }
+            }
+          }
+        ],
+        "description": "What undoing a change did."
+      },
+      "UndoRefusal": {
+        "type": "string",
+        "description": "Why an undo was refused. Nothing was written.",
+        "enum": [
+          "not_yours",
+          "not_undoable",
+          "row_edited_since",
+          "column_written_since",
+          "changed_since",
+          "already_back"
+        ]
       },
       "UpdateAgentRequest": {
         "type": "object",

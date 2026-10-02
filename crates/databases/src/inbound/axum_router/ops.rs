@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use models_databases::{DatabaseOp, OpResult, TakenId};
 
-use crate::domain::models::{OpBatch, OpRefusal};
+use crate::domain::models::{CommittedChange, OpBatch, OpRefusal};
 use serde::Serialize;
 
 use super::*;
@@ -36,6 +36,9 @@ pub struct ApplyOpsResponse {
     /// its op is: the same outer `kind`, naming the same ids, with a
     /// `change` saying what happened.
     pub results: Vec<OpResult>,
+    /// The journal's change for each table version the batch produced: the
+    /// ids `POST /databases/{id}/changes/{change}/undo` takes.
+    pub changes: Vec<CommittedChange>,
 }
 
 /// Why an op of a batch was refused. Nothing in the batch was written.
@@ -108,9 +111,9 @@ where
     EntityAccess: EntityAccessService,
     Authorization: MacroAuthorizationService,
 {
-    let results = state
+    let applied = state
         .service
-        .apply_ops(
+        .apply_ops_with_changes(
             access.entity_access_receipt,
             viewer_of(&user),
             OpBatch {
@@ -119,5 +122,8 @@ where
             },
         )
         .await?;
-    Ok(Json(ApplyOpsResponse { results }))
+    Ok(Json(ApplyOpsResponse {
+        results: applied.results,
+        changes: applied.changes,
+    }))
 }

@@ -23,7 +23,8 @@ use super::{ColumnCells, Place, Planner, refuse, refuse_taken, schema_refusal};
 use crate::domain::catalog::{self, ColumnEntry, PropertyType, TableEntry};
 use crate::domain::models::{
     Column, ColumnConfig, ColumnId, ColumnReplacement, DatabaseError, DatabaseId, DatabaseView,
-    NewDefinition, OptionId, RowId, SchemaError, TableId, Write, grant_writes,
+    NewDefinition, OptionId, PropertyDefinitionId, RowId, SchemaError, TableId, Write,
+    grant_writes,
 };
 
 impl Planner {
@@ -306,6 +307,9 @@ impl Planner {
         let now = self.now;
         let views = views_without_tests_of(self.views_of(entry), column_id, now)
             .map_err(|reason| place.refuse(reason.to_string()))?;
+        if let Some(previous) = self.restoration.rebinds.get(&place.op).copied() {
+            return self.rebind(place, entry, column, previous, relation, views);
+        }
         let current = PropertyType::of(&column.column, &column.definition);
         let target = PropertyType::from_column_kind(to);
         let same_relation = match (&column.column.config, relation) {
@@ -424,7 +428,52 @@ impl Planner {
         Ok(Write::ReplaceColumn {
             table_id: entry.table.id,
             read_version,
-            definition,
+            definition: Some(definition),
+            replacement,
+            views,
+        })
+    }
+
+    /// Bind a column back to a definition it had before a type change: the
+    /// definition still exists, with its options, so the cells written back
+    /// after this op name them as they were.
+    fn rebind(
+        &mut self,
+        place: Place,
+        entry: &TableEntry,
+        column: &ColumnEntry,
+        previous: PropertyDefinitionId,
+        relation: Option<(DatabaseId, TableId)>,
+        views: Vec<DatabaseView>,
+    ) -> Result<Write, DatabaseError> {
+        let definition = self
+            .found
+            .rebound
+            .get(&previous)
+            .cloned()
+            .ok_or_else(|| place.refuse("the column's earlier definition is gone"))?;
+        let config = relation.map(|(database_id, table_id)| ColumnConfig::Link {
+            database_id,
+            table_id,
+        });
+        let replacement = ColumnReplacement {
+            column: column.column.clone(),
+            definition_id: previous,
+            config: config.clone(),
+            values: Vec::new(),
+        };
+        self.store_views(entry.table.id, &views);
+        if let Some(stored) = self.column_mut(entry.table.id, place.column) {
+            stored.column.property_definition_id = previous;
+            stored.column.config = config;
+            stored.column.infer_type = false;
+            stored.definition = definition;
+        }
+        self.found.cells.remove(&place.column);
+        Ok(Write::ReplaceColumn {
+            table_id: entry.table.id,
+            read_version: Some(entry.table.version),
+            definition: None,
             replacement,
             views,
         })

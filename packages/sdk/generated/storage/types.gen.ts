@@ -882,6 +882,11 @@ export type ApplyOpsRequest = {
  */
 export type ApplyOpsResponse = {
     /**
+     * The journal's change for each table version the batch produced: the
+     * ids `POST /databases/{id}/changes/{change}/undo` takes.
+     */
+    changes: Array<CommittedChange>;
+    /**
      * One result per op, in the order the ops were sent. Each is grouped as
      * its op is: the same outer `kind`, naming the same ids, with a
      * `change` saying what happened.
@@ -2904,6 +2909,11 @@ export type ColumnChange = {
 };
 
 /**
+ * How a change touched a column.
+ */
+export type ColumnChangeKind = 'create' | 'rename' | 'change_type' | 'delete' | 'add_options' | 'update_option' | 'delete_option' | 'reorder' | 'infer_type' | 'related';
+
+/**
  * A relation column: its cells reference rows of another table.
  */
 export type ColumnConfig = {
@@ -3094,6 +3104,25 @@ export type CommandRejectedMetadata = {
      * The session.
      */
     identity: SessionIdentity;
+};
+
+/**
+ * One change a committed batch journaled: a table, the version the batch
+ * produced, and the journal's id for it.
+ */
+export type CommittedChange = {
+    /**
+     * The journal's id of the change.
+     */
+    change: number;
+    /**
+     * The table.
+     */
+    table: string;
+    /**
+     * The version the batch produced.
+     */
+    version: TableVersion;
 };
 
 /**
@@ -9128,6 +9157,11 @@ export type RowChange = {
 };
 
 /**
+ * How a change touched a row.
+ */
+export type RowChangeKind = 'insert' | 'update' | 'delete';
+
+/**
  * Which rows an update writes, and with what.
  */
 export type RowChanges = {
@@ -9146,6 +9180,65 @@ export type RowChanges = {
      * The rows and their cells, in order.
      */
     rows: Array<RowChange>;
+};
+
+/**
+ * One change of a row, as its history shows it.
+ */
+export type RowHistoryEntry = {
+    /**
+     * The agent acting for them, if one was.
+     */
+    actingBot: string | null;
+    /**
+     * Who made it; `null` for an internal caller, or a removed user.
+     */
+    actor: string | null;
+    /**
+     * Those columns' values it wrote, by column id; a cell it emptied is
+     * left out.
+     */
+    after: {
+        [key: string]: CellValue;
+    };
+    /**
+     * When it committed.
+     */
+    at: string;
+    /**
+     * Those columns' values before it, by column id; an empty cell is
+     * left out.
+     */
+    before: {
+        [key: string]: CellValue;
+    };
+    /**
+     * The change's id in the journal.
+     */
+    change: number;
+    /**
+     * The columns it wrote; for a removal, those the row had values in.
+     */
+    columns: Array<string>;
+    /**
+     * How it touched the row.
+     */
+    kind: RowChangeKind;
+    /**
+     * The table version it produced.
+     */
+    version: number;
+};
+
+/**
+ * A row's history.
+ */
+export type RowHistoryResponse = {
+    /**
+     * Every committed change that touched the row, newest first: who made
+     * it, when, how, and the touched columns' values before and after.
+     */
+    changes: Array<RowHistoryEntry>;
 };
 
 /**
@@ -9606,6 +9699,25 @@ export type SimpleMention = {
      * Mentioned entity type.
      */
     entity_type: string;
+};
+
+/**
+ * A cell an undo left alone, because someone changed it after the change
+ * being undone.
+ */
+export type SkippedCell = {
+    /**
+     * Who changed it since, from the journal; `null` when unknown.
+     */
+    by: string | null;
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * The row.
+     */
+    row: string;
 };
 
 /**
@@ -11199,6 +11311,36 @@ export type TableChanged = {
 };
 
 /**
+ * What changed in a table since a version, for a reader holding it at
+ * that version.
+ */
+export type TableChanges = {
+    /**
+     * The columns that changed; any of them means the table's shape moved.
+     */
+    columns: Array<TouchedColumn>;
+    /**
+     * Whether every version since is journaled; without it, read the table
+     * whole.
+     */
+    complete: boolean;
+    /**
+     * The rows that changed, each once, as they stand now: a row added
+     * and written is `insert`, one removed is `delete`, and one added and
+     * removed since is left out.
+     */
+    rows: Array<TouchedRow>;
+    /**
+     * Whether more rows changed than are listed; then read the table whole.
+     */
+    truncated: boolean;
+    /**
+     * The version the changes reach.
+     */
+    version: number;
+};
+
+/**
  * One table with its columns and SQL name.
  */
 export type TableDetail = {
@@ -11464,6 +11606,34 @@ export type ThreadState = {
 };
 
 /**
+ * A column a table's changes since some version touched.
+ */
+export type TouchedColumn = {
+    /**
+     * The column.
+     */
+    column: string;
+    /**
+     * How.
+     */
+    kind: ColumnChangeKind;
+};
+
+/**
+ * A row a table's changes since some version touched, and how it stands.
+ */
+export type TouchedRow = {
+    /**
+     * How it changed overall: added, written, or removed.
+     */
+    kind: RowChangeKind;
+    /**
+     * The row.
+     */
+    row: string;
+};
+
+/**
  * Transcription result.
  */
 export type TranscribeResponse = {
@@ -11664,6 +11834,55 @@ export type TypingInput = {
      */
     thread_id?: string | null;
 };
+
+/**
+ * What undoing a change did.
+ */
+export type UndoChangeResponse = {
+    /**
+     * The outcome: reverted, partly reverted with the cells others changed
+     * since left alone, or refused with why and whose change stands in the
+     * way.
+     */
+    outcome: UndoOutcome;
+};
+
+/**
+ * What undoing a change did.
+ */
+export type UndoOutcome = {
+    /**
+     * The journal's changes the undo made, one per table version; undo
+     * one of them to redo.
+     */
+    changes: Array<CommittedChange>;
+    kind: 'reverted';
+} | {
+    /**
+     * The journal's changes the undo made.
+     */
+    changes: Array<CommittedChange>;
+    kind: 'partial';
+    /**
+     * The cells left alone, each with who changed it.
+     */
+    skipped: Array<SkippedCell>;
+} | {
+    /**
+     * Whose change stands in the way, when one does.
+     */
+    by: string | null;
+    kind: 'refused';
+    /**
+     * Why.
+     */
+    reason: UndoRefusal;
+};
+
+/**
+ * Why an undo was refused. Nothing was written.
+ */
+export type UndoRefusal = 'not_yours' | 'not_undoable' | 'row_edited_since' | 'column_written_since' | 'changed_since' | 'already_back';
 
 /**
  * Request to replace the editable configuration of a persisted AI agent.
@@ -15032,6 +15251,50 @@ export type ShareDatabaseAwarenessResponses = {
 
 export type ShareDatabaseAwarenessResponse = ShareDatabaseAwarenessResponses[keyof ShareDatabaseAwarenessResponses];
 
+export type UndoDatabaseChangeData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * The change's journal id
+         */
+        change: number;
+    };
+    query?: never;
+    url: '/databases/{id}/changes/{change}/undo';
+};
+
+export type UndoDatabaseChangeErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No edit access to the database
+     */
+    403: ErrorResponse;
+    /**
+     * No such change in this database
+     */
+    404: ErrorResponse;
+    /**
+     * The table kept moving under the undo
+     */
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UndoDatabaseChangeError = UndoDatabaseChangeErrors[keyof UndoDatabaseChangeErrors];
+
+export type UndoDatabaseChangeResponses = {
+    200: UndoChangeResponse;
+};
+
+export type UndoDatabaseChangeResponse = UndoDatabaseChangeResponses[keyof UndoDatabaseChangeResponses];
+
 export type ImportDatabaseTableData = {
     body: ImportTable;
     path: {
@@ -15147,6 +15410,48 @@ export type UpdateDatabasePermissionsResponses = {
 
 export type UpdateDatabasePermissionsResponse = UpdateDatabasePermissionsResponses[keyof UpdateDatabasePermissionsResponses];
 
+export type GetDatabaseTableChangesData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+    };
+    query: {
+        /**
+         * The table version the reader last read.
+         */
+        since: number;
+    };
+    url: '/databases/{id}/tables/{table_id}/changes';
+};
+
+export type GetDatabaseTableChangesErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseTableChangesError = GetDatabaseTableChangesErrors[keyof GetDatabaseTableChangesErrors];
+
+export type GetDatabaseTableChangesResponses = {
+    200: TableChanges;
+};
+
+export type GetDatabaseTableChangesResponse = GetDatabaseTableChangesResponses[keyof GetDatabaseTableChangesResponses];
+
 export type ListDatabaseColumnCastsData = {
     body?: never;
     path: {
@@ -15239,6 +15544,47 @@ export type InferDatabaseColumnTypeResponses = {
 };
 
 export type InferDatabaseColumnTypeResponse = InferDatabaseColumnTypeResponses[keyof InferDatabaseColumnTypeResponses];
+
+export type GetDatabaseRowHistoryData = {
+    body?: never;
+    path: {
+        /**
+         * Database id
+         */
+        id: string;
+        /**
+         * Table id
+         */
+        table_id: string;
+        /**
+         * Row id
+         */
+        row_id: string;
+    };
+    query?: never;
+    url: '/databases/{id}/tables/{table_id}/rows/{row_id}/history';
+};
+
+export type GetDatabaseRowHistoryErrors = {
+    /**
+     * Missing or invalid credentials
+     */
+    401: ErrorResponse;
+    /**
+     * No access to the database
+     */
+    403: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDatabaseRowHistoryError = GetDatabaseRowHistoryErrors[keyof GetDatabaseRowHistoryErrors];
+
+export type GetDatabaseRowHistoryResponses = {
+    200: RowHistoryResponse;
+};
+
+export type GetDatabaseRowHistoryResponse = GetDatabaseRowHistoryResponses[keyof GetDatabaseRowHistoryResponses];
 
 export type GetDatabaseViewPositionsData = {
     body?: never;

@@ -6,6 +6,7 @@ use sqlx::{PgConnection, PgExecutor};
 use models_databases::position::keys_between;
 
 use super::{PgDatabasesRepoError, last_position, uuids};
+use crate::domain::journal::RestoredRow;
 use crate::domain::models::{
     DatabaseId, PropertyDefinitionId, RowId, RowRef, TableId, TableVersion,
 };
@@ -68,6 +69,57 @@ pub(crate) async fn append_rows(
         rows.push(RowRef { id, position });
     }
     Ok(Some(rows))
+}
+
+/// What putting removed rows back did.
+pub(crate) enum Restored {
+    /// They are back.
+    Applied(Vec<RowRef>),
+    /// The table is gone, or its database trashed.
+    TableGone,
+    /// A row has one of their ids again.
+    Taken(RowId),
+}
+
+/// Put removed rows back in a live table under their ids and positions.
+pub(crate) async fn restore_rows(
+    connection: &mut PgConnection,
+    table_id: TableId,
+    created_by: &str,
+    restored: &[RestoredRow],
+) -> Result<Restored, PgDatabasesRepoError> {
+    let live = sqlx::query_scalar!(
+        r#"SELECT t.id FROM database_tables t
+               JOIN databases d ON d.id = t.database_id
+               WHERE t.id = $1 AND d.trashed_at IS NULL FOR UPDATE OF t"#,
+        table_id.into_uuid(),
+    )
+    .fetch_optional(&mut *connection)
+    .await?;
+    if live.is_none() {
+        return Ok(Restored::TableGone);
+    }
+    let mut rows = Vec::with_capacity(restored.len());
+    for row in restored {
+        let inserted = sqlx::query!(
+            "INSERT INTO database_rows (id, table_id, position, created_by) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (id) DO NOTHING",
+            row.id.into_uuid(),
+            table_id.into_uuid(),
+            row.position.as_str(),
+            created_by,
+        )
+        .execute(&mut *connection)
+        .await?;
+        if inserted.rows_affected() != 1 {
+            return Ok(Restored::Taken(row.id));
+        }
+        rows.push(RowRef {
+            id: row.id,
+            position: row.position.clone(),
+        });
+    }
+    Ok(Restored::Applied(rows))
 }
 
 /// Remove one row of a table; `false` if it was not there.

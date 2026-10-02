@@ -5,6 +5,10 @@
 /// What a column's values would do under each type (`GET …/casts`), and
 /// what they become under one (`POST …/conversion`).
 pub mod casts;
+/// The change journal: a row's history
+/// (`GET /{id}/tables/{table_id}/rows/{row_id}/history`) and undoing a change
+/// (`POST /{id}/changes/{change}/undo`).
+pub mod history;
 /// Typed, batched writes, schema and data: `POST /{id}/ops`.
 pub mod ops;
 /// Saved, immutable queries that document nodes point at.
@@ -150,6 +154,18 @@ where
         .route(
             "/{id}/ops",
             post(ops::apply_ops_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/changes/{change}/undo",
+            post(history::undo_change_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/tables/{table_id}/changes",
+            get(history::table_changes_handler::<Service, EntityAccess, Authorization>),
+        )
+        .route(
+            "/{id}/tables/{table_id}/rows/{row_id}/history",
+            get(history::row_history_handler::<Service, EntityAccess, Authorization>),
         )
         .route(
             "/{id}/views/{view_id}/positions",

@@ -23,8 +23,13 @@ import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
+import { idToDisplayName } from '@core/user/util';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
-import { useDatabaseDetailQuery } from '@queries/storage/databases';
+import {
+  onDatabaseBatchCommitted,
+  undoDatabaseChange,
+  useDatabaseDetailQuery,
+} from '@queries/storage/databases';
 import { useDatabaseTableChangedSync } from '@queries/storage/databases-sync';
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
 import { getEntityGraphqlClient } from '@service-storage/graphql-soup';
@@ -35,6 +40,7 @@ import {
   createSignal,
   ErrorBoundary,
   For,
+  onCleanup,
   Show,
   untrack,
 } from 'solid-js';
@@ -51,6 +57,7 @@ import {
 import { allRecordsView, boardLayout } from '../core/views';
 import { databaseOpMessage } from '../core/write-failure';
 import { createDatabaseSearch } from '../primitives/database-search';
+import { createDatabaseUndo } from '../primitives/undo-controller';
 import { searchDatabase } from '../queries/database-search';
 import { toViewColumn } from '../queries/table-rows';
 import { trashDatabase } from '../queries/trash-database';
@@ -211,6 +218,58 @@ const Block: Component = () => {
     runWithInputFocused: true,
     keyDownHandler: () => {
       search.open();
+      return true;
+    },
+  });
+  const databaseUndo = createDatabaseUndo({
+    undoChange: (change) => undoDatabaseChange(databaseId, change),
+    onCommitted: (listener) => {
+      const stop = onDatabaseBatchCommitted((batch) => {
+        if (batch.databaseId !== databaseId) return;
+        listener({
+          ops: batch.ops,
+          changes: batch.changes.map(({ change }) => change),
+        });
+      });
+      onCleanup(stop);
+    },
+    names: {
+      person: idToDisplayName,
+      column: (columnId) => {
+        for (const table of tables()) {
+          const column = table.columns.find(
+            (column) => column.column.id === columnId
+          );
+          if (column) return toViewColumn(column).name;
+        }
+        return 'a column';
+      },
+    },
+    announce: (message, failed) =>
+      failed ? toast.failure(message) : toast.success(message),
+    offer: (label, undo) =>
+      toast.success(label, { actions: [{ label: 'Undo', onClick: undo }] }),
+  });
+  // Without input focus, so a cell editor keeps Ctrl+Z for its own text.
+  registerHotkey({
+    hotkey: 'cmd+z',
+    hotkeyToken: TOKENS.database.undo,
+    scopeId: panel.splitHotkeyScope,
+    description: 'Undo your last edit',
+    condition: databaseUndo.canUndo,
+    keyDownHandler: () => {
+      void databaseUndo.undo();
+      return true;
+    },
+  });
+  registerHotkey({
+    hotkey: 'shift+cmd+z',
+    hotkeyToken: TOKENS.database.redo,
+    scopeId: panel.splitHotkeyScope,
+    description: 'Redo your last undo',
+    condition: databaseUndo.canRedo,
+    keyDownHandler: () => {
+      void databaseUndo.redo();
       return true;
     },
   });

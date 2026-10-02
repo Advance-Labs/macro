@@ -47,6 +47,16 @@ pub(super) struct World {
     pub(super) views: Vec<DatabaseView>,
     /// Where each board's cards sit.
     pub(super) positions: HashMap<ViewId, Vec<CardPosition>>,
+    /// The change journal, oldest first.
+    pub(super) journal: Vec<JournaledChange>,
+}
+
+/// One change the fake cell store journaled.
+#[derive(Debug, Clone)]
+pub(super) struct JournaledChange {
+    pub(super) id: crate::domain::models::ChangeId,
+    pub(super) actor: String,
+    pub(super) entry: crate::domain::journal::JournalEntry,
 }
 
 /// Store views a schema change rewrote; `false` when one is gone.
@@ -218,6 +228,7 @@ impl DatabasesRepo for FakeRepo {
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
+        _actor: &crate::domain::journal::JournalActor,
     ) -> Result<Option<TableVersion>, FakeError> {
         let mut world = self.0.lock().unwrap();
         let has_value = world.rows.get(&table.id).is_some_and(|rows| {
@@ -357,6 +368,70 @@ impl DatabasesRepo for FakeRepo {
         self.0.lock().unwrap().queries.push(saved.clone());
         Ok(saved)
     }
+    async fn change(
+        &self,
+        database_id: DatabaseId,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<Option<crate::domain::journal::ChangeRecord>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .find(|journaled| journaled.id == change && journaled.entry.database_id == database_id)
+            .map(Self::record))
+    }
+
+    async fn changes_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::ChangeRecord>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .filter(|journaled| {
+                journaled.entry.table == table_id && journaled.entry.version > version
+            })
+            .map(Self::record)
+            .collect())
+    }
+
+    async fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::VersionTouches>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(world
+            .journal
+            .iter()
+            .filter(|journaled| {
+                journaled.entry.table == table_id && journaled.entry.version > version
+            })
+            .map(|journaled| crate::domain::journal::VersionTouches {
+                version: journaled.entry.version,
+                rows: journaled
+                    .entry
+                    .rows
+                    .iter()
+                    .map(|touch| (touch.row, touch.kind))
+                    .collect(),
+                columns: journaled.entry.columns.clone(),
+            })
+            .collect())
+    }
+
+    async fn row_history(
+        &self,
+        database_id: DatabaseId,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Result<Vec<crate::domain::journal::JournaledRowChange>, FakeError> {
+        let world = self.0.lock().unwrap();
+        Ok(Self::history(&world, database_id, table_id, row_id))
+    }
+
     async fn get_query(&self, id: QueryId) -> Result<Option<SavedQuery>, FakeError> {
         Ok(self
             .0
@@ -366,6 +441,58 @@ impl DatabasesRepo for FakeRepo {
             .iter()
             .find(|query| query.id == id)
             .cloned())
+    }
+}
+
+impl FakeRepo {
+    fn record(change: &JournaledChange) -> crate::domain::journal::ChangeRecord {
+        crate::domain::journal::ChangeRecord {
+            change: crate::domain::journal::StoredChange {
+                id: change.id,
+                table: change.entry.table,
+                version: change.entry.version,
+                actor: Some(change.actor.clone()),
+                acting_bot: None,
+                at: chrono::DateTime::UNIX_EPOCH,
+                ops: change.entry.ops.clone(),
+                inverse: change.entry.inverse.clone(),
+            },
+            rows: change.entry.rows.clone(),
+            columns: change.entry.columns.clone(),
+        }
+    }
+
+    fn history(
+        world: &World,
+        database_id: DatabaseId,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Vec<crate::domain::journal::JournaledRowChange> {
+        world
+            .journal
+            .iter()
+            .rev()
+            .filter(|change| {
+                change.entry.database_id == database_id && change.entry.table == table_id
+            })
+            .filter_map(|change| {
+                let touch = change.entry.rows.iter().find(|touch| touch.row == row_id)?;
+                Some(crate::domain::journal::JournaledRowChange {
+                    change: crate::domain::journal::StoredChange {
+                        id: change.id,
+                        table: change.entry.table,
+                        version: change.entry.version,
+                        actor: Some(change.actor.clone()),
+                        acting_bot: None,
+                        at: chrono::DateTime::UNIX_EPOCH,
+                        ops: change.entry.ops.clone(),
+                        inverse: change.entry.inverse.clone(),
+                    },
+                    kind: touch.kind,
+                    columns: touch.columns.clone(),
+                })
+            })
+            .collect()
     }
 }
 

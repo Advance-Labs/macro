@@ -203,6 +203,42 @@ impl DatabasesService for FakeService {
         unimplemented!("no tool converts a column into a new one")
     }
 
+    async fn apply_ops_with_changes(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: crate::domain::models::Viewer,
+        _batch: crate::domain::models::OpBatch,
+    ) -> Result<crate::domain::models::AppliedOps, DatabaseError> {
+        unimplemented!("the toolset does not undo")
+    }
+
+    async fn undo_change(
+        &self,
+        _receipt: EntityAccessReceipt<EditAccessLevel>,
+        _viewer: crate::domain::models::Viewer,
+        _change: crate::domain::models::ChangeId,
+    ) -> Result<crate::domain::journal::UndoOutcome, DatabaseError> {
+        unimplemented!("the toolset does not undo")
+    }
+
+    async fn table_changes(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: crate::domain::models::TableId,
+        _since: crate::domain::models::TableVersion,
+    ) -> Result<crate::domain::journal::TableChanges, DatabaseError> {
+        unimplemented!("the toolset reads no table changes")
+    }
+
+    async fn row_history(
+        &self,
+        _receipt: EntityAccessReceipt<ViewAccessLevel>,
+        _table_id: crate::domain::models::TableId,
+        _row_id: crate::domain::models::RowId,
+    ) -> Result<Vec<crate::domain::journal::RowHistoryEntry>, DatabaseError> {
+        unimplemented!("the toolset reads no history")
+    }
+
     async fn view_positions(
         &self,
         _receipt: EntityAccessReceipt<ViewAccessLevel>,

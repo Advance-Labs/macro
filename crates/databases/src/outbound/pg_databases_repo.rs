@@ -1,6 +1,8 @@
 //! Postgres repository for databases, tables, columns and row identities;
 //! cells are entity properties, written through the properties adapter.
 
+/// The change journal's statements, shared with the cell store's batches.
+pub(crate) mod journal;
 /// Row identity statements, shared with the cell store's batches.
 pub(crate) mod rows;
 mod saved_queries;
@@ -53,6 +55,9 @@ pub enum PgDatabasesRepoError {
     /// The properties domain refused or failed a write.
     #[error("properties write failed: {0}")]
     Properties(#[source] Box<dyn std::error::Error + Send + Sync>),
+    /// A stored journal row's kind is not one the journal writes.
+    #[error("stored change kind `{0}` is not a row change kind")]
+    CorruptChangeKind(String),
 }
 
 /// The UUIDs of typed ids, for a statement's `ANY($n)`.
@@ -374,7 +379,8 @@ where
     /// Tables, columns, rows, views and database-owned property definitions
     /// go with the database through `ON DELETE CASCADE`, and the rows' cells
     /// by trigger; `entity_access` rows are a generic side table with no
-    /// foreign key to `databases`, so they are purged explicitly in the same
+    /// foreign key to `databases`, and the change journal outlives what it
+    /// describes by design, so both are purged explicitly in the same
     /// transaction.
     #[tracing::instrument(err, skip(self))]
     async fn delete_database(&self, id: DatabaseId) -> Result<(), Self::Error> {
@@ -386,6 +392,7 @@ where
             EntityType::Database,
         )
         .await?;
+        journal::purge(&mut *transaction, id).await?;
 
         sqlx::query!(r#"DELETE FROM databases WHERE id = $1"#, id.into_uuid())
             .execute(&mut *transaction)
@@ -395,12 +402,13 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(err, skip(self, table, column))]
+    #[tracing::instrument(err, skip(self, table, column, actor))]
     async fn infer_column_type(
         &self,
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
+        actor: &crate::domain::journal::JournalActor,
     ) -> Result<Option<TableVersion>, Self::Error> {
         let mut transaction = self.pool.begin().await?;
         // Row writers take this same lock before checking versions and cells.
@@ -436,6 +444,17 @@ where
             return Ok(None);
         }
         let version = rows::bump_table_version(&mut *transaction, table.id).await?;
+        journal::record(
+            &mut transaction,
+            actor,
+            &[crate::domain::journal::settled_column(
+                table.database_id,
+                table.id,
+                version,
+                column.id,
+            )],
+        )
+        .await?;
         transaction.commit().await?;
         Ok(Some(version))
     }
@@ -524,6 +543,46 @@ where
                 })
             })
             .collect()
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn change(
+        &self,
+        database_id: DatabaseId,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<Option<crate::domain::journal::ChangeRecord>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::change(&mut connection, database_id, change).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn changes_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::ChangeRecord>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::changes_after(&mut connection, table_id, version).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> Result<Vec<crate::domain::journal::VersionTouches>, Self::Error> {
+        let mut connection = self.pool.acquire().await?;
+        journal::touches_after(&mut connection, table_id, version).await
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    async fn row_history(
+        &self,
+        database_id: DatabaseId,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Result<Vec<crate::domain::journal::JournaledRowChange>, Self::Error> {
+        journal::row_history(&self.pool, database_id, table_id, row_id).await
     }
 
     #[tracing::instrument(err, skip(self))]

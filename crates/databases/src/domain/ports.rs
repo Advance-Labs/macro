@@ -12,12 +12,16 @@ use models_properties::service::property_definition_with_options::PropertyDefini
 use models_properties::service::property_option::PropertyOptionValue;
 use models_properties::service::property_value::PropertyValue;
 
+use crate::domain::journal::{
+    ChangeRecord, JournalActor, JournaledRowChange, RowHistoryEntry, TableChanges, UndoOutcome,
+    VersionTouches,
+};
 use crate::domain::models::{
-    Awareness, CardPosition, Column, ColumnCast, ColumnConversion, ColumnId, CreateDatabase,
-    Database, DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable, InferColumnType,
-    InferColumnTypeOutcome, ListedDatabase, OpBatch, PropertyDefinitionId, QueryDefinition,
-    QueryId, RowId, RowRef, SavedQuery, SavedQueryError, Table, TableId, TableVersion, ViewId,
-    Viewer, Writes, WritesOutcome,
+    AppliedOps, Awareness, CardPosition, ChangeId, Column, ColumnCast, ColumnConversion, ColumnId,
+    CreateDatabase, Database, DatabaseDetail, DatabaseError, DatabaseId, DatabaseView, FirstTable,
+    InferColumnType, InferColumnTypeOutcome, ListedDatabase, OpBatch, PropertyDefinitionId,
+    QueryDefinition, QueryId, RowId, RowRef, SavedQuery, SavedQueryError, Table, TableId,
+    TableVersion, ViewId, Viewer, Writes, WritesOutcome,
 };
 use models_databases::{ColumnKind, OpResult};
 
@@ -67,12 +71,13 @@ pub trait DatabasesRepo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Settle an untyped column on a definition, provided no row has a value
-    /// in it yet.
+    /// in it yet, journaling the change as `actor`'s.
     fn infer_column_type(
         &self,
         table: &Table,
         column: &Column,
         definition_id: PropertyDefinitionId,
+        actor: &JournalActor,
     ) -> impl Future<Output = Result<Option<TableVersion>, Self::Error>> + Send;
 
     /// Every row of a table, in position order.
@@ -130,6 +135,39 @@ pub trait DatabasesRepo: Send + Sync + 'static {
         &self,
         id: QueryId,
     ) -> impl Future<Output = Result<Option<SavedQuery>, Self::Error>> + Send;
+
+    /// One journaled change of a database, with the rows and columns it
+    /// touched; `None` when the database has no such change.
+    fn change(
+        &self,
+        database_id: DatabaseId,
+        change: ChangeId,
+    ) -> impl Future<Output = Result<Option<ChangeRecord>, Self::Error>> + Send;
+
+    /// A table's journaled changes after a version, oldest first, with the
+    /// rows and columns each touched.
+    fn changes_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> impl Future<Output = Result<Vec<ChangeRecord>, Self::Error>> + Send;
+
+    /// What each journaled version of a table after `version` touched,
+    /// oldest first.
+    fn touches_after(
+        &self,
+        table_id: TableId,
+        version: TableVersion,
+    ) -> impl Future<Output = Result<Vec<VersionTouches>, Self::Error>> + Send;
+
+    /// A row's journaled changes in one table of a database, newest first,
+    /// the row's removal among them.
+    fn row_history(
+        &self,
+        database_id: DatabaseId,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<Vec<JournaledRowChange>, Self::Error>> + Send;
 }
 
 /// A row's cells, kept by the properties system as entity properties of the
@@ -356,6 +394,26 @@ pub trait DatabasesService: Send + Sync + 'static {
         batch: OpBatch,
     ) -> impl Future<Output = Result<Vec<OpResult>, DatabaseError>> + Send;
 
+    /// [`Self::apply_ops`], answering with the journal's change for each
+    /// table version the batch produced, which the caller can undo.
+    fn apply_ops_with_changes(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        batch: OpBatch,
+    ) -> impl Future<Output = Result<AppliedOps, DatabaseError>> + Send;
+
+    /// Undo one of the viewer's own changes: apply its inverse as a new,
+    /// journaled batch, guarded against what others changed since. A cell
+    /// changed since is left alone; anything else changed since refuses the
+    /// undo. Redo is undoing the undo's change.
+    fn undo_change(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        change: ChangeId,
+    ) -> impl Future<Output = Result<UndoOutcome, DatabaseError>> + Send;
+
     /// Where a board's cards sit: their lane and key, for the cards that
     /// have been placed. Rows that were never moved by hand have none, and
     /// show after the placed ones.
@@ -364,6 +422,27 @@ pub trait DatabasesService: Send + Sync + 'static {
         receipt: EntityAccessReceipt<ViewAccessLevel>,
         view_id: ViewId,
     ) -> impl Future<Output = Result<Vec<CardPosition>, DatabaseError>> + Send;
+
+    /// A row's history: every committed change that touched it, newest
+    /// first, with who made it, when, and the values of the columns it
+    /// touched before and after. It reads after the row is removed, too.
+    fn row_history(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> impl Future<Output = Result<Vec<RowHistoryEntry>, DatabaseError>> + Send;
+
+    /// What changed in one of the database's tables since a version: the
+    /// rows, each once as it stands now, and the columns. A reader holding
+    /// the table at that version reads just those rows, unless the shape
+    /// changed, the journal has a gap, or too many rows changed.
+    fn table_changes(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        since: TableVersion,
+    ) -> impl Future<Output = Result<TableChanges, DatabaseError>> + Send;
 
     /// Tell the database's other viewers where this viewer is; a relay
     /// failure is the caller's error.

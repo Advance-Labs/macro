@@ -10,6 +10,7 @@ mod sharing;
 #[cfg(test)]
 mod test;
 mod transfer;
+mod undo;
 mod views;
 
 use std::collections::{HashMap, HashSet};
@@ -110,6 +111,27 @@ fn receipt_attribution<T: RequiredPermission>(
             on_behalf_of: bot.scope().acting_user_id().cloned(),
         }),
         EntityAccessAuth::Unauthenticated | EntityAccessAuth::Internal => None,
+    }
+}
+
+/// Who a receipt says is acting, as the change journal records it.
+fn receipt_journal_actor<T: RequiredPermission>(
+    receipt: &EntityAccessReceipt<T>,
+) -> crate::domain::journal::JournalActor {
+    use crate::domain::journal::JournalActor;
+    match receipt.auth() {
+        EntityAccessAuth::Authenticated(user) => JournalActor {
+            user: Some(user.to_string()),
+            acting_bot: None,
+        },
+        EntityAccessAuth::Bot(bot) => JournalActor {
+            user: bot.scope().acting_user_id().map(ToString::to_string),
+            acting_bot: Some(bot.bot_id()),
+        },
+        EntityAccessAuth::Unauthenticated | EntityAccessAuth::Internal => JournalActor {
+            user: None,
+            acting_bot: None,
+        },
     }
 }
 
@@ -735,6 +757,32 @@ where
         self.apply_database_ops(receipt, viewer, batch).await
     }
 
+    #[tracing::instrument(skip(self, receipt, viewer, batch), err)]
+    async fn apply_ops_with_changes(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        batch: OpBatch,
+    ) -> Result<crate::domain::models::AppliedOps, DatabaseError> {
+        self.apply_batch(
+            &receipt,
+            &viewer,
+            &batch,
+            &crate::domain::journal::Restoration::default(),
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self, receipt, viewer), err)]
+    async fn undo_change(
+        &self,
+        receipt: EntityAccessReceipt<EditAccessLevel>,
+        viewer: Viewer,
+        change: crate::domain::models::ChangeId,
+    ) -> Result<crate::domain::journal::UndoOutcome, DatabaseError> {
+        self.undo(receipt, viewer, change).await
+    }
+
     #[tracing::instrument(skip(self, receipt), err)]
     async fn view_positions(
         &self,
@@ -742,6 +790,49 @@ where
         view_id: ViewId,
     ) -> Result<Vec<CardPosition>, DatabaseError> {
         self.board_positions(receipt, view_id).await
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn row_history(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        row_id: RowId,
+    ) -> Result<Vec<crate::domain::journal::RowHistoryEntry>, DatabaseError> {
+        let database_id = receipt_database_id(&receipt)?;
+        let changes = self
+            .repository
+            .row_history(database_id, table_id, row_id)
+            .await
+            .map_err(repository_error)?;
+        Ok(crate::domain::journal::row_history(row_id, changes))
+    }
+
+    #[tracing::instrument(skip(self, receipt), err)]
+    async fn table_changes(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+        table_id: TableId,
+        since: TableVersion,
+    ) -> Result<crate::domain::journal::TableChanges, DatabaseError> {
+        let database_id = receipt_database_id(&receipt)?;
+        let held = self
+            .repository
+            .get_database(database_id)
+            .await
+            .map_err(repository_error)?
+            .filter(|(database, tables)| {
+                database.trashed_at.is_none() && tables.iter().any(|table| table.id == table_id)
+            });
+        if held.is_none() {
+            return Err(DatabaseError::NotFound);
+        }
+        let touches = self
+            .repository
+            .touches_after(table_id, since)
+            .await
+            .map_err(repository_error)?;
+        Ok(crate::domain::journal::table_changes(since, &touches))
     }
 
     #[tracing::instrument(skip(self, receipt), err)]

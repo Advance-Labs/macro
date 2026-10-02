@@ -48,10 +48,20 @@ impl Planner {
                             })
                             .collect())
                     })
-                    .collect::<Result<_, DatabaseError>>()?;
+                    .collect::<Result<Vec<_>, DatabaseError>>()?;
+                let restored = self.restoration.rows.remove(&index).unwrap_or_default();
+                if !restored.is_empty() && restored.len() != rows.len() {
+                    return Err(refuse(
+                        index,
+                        None,
+                        None,
+                        "the rows to put back do not match the rows inserted",
+                    ));
+                }
                 Ok(Write::InsertRows {
                     table_id: table,
                     rows,
+                    restored,
                 })
             }
             RowsChange::Update {

@@ -7,6 +7,7 @@ import {
   type DatabaseSqlQueryCapabilities,
   type DatabaseSqlRun,
   type DatabaseSqlStatement,
+  readDatabaseSql,
   refreshInBackground,
   sameDatabaseSqlStatement,
 } from '@queries/database-sql/create-database-sql-query';
@@ -53,6 +54,10 @@ import type {
 } from '../core/write-failure';
 import { rowsByIdStatement } from '../sql';
 import { patchTableColumn } from './detail-cache';
+import {
+  refreshChangedRows,
+  type TableChangesCapabilities,
+} from './table-changes';
 
 export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
   const relation =
@@ -138,6 +143,13 @@ export function createDatabaseRowsSource(props: {
   read?: DatabaseSqlQueryCapabilities;
   /** Calls back with the version of each change the gateway reports for this table. */
   onTableChanged: (listener: (version: number) => void) => void;
+  /**
+   * The journal and row cache an incremental refresh reads, given how to read rows by id.
+   * Left out, a change reads the table whole.
+   */
+  changes?: (
+    readRows: (rowIds: string[]) => ResultAsync<void, DatabaseReadFailure>
+  ) => TableChangesCapabilities;
   applyVersions: (versions: Record<string, number>) => void;
   addOption: (
     columnId: string,
@@ -306,12 +318,38 @@ export function createDatabaseRowsSource(props: {
         : errAsync<void, DatabaseReadFailure>(TABLE_UNAVAILABLE);
     });
   }
+  /** Read these rows again by id, through the engine, into the cache the view reads. */
+  function readRows(rowIds: string[]): ResultAsync<void, DatabaseReadFailure> {
+    const detail = cachedDetail();
+    const table = currentTable();
+    if (!detail || !table) return errAsync(TABLE_UNAVAILABLE);
+    return readDatabaseSql(
+      {
+        schema: databaseSqlSchema([{ ...detail, tables: [table] }]),
+        scope: props.databaseId,
+        sql: rowsByIdStatement(table.sql_name, rowIds),
+      },
+      props.read
+    ).map(() => undefined);
+  }
+  const changes = props.changes?.(readRows);
   // Another viewer's edit. This writer's own edits read their version back.
   props.onTableChanged((version) => {
     if (version <= Math.max(readVersion(), writtenVersion)) return;
+    const target = Math.max(version, currentTable()?.table.version ?? version);
+    const fullRead = () => readAgain(target);
     refreshInBackground({
       refresh: () =>
-        readAgain(Math.max(version, currentTable()?.table.version ?? version)),
+        changes
+          ? refreshChangedRows({
+              from: readVersion(),
+              version: target,
+              changes,
+              fullRead,
+            }).map((reached) =>
+              setReadVersion((previous) => Math.max(previous, reached))
+            )
+          : fullRead(),
     });
   });
 

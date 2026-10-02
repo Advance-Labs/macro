@@ -93,6 +93,7 @@ const answer: ApplyOpsResponse = {
       change: { kind: 'renamed' },
     },
   ],
+  changes: [],
 };
 const params = {
   databaseId: 'db',

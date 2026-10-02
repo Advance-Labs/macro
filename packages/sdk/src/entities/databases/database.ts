@@ -16,6 +16,7 @@ import type {
   NewOption,
   OpRefusalResponse,
   OpResult,
+  RowHistoryEntry,
   SharePermissionV2,
   TableVersion,
   TakenId,
@@ -27,6 +28,7 @@ import { MacroEntity } from '../entity';
 import type { PropertyDefinition } from '../properties/property-definition';
 import { User } from '../users/user';
 import { DatabaseColumn } from './column';
+import type { DatabaseRow } from './row';
 import { DatabaseTable } from './table';
 import type { DatabaseView } from './view';
 
@@ -421,6 +423,20 @@ export class Database extends MacroEntity<DatabaseDetail> {
       }),
     );
     return positions;
+  }
+
+  /**
+   * A row's history: every committed change that touched it, newest first.
+   * See {@link DatabaseRow.history}.
+   */
+  async rowHistory(row: DatabaseRow): Promise<RowHistoryEntry[]> {
+    this.assertOwns(`row ${row.id}`, row.table.database);
+    const { changes } = unwrap(
+      await this.client.storage.getDatabaseRowHistory({
+        path: { id: this.id, table_id: row.table.id, row_id: row.id },
+      }),
+    );
+    return changes;
   }
 
   /** Import text rows atomically. Keep requestId unchanged when retrying. */

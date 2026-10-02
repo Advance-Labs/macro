@@ -5328,6 +5328,117 @@ export const shareDatabaseAwarenessBody = zod
   );
 
 /**
+ * @summary Undo one of your own committed changes: its inverse applies as a new,
+journaled batch, under the table's lock, guarded against what others
+changed since. A cell someone changed since is left alone and listed; a
+row or column you added that someone else wrote since, or a name, option,
+order, view or card place changed since, refuses the undo. Others'
+changes always stay. Redo by undoing the undo's change.
+ */
+export const undoDatabaseChangeParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  change: zod.number().describe("The change's journal id"),
+});
+
+export const undoDatabaseChangeResponse = zod
+  .object({
+    outcome: zod
+      .union([
+        zod
+          .object({
+            changes: zod
+              .array(
+                zod
+                  .object({
+                    change: zod
+                      .number()
+                      .describe("The journal's id of the change."),
+                    table: zod.uuid().describe('The table.'),
+                    version: zod
+                      .number()
+                      .describe(
+                        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                      ),
+                  })
+                  .describe(
+                    "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+                  )
+              )
+              .describe(
+                "The journal's changes the undo made, one per table version; undo\none of them to redo."
+              ),
+            kind: zod.enum(['reverted']),
+          })
+          .describe('Everything the change did is undone.'),
+        zod
+          .object({
+            changes: zod
+              .array(
+                zod
+                  .object({
+                    change: zod
+                      .number()
+                      .describe("The journal's id of the change."),
+                    table: zod.uuid().describe('The table.'),
+                    version: zod
+                      .number()
+                      .describe(
+                        "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+                      ),
+                  })
+                  .describe(
+                    "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+                  )
+              )
+              .describe("The journal's changes the undo made."),
+            kind: zod.enum(['partial']),
+            skipped: zod
+              .array(
+                zod
+                  .object({
+                    by: zod
+                      .string()
+                      .nullable()
+                      .describe(
+                        'Who changed it since, from the journal; `null` when unknown.'
+                      ),
+                    column: zod.uuid().describe('The column.'),
+                    row: zod.uuid().describe('The row.'),
+                  })
+                  .describe(
+                    'A cell an undo left alone, because someone changed it after the change\nbeing undone.'
+                  )
+              )
+              .describe('The cells left alone, each with who changed it.'),
+          })
+          .describe(
+            'Some cells were changed by someone since, and were left alone; the\nrest is undone. With no changes, nothing was left to undo.'
+          ),
+        zod
+          .object({
+            by: zod
+              .string()
+              .nullable()
+              .describe('Whose change stands in the way, when one does.'),
+            kind: zod.enum(['refused']),
+            reason: zod
+              .enum([
+                'not_yours',
+                'not_undoable',
+                'row_edited_since',
+                'column_written_since',
+                'changed_since',
+                'already_back',
+              ])
+              .describe('Why an undo was refused. Nothing was written.'),
+          })
+          .describe('Nothing was undone.'),
+      ])
+      .describe('What undoing a change did.'),
+  })
+  .describe('What undoing a change did.');
+
+/**
  * @summary Import a new table and every row atomically; retries carry the same request ID.
  */
 export const importDatabaseTableParams = zod.object({
@@ -7181,6 +7292,25 @@ export const applyDatabaseOpsResponseResultsItemChangeViewLayoutColumnsItemWidth
 
 export const applyDatabaseOpsResponse = zod
   .object({
+    changes: zod
+      .array(
+        zod
+          .object({
+            change: zod.number().describe("The journal's id of the change."),
+            table: zod.uuid().describe('The table.'),
+            version: zod
+              .number()
+              .describe(
+                "Monotonic per-table version, bumped once by every committed change to a\ntable's schema or rows. Schema edits name the version they were made\nagainst, and change events carry the new one."
+              ),
+          })
+          .describe(
+            "One change a committed batch journaled: a table, the version the batch\nproduced, and the journal's id for it."
+          )
+      )
+      .describe(
+        "The journal's change for each table version the batch produced: the\nids `POST \/databases\/{id}\/changes\/{change}\/undo` takes."
+      ),
     results: zod
       .array(
         zod
@@ -8282,6 +8412,81 @@ export const updateDatabasePermissionsResponse = zod.object({
 });
 
 /**
+ * @summary What changed in a table since a version, from the change journal: the
+rows that changed, each once as it stands now (`insert`, `update` or
+`delete`), and the columns. A reader holding the table at `since` reads
+just those rows; it reads the table whole when a column changed, the
+journal is not `complete`, or the rows are `truncated`.
+ */
+export const getDatabaseTableChangesParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+});
+
+export const getDatabaseTableChangesQueryParams = zod.object({
+  since: zod.number().describe('The table version the reader last read.'),
+});
+
+export const getDatabaseTableChangesResponse = zod
+  .object({
+    columns: zod
+      .array(
+        zod
+          .object({
+            column: zod.uuid().describe('The column.'),
+            kind: zod
+              .enum([
+                'create',
+                'rename',
+                'change_type',
+                'delete',
+                'add_options',
+                'update_option',
+                'delete_option',
+                'reorder',
+                'infer_type',
+                'related',
+              ])
+              .describe('How a change touched a column.'),
+          })
+          .describe("A column a table's changes since some version touched.")
+      )
+      .describe(
+        "The columns that changed; any of them means the table's shape moved."
+      ),
+    complete: zod
+      .boolean()
+      .describe(
+        'Whether every version since is journaled; without it, read the table\nwhole.'
+      ),
+    rows: zod
+      .array(
+        zod
+          .object({
+            kind: zod
+              .enum(['insert', 'update', 'delete'])
+              .describe('How a change touched a row.'),
+            row: zod.uuid().describe('The row.'),
+          })
+          .describe(
+            "A row a table's changes since some version touched, and how it stands."
+          )
+      )
+      .describe(
+        'The rows that changed, each once, as they stand now: a row added\nand written is `insert`, one removed is `delete`, and one added and\nremoved since is left out.'
+      ),
+    truncated: zod
+      .boolean()
+      .describe(
+        'Whether more rows changed than are listed; then read the table whole.'
+      ),
+    version: zod.number().describe('The version the changes reach.'),
+  })
+  .describe(
+    'What changed in a table since a version, for a reader holding it at\nthat version.'
+  );
+
+/**
  * @summary What changing one column to each type of the type menu would do to its
 values: safe, checked (with how many values would not convert and a few
 of them), or never (with why). Changes nothing.
@@ -8886,6 +9091,334 @@ export const inferDatabaseColumnTypeResponse = zod
   .describe(
     'Settled schema and the version against which its first value can be written.'
   );
+
+/**
+ * @summary A row's history, from the change journal: every committed change that
+touched it, newest first, with who made it, when, and the values of the
+columns it touched before and after. It reads after the row is removed,
+so a removed row's last values stay readable.
+ */
+export const getDatabaseRowHistoryParams = zod.object({
+  id: zod.uuid().describe('Database id'),
+  table_id: zod.uuid().describe('Table id'),
+  row_id: zod.uuid().describe('Row id'),
+});
+
+export const getDatabaseRowHistoryResponse = zod
+  .object({
+    changes: zod
+      .array(
+        zod
+          .object({
+            actingBot: zod
+              .string()
+              .nullable()
+              .describe('The agent acting for them, if one was.'),
+            actor: zod
+              .string()
+              .nullable()
+              .describe(
+                'Who made it; `null` for an internal caller, or a removed user.'
+              ),
+            after: zod
+              .record(
+                zod.string(),
+                zod
+                  .union([
+                    zod
+                      .object({
+                        type: zod.enum(['text']),
+                        value: zod.string().describe('Free text.'),
+                      })
+                      .describe('Free text.'),
+                    zod
+                      .object({
+                        type: zod.enum(['number']),
+                        value: zod.number().describe('A finite number.'),
+                      })
+                      .describe('A finite number.'),
+                    zod
+                      .object({
+                        type: zod.enum(['boolean']),
+                        value: zod.boolean().describe('A checkbox.'),
+                      })
+                      .describe('A checkbox.'),
+                    zod
+                      .object({
+                        type: zod.enum(['date']),
+                        value: zod.iso.datetime({}).describe('A date-time.'),
+                      })
+                      .describe('A date-time.'),
+                    zod
+                      .object({
+                        type: zod.enum(['link']),
+                        value: zod
+                          .array(zod.string())
+                          .describe(
+                            'Complete http or https URLs; at most one for a single-valued column.'
+                          ),
+                      })
+                      .describe(
+                        'Complete http or https URLs; at most one for a single-valued column.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['options']),
+                        value: zod
+                          .array(
+                            zod
+                              .union([
+                                zod
+                                  .object({
+                                    id: zod
+                                      .uuid()
+                                      .describe('An option the column has.'),
+                                  })
+                                  .describe('An option the column has.'),
+                                zod
+                                  .object({
+                                    label: zod
+                                      .string()
+                                      .describe(
+                                        "An option's label, matched without regard to case. An unknown label\nis refused."
+                                      ),
+                                  })
+                                  .describe(
+                                    "An option's label, matched without regard to case. An unknown label\nis refused."
+                                  ),
+                              ])
+                              .describe(
+                                'A select option, by its id or by its label.'
+                              )
+                          )
+                          .describe(
+                            'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                          ),
+                      })
+                      .describe(
+                        'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['entities']),
+                        value: zod
+                          .array(
+                            zod
+                              .object({
+                                entityId: zod
+                                  .string()
+                                  .describe("The entity's id."),
+                                entityType: zod
+                                  .enum([
+                                    'USER',
+                                    'DOCUMENT',
+                                    'TASK',
+                                    'COMPANY',
+                                    'CALL_RECORD',
+                                    'CHANNEL',
+                                    'CHAT',
+                                    'PROJECT',
+                                    'THREAD',
+                                    'CALENDAR_EVENT',
+                                    'INITIATIVE',
+                                  ])
+                                  .describe(
+                                    'A kind of Macro entity a reference column can point at.'
+                                  ),
+                              })
+                              .describe('A reference to one Macro entity.')
+                          )
+                          .describe(
+                            'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                          ),
+                      })
+                      .describe(
+                        'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['rows']),
+                        value: zod
+                          .array(zod.uuid())
+                          .describe(
+                            'Rows of the table a relation column points at.'
+                          ),
+                      })
+                      .describe(
+                        'Rows of the table a relation column points at.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['clear']),
+                      })
+                      .describe('No value: the cell is emptied.'),
+                  ])
+                  .describe(
+                    "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+                  )
+              )
+              .describe(
+                "Those columns' values it wrote, by column id; a cell it emptied is\nleft out."
+              ),
+            at: zod.iso.datetime({}).describe('When it committed.'),
+            before: zod
+              .record(
+                zod.string(),
+                zod
+                  .union([
+                    zod
+                      .object({
+                        type: zod.enum(['text']),
+                        value: zod.string().describe('Free text.'),
+                      })
+                      .describe('Free text.'),
+                    zod
+                      .object({
+                        type: zod.enum(['number']),
+                        value: zod.number().describe('A finite number.'),
+                      })
+                      .describe('A finite number.'),
+                    zod
+                      .object({
+                        type: zod.enum(['boolean']),
+                        value: zod.boolean().describe('A checkbox.'),
+                      })
+                      .describe('A checkbox.'),
+                    zod
+                      .object({
+                        type: zod.enum(['date']),
+                        value: zod.iso.datetime({}).describe('A date-time.'),
+                      })
+                      .describe('A date-time.'),
+                    zod
+                      .object({
+                        type: zod.enum(['link']),
+                        value: zod
+                          .array(zod.string())
+                          .describe(
+                            'Complete http or https URLs; at most one for a single-valued column.'
+                          ),
+                      })
+                      .describe(
+                        'Complete http or https URLs; at most one for a single-valued column.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['options']),
+                        value: zod
+                          .array(
+                            zod
+                              .union([
+                                zod
+                                  .object({
+                                    id: zod
+                                      .uuid()
+                                      .describe('An option the column has.'),
+                                  })
+                                  .describe('An option the column has.'),
+                                zod
+                                  .object({
+                                    label: zod
+                                      .string()
+                                      .describe(
+                                        "An option's label, matched without regard to case. An unknown label\nis refused."
+                                      ),
+                                  })
+                                  .describe(
+                                    "An option's label, matched without regard to case. An unknown label\nis refused."
+                                  ),
+                              ])
+                              .describe(
+                                'A select option, by its id or by its label.'
+                              )
+                          )
+                          .describe(
+                            'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                          ),
+                      })
+                      .describe(
+                        'Options of a select or tag column; at most one for a single-valued\ncolumn.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['entities']),
+                        value: zod
+                          .array(
+                            zod
+                              .object({
+                                entityId: zod
+                                  .string()
+                                  .describe("The entity's id."),
+                                entityType: zod
+                                  .enum([
+                                    'USER',
+                                    'DOCUMENT',
+                                    'TASK',
+                                    'COMPANY',
+                                    'CALL_RECORD',
+                                    'CHANNEL',
+                                    'CHAT',
+                                    'PROJECT',
+                                    'THREAD',
+                                    'CALENDAR_EVENT',
+                                    'INITIATIVE',
+                                  ])
+                                  .describe(
+                                    'A kind of Macro entity a reference column can point at.'
+                                  ),
+                              })
+                              .describe('A reference to one Macro entity.')
+                          )
+                          .describe(
+                            'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                          ),
+                      })
+                      .describe(
+                        'References to Macro entities of the kind the column points at; at\nmost one for a single-valued column.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['rows']),
+                        value: zod
+                          .array(zod.uuid())
+                          .describe(
+                            'Rows of the table a relation column points at.'
+                          ),
+                      })
+                      .describe(
+                        'Rows of the table a relation column points at.'
+                      ),
+                    zod
+                      .object({
+                        type: zod.enum(['clear']),
+                      })
+                      .describe('No value: the cell is emptied.'),
+                  ])
+                  .describe(
+                    "A cell's value. It must fit the column's type: text for a text column,\noptions of the column for a select, and so on."
+                  )
+              )
+              .describe(
+                "Those columns' values before it, by column id; an empty cell is\nleft out."
+              ),
+            change: zod.number().describe("The change's id in the journal."),
+            columns: zod
+              .array(zod.uuid())
+              .describe(
+                'The columns it wrote; for a removal, those the row had values in.'
+              ),
+            kind: zod
+              .enum(['insert', 'update', 'delete'])
+              .describe('How a change touched a row.'),
+            version: zod.number().describe('The table version it produced.'),
+          })
+          .describe('One change of a row, as its history shows it.')
+      )
+      .describe(
+        "Every committed change that touched the row, newest first: who made\nit, when, how, and the touched columns' values before and after."
+      ),
+  })
+  .describe("A row's history.");
 
 /**
  * @summary Where a board's cards sit, for drawing it: the views come with the

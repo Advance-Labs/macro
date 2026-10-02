@@ -10,7 +10,8 @@ pub mod property;
 pub mod views;
 
 pub use ids::{
-    ColumnId, DatabaseId, OptionId, PropertyId, QueryId, RowId, TableId, TableVersion, ViewId,
+    ChangeId, ColumnId, DatabaseId, OptionId, PropertyId, QueryId, RowId, TableId, TableVersion,
+    ViewId,
 };
 pub use ops::{
     CellValue, CellWrite, ColumnChange, ColumnKind, ColumnResult, DatabaseOp, EntityKind,

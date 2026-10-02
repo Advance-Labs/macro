@@ -4,12 +4,16 @@
  * document_storage_service
  * OpenAPI spec version: 0.1.0
  */
+import type { CommittedChange } from './committedChange';
 import type { OpResult } from './opResult';
 
 /**
  * What each op of a batch did.
  */
 export interface ApplyOpsResponse {
+  /** The journal's change for each table version the batch produced: the
+ids `POST /databases/{id}/changes/{change}/undo` takes. */
+  changes: CommittedChange[];
   /** One result per op, in the order the ops were sent. Each is grouped as
 its op is: the same outer `kind`, naming the same ids, with a
 `change` saying what happened. */

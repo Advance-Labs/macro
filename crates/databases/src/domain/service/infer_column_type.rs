@@ -67,7 +67,12 @@ where
             .map_or(definition.id, |new| new.definition.id);
         let result = self
             .repository
-            .infer_column_type(table, &detail.column, new_id)
+            .infer_column_type(
+                table,
+                &detail.column,
+                new_id,
+                &receipt_journal_actor(&receipt),
+            )
             .await;
         let version = match result {
             Ok(Some(version)) => version,
