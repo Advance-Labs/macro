@@ -10,6 +10,7 @@ name: Ensure Daytona Snapshot
     branches:
     - main
     paths:
+    - Cargo.toml
     - crates/agent_harness/container/**
     - crates/agent_review_runtime/**
     - vendor/diffd-core/**
@@ -22,6 +23,7 @@ name: Ensure Daytona Snapshot
     branches:
     - main
     paths:
+    - Cargo.toml
     - crates/agent_harness/container/**
     - crates/agent_review_runtime/**
     - vendor/diffd-core/**

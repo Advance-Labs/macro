@@ -6,7 +6,7 @@ import {
   useOwnsSearchNamespace,
 } from '@app/lib/split-router';
 import GitDiffIcon from '@phosphor/git-diff.svg';
-import { Button } from '@ui';
+import { Button, Dialog } from '@ui';
 import {
   createMemo,
   createSignal,
@@ -108,39 +108,51 @@ export function AgentReviewProvider(props: ParentProps) {
   );
 }
 
-/** The transcript stays mounted while review takes its full content area. */
+/** The session owns both editors; the existing fullscreen dialog owns focus. */
 export function ReviewSessionSurface(props: ParentProps) {
   const host = useReviewHost();
   const everOpened = createMemo(
     (opened: boolean) => opened || host.open(),
     false
   );
+  // Keep the reader's owner alive when the dialog detaches its DOM. Reopening
+  // reuses its draft and viewport; closed readers disable queries and windows.
+  const workspace = createMemo(() =>
+    everOpened() ? <ReviewWorkspace /> : undefined
+  );
+  let sessionElement: HTMLDivElement | undefined;
+  let dialogElement: HTMLDivElement | undefined;
+  let returnFocus: HTMLElement | undefined;
+  const interceptCitations = (element: HTMLDivElement) => {
+    const capture = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const anchor =
+        event.target instanceof Element
+          ? event.target.closest('a[href]')
+          : null;
+      const href = anchor?.getAttribute('href');
+      if (href && host.openLink(href)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    element.addEventListener('click', capture, true);
+    onCleanup(() => element.removeEventListener('click', capture, true));
+  };
   return (
     <div
       class="relative flex size-full min-h-0 min-w-0 flex-col"
       ref={(element) => {
-        const capture = (event: MouseEvent) => {
-          if (
-            event.defaultPrevented ||
-            event.button !== 0 ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.shiftKey ||
-            event.altKey
-          )
-            return;
-          const anchor =
-            event.target instanceof Element
-              ? event.target.closest('a[href]')
-              : null;
-          const href = anchor?.getAttribute('href');
-          if (href && host.openLink(href)) {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-        };
-        element.addEventListener('click', capture, true);
-        onCleanup(() => element.removeEventListener('click', capture, true));
+        sessionElement = element;
+        interceptCitations(element);
       }}
     >
       <div
@@ -151,13 +163,41 @@ export function ReviewSessionSurface(props: ParentProps) {
         {props.children}
       </div>
       <Show when={everOpened()}>
-        <div
-          class="absolute inset-0 flex min-h-0 flex-col bg-surface touch:pt-(--mobile-content-inset-top) touch:pb-(--mobile-content-inset-bottom)"
-          classList={{ hidden: !host.open() }}
-          inert={!host.open()}
+        <Dialog
+          fullscreen
+          open={host.open()}
+          contentRef={(element) => {
+            dialogElement = element;
+            interceptCitations(element);
+          }}
+          onOpenAutoFocus={(event) => {
+            returnFocus =
+              document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : undefined;
+            event.preventDefault();
+            dialogElement
+              ?.querySelector<HTMLElement>('[aria-label="Code review"]')
+              ?.focus({ preventScroll: true });
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const target =
+              returnFocus?.isConnected && returnFocus !== document.body
+                ? returnFocus
+                : sessionElement?.querySelector<HTMLElement>(
+                    '[data-review-toggle]'
+                  );
+            target?.focus({ preventScroll: true });
+          }}
+          onOpenChange={(open) => {
+            if (!open && host.open()) host.back();
+          }}
+          class="flex min-h-0 flex-col pt-(--safe-top,0px) pb-(--safe-bottom,0px)"
         >
-          <ReviewWorkspace />
-        </div>
+          <Dialog.Title class="sr-only">Code review</Dialog.Title>
+          {workspace()}
+        </Dialog>
       </Show>
     </div>
   );
@@ -166,7 +206,12 @@ export function ReviewToggle() {
   const host = useOptionalReviewHost();
   return (
     <Show when={host?.available()}>
-      <Button variant="ghost" size="sm" onClick={() => host?.show()}>
+      <Button
+        data-review-toggle
+        variant="ghost"
+        size="sm"
+        onClick={() => host?.show()}
+      >
         <GitDiffIcon />
         Review changes
       </Button>

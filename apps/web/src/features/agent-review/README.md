@@ -1,8 +1,9 @@
 # Agent review
 
 The production reader opens from **Review changes** or an agent's code citation.
-It occupies the current session pane and preserves the mounted conversation on
-Back. Capture, threads, revisions, and Internal MCP are connected through the
+It uses the shared fullscreen Dialog, covering app and Home/Agents navigation.
+Back returns to the mounted conversation. The session also retains the review
+workspace so reopening preserves its draft, file selection, and scroll position. Capture, threads, revisions, and Internal MCP are connected through the
 session host; the reader has no independent authentication or conversation loop.
 
 - `agent-review.tsx`: production composition, typed routing, citation interception.

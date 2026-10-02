@@ -41,7 +41,7 @@ permissions, storage, Internal MCP, session queue, and realtime notifications.
   including large directories. A review without a tour shows all files under Changes.
 - Modified files use two aligned columns on wide panes, with AST token highlights
   and hatched empty cells. New/deleted files use one centered source without full
-  green/red paint. Narrow panes use one column. Lines wrap with measured 20px
+  green/red paint. Narrow panes use one column. Lines wrap with measured 18px
   minimum row heights. Syntax colors survive changed-line backgrounds.
 - `/` or the search icon reveals Find in file and Go to line. Search includes
   unmounted/folded source. Code rows and inline discussions are virtualized;
@@ -54,21 +54,6 @@ permissions, storage, Internal MCP, session queue, and realtime notifications.
   chips. Generated files default to hidden, tests to visible unless the agent
   chooses otherwise. Hidden bodies remain reachable by citation. Binary,
   submodule, empty, and over-budget files stay listed.
-- An optional agent-authored component map is a full-page opening step in the
-  walkthrough. Overview in the sidebar returns to it; the chapter arrows include
-  it in their sequence. Citations open directly in code. The source reader stays
-  mounted while hidden, preserving drafts and scroll state. Cytoscape.js renders
-  rounded nodes and connections, pan/zoom, app colors, and keyboard code links.
-  Dagre routes connections around nodes and chooses the orientation that best fits
-  the pane unless the agent specifies a reading direction. Native text rendered
-  through Cytoscape Layers gives nodes a title, short explanation, optional category,
-  and actual change totals for their agent-chosen files. Agents choose the diagram's
-  structure, component scope, and relationships. Zoom reveals authored subcomponents
-  and browsable file lists inside cards. Lists use captured membership, retain
-  authored entry points, show per-file totals, and support search and virtual
-  scrolling without fetching file bodies. Node clicks navigate to code and
-  open a corner map highlighting the visited component; it supports jumping to other
-  nodes, expanding to the overview, and dismissal. Renderers load only when shown.
 - Drag over code or gutters to select a region; Shift-click extends a selection.
   Clicking code also selects a line. The range highlights during drag; a compact
   toolbar offers Comment, Copy link, and Clear. Comment opens the composer below
@@ -81,9 +66,11 @@ permissions, storage, Internal MCP, session queue, and realtime notifications.
   revisions keeps the reader mounted and disables writes while retained code is
   loading. Background capture and `r` preserve the viewport without an Updating
   label or refresh button. Historical links keep the original source, walkthrough,
-  annotations, file groups, and map.
-- Mobile uses a navigation drawer and reserves room for the floating app header
-  and dock. The conversation's composer stays mounted, hidden and inert during
+  annotations, and file groups.
+- The shared fullscreen Dialog covers app navigation, retains both editors, and
+  manages focus. File cards, change counts, path typography, and discussion threads
+  reuse the shared diff UI. Mobile uses a navigation drawer and safe-area padding.
+  The conversation's composer stays mounted, hidden and inert during
   review. Back restores the conversation and draft.
 - Browser-local notes from the previous changes panel are recoverable as drafts
   with their original locations attached; they are never silently sent.
@@ -177,10 +164,8 @@ metadata immediately, with 10-second polling as a fallback; the continuous reade
 retains the active file and scroll position across both paths.
 
 The domain validates file-group patterns and resolves them against the requested
-revision. Graphs are bounded to 64 nodes and 128 edges, with validated file/side/line
-anchors rather than arbitrary URLs. Capture relocates those anchors using the
-same logic as comments, dropping outdated nodes and incident edges. Both metadata
-types use the existing revision aggregate; permission checks remain unchanged.
+revision. File groups use the existing revision aggregate; permission checks
+remain unchanged.
 
 The frontend's feature-owned live sources isolate query/cache mechanics from
 reader state. `AgentReviewProvider` composes session authority and typed routing;

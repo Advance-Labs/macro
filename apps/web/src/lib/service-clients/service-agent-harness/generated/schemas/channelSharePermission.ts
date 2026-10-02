@@ -10,8 +10,8 @@ import type { AccessLevel } from './accessLevel';
  * The channel share permission
  */
 export interface ChannelSharePermission {
-  /** The access level for the channel */
-  access_level: AccessLevel;
   /** The channel id */
   channel_id: string;
+  /** The access level for the channel */
+  access_level: AccessLevel;
 }

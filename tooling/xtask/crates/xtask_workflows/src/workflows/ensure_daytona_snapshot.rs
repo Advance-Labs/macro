@@ -52,8 +52,9 @@ fn image_source_pull_request() -> PullRequest {
     pr
 }
 
-fn image_source_paths() -> [xtask_paths::RepoGlob<'static>; 8] {
+fn image_source_paths() -> [xtask_paths::RepoGlob<'static>; 9] {
     [
+        xtask_paths::repo_glob!("Cargo.toml"),
         xtask_paths::repo_glob!("crates/agent_harness/container/**"),
         xtask_paths::repo_glob!("crates/agent_review_runtime/**"),
         xtask_paths::repo_glob!("vendor/diffd-core/**"),

@@ -71,7 +71,6 @@ fn review(session: AgentSessionId) -> Review {
         tour: vec![],
         annotations: vec![],
         file_groups: vec![],
-        graph: None,
         anchors: vec![],
         threads: vec![],
     }

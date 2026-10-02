@@ -4,6 +4,7 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { AgentSessionChangesResponseAttempt } from './agentSessionChangesResponseAttempt';
 import type { AgentSessionChangesResponseChangeset } from './agentSessionChangesResponseChangeset';
 
@@ -13,8 +14,8 @@ import type { AgentSessionChangesResponseChangeset } from './agentSessionChanges
 Clients deserialize this, so both derives are used.
  */
 export interface AgentSessionChangesResponse {
+  changeset?: AgentSessionChangesResponseChangeset;
   attempt?: AgentSessionChangesResponseAttempt;
   /** A capture is running right now. */
   capturing: boolean;
-  changeset?: AgentSessionChangesResponseChangeset;
 }

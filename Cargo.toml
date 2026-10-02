@@ -156,6 +156,8 @@ members = [
 
 [workspace.dependencies]
 diffd-core = { path = "vendor/diffd-core" }
+rayon = "1.11"
+similar = "2"
 aes-gcm = { version = "0.10.3", features = ["zeroize"] }
 anyhow = "1.0.100"
 apollo-compiler = "1"

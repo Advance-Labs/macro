@@ -4,14 +4,15 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { UpdateChannelSharePermissionAccessLevel } from './updateChannelSharePermissionAccessLevel';
 import type { UpdateOperation } from './updateOperation';
 
 export interface UpdateChannelSharePermission {
-  accessLevel?: UpdateChannelSharePermissionAccessLevel;
-  /** The channel id */
-  channelId: string;
   /** The type of operation to be performed on the chanel share permission
 You can add, remove or replace and existing permission */
   operation: UpdateOperation;
+  /** The channel id */
+  channelId: string;
+  accessLevel?: UpdateChannelSharePermissionAccessLevel;
 }

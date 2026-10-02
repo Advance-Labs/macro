@@ -4,16 +4,17 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { AgentConfigOptionDtoAllOfCategory } from './agentConfigOptionDtoAllOfCategory';
 import type { AgentConfigOptionDtoAllOfDescription } from './agentConfigOptionDtoAllOfDescription';
 
 export type AgentConfigOptionDtoAllOf = {
-  /** ACP semantic category, such as `model` or `thought_level`. */
-  category?: AgentConfigOptionDtoAllOfCategory;
-  /** Optional explanatory copy. */
-  description?: AgentConfigOptionDtoAllOfDescription;
   /** Opaque id used to change this setting. */
   id: string;
   /** Display label supplied by the agent. */
   name: string;
+  /** Optional explanatory copy. */
+  description?: AgentConfigOptionDtoAllOfDescription;
+  /** ACP semantic category, such as `model` or `thought_level`. */
+  category?: AgentConfigOptionDtoAllOfCategory;
 };

@@ -5,7 +5,9 @@ Source: https://github.com/404Wolf/diffd/tree/91a5e3e7719d717c2cd1b6238e146023e8
 Revision: `91a5e3e7719d717c2cd1b6238e146023e8afb1df` (MIT; see LICENSE).
 
 Local changes:
-- Resolve upstream workspace package/dependency/lint settings in this manifest.
+- Resolve upstream package/lint settings and inherit shared dependencies from
+  Macro's workspace, including its Utoipa 5 schema derives. The sidecar image
+  extracts the same dependency table into a minimal build workspace.
 - Register SQL and the tree-sitter-sequel grammar in the shared language registry.
 - Translate Lua numeric predicates from the SQL grammar to regex and recognize its
   generic field/parameter/keyword capture aliases in the shared highlighter.

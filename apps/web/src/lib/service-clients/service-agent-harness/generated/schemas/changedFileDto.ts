@@ -4,7 +4,6 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
-
 import type { ChangedFileDtoPreviousPath } from './changedFileDtoPreviousPath';
 import type { FileChangeKindDto } from './fileChangeKindDto';
 
@@ -14,24 +13,24 @@ import type { FileChangeKindDto } from './fileChangeKindDto';
 Clients deserialize this, so both derives are used.
  */
 export interface ChangedFileDto {
+  /** The file's path after the change, or before it for a deletion. */
+  path: string;
+  /** Where a renamed file came from. */
+  previousPath?: ChangedFileDtoPreviousPath;
+  /** What happened to the file. */
+  kind: FileChangeKindDto;
   /**
    * Lines added.
    * @minimum 0
    */
   additions: number;
-  /** The diff carries no text for this file. */
-  binary: boolean;
   /**
    * Lines removed.
    * @minimum 0
    */
   deletions: number;
-  /** What happened to the file. */
-  kind: FileChangeKindDto;
+  /** The diff carries no text for this file. */
+  binary: boolean;
   /** The file's hunks were left out of the patch to fit the size budget. */
   patchOmitted: boolean;
-  /** The file's path after the change, or before it for a deletion. */
-  path: string;
-  /** Where a renamed file came from. */
-  previousPath?: ChangedFileDtoPreviousPath;
 }

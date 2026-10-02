@@ -19,8 +19,6 @@ import {
   Show,
 } from 'solid-js';
 import { ReviewDiscussion } from '../components/ReviewDiscussion';
-import { ReviewGraph } from '../components/ReviewGraph';
-import { ReviewGraphPreview } from '../components/ReviewGraphPreview';
 import {
   type NavigationTab,
   ReviewNavigation,
@@ -45,6 +43,14 @@ export default function ReviewWorkspace() {
   const [sidebar, setSidebar] = createSignal(false);
   const [main, setMain] = createSignal<HTMLElement>();
   const size = createElementSize(main);
+  const wide = createMemo(
+    (previous: boolean) =>
+      host.open() && main()?.isConnected && size.width
+        ? size.width >= 720
+        : previous,
+    false
+  );
+  const [observing, setObserving] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   let searchInput: HTMLInputElement | undefined;
   let root!: HTMLElement;
@@ -56,19 +62,6 @@ export default function ReviewWorkspace() {
   const chapters = createMemo(() =>
     (model.review()?.tour ?? []).map((chapter) => ({ ...chapter, note: '' }))
   );
-  const overviewCount = () => (model.review()?.graph ? 1 : 0);
-  const [graphFocus, setGraphFocus] = createSignal<string>();
-  const showOverview = (node?: string) => {
-    setGraphFocus(node);
-    model.showOverview();
-    setTab('Walkthrough');
-    setReadingMode('Walkthrough');
-    setSidebar(false);
-  };
-  const chooseStep = (index: number) => {
-    if (index === 0 && overviewCount()) showOverview();
-    else model.chooseChapter(index - overviewCount());
-  };
   const chapterIndex = () => {
     const path = model.target()?.path ?? '';
     const current = model.chapter();
@@ -100,8 +93,8 @@ export default function ReviewWorkspace() {
       { added: 0, removed: 0 }
     )
   );
-  const navigate = (location: CodeLocation, node?: string) => {
-    model.navigate(location, node);
+  const navigate = (location: CodeLocation) => {
+    model.navigate(location);
     setSidebar(false);
   };
   const notes = () => model.review()?.annotations ?? [];
@@ -162,11 +155,19 @@ export default function ReviewWorkspace() {
       .querySelector<HTMLElement>('[data-review-scroll]')
       ?.focus({ preventScroll: true });
   };
+  const cancelComment = () => {
+    if (
+      document.activeElement instanceof HTMLTextAreaElement &&
+      root.contains(document.activeElement)
+    )
+      root.focus({ preventScroll: true });
+    model.cancel();
+  };
   registerHotkey({
     scopeId: scope,
     hotkey: '/',
     description: 'Find in file',
-    condition: () => host.open() && !model.overview(),
+    condition: () => host.open(),
     keyDownHandler: () => {
       openSearch();
       return true;
@@ -184,7 +185,13 @@ export default function ReviewWorkspace() {
   });
   createEffect(
     on(host.open, (open) => {
-      if (open) queueMicrotask(() => root?.focus({ preventScroll: true }));
+      setObserving(false);
+      if (open)
+        queueMicrotask(() => {
+          if (!host.open() || !root?.isConnected) return;
+          setObserving(true);
+          root.focus({ preventScroll: true });
+        });
     })
   );
   const displayDiscussion = (at: CodeLocation) => (
@@ -220,7 +227,7 @@ export default function ReviewWorkspace() {
             }
             onDraft={model.setDraft}
             onSend={() => void model.send()}
-            onCancel={model.cancel}
+            onCancel={cancelComment}
             onResolve={() => void model.resolve(thread.id)}
             onReply={() => model.begin(at, thread.id)}
             readOnly={!host.canEdit() || !model.ready()}
@@ -242,7 +249,7 @@ export default function ReviewWorkspace() {
           readOnly={!host.canEdit() || !model.ready()}
           onDraft={model.setDraft}
           onSend={() => void model.send()}
-          onCancel={model.cancel}
+          onCancel={cancelComment}
           onResolve={() => {}}
           onReply={() => {}}
           sending={model.source.commenting()}
@@ -274,10 +281,8 @@ export default function ReviewWorkspace() {
             ?.focus({ preventScroll: true });
         } else if (searchOpen()) closeSearch();
         else if (model.composing()) {
-          model.cancel();
-          root.focus({ preventScroll: true });
-        } else if (model.mapOpen() && !model.overview()) model.closeMap();
-        else host.back();
+          cancelComment();
+        } else host.back();
       }}
       ref={(element) => {
         root = element;
@@ -308,10 +313,10 @@ export default function ReviewWorkspace() {
         </div>
         <Show when={model.review()}>
           <span class="hidden text-xs @min-[600px]/review:inline">
-            <span class="text-success">+{totals().added.toLocaleString()}</span>{' '}
-            <span class="text-failure">
-              −{totals().removed.toLocaleString()}
-            </span>
+            <DiffCounts
+              additions={totals().added}
+              deletions={totals().removed}
+            />
           </span>
         </Show>
       </header>
@@ -428,34 +433,22 @@ export default function ReviewWorkspace() {
             )}
           >
             <ReviewNavigation
-              active={host.open()}
+              active={observing()}
               onClose={() => setSidebar(false)}
               tab={tab()}
               onTab={(next) => {
                 setTab(next);
                 if (next === 'Walkthrough' || next === 'Full Diff')
                   setReadingMode(next);
-                const target = model.target();
-                if (next === 'Full Diff' && model.overview() && target)
-                  model.navigate(target);
               }}
               chapters={chapters()}
-              chapter={model.overview() ? -1 : chapterIndex()}
+              chapter={chapterIndex()}
               onChapter={model.chooseChapter}
-              overview={
-                model.review()?.graph
-                  ? {
-                      title: model.review()!.graph!.title,
-                      active: model.overview(),
-                      onSelect: showOverview,
-                    }
-                  : undefined
-              }
               files={files()}
               walkthroughFiles={model.visibleFiles()}
               fileGroups={model.fileGroups()}
               onToggleGroup={model.toggleGroup}
-              activePath={model.overview() ? '' : (model.target()?.path ?? '')}
+              activePath={model.target()?.path ?? ''}
               onFile={(path, chapter) =>
                 batch(() => {
                   if (chapter !== undefined) model.chooseChapter(chapter);
@@ -490,34 +483,16 @@ export default function ReviewWorkspace() {
             />
           </div>
           <main ref={setMain} class="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Show when={model.overview() && model.review()?.graph}>
-              {(graph) => (
-                <ReviewGraph
-                  graph={graph()}
-                  files={files()}
-                  count={chapters().length + 1}
-                  activeNode={graphFocus()}
-                  nextChapter={chapters()[0]?.title}
-                  onNext={() => model.chooseChapter(0)}
-                  onLocation={navigate}
-                />
-              )}
-            </Show>
-            <div
-              class={cn(
-                'relative flex min-h-0 flex-1 flex-col',
-                model.overview() && 'hidden'
-              )}
-            >
+            <div class="relative flex min-h-0 flex-1 flex-col">
               <Show
                 when={tab() === 'Walkthrough' && chapters()[chapterIndex()]}
               >
                 {(chapter) => (
                   <ReviewWalkthrough
                     chapter={chapter()}
-                    index={chapterIndex() + overviewCount()}
-                    count={chapters().length + overviewCount()}
-                    onChapter={chooseStep}
+                    index={chapterIndex()}
+                    count={chapters().length}
+                    onChapter={model.chooseChapter}
                   />
                 )}
               </Show>
@@ -591,12 +566,12 @@ export default function ReviewWorkspace() {
                 <ReviewFiles
                   files={readingFiles()}
                   revision={model.currentRevision()}
-                  active={host.open() && !model.overview()}
+                  active={observing()}
                   disabled={
                     model.source.loadedRevision() !== model.currentRevision() ||
                     model.source.manifest.phase() !== 'ready'
                   }
-                  wide={(size.width ?? 0) >= 720}
+                  wide={wide()}
                   target={model.target()}
                   sequence={model.sequence()}
                   search={search()}
@@ -628,22 +603,6 @@ export default function ReviewWorkspace() {
                   Choose a file or open the original revision in History.
                 </p>
               </Show>
-              <Show
-                when={
-                  !model.overview() && model.mapOpen() && model.review()?.graph
-                }
-              >
-                {(graph) => (
-                  <ReviewGraphPreview
-                    graph={graph()}
-                    files={files()}
-                    activeNode={model.activeGraphNode()}
-                    onLocation={navigate}
-                    onExpand={() => showOverview(model.activeGraphNode())}
-                    onClose={model.closeMap}
-                  />
-                )}
-              </Show>
             </div>
           </main>
         </div>
@@ -651,3 +610,5 @@ export default function ReviewWorkspace() {
     </section>
   );
 }
+
+import { DiffCounts } from '@app/components/diff-view/DiffCounts';

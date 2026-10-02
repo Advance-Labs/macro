@@ -9,10 +9,10 @@
  * Safe connection metadata.
  */
 export interface StatusResponse {
-  /** Whether the authenticated Macro user has connected. */
-  connected: boolean;
   /** Whether this deployment supports browser connection. */
   enabled: boolean;
+  /** Whether the authenticated Macro user has connected. */
+  connected: boolean;
   /** Whether reconnecting after service restart is required. */
   ephemeral: boolean;
 }

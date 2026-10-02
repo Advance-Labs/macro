@@ -8,7 +8,7 @@ import type {
   Location,
   Review,
   ReviewLink,
-} from './review-types';
+} from './generated/schemas';
 
 const reviewError: ErrorResponseHandler<never> = async (response) => {
   const data = await response.json().catch(() => undefined);

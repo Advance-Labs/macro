@@ -1,7 +1,10 @@
 import { throwOnErr } from '@core/util/result';
 import { subscribeAgentSessionUpdated } from '@queries/agent-session/session-metadata-sync';
 import { queryReadyGate } from '@queries/gate';
-import type { Comment, Location } from '@service-agent-harness/review-types';
+import type {
+  Comment,
+  Location,
+} from '@service-agent-harness/generated/schemas';
 import { agentReviewClient } from '@service-agent-harness/reviews';
 import {
   queryOptions,
@@ -19,8 +22,18 @@ export const reviewKey = (session: string) =>
 const fileOptions = (session: string, revision: number, path: string) =>
   queryOptions({
     queryKey: [...reviewKey(session), 'file', revision, path] as const,
-    queryFn: ({ signal }) =>
-      throwOnErr(() => agentReviewClient.file(session, revision, path, signal)),
+    queryFn: async ({ signal }): Promise<ReviewFile> => {
+      const file = await throwOnErr(() =>
+        agentReviewClient.file(session, revision, path, signal)
+      );
+      return {
+        ...file,
+        rows: file.rows.map((row): ReviewFile['rows'][number] => {
+          if (row.length !== 2) throw new Error('Invalid aligned diff row');
+          return [row[0], row[1]];
+        }),
+      };
+    },
     retry: 1,
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 5 * 60_000,

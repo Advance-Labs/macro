@@ -4,19 +4,20 @@
  * agent_harness_service
  * OpenAPI spec version: 0.1.0
  */
+
 import type { SharePermissionV2ChannelSharePermissions } from './sharePermissionV2ChannelSharePermissions';
 import type { SharePermissionV2LinkShare } from './sharePermissionV2LinkShare';
 import type { SharePermissionV2LinkShareAccessLevel } from './sharePermissionV2LinkShareAccessLevel';
 import type { SharePermissionV2TeamShareAccessLevel } from './sharePermissionV2TeamShareAccessLevel';
 
 export interface SharePermissionV2 {
-  /** The channel share permissions for the item */
-  channelSharePermissions?: SharePermissionV2ChannelSharePermissions;
   /** The share permission id */
   id: string;
   linkShare?: SharePermissionV2LinkShare;
   linkShareAccessLevel?: SharePermissionV2LinkShareAccessLevel;
+  teamShareAccessLevel?: SharePermissionV2TeamShareAccessLevel;
   /** The owner of the item */
   owner: string;
-  teamShareAccessLevel?: SharePermissionV2TeamShareAccessLevel;
+  /** The channel share permissions for the item */
+  channelSharePermissions?: SharePermissionV2ChannelSharePermissions;
 }

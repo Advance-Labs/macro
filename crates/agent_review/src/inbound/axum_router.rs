@@ -241,8 +241,8 @@ async fn resolve<A: EntityAccessService, Auth: MacroAuthorizationService>(
 #[openapi(paths(view, file, capture, comment, link, resolve))]
 pub struct ReviewApiDoc;
 
-/// Export OpenAPI JSON across the pinned diffd/host OpenAPI library versions.
-pub fn openapi() -> serde_json::Value {
+/// Export the review endpoints and their shared wire models.
+pub fn openapi() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi;
-    serde_json::to_value(ReviewApiDoc::openapi()).expect("serializable review API")
+    ReviewApiDoc::openapi()
 }

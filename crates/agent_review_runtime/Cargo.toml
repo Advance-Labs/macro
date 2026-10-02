@@ -5,17 +5,17 @@ edition = "2024"
 publish = false
 
 [dependencies]
-anyhow = "1"
-diffd-core = { path = "../../vendor/diffd-core" }
-rayon = "1.11"
-sha2 = "0.10"
-similar = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tempfile = "3"
-tokio = { version = "1", features = ["rt", "sync"] }
-tracing = "0.1"
+anyhow.workspace = true
+diffd-core.workspace = true
+rayon.workspace = true
+sha2.workspace = true
+similar.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "sync"] }
+tracing.workspace = true
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile.workspace = true

@@ -11,10 +11,10 @@ import type { ExternalSessionResponseUrl } from './externalSessionResponseUrl';
  * The provider-side identity of an externally-served session.
  */
 export interface ExternalSessionResponse {
-  /** The provider's display name for the agent, when it reported one. */
-  name?: ExternalSessionResponseName;
   /** Which provider serves the session, e.g. `cursor`. */
   provider: string;
+  /** The provider's display name for the agent, when it reported one. */
+  name?: ExternalSessionResponseName;
   /** The agent's page on the provider's site, for a client to link out to. */
   url?: ExternalSessionResponseUrl;
 }

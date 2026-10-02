@@ -9,6 +9,13 @@ COPY crates/agent_harness/container/sidecar/Cargo.toml crates/agent_harness/cont
 COPY crates/agent_harness/container/sidecar/src ./src
 COPY crates/agent_review_runtime /crates/agent_review_runtime
 COPY vendor/diffd-core /vendor/diffd-core
+# Keep workspace dependency versions identical to Macro without copying its
+# backend members into the standalone sidecar build.
+COPY Cargo.toml /macro-workspace.toml
+RUN awk 'BEGIN {print "[workspace]\nresolver = \"2\"\nmembers = [\"crates/agent_review_runtime\", \"vendor/diffd-core\"]\n"} \
+    /^\[workspace.dependencies\]/ {copy = 1} \
+    copy && /^\[/ && $0 != "[workspace.dependencies]" {exit} \
+    copy {print}' /macro-workspace.toml > /Cargo.toml
 RUN cargo build --locked --release
 
 # Macro nix devshell hard install

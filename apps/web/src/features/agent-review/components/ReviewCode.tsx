@@ -233,14 +233,11 @@ export function ReviewCode(props: {
   const rowKeyPrefix = createMemo(() => `${props.file.path}:${props.split}`);
   let savedScroll = 0;
   const virtualizer = createVirtualizer({
-    get enabled() {
-      return props.active !== false;
-    },
     initialOffset: () => props.viewport?.element.scrollTop ?? savedScroll,
     get count() {
       return items().length;
     },
-    getScrollElement: viewport,
+    getScrollElement: () => (props.active === false ? null : viewport()),
     get scrollMargin() {
       return props.viewport ? (margin() ?? props.viewport.offset) : 0;
     },
@@ -252,7 +249,7 @@ export function ReviewCode(props: {
         ? 160
         : items()[index]?.kind === 'fold'
           ? 28
-          : 20,
+          : 18,
     getItemKey: (index) => {
       const item = items()[index];
       return `${rowKeyPrefix()}:${item?.kind === 'code' ? item.row.key : item?.kind === 'fold' ? `fold:${item.start}` : `discussion:${item?.location.side}:${item?.location.line}`}`;
@@ -500,7 +497,7 @@ export function ReviewCode(props: {
         </span>
         <code
           class={cn(
-            'min-w-0 flex-1 px-2 [tab-size:8] font-mono text-[12px] leading-5 text-ink',
+            'min-w-0 flex-1 px-2 [tab-size:2] font-mono text-xs leading-[18px] text-ink',
             props.wrap
               ? 'whitespace-pre-wrap break-all'
               : 'overflow-hidden whitespace-pre'
@@ -686,7 +683,7 @@ export function ReviewCode(props: {
                     {(code) => (
                       <div
                         class={cn(
-                          props.wrap ? 'grid min-h-5' : 'grid h-5',
+                          props.wrap ? 'grid min-h-[18px]' : 'grid h-[18px]',
                           props.split && 'grid-cols-2',
                           matches()[activeMatch()] === virtual.index &&
                             'bg-accent/5'
