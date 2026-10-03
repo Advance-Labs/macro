@@ -649,6 +649,7 @@ async fn list_includes_me_matches_every_linked_github_identity(pool: PgPool) {
             vec![SourceId::user(macro_id)],
             10,
             filter_query(includes_me_filter()),
+            None,
         )
         .await
         .expect("includes_me should match both linked identities");
