@@ -1,4 +1,5 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
+import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
 import { createConfiguredChannelMarkdownEditor } from '@channel/Input';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
 import { useIsAuthenticated } from '@core/auth';
@@ -13,7 +14,6 @@ import { CustomScrollbar } from '@core/component/CustomScrollbar';
 import { MarkdownShell } from '@core/component/LexicalMarkdown/builder/MarkdownShell';
 import { RecipientSelector } from '@core/component/RecipientSelector';
 import { ShareOptions } from '@core/component/TopBar/ShareButton';
-import { resolveBlockAlias } from '@core/constant/allBlocks';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { isMobile } from '@core/mobile/isMobile';
 import { useCombinedRecipients } from '@core/signal/useCombinedRecipient';

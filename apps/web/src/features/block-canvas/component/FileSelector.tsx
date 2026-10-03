@@ -1,9 +1,9 @@
+import { blockAcceptedFileExtensionSet } from '@app/lib/constants/file-metadata';
 import {
   EntityIcon,
   type EntityWithValidIcon,
 } from '@core/component/EntityIcon';
 import { OldMenu } from '@core/component/OldMenu';
-import { blockAcceptedFileExtensionSet } from '@core/constant/allBlocks';
 import { onKeyDownClick, onKeyUpClick } from '@core/util/click';
 import FileText from '@phosphor-icons/core/regular/file-text.svg?component-solid';
 import { useHistoryQuery } from '@queries/history/history';

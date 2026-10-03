@@ -35,7 +35,7 @@ vi.mock('@queries/preview', () => ({
     !item.loading && item.access === 'access',
 }));
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   verifyBlockName: (name?: string) => name ?? 'unknown',
   fileTypeToResolvedBlockName: (fileType?: string) =>
     fileType === 'png' || fileType === 'jpg' ? 'image' : 'unknown',

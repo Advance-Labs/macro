@@ -1,7 +1,10 @@
 import { analytics } from '@app/lib/analytics';
-import type { FileTypeString, MimeType } from '@core/block';
+import type {
+  FileTypeString,
+  MimeType,
+} from '@app/lib/constants/block-registry';
+import { blockAcceptedMimetypeToFileExtension } from '@app/lib/constants/file-metadata';
 import { createUploadToast, toast } from '@core/component/Toast/Toast';
-import { blockAcceptedMimetypeToFileExtension } from '@core/constant/allBlocks';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import {
   getUploadFileSize,

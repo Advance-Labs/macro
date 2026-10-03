@@ -1,11 +1,11 @@
 import { reviewsHostedContent } from '@app/features/reviews-view/reviews-hosted-content';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { getChannelParams } from '@block-channel/utils/link';
 import { usePrForeignEntityQuery } from '@block-pr/data/queries';
 import { prDisplayName } from '@block-pr/util/prKey';
 import type { SplitContent } from '@components/app/split-layout/layoutManager';
 import type { EntityIconSelector } from '@core/component/EntityIcon';
 import { getIconConfig } from '@core/component/EntityIcon';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { useChannelsContext } from '@core/context/channels';
 import { useUserId } from '@core/context/user';
 import {

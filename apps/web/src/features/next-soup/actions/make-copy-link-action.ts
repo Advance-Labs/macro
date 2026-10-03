@@ -1,8 +1,8 @@
 import { copyCalendarEventMentionTarget } from '@app/features/calendar-view/copy-event-mention';
 import { reminderDetailUrl } from '@app/features/reminders/reminder-navigation';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { getChannelParams } from '@block-channel/utils/link';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { enableReminders, isFeatureEnabled } from '@core/constant/featureFlags';
 import { buildSimpleEntityUrl } from '@core/util/url';
 import { type EntityData, isGithubPrEntity } from '@entity';

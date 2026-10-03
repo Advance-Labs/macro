@@ -1,7 +1,7 @@
 import { projectRouteId } from '@app/features/projects/core/route';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { getChannelParams } from '@channel/Channel/link';
 import type { SplitContent } from '@components/app/split-layout/layoutManager';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import type { EntityData } from '@entity';
 import { match } from 'ts-pattern';
 

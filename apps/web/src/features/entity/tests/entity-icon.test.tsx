@@ -29,7 +29,7 @@ vi.mock('@queries/channel/picture', () => ({
     return { url: () => channelPicture.url, revision: () => 1 };
   },
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockAcceptedFileExtensionSet: new Set(),
   fileTypeToBlockName: vi.fn(),
   isBlockAlias: () => false,

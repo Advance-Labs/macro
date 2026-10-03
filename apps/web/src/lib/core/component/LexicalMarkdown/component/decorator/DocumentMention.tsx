@@ -2,6 +2,11 @@ import { parseLocalDate } from '@app/features/calendar/utils/calendar-date';
 import { calendarMentionOpen } from '@app/features/calendar-view/mention-open-target';
 import { openCalendarEventSplit } from '@app/features/calendar-view/open-calendar-event';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import {
+  itemToBlockName,
+  resolveBlockAlias,
+  verifyBlockName,
+} from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
 import {
   type BlockAlias,
@@ -18,11 +23,6 @@ import { EntityIcon } from '@core/component/EntityIcon';
 import { HoverCard } from '@core/component/HoverCard';
 import { InlineTaskProperties } from '@core/component/InlineTaskProperties';
 import { useItemPreviewData } from '@core/component/ItemPreview';
-import {
-  itemToBlockName,
-  resolveBlockAlias,
-  verifyBlockName,
-} from '@core/constant/allBlocks';
 import {
   ENABLE_BLOCK_IN_BLOCK,
   enableDatabases,

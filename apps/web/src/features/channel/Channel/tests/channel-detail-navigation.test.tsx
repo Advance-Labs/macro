@@ -96,8 +96,8 @@ vi.mock('@queries/channel/channel-participants', () => ({
   useChannelParticipantsQuery: () => ({ isSuccess: false, data: undefined }),
 }));
 // Keep the orchestrator's registry real without pulling every block definition.
-vi.mock('@core/constant/allBlocks', () => ({
-  blocks: {},
+vi.mock('@core/constant/allBlocks', () => ({ blocks: {} }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
   resolveBlockAlias: (type: string) => type,
 }));
 // Live viewer indicators open the shared connection's socket, which jsdom

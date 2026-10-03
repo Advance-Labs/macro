@@ -18,7 +18,7 @@ vi.mock('@app/lib/analytics/posthog', () => ({
   useFeatureFlag: () => () => ({ enabled: true }),
 }));
 vi.mock('@core/constant/featureFlags', () => ({ enableGraphqlSoup: {} }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToSafeName: (item: { name: string }) => item.name,
 }));
 vi.mock('@service-storage/util/filename', () => ({

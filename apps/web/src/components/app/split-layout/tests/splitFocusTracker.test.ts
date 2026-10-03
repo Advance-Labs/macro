@@ -20,7 +20,7 @@ vi.mock('../componentRegistry', () => ({
   })),
 }));
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   isBlockAlias: vi.fn(() => false),
   resolveBlockAlias: vi.fn((type: string) => type),
 }));

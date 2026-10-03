@@ -1,6 +1,6 @@
+import { blockNameToDefaultFile } from '@app/lib/constants/file-metadata';
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { unifiedListMarkdownTheme } from '@core/component/LexicalMarkdown/theme';
-import { blockNameToDefaultFile } from '@core/constant/allBlocks';
 import { formatDocumentName } from '@service-storage/util/filename';
 import { type JSX, Show } from 'solid-js';
 import { match } from 'ts-pattern';

@@ -43,10 +43,8 @@ vi.mock('@channel/Media/MediaViewerDialog', () => ({
     </div>
   ),
 }));
-// The block registry eagerly imports every block's definition, which drags
-// the chat input's storage module into jsdom; the extension-to-icon mapping
-// is all this component needs from it.
-vi.mock('@core/constant/allBlocks', () => ({
+// Keep file-type classification deterministic while testing attachment selection.
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (fileType?: string) => fileType ?? 'unknown',
 }));
 vi.mock('@core/component/EntityIcon', () => ({

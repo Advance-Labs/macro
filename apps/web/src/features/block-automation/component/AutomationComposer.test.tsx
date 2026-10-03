@@ -45,7 +45,7 @@ vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => false }));
 vi.mock('@core/mobile/virtualKeyboard', () => ({
   virtualKeyboardVisible: () => false,
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockNameToDefaultFile: () => 'New automation',
 }));
 vi.mock('@queries/agent-schedule/schedules', async () => {

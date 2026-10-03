@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -11,17 +12,9 @@ import { err, ok } from 'neverthrow';
 import { lazy } from 'solid-js';
 
 export const definition = defineBlock({
+  ...blockMetadata.image,
   name: 'image',
-  description: 'views images',
   component: lazy(() => import('./component/Block')),
-  accepted: {
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    svg: 'image/svg+xml',
-    webp: 'image/webp',
-  },
   async load(source, intent) {
     if (source.type === 'dss') {
       const maybeDocument = await loadResult(

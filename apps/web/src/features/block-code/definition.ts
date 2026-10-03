@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -7,12 +8,10 @@ import {
 import { storageServiceClient } from '@service-storage/client';
 import { err, ok } from 'neverthrow';
 import BlockCode from './component/Block';
-import { supportedExtensions } from './util/languageSupport';
 
 export const definition = defineBlock({
+  ...blockMetadata.code,
   name: 'code',
-  description: 'Edit code files with syntax highlighting and formatting',
-  aliases: [{ name: 'csv', defaultFileName: 'New CSV' }],
   component: BlockCode,
   async load(source, intent) {
     if (intent === 'preload') {
@@ -37,9 +36,6 @@ export const definition = defineBlock({
     return ok(result);
   },
 
-  accepted: Object.fromEntries(
-    supportedExtensions.map((ext) => [ext, 'text/plain'])
-  ),
   liveTrackingEnabled: true,
   syncServiceEnabled: false,
 });

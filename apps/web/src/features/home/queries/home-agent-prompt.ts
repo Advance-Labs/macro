@@ -1,6 +1,6 @@
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import type { ChatSendInput } from '@core/component/AI/component/input/buildRequest';
 import { getVisibleUserMessageAttachments } from '@core/component/AI/component/message/userMessageAttachments';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import { buildMentionMarkdownString } from '@macro-inc/lexical-core/utils/mentions';
 import { getItemPreview, isAccessiblePreviewItem } from '@queries/preview';
 import { stringToItemType } from '@service-storage/itemType';

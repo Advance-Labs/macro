@@ -1,10 +1,10 @@
-import { EntityIcon } from '@core/component/EntityIcon';
-import { INSERT_MEDIA_COMMAND } from '@core/component/LexicalMarkdown/plugins';
 import {
   blockAcceptsFileExtension,
   blockNameToFileExtensions,
   blockNameToMimeTypes,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
+import { EntityIcon } from '@core/component/EntityIcon';
+import { INSERT_MEDIA_COMMAND } from '@core/component/LexicalMarkdown/plugins';
 import { fileDrop } from '@core/directive/fileDrop';
 import { fileSelector } from '@core/directive/fileSelector';
 import ImageIcon from '@phosphor/image.svg';

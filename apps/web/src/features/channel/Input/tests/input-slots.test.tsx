@@ -152,7 +152,7 @@ vi.mock('@macro-inc/collaboration/websocket', async (importOriginal) => {
   };
 });
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type?: string | null) => type ?? 'unknown',
 }));
 

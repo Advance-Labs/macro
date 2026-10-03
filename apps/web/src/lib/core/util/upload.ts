@@ -9,6 +9,10 @@
 
 import { analytics } from '@app/lib/analytics';
 import {
+  blockAcceptedMimetypeToFileExtension,
+  blockAcceptsFileExtension,
+} from '@app/lib/constants/file-metadata';
+import {
   DirectoryFileCountExceededError,
   DirectoryFileSizeExceededError,
   type FileDetail,
@@ -16,10 +20,6 @@ import {
   zipFiles,
 } from '@core/client/zipWorkerClient';
 import { toast } from '@core/component/Toast/Toast';
-import {
-  blockAcceptedMimetypeToFileExtension,
-  blockAcceptsFileExtension,
-} from '@core/constant/allBlocks';
 import { heicConversionService } from '@core/heic/service';
 import { holdAutomaticReload } from '@core/util/reloadForNewerBuild';
 import {

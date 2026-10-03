@@ -1,5 +1,5 @@
-import type { BlockAlias, BlockName } from '@core/block';
-import { resolveBlockAlias } from '@core/constant/allBlocks';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
 import { createSignal } from 'solid-js';
 
 export type ContentIdentity = {

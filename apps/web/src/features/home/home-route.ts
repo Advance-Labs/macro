@@ -6,10 +6,13 @@ import {
 } from '@app/features/calendar-view/calendar-url';
 import type { channelsSearch } from '@app/features/channels-view/channels-route';
 import type { DriveSearchParams } from '@app/features/drive-view/primitives/drive-search';
+import {
+  isBlockAlias,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
 import type { PreviewBlockTarget } from '@components/app/previewTarget';
 import type { SplitContent } from '@components/app/split-layout/layoutManager';
-import { isBlockAlias, resolveBlockAlias } from '@core/constant/allBlocks';
 import { documentCommentLocation } from '@notifications/document-comment-location';
 import type { z } from 'zod';
 import {

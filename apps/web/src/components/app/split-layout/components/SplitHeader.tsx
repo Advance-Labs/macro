@@ -7,6 +7,7 @@ import type { DriveState } from '@app/features/drive-view/core/types';
 import { useSoup } from '@app/features/next-soup/soup-context';
 import { openEntityInSplitFromUnifiedList } from '@app/features/next-soup/utils';
 import { projectRouteId } from '@app/features/projects/core/route';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useSplitRouter } from '@app/lib/split-router';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { type BlockName, NonDocumentBlockTypes } from '@core/block';
@@ -16,7 +17,6 @@ import {
   MenuSeparator,
 } from '@core/component/ContextMenu';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isMobile } from '@core/mobile/isMobile';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';

@@ -41,7 +41,8 @@ import {
 } from 'solid-js';
 import { createStore, type SetStoreFunction, type Store } from 'solid-js/store';
 import {
-  type BlockAliasRegistry,
+  type BlockAlias,
+  type BlockName,
   BlockRegistry,
 } from '../constants/block-registry';
 import { ENABLE_PDF_MULTISPLIT } from './constant/featureFlags';
@@ -49,29 +50,17 @@ import { blockDataSignal } from './internal/BlockLoader';
 import type { Source, SourcePreload } from './source';
 import type { ObjectLike, ResultError } from './util/result';
 
-export { BlockAliasRegistry, BlockRegistry } from '../constants/block-registry';
-
-/** Block names that resolve through another concrete block implementation. */
-export const VirtualBlockRegistry = ['write'] as const;
-const virtualBlockNames = new Set<string>(VirtualBlockRegistry);
-export const ConcreteBlockRegistry = BlockRegistry.filter(
-  (name) => !virtualBlockNames.has(name)
-);
-
-type BlockNameKeys = keyof typeof BlockRegistry & number;
-
-/**
- * Represents a block name which is one of the predefined block types in {@link BlockRegistry}.
- */
-export type BlockName = (typeof BlockRegistry)[BlockNameKeys];
-
-type BlockAliasKeys = keyof typeof BlockAliasRegistry & number;
-
-/**
- * Represents a block-alias. Which a a valid, differentiated entity type with
- * the same behavior as a true block.
- */
-export type BlockAlias = (typeof BlockAliasRegistry)[BlockAliasKeys];
+// Compatibility exports. Metadata consumers import the pure registry directly.
+export {
+  type BlockAlias,
+  BlockAliasRegistry,
+  type BlockName,
+  BlockRegistry,
+  ConcreteBlockRegistry,
+  type FileTypeString,
+  type MimeType,
+  VirtualBlockRegistry,
+} from '../constants/block-registry';
 
 /**
  * Represents the block types that do not correspond to a document type.
@@ -351,9 +340,6 @@ interface BlockComponentLoadData extends Record<BlockName, ObjectLike> {
 export type BlockComponent<Name extends BlockName> =
   | ReturnType<typeof lazy<Component<BlockComponentProps[Name]>>>
   | (Component<BlockComponentProps[Name]> & { preload?: undefined });
-
-export type FileTypeString = string & {};
-export type MimeType = string & {};
 
 /**
  * Defines a block and its associated metadata and behavior.

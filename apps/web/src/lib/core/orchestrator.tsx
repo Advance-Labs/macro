@@ -23,6 +23,7 @@ import {
 import type { BlockMethodsFor } from './blockMethodRegistry';
 import { LoadingBlock } from './component/LoadingBlock';
 import { blocks as BLOCK_REGISTRY } from './constant/allBlocks';
+import { ENABLE_VIDEO_BLOCK } from './constant/featureFlags';
 import { BlockEffectRunner } from './internal/BlockEffectRunner';
 import { BlockLoader } from './internal/BlockLoader';
 import type { Source } from './source';
@@ -42,7 +43,8 @@ type BlockKey = `${BlockName}:${string}`;
 const keyOf = (type: BlockName, id: string): BlockKey => `${type}:${id}`;
 
 function getBlockDefinition(type: BlockName) {
-  const definition = BLOCK_REGISTRY[type];
+  const renderer = type === 'video' && !ENABLE_VIDEO_BLOCK ? 'unknown' : type;
+  const definition = BLOCK_REGISTRY[renderer];
   if (!definition) {
     throw new Error(`Block definition not found for type: ${type}`);
   }

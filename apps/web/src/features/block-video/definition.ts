@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -5,24 +6,22 @@ import {
   loadResult,
 } from '@core/block';
 import { toast } from '@core/component/Toast/Toast';
+import { ENABLE_VIDEO_BLOCK } from '@core/constant/featureFlags';
 import { storageServiceClient } from '@service-storage/client';
 import { getPresignedUrl } from '@service-storage/util/presignedUrl';
 import { err, ok } from 'neverthrow';
 import BlockVideo from './component/Block';
-import {
-  isVideoPlaybackEnabled,
-  PLAYBACK_ENABLED_MIMES,
-  VIDEO_MIMES,
-} from './core/video';
+import { isVideoPlaybackEnabled, PLAYBACK_ENABLED_MIMES } from './core/video';
 
-export { PLAYBACK_ENABLED_MIMES, VIDEO_MIMES };
+export { VIDEO_MIMES } from '@app/lib/constants/video-file-types';
+export { PLAYBACK_ENABLED_MIMES };
 
 export const definition = defineBlock({
+  ...blockMetadata.video,
   name: 'video',
-  description: 'block for video file types',
   component: BlockVideo,
   liveTrackingEnabled: false,
-  accepted: VIDEO_MIMES,
+
   async load(source, intent) {
     if (source.type === 'dss') {
       const maybeDocument = await loadResult(
@@ -43,7 +42,7 @@ export const definition = defineBlock({
 
       const fileType = documentMetadata.fileType;
       let videoUrl: string | undefined;
-      if (isVideoPlaybackEnabled(fileType)) {
+      if (ENABLE_VIDEO_BLOCK && isVideoPlaybackEnabled(fileType)) {
         videoUrl = await getPresignedUrl({
           documentId: documentMetadata.documentId,
           versionId: documentMetadata.documentVersionId,

@@ -1,4 +1,4 @@
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import {
   isStaticAttachmentType,
   STATIC_IMAGE,

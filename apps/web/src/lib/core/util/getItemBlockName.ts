@@ -1,4 +1,4 @@
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import type { Item } from '@service-storage/generated/schemas/item';
 
 type NonDocumentItem = Pick<Exclude<Item, { type: 'document' }>, 'type'>;

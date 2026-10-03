@@ -1,4 +1,4 @@
-import { blockAcceptedFileExtensionToMimeType } from "@core/constant/allBlocks";
+import { blockAcceptedFileExtensionToMimeType } from "@app/lib/constants/file-metadata";
 
 export type OldSupportedExt = 'pdf' | 'docx';
 

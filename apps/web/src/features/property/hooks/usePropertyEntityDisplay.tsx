@@ -1,8 +1,8 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
 import { EntityIcon as CoreEntityIcon } from '@core/component/EntityIcon';
 import { UserIcon } from '@core/component/UserIcon';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { enableProjects } from '@core/constant/featureFlags';
 import { useChannelName } from '@core/context/channels';
 import { useUserId } from '@core/context/user';

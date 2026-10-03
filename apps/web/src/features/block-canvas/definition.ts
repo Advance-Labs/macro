@@ -1,10 +1,11 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
+import { blockAcceptedFileExtensionToMimeType } from '@app/lib/constants/file-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
   LoadErrors,
   loadResult,
 } from '@core/block';
-import { blockAcceptedFileExtensionToMimeType } from '@core/constant/allBlocks';
 import { fetchBinaryDocumentData } from '@queries/storage/binary-document';
 import { fetchBinary } from '@service-storage/util/fetchBinary';
 import { makeFileFromBlob } from '@service-storage/util/makeFileFromBlob';
@@ -13,12 +14,9 @@ import CanvasBlock from './component/Block';
 import type { Canvas } from './model/CanvasModel';
 
 export const definition = defineBlock({
+  ...blockMetadata.canvas,
   name: 'canvas',
-  description: 'edit canvas',
   component: CanvasBlock,
-  accepted: {
-    canvas: 'application/x-macro-canvas',
-  },
   liveTrackingEnabled: true,
   async load(source, intent) {
     if (source.type === 'dss') {

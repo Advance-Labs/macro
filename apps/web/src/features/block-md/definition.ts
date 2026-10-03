@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ENABLE_MARKDOWN_LIVE_COLLABORATION } from '@core/constant/featureFlags';
 import { fetchSyncDocumentOpenContext } from '@queries/storage/documentLoad/sync-document-context';
@@ -13,18 +14,9 @@ import {
 } from './observability';
 
 export const definition = defineBlock({
+  ...blockMetadata.md,
   name: 'md',
-  description: 'write markdown notes',
-  defaultFilename: 'New Note',
-  aliases: [
-    { name: 'task', defaultFileName: 'New Task' },
-    { name: 'snippet', defaultFileName: 'New Snippet' },
-    { name: 'skill', defaultFileName: 'New Skill' },
-  ],
   component: MarkdownBlock,
-  accepted: {
-    md: 'text/markdown',
-  },
   async load(source, intent) {
     if (source.type === 'sync-service') {
       const documentId = source.id;

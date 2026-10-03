@@ -1,6 +1,6 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { type UploadInput, uploadFiles } from '@core/util/upload';
 import { refetchHistory } from '@queries/history/history';
 import { refetchSoupEntity } from '@queries/soup/cache';

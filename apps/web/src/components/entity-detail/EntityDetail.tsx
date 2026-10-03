@@ -27,6 +27,8 @@ import {
   type VideoDetailContext,
 } from '@app/features/drive-view/views/VideoDetail';
 import { getChannelEntityTarget } from '@app/features/next-soup/utils';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import type { MarkdownDocumentKind } from '@block-md/types';
 import {
   ChannelDetail,
@@ -38,8 +40,7 @@ import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { PreviewPanel } from '@components/app/PreviewPanel';
 import { previewBlockTarget } from '@components/app/previewTarget';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
-import type { BlockAlias, BlockName } from '@core/block';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import { ENABLE_VIDEO_BLOCK } from '@core/constant/featureFlags';
 import {
   children,
   createMemo,
@@ -112,6 +113,7 @@ export function entityDetailBlockType(
       ? subType
       : target.fileType
   );
+  if (blockType === 'video' && !ENABLE_VIDEO_BLOCK) return 'unknown';
   if (
     blockType === 'md' ||
     blockType === 'task' ||

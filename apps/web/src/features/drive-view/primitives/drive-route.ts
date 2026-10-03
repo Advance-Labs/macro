@@ -1,5 +1,5 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import type { SplitRouteParams } from '@app/split-router';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { z } from 'zod';
 import type { DriveLocation, DriveTab } from '../core/types';
 import {

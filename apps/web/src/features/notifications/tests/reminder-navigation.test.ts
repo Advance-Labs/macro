@@ -29,7 +29,7 @@ vi.mock('@block-channel/utils/link', () => ({
   getChannelParams: vi.fn(),
   navigateToChannelMessage: vi.fn(),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToBlockName: (value: { fileType: string }) => value.fileType,
   resolveBlockAlias: (type: string) => type,
 }));

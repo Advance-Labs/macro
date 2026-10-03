@@ -23,7 +23,7 @@ vi.mock('@core/component/Toast/Toast', () => ({
   toast: { success: vi.fn(), failure: vi.fn() },
   createUploadToast: mocks.createUploadToast,
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockAcceptedMimetypeToFileExtension: { 'application/pdf': 'pdf' },
 }));
 vi.mock('@core/constant/PaywallState', () => ({

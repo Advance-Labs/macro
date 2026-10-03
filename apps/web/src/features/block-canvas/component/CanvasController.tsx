@@ -1,12 +1,12 @@
-import { useCanvasFileDrop } from '@block-canvas/signal/fileDrop';
-import type { BlockName } from '@core/block';
-import { FileDropOverlay } from '@core/component/FileDropOverlay';
-import { OldMenu, OldMenuItem } from '@core/component/OldMenu';
+import type { BlockName } from '@app/lib/constants/block-registry';
 import {
   blockNameToFileExtensions,
   blockNameToMimeTypes,
   fileTypeToBlockName,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
+import { useCanvasFileDrop } from '@block-canvas/signal/fileDrop';
+import { FileDropOverlay } from '@core/component/FileDropOverlay';
+import { OldMenu, OldMenuItem } from '@core/component/OldMenu';
 import {
   ENABLE_CANVAS_HEIC,
   ENABLE_CANVAS_VIDEO,

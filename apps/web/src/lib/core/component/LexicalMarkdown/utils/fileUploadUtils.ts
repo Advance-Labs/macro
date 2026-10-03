@@ -1,9 +1,9 @@
-import type { BlockName } from '@core/block';
-import { toast } from '@core/component/Toast/Toast';
+import type { BlockName } from '@app/lib/constants/block-registry';
 import {
   blockNameToFileExtensions,
   fileTypeToBlockName,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
+import { toast } from '@core/component/Toast/Toast';
 import { HEIC_EXTENSIONS } from '@core/heic';
 import {
   forceDssRuleset,

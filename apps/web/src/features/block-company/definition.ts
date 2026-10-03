@@ -1,11 +1,12 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ok } from 'neverthrow';
 
 import { CompanyBlockAdapter } from './component/CompanyBlockAdapter';
 
 export const definition = defineBlock({
+  ...blockMetadata.company,
   name: 'company',
-  description: 'View a CRM company',
   component: CompanyBlockAdapter,
   liveTrackingEnabled: false,
   async load(source, _intent) {
@@ -14,7 +15,6 @@ export const definition = defineBlock({
     }
     return LoadErrors.MISSING;
   },
-  accepted: {},
 });
 
 export type CompanyData = ExtractLoadType<(typeof definition)['load']>;

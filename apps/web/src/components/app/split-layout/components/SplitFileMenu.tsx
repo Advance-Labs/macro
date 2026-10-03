@@ -11,6 +11,7 @@ import {
 } from '@app/features/next-soup/actions';
 import { ProjectAssignmentDialog } from '@app/features/projects/projects';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
 import type { BlockTool } from '@components/app/ResponsiveBlockToolbar';
@@ -22,7 +23,6 @@ import {
 import { useItemOperations } from '@core/component/FileList/useItemOperations';
 import { Permissions } from '@core/component/SharePermissions';
 import { toast } from '@core/component/Toast/Toast';
-import { resolveBlockAlias } from '@core/constant/allBlocks';
 import { enableProjects, enableReminders } from '@core/constant/featureFlags';
 import { useQuickAccess } from '@core/context/quickAccess';
 import { useUserId } from '@core/context/user';

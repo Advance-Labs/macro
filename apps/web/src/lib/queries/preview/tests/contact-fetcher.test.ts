@@ -5,7 +5,9 @@ const getContact = vi.hoisted(() => vi.fn());
 vi.mock('@service-storage/client', () => ({
   storageServiceClient: { getContact },
 }));
-vi.mock('@core/constant/allBlocks', () => ({ itemToSafeName: () => '' }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
+  itemToSafeName: () => '',
+}));
 vi.mock('@service-cognition/client', () => ({ cognitionApiServiceClient: {} }));
 vi.mock('@service-email/client', () => ({ emailClient: {} }));
 vi.mock('@service-storage/messages', () => ({ entityMessagesClient: {} }));

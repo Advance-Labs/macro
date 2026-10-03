@@ -1,4 +1,4 @@
-import { itemToSafeName } from '@core/constant/allBlocks';
+import { itemToSafeName } from '@app/lib/constants/file-metadata';
 import type { Item } from '@service-storage/generated/schemas/item';
 import { formatDocumentName } from '@service-storage/util/filename';
 import type { HistoryItem, HistoryQueryResponse } from './types';

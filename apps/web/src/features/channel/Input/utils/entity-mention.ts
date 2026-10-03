@@ -1,4 +1,4 @@
-import { itemToBlockName } from '@core/constant/allBlocks';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import type { EntityData } from '@entity';
 import type { DocumentMentionInfo } from '@macro-inc/lexical-core';
 

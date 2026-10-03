@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -11,14 +12,13 @@ import type { DocumentMetadata } from '@service-storage/generated/schemas/docume
 import { err, ok } from 'neverthrow';
 import BlockChat from './component/Block';
 
-export const DEFAULT_CHAT_NAME = 'New Chat';
+export { DEFAULT_CHAT_NAME } from '@app/lib/constants/block-metadata';
 
 export type AttachmentWithoutId = Entity;
 
 export const definition = defineBlock({
+  ...blockMetadata.chat,
   name: 'chat',
-  description: '',
-  defaultFilename: DEFAULT_CHAT_NAME,
   component: BlockChat,
   liveTrackingEnabled: true,
   async load(source, intent) {
@@ -54,7 +54,6 @@ export const definition = defineBlock({
 
     return LoadErrors.MISSING;
   },
-  accepted: {},
 });
 
 export type ChatData = ExtractLoadType<(typeof definition)['load']>;

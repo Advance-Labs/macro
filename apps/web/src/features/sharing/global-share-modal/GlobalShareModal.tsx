@@ -1,6 +1,6 @@
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { Permissions } from '@core/component/SharePermissions';
 import { openShareModal } from '@core/component/TopBar/shareModal';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import type { DialogHandle } from '@ui';
 import {
   isShareableEntityType,

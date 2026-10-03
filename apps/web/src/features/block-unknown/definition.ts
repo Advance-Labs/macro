@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -9,8 +10,8 @@ import { err, ok } from 'neverthrow';
 import BlockUnknown from './component/Block';
 
 export const definition = defineBlock({
+  ...blockMetadata.unknown,
   name: 'unknown',
-  description: 'fallback block for unknown files types',
   component: BlockUnknown,
   async load(source, intent) {
     if (source.type === 'dss') {
@@ -36,7 +37,6 @@ export const definition = defineBlock({
     return LoadErrors.INVALID;
   },
   liveTrackingEnabled: false,
-  accepted: {},
 });
 
 export type UnknownFileData = ExtractLoadType<(typeof definition)['load']>;

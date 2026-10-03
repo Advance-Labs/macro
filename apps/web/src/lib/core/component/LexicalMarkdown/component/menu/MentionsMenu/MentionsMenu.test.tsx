@@ -48,7 +48,7 @@ vi.mock('@core/context/quickAccess', () => ({
 vi.mock('@core/context/user', () => ({
   useEmail: () => () => 'gab@macro.com',
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: () => 'md',
 }));
 vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => false }));

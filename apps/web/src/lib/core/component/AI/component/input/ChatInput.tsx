@@ -5,6 +5,7 @@ import {
 } from '@app/features/dictation/components/dictation-controls';
 import { createComposerDictation } from '@app/features/dictation/composer-dictation';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useHasPaidAccess } from '@core/auth/license';
 import type { ChatSendInput } from '@core/component/AI/component/input/buildRequest';
 import { ModelSelector } from '@core/component/AI/component/input/ModelSelector';
@@ -23,7 +24,6 @@ import type { EditorConfigBuilder } from '@core/component/LexicalMarkdown/builde
 import { ComposerEditor } from '@core/component/LexicalMarkdown/component/ComposerEditor';
 import { createComposerLayout } from '@core/component/LexicalMarkdown/utils/create-composer-layout';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isMobile } from '@core/mobile/isMobile';

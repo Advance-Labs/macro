@@ -1,8 +1,8 @@
 import { LIST_VIEW_PATHS } from '@app/constants/list-views';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useChatInputContext } from '@core/component/AI/context';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { useSettingsState } from '@core/constant/SettingsState';
 import type { Entity } from '@core/types';
 import {

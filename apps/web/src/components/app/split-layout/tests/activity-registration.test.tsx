@@ -56,7 +56,9 @@ vi.mock('../layoutUtils', () => ({
 vi.mock('@core/component/LoadingBlock', () => ({
   LoadingBlock: () => <div>Authenticating</div>,
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+// Keep legacy renderer discovery out of this component-registration test.
+vi.mock('@core/constant/allBlocks', () => ({ blocks: {} }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type: string) => type,
   isBlockAlias: () => false,
   resolveBlockAlias: (type: string) => type,

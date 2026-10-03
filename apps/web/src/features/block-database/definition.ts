@@ -1,11 +1,12 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, LoadErrors, loadResult } from '@core/block';
 import NotFound from '@core/component/AccessErrorViews/NotFound';
 import { lazy } from 'solid-js';
 import { waitForDatabaseRollout } from './queries/database-rollout';
 
 export const definition = defineBlock({
+  ...blockMetadata.database,
   name: 'database',
-  description: 'View a table',
   // Off, a database link is a 404 and the block's bundle is never fetched:
   // the loader preloads this component alongside `load`.
   component: lazy(async () =>
@@ -26,6 +27,4 @@ export const definition = defineBlock({
     const { loadDatabase } = await import('./queries/load-database');
     return await loadResult(loadDatabase(source.id));
   },
-  accepted: {},
-  defaultFilename: 'Untitled database',
 });

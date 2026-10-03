@@ -11,7 +11,7 @@ const { getImageDimensionsMock, getVideoDimensionsMock, toastFailureMock } =
     toastFailureMock: vi.fn(),
   }));
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type?: string | null) => type ?? 'unknown',
 }));
 

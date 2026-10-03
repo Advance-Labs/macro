@@ -1,5 +1,5 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
-import { DEFAULT_CHAT_NAME } from '@block-chat/definition';
+import { DEFAULT_CHAT_NAME } from '@app/lib/constants/block-metadata';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { SidePanel } from '@components/app/side-panel';
 import { useBlockId } from '@core/block';

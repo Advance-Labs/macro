@@ -6,7 +6,7 @@ import { favoriteBlockName, favoriteSplitContent } from './favorites';
 vi.mock('@core/component/EntityIcon', () => ({
   getIconConfig: vi.fn(),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type: string) => type,
 }));
 vi.mock('@queries/preview', () => ({

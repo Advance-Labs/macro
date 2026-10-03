@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -11,8 +12,8 @@ import { ok } from 'neverthrow';
 import { lazy } from 'solid-js';
 
 export const definition = defineBlock({
+  ...blockMetadata.project,
   name: 'project',
-  description: 'View individual folders',
   component: lazy(() => import('./component/Block')),
   async load(source, _intent) {
     if (source.type === 'dss') {
@@ -58,7 +59,7 @@ export const definition = defineBlock({
 
     return LoadErrors.MISSING;
   },
-  accepted: {},
+
   editPermissionEnabled: true,
 });
 

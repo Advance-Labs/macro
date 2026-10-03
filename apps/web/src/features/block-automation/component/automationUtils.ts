@@ -1,5 +1,5 @@
+import { blockNameToDefaultFile } from '@app/lib/constants/file-metadata';
 import { DEFAULT_MODEL } from '@core/component/AI/constant';
-import { blockNameToDefaultFile } from '@core/constant/allBlocks';
 import {
   buildCron as buildCronExpression,
   type CronParts,

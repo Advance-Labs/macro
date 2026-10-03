@@ -1,13 +1,13 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import type { AccountDeletionReason } from '@app/lib/analytics/app-events';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { useLogout } from '@core/auth/logout';
-import { toast } from '@core/component/Toast/Toast';
-import { UserIcon } from '@core/component/UserIcon';
 import {
   blockNameToFileExtensions,
   blockNameToMimeTypes,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
+import { useLogout } from '@core/auth/logout';
+import { toast } from '@core/component/Toast/Toast';
+import { UserIcon } from '@core/component/UserIcon';
 import {
   disableAutoUpdateUi,
   ENABLE_PROFILE_PICTURES,

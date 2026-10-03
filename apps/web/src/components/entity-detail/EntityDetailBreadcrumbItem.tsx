@@ -1,10 +1,10 @@
 import { ViewBreadcrumbs } from '@app/components/view-shell';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useSplitDisplayName } from '@components/app/split-layout/layoutUtils';
 import {
   EntityIcon,
   type EntityIconSelector,
 } from '@core/component/EntityIcon';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { useItemRawName } from '@queries/preview';
 import type { ItemEntity } from '@queries/preview/types';
 import { Show } from 'solid-js';

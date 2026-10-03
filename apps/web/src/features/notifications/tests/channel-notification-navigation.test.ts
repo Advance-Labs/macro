@@ -22,7 +22,7 @@ vi.mock('@app/features/calendar-view/calendar-range', () => ({
 vi.mock('@app/features/calendar-view/calendar-navigation', () => ({
   openCalendarView: vi.fn(),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   isBlockAlias: () => false,
   itemToBlockName: (value: { fileType: string }) => value.fileType,
   resolveBlockAlias: (type: string) => type,

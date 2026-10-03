@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildHomeAgentPrompt } from './home-agent-prompt';
 
 const mocks = vi.hoisted(() => ({ preview: vi.fn() }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToBlockName: (item: { type: string; fileType?: string }) =>
     item.fileType ?? item.type,
 }));

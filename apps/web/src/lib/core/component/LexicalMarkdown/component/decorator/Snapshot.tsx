@@ -1,3 +1,4 @@
+import { verifyBlockName } from '@app/lib/constants/file-metadata';
 import { useMaybeBlockId } from '@core/block';
 import { PopupPreview } from '@core/component/DocumentPreview';
 import {
@@ -5,7 +6,6 @@ import {
   type EntityIconSelector,
 } from '@core/component/EntityIcon';
 import { HoverCard } from '@core/component/HoverCard';
-import { verifyBlockName } from '@core/constant/allBlocks';
 import { matches } from '@core/util/match';
 import { openInNewSplitForMention } from '@core/util/openInNewSplit';
 import { useNativeSplitNavigationHandler } from '@core/util/useSplitNavigationHandler';

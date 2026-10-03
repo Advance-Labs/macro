@@ -1,5 +1,9 @@
 import { LIST_VIEW_ID, type ListView } from '@app/constants/list-views';
 import { parseAgentsRoute } from '@app/features/agents-view/core/route';
+import {
+  isBlockAlias,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import type { SplitSearchUpdate } from '@app/lib/split-router';
 import type {
   BlockAlias,
@@ -8,7 +12,6 @@ import type {
   BlockName,
 } from '@core/block';
 import type { ResizeZoneCtx } from '@core/component/Resize/types';
-import { isBlockAlias, resolveBlockAlias } from '@core/constant/allBlocks';
 import type {
   BlockInstanceHandle,
   BlockOrchestrator,

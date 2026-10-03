@@ -1,5 +1,6 @@
 import { agentsRouteId } from '@app/features/agents-view/core/route';
 import { startPendingSession } from '@app/features/block-agent/context/pending-session';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { HeaderActionButton } from '@components/app/HeaderActionButton';
 import type { SplitHandle } from '@components/app/split-layout/layoutManager';
@@ -8,7 +9,6 @@ import {
   chatAttachmentMentionToMarkdown,
 } from '@core/component/AI/util/chatAttachmentMention';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import AgentIcon from '@phosphor/sparkle.svg';
 import type { ChannelType } from '@service-cognition/generated/schemas/channelType';
 import { createSignal } from 'solid-js';

@@ -1,10 +1,10 @@
-import type { BlockAlias, BlockName } from '@core/block';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import {
   blockAcceptedFileExtensionSet,
   fileTypeToBlockName,
   isBlockAlias,
   itemToBlockName,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
 import type {
   ChannelEntity,
   DocumentEntity,

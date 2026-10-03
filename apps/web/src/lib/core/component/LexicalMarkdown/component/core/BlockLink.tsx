@@ -1,7 +1,7 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { type BlockAlias, type BlockName, useMaybeBlockId } from '@core/block';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { useSplitNavigationHandler } from '@core/util/useSplitNavigationHandler';
 import { createCallback } from '@solid-primitives/rootless';
 import type { ParentProps } from 'solid-js';

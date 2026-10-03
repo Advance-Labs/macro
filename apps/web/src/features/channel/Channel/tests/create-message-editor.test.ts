@@ -11,7 +11,7 @@ vi.mock('@core/store/cacheChannelInput', () => ({
   STATIC_VIDEO: 'static/video',
   isStaticAttachmentType: () => false,
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: () => undefined,
 }));
 

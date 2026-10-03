@@ -11,6 +11,10 @@ import { calendarMentionOpen } from '@app/features/calendar-view/mention-open-ta
 import { openCalendarEventSplit } from '@app/features/calendar-view/open-calendar-event';
 import { CALENDAR_VIEW_ID } from '@app/features/calendar-view/types';
 import { openChatWithAgent } from '@app/features/chat/ChatWithAgentButton';
+import {
+  itemToBlockName,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { URL_PARAMS as URL_PARAMS_CANVAS } from '@block-canvas/constants';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
@@ -30,7 +34,6 @@ import {
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { channelTheme } from '@core/component/LexicalMarkdown/theme';
 import { toast } from '@core/component/Toast/Toast';
-import { itemToBlockName, resolveBlockAlias } from '@core/constant/allBlocks';
 import { getDisplayName, tryMacroId } from '@core/user';
 import { copyBranchNameToClipboard } from '@core/util/branchName';
 import { matches } from '@core/util/match';

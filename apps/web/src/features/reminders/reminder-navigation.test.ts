@@ -16,7 +16,7 @@ import {
 } from './reminder-navigation';
 import { reminderSourceContent } from './reminder-source';
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToBlockName: (item: {
     referencedEntity: { type: string; fileType?: string; subType?: string };
   }) =>

@@ -1,4 +1,4 @@
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { filenameWithoutExtension } from '@service-storage/util/filename';
 import {
   CHANNEL_IMAGE_FILE_EXTENSIONS,

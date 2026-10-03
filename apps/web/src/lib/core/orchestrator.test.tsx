@@ -1,7 +1,17 @@
 import { render } from '@solidjs/testing-library';
 import { createRoot, type ParentProps } from 'solid-js';
-import { expect, it, vi } from 'vitest';
-import { createBlockOrchestrator } from './orchestrator';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { createBlockInstance, createBlockOrchestrator } from './orchestrator';
+
+const flags = vi.hoisted(() => ({ videoEnabled: true }));
+vi.mock('./constant/featureFlags', () => ({
+  get ENABLE_VIDEO_BLOCK() {
+    return flags.videoEnabled;
+  },
+}));
+beforeEach(() => {
+  flags.videoEnabled = true;
+});
 
 vi.mock('./block', () => ({
   Block: (props: ParentProps) => props.children,
@@ -11,6 +21,8 @@ vi.mock('./constant/allBlocks', () => ({
   resolveBlockAlias: (type: string) => type,
   blocks: {
     channel: { component: () => <div>Channel content</div> },
+    video: { component: () => <div>Video content</div> },
+    unknown: { component: () => <div>Download file</div> },
   },
 }));
 vi.mock('./internal/BlockLoader', () => ({ BlockLoader: () => null }));
@@ -70,3 +82,30 @@ it('exposes a handle for content mounted outside a block container until its own
   ).toBeUndefined();
   view.unmount();
 });
+
+it.each([true, false])(
+  'gates managed video rendering with playback enabled %s',
+  (enabled) => {
+    flags.videoEnabled = enabled;
+    const orchestrator = createBlockOrchestrator();
+    const video = orchestrator.createBlockInstance('video', 'video-1');
+    const view = render(video.element);
+    expect(view.container.textContent).toBe(
+      enabled ? 'Video content' : 'Download file'
+    );
+    view.unmount();
+  }
+);
+
+it.each([true, false])(
+  'gates embedded video rendering with playback enabled %s',
+  (enabled) => {
+    flags.videoEnabled = enabled;
+    const video = createBlockInstance('video', 'video-1');
+    const view = render(video.element);
+    expect(view.container.textContent).toBe(
+      enabled ? 'Video content' : 'Download file'
+    );
+    view.unmount();
+  }
+);

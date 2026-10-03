@@ -29,7 +29,9 @@ vi.mock('@core/component/HoverCard', () => ({ HoverCard: () => null }));
 vi.mock('@core/component/LexicalMarkdown/component/core/BlockLink', () => ({
   openDocument: vi.fn(),
 }));
-vi.mock('@core/constant/allBlocks', () => ({ itemToBlockName: vi.fn() }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
+  itemToBlockName: vi.fn(),
+}));
 vi.mock('@core/util/useSplitNavigationHandler', () => ({
   useSplitNavigationHandler: vi.fn(),
 }));

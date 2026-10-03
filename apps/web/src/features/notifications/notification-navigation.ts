@@ -1,6 +1,8 @@
 import { openCalendarView } from '@app/features/calendar-view/calendar-navigation';
 import { createCalendarRange } from '@app/features/calendar-view/calendar-range';
 import { openReminderDetail } from '@app/features/reminders/reminder-navigation';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
 import {
   getChannelParams,
   navigateToChannelMessage,
@@ -11,8 +13,6 @@ import type {
   SplitHandle,
   SplitManager,
 } from '@components/app/split-layout/layoutManager';
-import type { BlockAlias, BlockName } from '@core/block';
-import { resolveBlockAlias } from '@core/constant/allBlocks';
 import {
   enableCalendarUi,
   enableProjects,

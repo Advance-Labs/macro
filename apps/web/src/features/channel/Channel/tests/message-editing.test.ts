@@ -9,7 +9,7 @@ vi.mock('@core/store/cacheChannelInput', () => ({
     v === 'static/image' || v === 'static/video',
 }));
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: () => undefined,
 }));
 

@@ -1,8 +1,8 @@
+import { blockAcceptedFileExtensionToMimeType } from '@app/lib/constants/file-metadata';
 import type {
   Export,
   ExportResponseData,
 } from '@coparse/document-processing-types';
-import { blockAcceptedFileExtensionToMimeType } from '@core/constant/allBlocks';
 import { type EphemeralFile, makeFile } from '@filesystem/file';
 import { fetchBinary } from '@service-storage/util/fetchBinary';
 import { createWebSocketJob } from '@service-storage/websocket';

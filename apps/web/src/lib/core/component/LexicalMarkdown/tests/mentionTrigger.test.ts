@@ -13,7 +13,7 @@ vi.hoisted(() => {
 });
 
 // Stub any imports before they import the entire app (sad).
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   verifyBlockName: (name: string) => name,
 }));
 vi.mock('@core/signal/mention', () => ({

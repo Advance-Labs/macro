@@ -1,14 +1,13 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ok } from 'neverthrow';
 
 import { Automation } from './component/Automation';
 
 export const definition = defineBlock({
+  ...blockMetadata.automation,
   name: 'automation',
-  description: 'view and edit a single automation',
-  defaultFilename: 'Untitled automation',
   component: Automation,
-  accepted: {},
   async load(source, intent) {
     if (source.type === 'dss') {
       if (intent === 'preload') {

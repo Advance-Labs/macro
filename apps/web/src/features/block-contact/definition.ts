@@ -1,11 +1,12 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ok } from 'neverthrow';
 
 import { ContactBlockAdapter } from './component/ContactBlockAdapter';
 
 export const definition = defineBlock({
+  ...blockMetadata.contact,
   name: 'contact',
-  description: 'View a CRM contact',
   component: ContactBlockAdapter,
   liveTrackingEnabled: false,
   async load(source, _intent) {
@@ -14,7 +15,6 @@ export const definition = defineBlock({
     }
     return LoadErrors.MISSING;
   },
-  accepted: {},
 });
 
 export type ContactData = ExtractLoadType<(typeof definition)['load']>;

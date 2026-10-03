@@ -1,9 +1,9 @@
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { navigateToChannelMessage } from '@block-channel/utils/link';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
-import type { BlockAlias, BlockName } from '@core/block';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { getDisplayNameParts, tryMacroId } from '@core/user';
 import { compareDateDesc, type DateValue } from '@core/util/date';
 import { useSplitNavigationHandler } from '@core/util/useSplitNavigationHandler';

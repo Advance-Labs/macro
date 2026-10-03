@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_NAME } from '@block-chat/definition';
+import { DEFAULT_CHAT_NAME } from '@app/lib/constants/block-metadata';
 import type { BlockTool } from '@components/app/ResponsiveBlockToolbar';
 import {
   ResponsiveBlockToolbar,

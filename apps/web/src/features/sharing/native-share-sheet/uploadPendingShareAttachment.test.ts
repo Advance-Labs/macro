@@ -5,7 +5,7 @@ const { uploadFile, makePresignedUrl, toastFailure } = vi.hoisted(() => ({
   makePresignedUrl: vi.fn(),
   toastFailure: vi.fn(),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type: string) => type,
 }));
 vi.mock('@core/util/upload', () => ({ uploadFile, chatRuleset: {} }));

@@ -7,7 +7,7 @@ import type {
 import { describe, expect, it, vi } from 'vitest';
 import { entityToDocumentMentionInfo } from '../utils/entity-mention';
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToBlockName: (entity: EntityData) => {
     if (entity.type === 'document') {
       return entity.fileType === 'md' ? 'md' : 'unknown';

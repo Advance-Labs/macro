@@ -1,13 +1,13 @@
+import {
+  blockAcceptsFileExtension,
+  blockNameToFileExtensions,
+  blockNameToMimeTypes,
+} from '@app/lib/constants/file-metadata';
 import { useCanvasFileDrop } from '@block-canvas/signal/fileDrop';
 import { useRenderState } from '@block-canvas/store/RenderState';
 import { vec2 } from '@block-canvas/util/vector2';
 import { EntityIcon } from '@core/component/EntityIcon';
 import { FileDropOverlay } from '@core/component/FileDropOverlay';
-import {
-  blockAcceptsFileExtension,
-  blockNameToFileExtensions,
-  blockNameToMimeTypes,
-} from '@core/constant/allBlocks';
 import {
   ENABLE_CANVAS_HEIC,
   ENABLE_CANVAS_VIDEO,

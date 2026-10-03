@@ -1,5 +1,5 @@
+import { itemToSafeName } from '@app/lib/constants/file-metadata';
 import { buildFileTree } from '@core/component/FileList/buildFileTree';
-import { itemToSafeName } from '@core/constant/allBlocks';
 
 import { storageServiceClient } from '@service-storage/client';
 import type { Item } from '@service-storage/generated/schemas/item';

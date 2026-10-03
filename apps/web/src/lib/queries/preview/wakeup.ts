@@ -1,4 +1,4 @@
-import type { ItemLike } from '@core/constant/allBlocks';
+import type { ItemLike } from '@app/lib/constants/file-metadata';
 
 import { storageServiceClient } from '@service-storage/client';
 import { AsyncBatcher } from '@tanstack/pacer';

@@ -1,4 +1,4 @@
-import { itemToBlockName } from '@core/constant/allBlocks';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import SpreadsheetIcon from '@icon/wide-spreadsheet.svg';
 import ContactIcon from '@phosphor/address-book.svg';
 import ReminderIcon from '@phosphor/bell-simple.svg';
@@ -25,7 +25,7 @@ import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EntityIcon, getEntityIconType, getIconConfig } from './EntityIcon';
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockAcceptedFileExtensionSet: new Set(),
   fileTypeToBlockName: vi.fn(),
   isBlockAlias: () => false,

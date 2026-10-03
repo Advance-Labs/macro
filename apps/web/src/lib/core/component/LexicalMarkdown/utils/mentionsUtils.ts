@@ -1,5 +1,5 @@
-import type { BlockAlias, BlockName } from '@core/block';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import type { EntityItem, QuickAccessItem } from '@core/context/quickAccess';
 import { trackMention } from '@core/signal/mention';
 import type { ChannelWithParticipants, IUser } from '@core/user';

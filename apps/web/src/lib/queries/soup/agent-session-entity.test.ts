@@ -1,7 +1,7 @@
 import type { SoupApiItem } from '@service-storage/generated/schemas';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockNameToDefaultFile: () => 'Untitled',
   itemToSafeName: (item: { name: string }) => item.name,
 }));

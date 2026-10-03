@@ -95,7 +95,7 @@ vi.mock('../../../directive/floatWithSelection', () => ({
 }));
 vi.mock('@core/component/EntityIcon', () => ({ EntityIcon: () => null }));
 vi.mock('@core/component/UserIcon', () => ({ UserIcon: () => null }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: () => 'md',
 }));
 vi.mock('../../../plugins/mentions', () => ({

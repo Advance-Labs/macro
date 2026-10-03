@@ -1,8 +1,11 @@
+import {
+  resolveBlockAlias,
+  verifyBlockName,
+} from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
 import { isInBlock, type PreviewState, useMaybeBlockName } from '@core/block';
 import { useItemPreviewData } from '@core/component/ItemPreview';
 import { toast } from '@core/component/Toast/Toast';
-import { resolveBlockAlias, verifyBlockName } from '@core/constant/allBlocks';
 import { ENABLE_BLOCK_IN_BLOCK } from '@core/constant/featureFlags';
 import { canNestBlock, createBlockInstance } from '@core/orchestrator';
 import { blockElementSignal } from '@core/signal/blockElement';

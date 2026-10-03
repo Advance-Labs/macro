@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { fetchSyncDocumentOpenContext } from '@queries/storage/documentLoad/sync-document-context';
 import { createSyncServiceSource } from '@service-sync/source';
@@ -6,10 +7,8 @@ import { lazy } from 'solid-js';
 import { isSpreadsheetEnabledForCurrentUser } from './queries/spreadsheet-access';
 
 export const definition = defineBlock({
+  ...blockMetadata.spreadsheet,
   name: 'spreadsheet',
-  description: 'Calculate, organize, and collaborate in a spreadsheet',
-  defaultFilename: 'New Spreadsheet',
-  accepted: { spreadsheet: 'application/x-macro-spreadsheet' },
   component: lazy(() => import('./SpreadsheetBlock')),
   liveTrackingEnabled: true,
   syncServiceEnabled: true,

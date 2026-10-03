@@ -59,8 +59,8 @@ vi.mock('@service-connection/websocket', () => ({
 
 // The block registry globs every block definition (and their heavy
 // dependencies) at import time; the pane never reads it.
-vi.mock('@core/constant/allBlocks', () => ({
-  blocks: {},
+vi.mock('@core/constant/allBlocks', () => ({ blocks: {} }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockAcceptedMimetypeToFileExtension: {},
   blockAcceptedFileExtensionToMimeType: {},
 }));

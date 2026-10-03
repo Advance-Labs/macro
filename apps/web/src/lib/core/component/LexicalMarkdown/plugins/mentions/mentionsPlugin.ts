@@ -1,4 +1,4 @@
-import { verifyBlockName } from '@core/constant/allBlocks';
+import { verifyBlockName } from '@app/lib/constants/file-metadata';
 import { untrackMention } from '@core/signal/mention';
 import { $wrapNodeInElement, mergeRegister } from '@lexical/utils';
 import type { PeerIdValidator } from '@macro-inc/lexical-core';

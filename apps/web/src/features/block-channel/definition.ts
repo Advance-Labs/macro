@@ -1,11 +1,12 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ok } from 'neverthrow';
 
 import { NewChannelBlockAdapter } from './component/NewChannelBlockAdapter';
 
 export const definition = defineBlock({
+  ...blockMetadata.channel,
   name: 'channel',
-  description: '',
   component: NewChannelBlockAdapter,
   liveTrackingEnabled: true,
   async load(source, _intent) {
@@ -14,7 +15,6 @@ export const definition = defineBlock({
     }
     return LoadErrors.MISSING;
   },
-  accepted: {},
 });
 
 export type ChannelData = ExtractLoadType<(typeof definition)['load']>;

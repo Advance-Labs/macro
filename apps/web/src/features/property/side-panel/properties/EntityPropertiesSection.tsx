@@ -1,10 +1,10 @@
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { SidePanel } from '@components/app/side-panel/SidePanel';
 import { useIsAuthenticated } from '@core/auth';
-import type { BlockAlias, BlockName } from '@core/block';
 import { PopupPreview } from '@core/component/DocumentPreview';
 import { HoverCard } from '@core/component/HoverCard';
 import { openDocument } from '@core/component/LexicalMarkdown/component/core/BlockLink';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import { useSplitNavigationHandler } from '@core/util/useSplitNavigationHandler';
 import Plus from '@phosphor/plus.svg';
 import TrashIcon from '@phosphor/trash.svg';

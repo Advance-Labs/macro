@@ -47,7 +47,7 @@ vi.mock('@core/component/UserIcon', () => ({
     return null;
   },
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (type: string) => type,
 }));
 vi.mock('../utils', () => ({

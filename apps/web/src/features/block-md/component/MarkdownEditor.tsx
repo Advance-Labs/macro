@@ -1,9 +1,10 @@
+import type { BlockName } from '@app/lib/constants/block-registry';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
 import { MessageCommentsProvider } from '@block-md/comments/MessageCommentsProvider';
 import { URL_PARAMS } from '@block-md/constants';
 import { keyNavigationPlugin } from '@block-md/plugins/keyboardNavigation';
 import { SplitBottomPanel } from '@components/app/split-layout/components/SplitBottomPanel';
-import type { BlockName } from '@core/block';
 import { DecoratorRenderer } from '@core/component/LexicalMarkdown/component/core/DecoratorRenderer';
 import { FocusClickTarget } from '@core/component/LexicalMarkdown/component/core/FocusClickTarget';
 import {
@@ -131,7 +132,6 @@ import {
 } from '@core/component/LexicalMarkdown/utils/fileUploadUtils';
 import { useUrlParams } from '@core/component/ParamsProvider';
 import { toast } from '@core/component/Toast/Toast';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import {
   ENABLE_MARKDOWN_AI_GENERATE,
   ENABLE_MARKDOWN_COMMENTS,

@@ -1,11 +1,12 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import { defineBlock, type ExtractLoadType, LoadErrors } from '@core/block';
 import { ok } from 'neverthrow';
 import { lazy } from 'solid-js';
 import { CALENDAR_BLOCK_ID } from './types';
 
 export const definition = defineBlock({
+  ...blockMetadata.calendar,
   name: 'calendar',
-  description: 'View calendar events',
   component: lazy(() => import('./CalendarBlockAdapter')),
   liveTrackingEnabled: false,
   openTrackingEnabled: false,
@@ -14,7 +15,6 @@ export const definition = defineBlock({
     if (source.id !== CALENDAR_BLOCK_ID) return LoadErrors.INVALID;
     return ok({ id: source.id });
   },
-  accepted: {},
 });
 
 export type CalendarData = ExtractLoadType<(typeof definition)['load']>;

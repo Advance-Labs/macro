@@ -17,7 +17,7 @@ vi.mock('@app/signal/splitLayout', () => ({
   globalSplitManager: () => undefined,
 }));
 vi.mock('@core/block', () => ({ useBlockId: () => 'channel' }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blocks: {},
   resolveBlockAlias: (type: string) => type,
 }));

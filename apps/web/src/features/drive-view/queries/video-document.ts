@@ -1,4 +1,5 @@
 import { isVideoPlaybackEnabled } from '@block-video/core/video';
+import { ENABLE_VIDEO_BLOCK } from '@core/constant/featureFlags';
 import {
   type FileDocumentData,
   getFileDocumentUrl,
@@ -13,7 +14,11 @@ export async function loadVideoDocument(
   documentId: string
 ): Promise<VideoDocumentData> {
   const data = await loadFileDocumentData(documentId);
-  if (!isVideoPlaybackEnabled(data.documentMetadata.fileType)) return data;
+  if (
+    !ENABLE_VIDEO_BLOCK ||
+    !isVideoPlaybackEnabled(data.documentMetadata.fileType)
+  )
+    return data;
 
   const videoUrl = await getFileDocumentUrl({
     documentId,

@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { trackMention } = vi.hoisted(() => ({ trackMention: vi.fn() }));
 vi.mock('@core/signal/mention', () => ({ trackMention }));
 // The block table loads every block module; entities here never need it.
-vi.mock('@core/constant/allBlocks', () => ({ fileTypeToBlockName: vi.fn() }));
+vi.mock('@app/lib/constants/file-metadata', () => ({
+  fileTypeToBlockName: vi.fn(),
+}));
 vi.mock('../../../../plugins', () => ({
   REMOVE_INLINE_SEARCH_COMMAND: 'remove-search',
 }));

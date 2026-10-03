@@ -14,7 +14,7 @@ vi.mock('@core/user', () => ({
   getDisplayName: () => undefined,
 }));
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToResolvedBlockName: () => undefined,
 }));
 

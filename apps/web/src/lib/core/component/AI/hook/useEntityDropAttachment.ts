@@ -1,8 +1,8 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { SUPPORTED_CHAT_ATTACHMENT_BLOCKS } from '@core/component/AI/constant';
 import type { Attachment, Attachments } from '@core/component/AI/types';
 import type { ChatAttachmentMention } from '@core/component/AI/util/chatAttachmentMention';
 import { toast } from '@core/component/Toast/Toast';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { isEntityDragData, isEntityDragEvent } from '@entity';
 import { createDroppable, useDragDropContext } from '@thisbeyond/solid-dnd';
 import { type Accessor, createMemo } from 'solid-js';

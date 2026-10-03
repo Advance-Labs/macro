@@ -50,7 +50,7 @@ vi.mock('@core/component/RecipientSelector', () => ({
 vi.mock('@core/component/TopBar/ShareButton', () => ({
   ShareOptions: () => null,
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   resolveBlockAlias: (name: string) =>
     ['task', 'snippet', 'skill'].includes(name) ? 'md' : name,
 }));

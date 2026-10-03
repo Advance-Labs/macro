@@ -1,4 +1,4 @@
-import { blockAcceptedMimetypeToFileExtension } from '@core/constant/allBlocks';
+import { blockAcceptedMimetypeToFileExtension } from '@app/lib/constants/file-metadata';
 import type { DocumentMetadata } from '@coparse/document-processing-types';
 import { fileExtension } from '@service-storage/util/filename';
 import { contentHash } from '@core/util/hash';

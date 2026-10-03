@@ -19,6 +19,13 @@ import {
   reminderDetailContent,
   reminderIdFromDetailContent,
 } from '@app/features/reminders/reminder-navigation';
+import { blockMetadata } from '@app/lib/constants/block-metadata';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import {
+  fileTypeToBlockName,
+  isBlockAlias,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import {
   defineRoute,
   routeParams,
@@ -37,13 +44,6 @@ import { parseSearchState } from '@app/lib/split-router/search';
 import { isRecord } from '@app/lib/split-router/utils';
 import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
-import type { BlockAlias, BlockName } from '@core/block';
-import {
-  blocks,
-  fileTypeToBlockName,
-  isBlockAlias,
-  resolveBlockAlias,
-} from '@core/constant/allBlocks';
 import { COMMENT_LINK_PARAM } from '@core/messages/comment-link';
 import { z } from 'zod';
 import type { SplitContent } from '../layoutManager';
@@ -79,7 +79,7 @@ export function decodeLegacyPair(
     type === 'write'
       ? resolveBlockAlias(fileTypeToBlockName(type))
       : resolveBlockAlias(type as BlockName | BlockAlias);
-  if (!Object.hasOwn(blocks, resolvedType)) return;
+  if (!Object.hasOwn(blockMetadata, resolvedType)) return;
 
   if (isBlockAlias(type)) {
     return {

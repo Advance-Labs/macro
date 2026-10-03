@@ -1,6 +1,6 @@
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { URL_PARAMS as MD_URL_PARAMS } from '@block-md/constants';
 import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import { useChannelsContext } from '@core/context/channels';
 
 import {

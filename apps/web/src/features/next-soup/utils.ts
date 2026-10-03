@@ -28,6 +28,10 @@ import {
   getEntityNotifications,
   scopeChannelNotificationsForEntity,
 } from '@app/features/soup/entity-notifications';
+import {
+  fileTypeToBlockName,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
@@ -41,10 +45,6 @@ import type {
   SplitHandle,
 } from '@components/app/split-layout/layoutManager';
 import { toast } from '@core/component/Toast/Toast';
-import {
-  fileTypeToBlockName,
-  resolveBlockAlias,
-} from '@core/constant/allBlocks';
 import {
   enableCalendarUi,
   enableGraphqlSoup,

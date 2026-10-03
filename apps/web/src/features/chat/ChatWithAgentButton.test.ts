@@ -29,7 +29,7 @@ vi.mock('@core/component/LexicalMarkdown/plugins/mentions', () => ({
 vi.mock('@core/component/Toast/Toast', () => ({
   toast: { failure: mocks.failure },
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   fileTypeToBlockName: (fileType: string | null | undefined) =>
     fileType ?? 'unknown',
 }));

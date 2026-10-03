@@ -23,7 +23,7 @@ vi.mock('@components/app/split-layout/componentRegistry', () => ({
   resolveComponent: () => ({ element: undefined }),
 }));
 vi.mock('@core/block', () => ({ useMaybeBlockId: () => undefined }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   isBlockAlias: () => false,
   resolveBlockAlias: (type: string) => type,
   fileTypeToBlockName: (type: string) => type,

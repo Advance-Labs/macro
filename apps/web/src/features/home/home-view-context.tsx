@@ -3,6 +3,10 @@ import { useMobileSearchText } from '@app/features/command/mobile/use-mobile-sea
 import { driveSearch } from '@app/features/drive-view/primitives/drive-search';
 import { reminderSourceContent } from '@app/features/reminders/reminder-source';
 import type { FacetSelection } from '@app/features/soup/filters/facets/types';
+import {
+  isBlockAlias,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import { makePersistedState } from '@app/lib/persistence';
 import {
   createSearchParams,
@@ -17,7 +21,6 @@ import {
   previewBlockTarget,
 } from '@components/app/previewTarget';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
-import { isBlockAlias, resolveBlockAlias } from '@core/constant/allBlocks';
 import { createAssertedContextProvider } from '@core/context/createContext';
 import { useUserId } from '@core/context/user';
 import type { ContextProviderProps } from '@solid-primitives/context';

@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -13,9 +14,8 @@ import { err, ok } from 'neverthrow';
 import { CallBlockAdapter } from './component/CallBlockAdapter';
 
 export const definition = defineBlock({
+  ...blockMetadata.call,
   name: 'call',
-  description: '',
-  defaultFilename: 'Call',
   component: CallBlockAdapter,
   async load(source, _intent) {
     if (!ENABLE_CALLS) return LoadErrors.MISSING;
@@ -35,7 +35,6 @@ export const definition = defineBlock({
       userAccessLevel: record.userAccessLevel ?? undefined,
     });
   },
-  accepted: {},
 });
 
 export type CallData = ExtractLoadType<(typeof definition)['load']>;

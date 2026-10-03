@@ -72,7 +72,7 @@ vi.mock('@core/component/AI/util/attachment', () => ({
 }));
 vi.mock('@core/component/AI/util/chatAttachmentMention', () => ({}));
 vi.mock('@core/component/Toast/Toast', () => ({}));
-vi.mock('@core/constant/allBlocks', () => ({}));
+vi.mock('@app/lib/constants/file-metadata', () => ({}));
 vi.mock('@core/constant/PaywallState', () => ({
   usePaywallState: () => ({ showPaywall: vi.fn() }),
 }));

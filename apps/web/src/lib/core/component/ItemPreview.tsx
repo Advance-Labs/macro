@@ -1,7 +1,7 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { useSplitLayout } from '@components/app/split-layout/layout';
-import type { BlockAlias, BlockName } from '@core/block';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { matches } from '@core/util/match';
 import { openInNewSplitForMention } from '@core/util/openInNewSplit';

@@ -1,4 +1,5 @@
 import { openBulkEditModal } from '@app/features/entity/bulk-edit/BulkEditEntityModal';
+import { blockNameToDefaultFile } from '@app/lib/constants/file-metadata';
 import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
 import { BlockSplitFileMenu } from '@components/app/split-layout/components/SplitFileMenu';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
@@ -11,7 +12,6 @@ import {
 import { useBlockId } from '@core/block';
 import { EntityIcon } from '@core/component/EntityIcon';
 import { toast } from '@core/component/Toast/Toast';
-import { blockNameToDefaultFile } from '@core/constant/allBlocks';
 import { formatDateAndTime } from '@entity';
 import CopyIcon from '@phosphor/copy.svg';
 import RenameIcon from '@phosphor/pencil-line.svg';

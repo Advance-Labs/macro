@@ -1,3 +1,4 @@
+import { blockMetadata } from '@app/lib/constants/block-metadata';
 import {
   defineBlock,
   type ExtractLoadType,
@@ -13,12 +14,8 @@ import { lazy } from 'solid-js';
 import PdfJsWorker from './PdfViewer/pdfjs-worker?worker';
 
 export const definition = defineBlock({
+  ...blockMetadata.pdf,
   name: 'pdf',
-  description: 'work with pdf files',
-  accepted: {
-    pdf: 'application/pdf',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  },
   component: lazy(() => import('./component/Block')),
   liveTrackingEnabled: true,
   async load(source, intent) {

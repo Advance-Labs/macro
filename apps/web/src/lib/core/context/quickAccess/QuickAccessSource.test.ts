@@ -74,7 +74,7 @@ vi.mock('@core/constant/featureFlags', () => ({
 vi.mock('@app/lib/analytics/posthog', () => ({
   useFeatureFlag: () => () => ({ enabled: mocks.crmEnabled() }),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   itemToSafeName: (item: { name: string }) => item.name,
 }));
 vi.mock('@core/context/channels', () => ({

@@ -4,10 +4,10 @@ import { getViewPreset } from '@app/features/next-soup/sidebar/soup-filter-prese
 import { getSearchSplit } from '@app/features/next-soup/soup-view/search-controllers';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { toast } from '@core/component/Toast/Toast';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import {
   enableProjects,
   USE_MACRO_PR_SUMMARY_BLOCK,

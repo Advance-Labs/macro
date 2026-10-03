@@ -7,17 +7,17 @@ import {
   getDocumentCommentTarget,
   type ReminderPreviewSelection,
 } from '@app/features/next-soup/utils';
+import {
+  fileTypeToResolvedBlockName,
+  isBlockAlias,
+  resolveBlockAlias,
+} from '@app/lib/constants/file-metadata';
 import { getChannelParams } from '@block-channel/utils/link';
 import type {
   BlockAliasContext,
   BlockComponentProps,
   BlockName,
 } from '@core/block';
-import {
-  fileTypeToResolvedBlockName,
-  isBlockAlias,
-  resolveBlockAlias,
-} from '@core/constant/allBlocks';
 import { USE_MACRO_PR_SUMMARY_BLOCK } from '@core/constant/featureFlags';
 import type {
   DocumentCommentTarget,

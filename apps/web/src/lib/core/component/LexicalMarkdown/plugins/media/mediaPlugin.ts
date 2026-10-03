@@ -1,4 +1,4 @@
-import { blockNameToFileExtensionSet } from '@core/constant/allBlocks';
+import { blockNameToFileExtensionSet } from '@app/lib/constants/file-metadata';
 import { staticFileIdEndpoint } from '@core/constant/servers';
 import { heicConversionService } from '@core/heic/service';
 import type { FetchError } from '@core/service';

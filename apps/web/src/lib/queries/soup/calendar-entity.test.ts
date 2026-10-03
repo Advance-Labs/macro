@@ -12,7 +12,7 @@ import {
 } from './normalized-cache/notified-floor';
 import { mapApiSoupItemToEntity } from './transform-utils';
 
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockNameToDefaultFile: {},
   itemToSafeName: vi.fn(),
 }));

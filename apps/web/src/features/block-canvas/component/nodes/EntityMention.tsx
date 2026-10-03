@@ -1,12 +1,12 @@
+import type { BlockName } from '@app/lib/constants/block-registry';
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import { useToolManager } from '@block-canvas/signal/toolManager';
 import { useRenderState } from '@block-canvas/store/RenderState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
-import type { BlockName } from '@core/block';
 import { CircleSpinner } from '@core/component/CircleSpinner';
 import { PopupPreview } from '@core/component/DocumentPreview';
 import { EntityIcon, getPreviewItemIconType } from '@core/component/EntityIcon';
 import { HoverCard } from '@core/component/HoverCard';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { matches } from '@core/util/match';
 import LockKey from '@phosphor-icons/core/regular/lock-key.svg';

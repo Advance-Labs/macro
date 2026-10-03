@@ -5,13 +5,13 @@
  * so this is a plain fetch from the static file service.
  */
 
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { getAttachmentKindFromFile } from '@channel/Input/utils/file-helpers';
 import { MediaImage } from '@channel/Media/MediaImage';
 import { MediaVideo } from '@channel/Media/MediaVideo';
 import { MediaViewerDialog } from '@channel/Media/MediaViewerDialog';
 import type { MediaItem } from '@channel/Media/media-items';
 import { EntityIcon } from '@core/component/EntityIcon';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { staticFileSizedUrl } from '@core/constant/servers';
 import type { MessagePart } from '@service-agent-fold/generated/types';
 import { createSignal, Match, Show, Switch } from 'solid-js';

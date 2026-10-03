@@ -12,7 +12,7 @@ import type { ScheduleDraft } from './types';
 vi.mock('@core/component/AI/constant', () => ({
   DEFAULT_MODEL: 'claude-sonnet-4-6',
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockNameToDefaultFile: () => 'New automation',
 }));
 

@@ -1,10 +1,10 @@
+import { blockNameToDefaultFile } from '@app/lib/constants/file-metadata';
 import {
   isInBlock,
   NonDocumentBlockTypes,
   useBlockAliasedName,
   useBlockId,
 } from '@core/block';
-import { blockNameToDefaultFile } from '@core/constant/allBlocks';
 import { blockMetadataSignal } from '@core/signal/load';
 import { useItemRawName } from '@queries/preview';
 import { blockNameToItemType } from '@service-storage/client';

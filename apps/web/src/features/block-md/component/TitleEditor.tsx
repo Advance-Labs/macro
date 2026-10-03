@@ -1,3 +1,4 @@
+import { blockNameToDefaultFile } from '@app/lib/constants/file-metadata';
 import { EmojiMenu } from '@core/component/LexicalMarkdown/component/menu/EmojiMenu';
 import { TagsMenu } from '@core/component/LexicalMarkdown/component/menu/TagsMenu';
 import { createLexicalWrapper } from '@core/component/LexicalMarkdown/context/LexicalWrapperContext';
@@ -16,7 +17,6 @@ import {
   isRectFlushWith,
   trimWhitespace,
 } from '@core/component/LexicalMarkdown/utils';
-import { blockNameToDefaultFile } from '@core/constant/allBlocks';
 import { createRenameDssEntityMutation } from '@entity';
 import { mergeRegister } from '@lexical/utils';
 import { useDocTags } from '@property/tags';

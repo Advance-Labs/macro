@@ -1,5 +1,5 @@
+import { itemToBlockName } from '@app/lib/constants/file-metadata';
 import type { SplitContent } from '@components/app/split-layout/layoutManager';
-import { itemToBlockName } from '@core/constant/allBlocks';
 import type { ReminderEntity } from '@entity';
 
 /** Source content for ordinary opening; explicit editing retains reminder identity. */

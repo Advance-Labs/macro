@@ -24,7 +24,7 @@ vi.mock('@core/component/Toast/Toast', () => ({ toast: { alert: vi.fn() } }));
 vi.mock('./split-layout/layoutUtils', () => ({
   useSplitPanelOrThrow: () => ({ handle: { activate } }),
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   resolveBlockAlias: (type: string) => (type === 'task' ? 'md' : type),
 }));
 vi.mock('./previewTarget', () => ({

@@ -3,7 +3,7 @@ import {
   fetchCrmContactPreviews,
 } from '@app/features/crm/preview-adapter';
 import { QUERY_FILTERS_BASE } from '@app/features/next-soup/filters/query-filters';
-import { itemToSafeName } from '@core/constant/allBlocks';
+import { itemToSafeName } from '@app/lib/constants/file-metadata';
 import {
   enableGraphqlSoup,
   isFeatureEnabled,

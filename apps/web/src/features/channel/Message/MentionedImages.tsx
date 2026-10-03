@@ -1,8 +1,8 @@
-import { ImageDocumentCard } from '@core/component/ImageDocumentCard';
 import {
   fileTypeToResolvedBlockName,
   verifyBlockName,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
+import { ImageDocumentCard } from '@core/component/ImageDocumentCard';
 import {
   type DocumentMentionRef,
   getDocumentMentions,

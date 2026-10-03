@@ -1,9 +1,9 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import type { CodeFileExtension } from '@block-code/util/languageSupport';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { asFileType } from '@core/component/AI/util/attachment';
 import { EntityIcon } from '@core/component/EntityIcon';
 import { TruncatedText } from '@core/component/FileList/TruncatedText';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import { createCodeFileFromText } from '@core/util/create';
 import {
   allSupportedExtensionSet,

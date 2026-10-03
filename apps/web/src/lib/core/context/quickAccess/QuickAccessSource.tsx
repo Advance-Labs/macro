@@ -4,7 +4,7 @@ import {
 } from '@app/features/crm/crm-search';
 import { useQuickAccessCrmContactsQuery } from '@app/features/crm/record-adapter';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { itemToSafeName } from '@core/constant/allBlocks';
+import { itemToSafeName } from '@app/lib/constants/file-metadata';
 import { enableCrm, enableDatabases } from '@core/constant/featureFlags';
 import {
   useChannelsContext,

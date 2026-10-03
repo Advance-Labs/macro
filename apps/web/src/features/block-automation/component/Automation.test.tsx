@@ -35,7 +35,7 @@ vi.mock('@core/block', () => ({ useBlockId: () => 'routine-id' }));
 vi.mock('@core/component/AI/constant', () => ({
   DEFAULT_MODEL: 'claude-sonnet-4-6',
 }));
-vi.mock('@core/constant/allBlocks', () => ({
+vi.mock('@app/lib/constants/file-metadata', () => ({
   blockNameToDefaultFile: () => 'New automation',
 }));
 vi.mock('@core/component/EntityIcon', () => ({ EntityIcon: () => null }));

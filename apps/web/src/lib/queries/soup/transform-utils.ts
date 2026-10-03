@@ -1,7 +1,7 @@
 import {
   blockNameToDefaultFile,
   itemToSafeName,
-} from '@core/constant/allBlocks';
+} from '@app/lib/constants/file-metadata';
 import { useChannelsContext } from '@core/context/channels';
 import { emailToId } from '@core/user';
 import {

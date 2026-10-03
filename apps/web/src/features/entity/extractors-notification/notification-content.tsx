@@ -1,10 +1,10 @@
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
 import { EntityIcon } from '@core/component/EntityIcon';
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { unifiedListMarkdownTheme } from '@core/component/LexicalMarkdown/theme';
-import { fileTypeToBlockName } from '@core/constant/allBlocks';
 import {
   type NotificationStack,
   openNotification,

@@ -1,5 +1,5 @@
-import type { BlockName } from '@core/block';
-import { itemToResolvedBlockName } from '@core/constant/allBlocks';
+import type { BlockName } from '@app/lib/constants/block-registry';
+import { itemToResolvedBlockName } from '@app/lib/constants/file-metadata';
 import type { EntityType } from '@core/types';
 import { getDisplayName, macroIdToEmail, tryMacroId } from '@core/user';
 import { getItemPreview, isAccessiblePreviewItem } from '@queries/preview';
