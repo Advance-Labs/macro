@@ -105,7 +105,7 @@ impl GithubPullRequestFacetRepository for PgGithubPullRequestRepo {
                 assignee.value ->> 'githubUserId' AS "github_user_id!",
                 (ARRAY_AGG(
                     assignee.value ->> 'login'
-                    ORDER BY COALESCE(gpr.github_updated_at, gpr.updated_at) DESC
+                    ORDER BY gpr.updated_at DESC, gpr.github_key
                 ) FILTER (WHERE assignee.value ->> 'login' IS NOT NULL))[1] AS login,
                 COUNT(*) AS "count!"
             FROM github_pull_request gpr
@@ -139,7 +139,7 @@ impl GithubPullRequestFacetRepository for PgGithubPullRequestRepo {
                 label.value ->> 'name' AS "name!",
                 (ARRAY_AGG(
                     label.value ->> 'color'
-                    ORDER BY COALESCE(gpr.github_updated_at, gpr.updated_at) DESC
+                    ORDER BY gpr.updated_at DESC, gpr.github_key
                 ) FILTER (WHERE label.value ->> 'color' IS NOT NULL))[1] AS color,
                 COUNT(*) AS "count!"
             FROM github_pull_request gpr

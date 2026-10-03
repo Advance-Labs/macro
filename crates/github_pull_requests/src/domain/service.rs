@@ -16,8 +16,7 @@ use super::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestRow,
         GithubPullRequestSortDirection, GithubPullRequestStatus, GithubPullRequestWrite,
-        GithubRepositoryIdentity,
-        UpsertGithubPullRequest, UpsertedGithubPullRequest,
+        GithubRepositoryIdentity, UpsertGithubPullRequest, UpsertedGithubPullRequest,
     },
     ports::{
         GithubPullRequestFacetRepository, GithubPullRequestFacetService,

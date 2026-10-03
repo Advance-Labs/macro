@@ -25,8 +25,7 @@ use crate::domain::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestReviewDecision,
         GithubPullRequestRow, GithubPullRequestSortDirection, GithubPullRequestStatus,
-        GithubPullRequestWrite,
-        GithubRepositoryIdentity, UpsertGithubPullRequest,
+        GithubPullRequestWrite, GithubRepositoryIdentity, UpsertGithubPullRequest,
     },
     ports::{
         GithubPullRequestFacetRepository, GithubPullRequestFacetService,
