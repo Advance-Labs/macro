@@ -1,7 +1,15 @@
 # Legal and eSignature
 
 Open **Legal** in either desktop sidebar, visit `/app/legal`, or use `g l`.
-Envelopes are private to the sending account in this first version.
+Legal is a Macro workspace panel, with the same navigation rail, collapsible
+workspace sidebar, split controls, and breadcrumbs as Email and Tasks. Shift-click
+Legal in the app rail to open it beside another workspace; close its panel with
+the shared close control. Envelopes are private to the sending account.
+
+New envelope preparation lives at `/app/legal/new`. An agreement opens at
+`/app/legal/<envelope-id>`; direct navigation and reload restore that agreement.
+Use the Legal breadcrumb to return to the list. Status filters and search live
+in the shared workspace layout.
 
 1. Choose **New envelope** and upload a static PDF (10 MB, up to 100 pages).
 2. Add recipients with their names, email addresses, and signing order. Recipients

@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build();
     let mail = Mail::new(
         ses_client::SesClient::from_env(aws_sdk_sesv2::Client::from_conf(config), "local"),
-        "http://localhost:3004/work/legal-demo/index.html".into(),
+        "http://localhost:3003".into(),
     );
     let service = Arc::new(Service::new(Postgres::new(pool), Pdf, mail));
     let auth = Arc::new(MacroAuthorizationServiceImpl::new(

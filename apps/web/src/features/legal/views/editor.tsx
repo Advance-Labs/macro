@@ -1,3 +1,4 @@
+import { SplitPanel } from '@components/app/split-panel';
 import ArrowLeft from '@phosphor/arrow-left.svg';
 import ArrowRight from '@phosphor/arrow-right.svg';
 import Check from '@phosphor/check.svg';
@@ -71,8 +72,8 @@ export function Editor(props: { workspace: Workspace }) {
     }
   }
   return (
-    <div class="flex flex-col h-full bg-surface text-ink">
-      <header class="flex items-center justify-between border-b border-edge-muted px-6 py-4 shrink-0 gap-4">
+    <div class="flex min-h-0 flex-1 flex-col bg-panel text-ink">
+      <SplitPanel.Toolbar class="justify-between gap-3 px-4">
         <div class="flex items-center gap-3">
           <Button
             size="icon-md"
@@ -83,16 +84,15 @@ export function Editor(props: { workspace: Workspace }) {
             <ArrowLeft class="size-4" />
           </Button>
           <div>
-            <div class="text-xs text-ink-muted">Legal / New envelope</div>
-            <h1 class="text-lg font-semibold">Prepare for signature</h1>
+            <h1 class="text-sm font-medium">Prepare for signature</h1>
           </div>
         </div>
         <Button variant="strong" onClick={saveClose} disabled={w.busy()}>
           {w.busy() ? 'Saving…' : w.active() ? 'Save & close' : 'Cancel'}
         </Button>
-      </header>
+      </SplitPanel.Toolbar>
       <nav
-        class="border-b border-edge-muted flex justify-center gap-3 sm:gap-8 py-4 shrink-0"
+        class="border-b border-edge-muted flex justify-center gap-3 @min-[480px]/view-shell:gap-8 py-4 shrink-0"
         aria-label="Envelope preparation steps"
       >
         <For each={['Document', 'Recipients', 'Fields', 'Review']}>
@@ -114,7 +114,7 @@ export function Editor(props: { workspace: Workspace }) {
               >
                 {w.step() > index() ? <Check class="size-3" /> : index() + 1}
               </span>
-              <span class="hidden sm:inline">{label}</span>
+              <span class="hidden @min-[480px]/view-shell:inline">{label}</span>
             </div>
           )}
         </For>
@@ -130,7 +130,7 @@ export function Editor(props: { workspace: Workspace }) {
       <div class="flex-1 min-h-0 overflow-auto">
         <Switch>
           <Match when={w.step() === 0}>
-            <div class="max-w-2xl mx-auto p-8 sm:p-12">
+            <div class="max-w-2xl mx-auto p-8 @min-[480px]/view-shell:p-12">
               <h2 class="text-2xl font-semibold mb-2">
                 Start with your document
               </h2>
@@ -202,7 +202,7 @@ export function Editor(props: { workspace: Workspace }) {
                         <Trash class="size-4" />
                       </Button>
                     </div>
-                    <div class="grid sm:grid-cols-2 gap-4">
+                    <div class="grid @min-[480px]/view-shell:grid-cols-2 gap-4">
                       <label class="text-xs text-ink-muted">
                         Full name
                         <input
@@ -272,8 +272,8 @@ export function Editor(props: { workspace: Workspace }) {
             </div>
           </Match>
           <Match when={w.step() === 2}>
-            <div class="flex flex-col lg:flex-row min-h-full">
-              <aside class="w-full lg:w-72 shrink-0 border-b lg:border-r border-edge-muted p-6 space-y-6">
+            <div class="flex flex-col @min-[960px]/view-shell:flex-row min-h-full">
+              <aside class="w-full @min-[960px]/view-shell:w-72 shrink-0 border-b @min-[960px]/view-shell:border-r border-edge-muted p-6 space-y-6">
                 <div>
                   <h2 class="font-semibold text-lg">Add signing fields</h2>
                   <p class="text-xs text-ink-muted mt-2">

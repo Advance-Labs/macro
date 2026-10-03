@@ -6,6 +6,7 @@ import type {
 } from '../core/models';
 export interface LegalSource {
   list(): Promise<Envelope[]>;
+  get(id: string): Promise<Envelope>;
   create(file: File, title: string): Promise<Envelope>;
   update(id: string, draft: Draft): Promise<Envelope>;
   send(id: string, revision: number): Promise<Envelope>;

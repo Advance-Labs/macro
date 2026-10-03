@@ -39,6 +39,11 @@ export const legalSource: LegalSource = {
       .array(envelopeSchema)
       .parse(resultValue(await legalRequest('/envelopes')));
   },
+  async get(id) {
+    return envelopeSchema.parse(
+      resultValue(await legalRequest(`/envelopes/${id}`))
+    );
+  },
   async create(file, title) {
     return envelopeSchema.parse(
       resultValue(

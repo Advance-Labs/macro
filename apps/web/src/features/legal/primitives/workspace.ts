@@ -6,10 +6,20 @@ import {
   type Field,
   type FieldKind,
   type Recipient,
+  type Status,
   sendIssue,
 } from '../core/models';
 
-export function createWorkspace(source: LegalSource) {
+export interface LegalNavigation {
+  start(): void;
+  open(id: string): void;
+  close(): void;
+}
+
+export function createWorkspace(
+  source: LegalSource,
+  navigation?: LegalNavigation
+) {
   const [envelopes, setEnvelopes] = createSignal<Envelope[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [busy, setBusy] = createSignal(false);
@@ -19,6 +29,9 @@ export function createWorkspace(source: LegalSource) {
   const [bytes, setBytes] = createSignal<Uint8Array>();
   const [creating, setCreating] = createSignal(false);
   const [step, setStep] = createSignal(0);
+  const [filter, setFilter] = createSignal<Status | 'all'>('all');
+  const [search, setSearch] = createSignal('');
+  let selection = 0;
   const remember = (envelope: Envelope) => {
     setActive(envelope);
     setEnvelopes((items) => [
@@ -26,27 +39,37 @@ export function createWorkspace(source: LegalSource) {
       ...items.filter((e) => e.id !== envelope.id),
     ]);
   };
-  async function run<T>(task: () => Promise<T>) {
+  async function run<T>(task: (current: () => boolean) => Promise<T>) {
     if (busy()) return;
+    const requested = selection;
+    const current = () => requested === selection;
     setBusy(true);
     setError('');
     try {
-      return await task();
+      return await task(current);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Something went wrong. Try again.'
-      );
+      if (current())
+        setError(
+          e instanceof Error ? e.message : 'Something went wrong. Try again.'
+        );
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   }
   async function refresh() {
     setLoading(true);
-    await run(async () => setEnvelopes(await source.list()));
-    setLoading(false);
+    try {
+      setEnvelopes(await source.list());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load agreements.');
+    } finally {
+      setLoading(false);
+    }
   }
   onMount(refresh);
-  function close() {
+  function reset() {
+    selection += 1;
+    setBusy(false);
     setActive(undefined);
     setDraft(undefined);
     setBytes(undefined);
@@ -54,13 +77,28 @@ export function createWorkspace(source: LegalSource) {
     setError('');
     setStep(0);
   }
-  function start() {
-    close();
+  function close() {
+    reset();
+    navigation?.close();
+  }
+  function begin() {
+    reset();
     setCreating(true);
   }
-  async function open(envelope: Envelope) {
-    await run(async () => {
-      const file = await source.document(envelope.id);
+  function start() {
+    begin();
+    navigation?.start();
+  }
+  async function load(id: string) {
+    reset();
+    const requested = selection;
+    setBusy(true);
+    try {
+      const [envelope, file] = await Promise.all([
+        source.get(id),
+        source.document(id),
+      ]);
+      if (requested !== selection) return;
       remember(envelope);
       setBytes(file);
       setCreating(envelope.status === 'draft');
@@ -76,16 +114,29 @@ export function createWorkspace(source: LegalSource) {
           : undefined
       );
       setStep(1);
-    });
+    } catch (e) {
+      if (requested === selection)
+        setError(
+          e instanceof Error ? e.message : 'Could not load the agreement.'
+        );
+    } finally {
+      if (requested === selection) setBusy(false);
+    }
+  }
+  async function open(envelope: Envelope) {
+    if (navigation) navigation.open(envelope.id);
+    else await load(envelope.id);
   }
   async function upload(file: File) {
-    await run(async () => {
+    await run(async (current) => {
       const envelope = await source.create(
         file,
         file.name.replace(/\.pdf$/i, '')
       );
+      const data = new Uint8Array(await file.arrayBuffer());
+      if (!current()) return;
       remember(envelope);
-      setBytes(new Uint8Array(await file.arrayBuffer()));
+      setBytes(data);
       setDraft({
         title: envelope.title,
         message: '',
@@ -177,8 +228,9 @@ export function createWorkspace(source: LegalSource) {
     const d = draft();
     const a = active();
     if (!d || !a) return;
-    return run(async () => {
+    return run(async (current) => {
       const envelope = await source.update(a.id, d);
+      if (!current()) return;
       remember(envelope);
       patch({ revision: envelope.revision });
       return envelope;
@@ -193,26 +245,35 @@ export function createWorkspace(source: LegalSource) {
       setError(issue);
       return;
     }
-    await run(async () => {
+    await run(async (current) => {
       const saved = await source.update(a.id, d);
-      remember(saved);
-      patch({ revision: saved.revision });
+      if (current()) {
+        remember(saved);
+        patch({ revision: saved.revision });
+      }
       const sent = await source.send(a.id, saved.revision);
+      if (!current()) return;
       remember(sent);
       setDraft(undefined);
       setCreating(false);
+      navigation?.open(sent.id);
     });
   }
   async function resend() {
     const a = active();
-    if (a) await run(async () => remember(await source.resend(a.id)));
+    if (a)
+      await run(async (current) => {
+        const envelope = await source.resend(a.id);
+        if (current()) remember(envelope);
+      });
   }
   async function voidEnvelope(reason: string) {
     const a = active();
     if (a)
-      await run(async () =>
-        remember(await source.void(a.id, a.revision, reason))
-      );
+      await run(async (current) => {
+        const envelope = await source.void(a.id, a.revision, reason);
+        if (current()) remember(envelope);
+      });
   }
   async function download(completed = true) {
     const a = active();
@@ -231,6 +292,10 @@ export function createWorkspace(source: LegalSource) {
   }
   return {
     envelopes,
+    filter,
+    setFilter,
+    search,
+    setSearch,
     loading,
     busy,
     error,
@@ -241,6 +306,9 @@ export function createWorkspace(source: LegalSource) {
     step,
     setStep,
     refresh,
+    reset,
+    begin,
+    load,
     close,
     start,
     open,

@@ -60,4 +60,4 @@ frontend URL. The local demo example supplies its own frontend origin.
 credential. It exercises the same HTTP routers, PostgreSQL adapter, PDF renderer,
 and SMTP transport through Mailpit. Never deploy it or use its credential against
 real data. It expects Postgres at 55432, Mailpit SMTP at 11025 (set SMTP_HOST and
-SMTP_PORT), and a demo frontend at 3004.
+SMTP_PORT), and the Macro app frontend at 3003.

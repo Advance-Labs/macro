@@ -1,3 +1,4 @@
+import { SplitPanel } from '@components/app/split-panel';
 import ArrowLeft from '@phosphor/arrow-left.svg';
 import CheckCircle from '@phosphor/check-circle.svg';
 import Clock from '@phosphor/clock.svg';
@@ -17,8 +18,8 @@ export function EnvelopeDetail(props: { workspace: Workspace }) {
   return (
     <Show when={w.active()}>
       {(envelope) => (
-        <div class="flex flex-col h-full bg-surface text-ink">
-          <header class="p-5 border-b border-edge-muted flex flex-wrap gap-4 items-center justify-between">
+        <div class="flex min-h-0 flex-1 flex-col bg-panel text-ink">
+          <SplitPanel.Toolbar class="flex-wrap justify-between gap-3 px-4">
             <div class="flex gap-3 items-center">
               <Button
                 size="icon-md"
@@ -28,8 +29,7 @@ export function EnvelopeDetail(props: { workspace: Workspace }) {
                 <ArrowLeft class="size-4" />
               </Button>
               <div>
-                <div class="text-xs text-ink-muted">Legal / Envelope</div>
-                <h1 class="text-lg font-semibold">{envelope().title}</h1>
+                <h1 class="text-sm font-medium">{envelope().title}</h1>
               </div>
             </div>
             <div class="flex items-center gap-3">
@@ -44,8 +44,8 @@ export function EnvelopeDetail(props: { workspace: Workspace }) {
                 </Button>
               </Show>
             </div>
-          </header>
-          <div class="flex-1 min-h-0 overflow-auto flex flex-col xl:flex-row">
+          </SplitPanel.Toolbar>
+          <div class="flex-1 min-h-0 overflow-auto flex flex-col @min-[1180px]/view-shell:flex-row">
             <div class="flex-1 min-w-0 bg-ink/4 p-6">
               <div class="flex justify-center items-center gap-4 mb-5 text-sm">
                 <Button
@@ -74,7 +74,7 @@ export function EnvelopeDetail(props: { workspace: Workspace }) {
                 )}
               </Show>
             </div>
-            <aside class="w-full xl:w-96 border-l border-edge-muted p-6 space-y-7">
+            <aside class="w-full @min-[1180px]/view-shell:w-96 border-l border-edge-muted p-6 space-y-7">
               <div>
                 <h2 class="text-lg font-semibold">Recipients</h2>
                 <For each={envelope().recipients}>
