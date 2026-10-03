@@ -8,6 +8,7 @@
 import { type PortalScope, ScopedPortal } from '@core/component/ScopedPortal';
 import { isMobile } from '@core/mobile/isMobile';
 import { debouncedDependent } from '@core/util/debounce';
+import type { Boundary } from '@floating-ui/dom';
 import CaretDown from '@phosphor/caret-down.svg';
 import TextCode from '@phosphor/code.svg';
 import CodeBlock from '@phosphor/code-block.svg';
@@ -152,6 +153,8 @@ const BlockOptions: ElementOption[] = [
 
 export function FloatingFormatMenu(props: {
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
+  boundary?: Boundary;
   /**
    * The link button dispatches commands handled by the links plugin, which is
    * registered by FloatingLinkMenu. Pass false when no FloatingLinkMenu is
@@ -365,14 +368,14 @@ export function FloatingFormatMenu(props: {
     <Show
       when={showMenu() && lexicalWrapper.isInteractable() && domSelection()}
     >
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           ref={setMenuRef}
           class="fixed top-0 left-0 z-action-menu w-fit"
           use:floatWithSelection={{
             selection: domSelection(),
             reactiveOnContainer: editor.getRootElement(),
-            useBlockBoundary: true,
+            boundary: props.boundary ?? lexicalWrapper.floatingBoundary?.(),
             moveWithSelection: true,
           }}
         >

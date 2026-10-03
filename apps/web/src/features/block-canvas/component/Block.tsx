@@ -7,7 +7,10 @@ import {
 } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { createMethodRegistration } from '@core/orchestrator';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
+import {
+  blockElementSignal,
+  blockHotkeyScopeSignal,
+} from '@core/signal/blockElement';
 import { blockFileSignal, blockHandleSignal } from '@core/signal/load';
 import { useCanEdit } from '@core/signal/permissions';
 import { useSearchParams } from '@solidjs/router';
@@ -22,6 +25,7 @@ export type BlockCanvasProps = {
 
 export default function BlockCanvas(props: BlockCanvasProps) {
   const documentId = useBlockId();
+  const portalMount = blockElementSignal.get;
   const isNested = useIsNestedBlock();
   const nestedContext = useBlockNestedContext<'canvas'>();
   const canEdit = useCanEdit();
@@ -46,7 +50,7 @@ export default function BlockCanvas(props: BlockCanvasProps) {
         canEdit={canEdit()}
         hotkeyScope={hotkeyScope()}
         isNested={isNested}
-        portalScope="block"
+        portalMount={portalMount()}
         view={props.view}
         locationParams={locationParams}
         onLocationChange={

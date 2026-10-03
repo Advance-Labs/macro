@@ -144,7 +144,7 @@ export function DraggableBlockMenu(props: {
 
   return (
     <Show when={props.active}>
-      <ScopedPortal scope="block">
+      <ScopedPortal mount={lexicalWrapper?.portalMount?.()}>
         <div
           class="draggable-block-menu fixed z-user-highlight flex items-center justify-center cursor-grab rounded transition-opacity duration-100"
           classList={{

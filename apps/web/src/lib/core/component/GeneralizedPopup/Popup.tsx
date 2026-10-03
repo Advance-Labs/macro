@@ -1,4 +1,5 @@
 import type { BlockName } from '@core/block';
+import type { Boundary } from '@floating-ui/dom';
 import type { ParentProps, Ref } from 'solid-js';
 import { PopupPositioner } from './PopupPositioner';
 
@@ -8,7 +9,7 @@ type GeneralizedPopupProps = ParentProps<{
     blockId: string;
     blockType: BlockName;
   };
-  useBlockBoundary?: boolean;
+  boundary?: Boundary;
   /** Forwarded to the positioned container. */
   class?: string;
   ref?: Ref<HTMLDivElement>;
@@ -23,7 +24,7 @@ export function GeneralizedPopup(props: GeneralizedPopupProps) {
   return (
     <PopupPositioner
       anchor={props.anchor.ref}
-      useBlockBoundary={props.useBlockBoundary}
+      boundary={props.boundary}
       class={props.class}
     >
       <div

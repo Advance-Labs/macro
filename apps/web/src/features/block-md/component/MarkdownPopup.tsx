@@ -98,7 +98,12 @@ export function MarkdownPopup(props: {
   highlightLayerRef: HTMLDivElement;
   lexicalMapping: NodeIdMappings;
 }) {
-  const { documentId, permissions, state } = useMarkdownDocument();
+  const {
+    documentId,
+    element: overlayMount,
+    permissions,
+    state,
+  } = useMarkdownDocument();
   const { canEdit, canComment } = permissions;
   const { comments: commentState, setCommentState } = state;
   const blockId = documentId();
@@ -698,7 +703,7 @@ export function MarkdownPopup(props: {
         fallback={
           <PopupPositioner
             anchor={anchorRef()!}
-            useBlockBoundary
+            boundary={overlayMount()}
             ref={setMenuRef}
           >
             <MarkdownPopupToolbar />
@@ -712,7 +717,7 @@ export function MarkdownPopup(props: {
             blockId: `${blockId}`,
             blockType: 'md',
           }}
-          useBlockBoundary={true}
+          boundary={overlayMount()}
           ref={setMenuRef}
         >
           <TouchSelectionToolbar

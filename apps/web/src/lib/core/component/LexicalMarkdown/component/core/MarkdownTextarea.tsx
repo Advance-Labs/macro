@@ -1,6 +1,9 @@
+import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
 import type { PortalScope } from '@core/component/ScopedPortal';
+import { resolveScopedPortalMount } from '@core/component/ScopedPortal';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import type { ChannelWithParticipants } from '@core/user';
+import type { Boundary } from '@floating-ui/dom';
 import type { EditorType } from '@macro-inc/lexical-core';
 import type { HistoryItem } from '@queries/history/types';
 import { onElementConnect } from '@solid-primitives/lifecycle';
@@ -112,7 +115,8 @@ interface MarkdownTextareaProps {
   onUserMention?: (mention: UserMentionRecord) => void;
   onRemoveMention?: (mention: ItemMention) => void;
   portalScope?: PortalScope;
-  useBlockBoundary?: boolean;
+  boundary?: Boundary;
+  portalMount?: HTMLElement;
   onDocumentMention?: (mention: HistoryItem) => void;
   onEscape?: (e: KeyboardEvent) => boolean;
   onTab?: (e: KeyboardEvent) => boolean;
@@ -140,11 +144,21 @@ interface MarkdownTextareaProps {
 }
 
 export function MarkdownTextarea(props: MarkdownTextareaProps) {
+  const panel = useSplitPanel();
   let mountRef!: HTMLDivElement;
-  let scrollContainerRef: HTMLDivElement | undefined;
+  const [scrollContainerRef, setScrollContainerRef] =
+    createSignal<HTMLDivElement>();
   const lexicalWrapper = createLexicalWrapper({
     type: props.type ?? 'markdown',
     namespace: 'markdown-textarea',
+    portalMount: () =>
+      props.portalMount ??
+      resolveScopedPortalMount(
+        props.portalScope ?? 'local',
+        scrollContainerRef(),
+        panel?.panelRef()
+      ),
+    floatingBoundary: () => props.boundary,
     isInteractable: props.editable,
   });
   const { editor, plugins, cleanup: cleanupLexical } = lexicalWrapper;
@@ -259,7 +273,7 @@ export function MarkdownTextarea(props: MarkdownTextareaProps) {
   if (isIOS || isNativeMobilePlatform()) {
     plugins.use(
       iosCursorScrollPlugin({
-        scrollContainer: props.scrollRef ?? (() => scrollContainerRef),
+        scrollContainer: props.scrollRef ?? scrollContainerRef,
       })
     );
   }
@@ -347,7 +361,9 @@ export function MarkdownTextarea(props: MarkdownTextareaProps) {
   return (
     <LexicalWrapperContext.Provider value={lexicalWrapper}>
       <div
-        ref={scrollContainerRef}
+        ref={(element) => {
+          onElementConnect(element, () => setScrollContainerRef(element));
+        }}
         class={cn(
           'relative size-full overflow-auto min-h-8 text-base',
           props.class
@@ -411,26 +427,30 @@ export function MarkdownTextarea(props: MarkdownTextareaProps) {
           onDocumentMention={(item) => {
             if (isHistoryItem(item)) props.onDocumentMention?.(item);
           }}
-          useBlockBoundary={props.useBlockBoundary}
+          boundary={lexicalWrapper.floatingBoundary()}
           portalScope={props.portalScope}
+          portalMount={lexicalWrapper.portalMount()}
         />
         <EmojiMenu
           editor={editor}
           menu={emojisMenuOperations}
           portalScope={props.portalScope}
-          useBlockBoundary={props.useBlockBoundary}
+          portalMount={lexicalWrapper.portalMount()}
+          boundary={lexicalWrapper.floatingBoundary()}
         />
         <SnippetsMenu
           editor={editor}
           menu={snippetsMenuOperations}
           portalScope={props.portalScope}
-          useBlockBoundary={props.useBlockBoundary}
+          portalMount={lexicalWrapper.portalMount()}
+          boundary={lexicalWrapper.floatingBoundary()}
         />
         <FloatingMenuGroup>
           <FloatingLinkMenu autoLinkMatchMode={props.autoLinkMatchMode} />
           <Show when={props.floatingFormatMenu}>
             <FloatingFormatMenu
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
               extendedInlineFormats={
                 typeof props.floatingFormatMenu === 'object' &&
                 props.floatingFormatMenu.extendedInlineFormats

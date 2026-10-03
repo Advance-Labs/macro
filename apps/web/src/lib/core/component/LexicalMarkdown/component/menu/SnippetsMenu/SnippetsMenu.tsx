@@ -4,6 +4,7 @@ import type { EntityItem } from '@core/context/quickAccess';
 import clickOutside from '@core/directive/clickOutside';
 import { debouncedDependent } from '@core/util/debounce';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
+import type { Boundary } from '@floating-ui/dom';
 import { fetchSnippetRaw } from '@queries/storage/snippets';
 import { Surface } from '@ui';
 import type { LexicalEditor } from 'lexical';
@@ -36,9 +37,10 @@ const PANEL_DECORATION_HEIGHT = 18;
 type SnippetsMenuProps = {
   editor: LexicalEditor;
   menu: MenuOperations;
-  /** whether the menu checks against block boundary in floating middleware. uses floating-ui default if false. */
-  useBlockBoundary?: boolean;
+  /** Optional clipping boundary supplied by the editor host. */
+  boundary?: Boundary;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   sourceDocumentId?: string;
 };
 
@@ -188,13 +190,13 @@ function SnippetsMenuInner(props: SnippetsMenuProps) {
 
   return (
     <Show when={menuOpen()}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="w-96 max-w-[calc(100cqw-1rem-2px)] cursor-default select-none z-modal-content menu-open-animation"
           use:floatWithSelection={{
             selection: untrack(mountSelection),
             reactiveOnContainer: props.editor.getRootElement(),
-            useBlockBoundary: props.useBlockBoundary,
+            boundary: props.boundary,
             onAvailableHeight: setMenuAvailableHeight,
           }}
           use:clickOutside={() => {

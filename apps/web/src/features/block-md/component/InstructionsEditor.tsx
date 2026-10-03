@@ -131,6 +131,8 @@ export function InstructionsEditor(props: {
   const lexicalWrapper = createLexicalWrapper({
     type: 'markdown-sync',
     namespace: 'block-md-instructions',
+    portalMount: blockElement,
+    floatingBoundary: blockElement,
     isInteractable: isContentEditable,
     withIds: true,
   });
@@ -398,20 +400,20 @@ export function InstructionsEditor(props: {
         <EmojiMenu
           editor={editor}
           menu={emojiMenuOperations}
-          useBlockBoundary={true}
+          boundary={blockElement()}
         />
 
         <MentionsMenu
           editor={editor}
           menu={mentionsMenuOperations}
-          useBlockBoundary={true}
+          boundary={blockElement()}
           disableMentionTracking={true}
         />
 
         <SnippetsMenu
           editor={editor}
           menu={snippetsMenuOperations}
-          useBlockBoundary={true}
+          boundary={blockElement()}
           sourceDocumentId={blockId}
         />
 

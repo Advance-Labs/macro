@@ -1,11 +1,8 @@
-import { getSplitPanelRef } from '@components/app/split-layout/layoutUtils';
-import { isInBlock } from '@core/block';
+import { ScopedPortal } from '@core/component/ScopedPortal';
 import clickOutside from '@core/directive/clickOutside';
-import { blockElementSignal } from '@core/signal/blockElement';
 import type { EntityData } from '@entity';
 import { Dialog } from '@kobalte/core/dialog';
 import { Button } from '@ui';
-import type { ComponentProps } from 'solid-js';
 import {
   type Accessor,
   type JSX,
@@ -14,7 +11,6 @@ import {
   type Setter,
   Show,
 } from 'solid-js';
-import { Portal } from 'solid-js/web';
 import { MoveToProjectView } from './MoveToProjectView';
 import { RenameView } from './RenameView';
 
@@ -159,50 +155,5 @@ function SplitModal(
         </div>
       </ScopedPortal>
     </Dialog>
-  );
-}
-
-type PortalScope = 'local' | 'block' | 'global' | 'split';
-
-/**
- * Portal with some extra scoping logic. If passed a specific mount prop or no props at all – it is
- * just a regular solid Portal.
- * @param props.scope - The scope of the portal. If 'local' it will mount to the closest element with the
- *    '.portal-scope' class. If 'block' it will mount to the containing block element. If 'global' it will
- *    mount to the document body.
- * @returns
- */
-function ScopedPortal(
-  props: ComponentProps<typeof Portal> & {
-    scope?: PortalScope;
-    show?: boolean;
-  }
-) {
-  let searchRef!: HTMLDivElement;
-
-  const mountRef = () => {
-    if (props.mount) return props.mount;
-    if (props.scope === 'block') {
-      if (isInBlock()) {
-        const blockElement = blockElementSignal.get();
-        if (blockElement) return blockElement;
-      }
-    }
-    if (props.scope === 'split') {
-      const panelElement = getSplitPanelRef();
-      if (panelElement) return panelElement;
-    }
-    if (props.scope === 'local') {
-      const scopedElement = searchRef.closest('.portal-scope');
-      if (scopedElement) return scopedElement;
-    }
-    return document.body;
-  };
-
-  return (
-    <Show when={props.show !== false}>
-      <div class="hidden" ref={searchRef} />
-      <Portal mount={mountRef()}>{props.children}</Portal>
-    </Show>
   );
 }

@@ -1,3 +1,5 @@
+import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
+import { resolveScopedPortalMount } from '@core/component/ScopedPortal';
 import { fileFolderDrop } from '@core/directive/fileFolderDrop';
 import { isMobile } from '@core/mobile/isMobile';
 import { handleFileFolderDrop } from '@core/util/upload';
@@ -51,6 +53,8 @@ export type MarkdownShellProps = EditorComponentProps & {
 };
 
 export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
+  const panel = useSplitPanel();
+  const [hostElement, setHostElement] = createSignal<HTMLElement>();
   const handle = props.config.buildHandle();
   const state = handle._internal;
   const {
@@ -60,7 +64,16 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
     builderConfig,
     markdownState,
   } = state;
-
+  lexicalWrapper.setPortalMount(
+    () =>
+      props.portalMount ??
+      resolveScopedPortalMount(
+        props.portalScope ?? 'local',
+        hostElement(),
+        panel?.panelRef()
+      )
+  );
+  lexicalWrapper.setFloatingBoundary(() => props.boundary);
   const [showPlaceholder, setShowPlaceholder] = createSignal(true);
 
   // Track initialization so onChange is not fired during setup
@@ -197,6 +210,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
   return (
     <LexicalWrapperContext.Provider value={lexicalWrapper}>
       <div
+        ref={(element) => {
+          onElementConnect(element, () => setHostElement(element));
+        }}
         class={cn(
           'relative h-full overflow-y-auto min-h-8 scrollbar-hidden text-base',
           props.class
@@ -254,8 +270,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <MentionsMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
               block={builderConfig.mentions?.block as any}
               showOpenTabs={builderConfig.mentions?.showOpenTabs}
               entities={builderConfig.mentions?.entities}
@@ -276,8 +293,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <TagsMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
               applyTargetLabel={builderConfig.tags?.applyTargetLabel}
               isApplied={builderConfig.tags?.isApplied}
               onApplyTag={builderConfig.tags?.onCreate}
@@ -290,7 +308,6 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <ActionMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               additionalActions={
                 (builderConfig.actions &&
                   builderConfig.actions.additionalActions) ||
@@ -308,6 +325,8 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
                   builderConfig.mentions?.disableMentionTracking,
               }}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
             />
           )}
         </Show>
@@ -318,8 +337,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <EmojiMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
             />
           )}
         </Show>
@@ -330,8 +350,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <SnippetsMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
               sourceDocumentId={builderConfig.mentions?.sourceDocumentId}
             />
           )}
@@ -343,8 +364,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
             <SkillsMenu
               editor={editor}
               menu={menu()}
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
             />
           )}
         </Show>
@@ -358,8 +380,9 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
               agentCommands={
                 builderConfig.agentCommands?.commands ?? (() => [])
               }
-              useBlockBoundary={false}
               portalScope={props.portalScope}
+              portalMount={lexicalWrapper.portalMount()}
+              boundary={lexicalWrapper.floatingBoundary()}
             />
           )}
         </Show>
@@ -374,12 +397,16 @@ export const MarkdownShell: Component<MarkdownShellProps> = (props) => {
           <FloatingMenuGroup>
             <Show when={builderConfig.links?.floatingMenu}>
               <FloatingLinkMenu
+                portalMount={lexicalWrapper.portalMount()}
+                boundary={lexicalWrapper.floatingBoundary()}
                 autoLinkMatchMode={builderConfig.links?.autoLinkMatchMode}
               />
             </Show>
             <Show when={builderConfig.floatingFormatMenu}>
               <FloatingFormatMenu
                 portalScope={props.portalScope}
+                portalMount={lexicalWrapper.portalMount()}
+                boundary={lexicalWrapper.floatingBoundary()}
                 showLinkButton={!!builderConfig.links?.floatingMenu}
                 extendedInlineFormats={
                   typeof builderConfig.floatingFormatMenu === 'object' &&

@@ -362,7 +362,7 @@ export function ComposeSkill(props: ComposeSkillProps) {
   const editor = editorConfig.buildHandle().lexical;
   setBodyEditor(editor);
   const portalScope = (): PortalScope =>
-    splitPanel.handle.isPopover() ? 'local' : 'block';
+    splitPanel.handle.isPopover() ? 'local' : 'split';
 
   return (
     <div

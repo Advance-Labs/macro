@@ -27,11 +27,11 @@ interface BaseMenuProps {
   ref?: HTMLDivElement | ((ref: HTMLDivElement) => void);
 }
 export function BaseMenu(props: ParentProps<BaseMenuProps>) {
-  const { portalScope } = useCanvasDocument();
+  const { portalScope, portalMount } = useCanvasDocument();
   const safeChildren = children(() => props.open && props.children);
   return (
     <Show when={props.open}>
-      <ScopedPortal scope={portalScope()}>
+      <ScopedPortal mount={portalMount()} scope={portalScope()}>
         <div
           style={{ left: `${props.x}px`, top: `${props.y}px` }}
           class="absolute z-item-options-menu"

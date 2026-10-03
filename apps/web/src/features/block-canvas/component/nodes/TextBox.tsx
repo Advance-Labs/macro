@@ -66,7 +66,6 @@ function TextBoxEditor(props: {
   const { registerEditor, unregisterEditor } = useTextNodeEditors();
   const canvas = useCanvasDocument();
   const canEdit = canvas.canEdit;
-  const useBlockBoundary = () => canvas.portalScope() === 'block';
   let mountRef!: HTMLDivElement;
 
   const toolManager = useToolManager();
@@ -97,6 +96,8 @@ function TextBoxEditor(props: {
   const handle = config.buildHandle();
   const { lexical: editor, plugins } = handle;
   const state = handle._internal;
+  state.lexicalWrapper.setPortalMount(canvas.portalMount);
+  state.lexicalWrapper.setFloatingBoundary(canvas.portalMount);
   props.setter(editor);
 
   createEffect(() => state.setIsInteractable(canEdit() ?? false));
@@ -211,13 +212,15 @@ function TextBoxEditor(props: {
       <MentionsMenu
         editor={editor}
         menu={state.mentionsMenuOps!}
-        useBlockBoundary={useBlockBoundary()}
+        boundary={state.lexicalWrapper.floatingBoundary()}
+        portalMount={state.lexicalWrapper.portalMount()}
         portalScope={canvas.portalScope()}
       />
       <EmojiMenu
         editor={editor}
         menu={state.emojisMenuOps!}
-        useBlockBoundary={useBlockBoundary()}
+        boundary={state.lexicalWrapper.floatingBoundary()}
+        portalMount={state.lexicalWrapper.portalMount()}
         portalScope={canvas.portalScope()}
       />
       <Show when={state.snippetsMenuOps}>
@@ -225,7 +228,8 @@ function TextBoxEditor(props: {
           <SnippetsMenu
             editor={editor}
             menu={menu()}
-            useBlockBoundary={useBlockBoundary()}
+            boundary={state.lexicalWrapper.floatingBoundary()}
+            portalMount={state.lexicalWrapper.portalMount()}
             portalScope={canvas.portalScope()}
             sourceDocumentId={props.blockId}
           />

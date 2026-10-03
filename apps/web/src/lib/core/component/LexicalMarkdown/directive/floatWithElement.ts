@@ -1,5 +1,3 @@
-import { isInBlock } from '@core/block';
-import { blockElementSignal } from '@core/signal/blockElement';
 import {
   autoUpdate,
   type Boundary,
@@ -17,7 +15,7 @@ import { iosSafePadding } from './iosFloatingMiddleware';
 type FloatWithElementOptions = {
   element: () => Element | undefined | null;
   spacing?: number;
-  useBlockBoundary?: boolean;
+  boundary?: Boundary;
   floatingOptions?: Partial<ComputePositionConfig>;
 };
 
@@ -44,11 +42,7 @@ export function floatWithElement(
   let referenceEl: Element | null;
   let cleanup: () => void = () => {};
 
-  let boundary: Boundary = 'clippingAncestors';
-  if (accessor()?.useBlockBoundary && isInBlock()) {
-    const blockElement = blockElementSignal.get;
-    boundary = blockElement() ?? 'clippingAncestors';
-  }
+  const boundary = (): Boundary => accessor()?.boundary ?? 'clippingAncestors';
 
   async function updatePosition() {
     if (!referenceEl) {
@@ -65,7 +59,7 @@ export function floatWithElement(
         middleware: [
           offset(spacing),
           flip({ padding: iosSafePadding(spacing) }),
-          shift({ padding: spacing, boundary }),
+          shift({ padding: spacing, boundary: boundary() }),
           hide(),
         ],
         ...(accessor()?.floatingOptions ?? {}),

@@ -122,6 +122,10 @@ function setup() {
     editor,
     cleanup: () => {},
     isInteractable: () => true,
+    portalMount: () => undefined,
+    setPortalMount: vi.fn(),
+    floatingBoundary: () => undefined,
+    setFloatingBoundary: vi.fn(),
     mapping: { idToNodeKeyMap: new Map(), nodeKeyToIdMap: new Map() },
     plugins: {
       use: (plugin: (editor: LexicalEditor) => () => void) =>

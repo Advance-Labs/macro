@@ -54,6 +54,7 @@ export type CanvasDocumentProps = {
   hotkeyScope: string;
   isNested?: boolean;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   view?: CanvasView;
   locationParams?: Record<string, string | string[] | undefined>;
   onLocationChange?: (location: CanvasView) => void;
@@ -71,6 +72,7 @@ export function CanvasDocument(props: CanvasDocumentProps) {
           isNested={props.isNested}
           hotkeyScope={props.hotkeyScope}
           portalScope={props.portalScope}
+          portalMount={props.portalMount}
           onLocationChange={props.onLocationChange}
         >
           <CanvasDocumentState {...props} />

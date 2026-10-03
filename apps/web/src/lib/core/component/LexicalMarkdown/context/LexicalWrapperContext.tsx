@@ -1,6 +1,7 @@
 /**
  * @file Wrap the Lexical Editor in some helpful utilities.
  */
+import type { Boundary } from '@floating-ui/dom';
 import {
   type EditorType,
   type NodeIdMappings,
@@ -15,7 +16,13 @@ import {
   type EditorThemeClasses,
   type LexicalEditor,
 } from 'lexical';
-import { createContext, getOwner, type Owner } from 'solid-js';
+import {
+  type Accessor,
+  createContext,
+  createSignal,
+  getOwner,
+  type Owner,
+} from 'solid-js';
 import type { Store } from 'solid-js/store';
 import {
   createPluginManager,
@@ -32,6 +39,9 @@ type LexicalWrapperProps = {
   isInteractable: () => boolean;
   withIds?: boolean;
   theme?: EditorThemeClasses;
+  /** Overlay sources supplied by the editor host. */
+  portalMount?: Accessor<HTMLElement | undefined>;
+  floatingBoundary?: Accessor<Boundary | undefined>;
 };
 
 export type LexicalWrapperBase = {
@@ -45,6 +55,15 @@ export type LexicalWrapperBase = {
   selection?: Store<SelectionData>;
   /** When true, decorator components should skip backend fetches (e.g. preview API). */
   skipPreviewFetch?: boolean;
+  /** Stable getters follow the latest supplied accessor. */
+  readonly portalMount: Accessor<HTMLElement | undefined>;
+  setPortalMount: (
+    source: Accessor<HTMLElement | undefined> | undefined
+  ) => void;
+  readonly floatingBoundary: Accessor<Boundary | undefined>;
+  setFloatingBoundary: (
+    source: Accessor<Boundary | undefined> | undefined
+  ) => void;
 };
 
 export type LexicalWrapperWithMapping = LexicalWrapperBase & {
@@ -84,8 +103,15 @@ export function createLexicalWrapper({
   isInteractable,
   withIds,
   theme,
+  portalMount: initialPortalMount,
+  floatingBoundary: initialFloatingBoundary,
 }: LexicalWrapperProps): LexicalWrapper {
   const owner = getOwner();
+  const [portalMountSource, setPortalMountSource] =
+    createSignal(initialPortalMount);
+  const [floatingBoundarySource, setFloatingBoundarySource] = createSignal(
+    initialFloatingBoundary
+  );
   _id++;
 
   const nodes = RegisteredNodesByType[type];
@@ -135,6 +161,10 @@ export function createLexicalWrapper({
     type,
     isInteractable,
     mapping,
+    portalMount: () => portalMountSource()?.(),
+    setPortalMount: (source) => setPortalMountSource(() => source),
+    floatingBoundary: () => floatingBoundarySource()?.(),
+    setFloatingBoundary: (source) => setFloatingBoundarySource(() => source),
   };
 }
 

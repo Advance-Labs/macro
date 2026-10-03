@@ -4,6 +4,7 @@ import { toast } from '@core/component/Toast/Toast';
 import clickOutside from '@core/directive/clickOutside';
 import { useUnfurl } from '@core/signal/unfurl';
 import { openExternalUrl } from '@core/util/url';
+import type { Boundary } from '@floating-ui/dom';
 import { mergeRegister } from '@lexical/utils';
 import NewTab from '@phosphor/arrow-square-out.svg';
 import Check from '@phosphor/check-circle.svg';
@@ -58,10 +59,15 @@ const MENU_ID = 'floating-link-menu';
 const HOVER_ID = 'floating-link-hover';
 
 export function FloatingLinkMenu(props: {
+  portalMount?: HTMLElement;
+  boundary?: Boundary;
   closePopup?: () => void;
   autoLinkMatchMode?: AutoLinkMatchMode;
 }) {
-  const { plugins, editor } = useContext(LexicalWrapperContext) ?? {};
+  const wrapper = useContext(LexicalWrapperContext);
+  const { plugins, editor } = wrapper ?? {};
+  const portalMount = () => props.portalMount ?? wrapper?.portalMount?.();
+  const boundary = () => props.boundary ?? wrapper?.floatingBoundary?.();
   if (!plugins || !editor) {
     console.error(
       'FloatingLinkMenu requires plugins and editor from LexicalWrapperContext!'
@@ -336,7 +342,7 @@ export function FloatingLinkMenu(props: {
     linkInfo()?.linkRef
       ? {
           element: () => linkInfo()?.linkRef,
-          useBlockBoundary: true,
+          boundary: boundary(),
         }
       : undefined;
 
@@ -345,14 +351,14 @@ export function FloatingLinkMenu(props: {
       ? {
           selection: linkInfo()?.selection,
           reactiveOnContainer: editor.getRootElement(),
-          useBlockBoundary: true,
+          boundary: boundary(),
         }
       : undefined;
 
   const MenuWrapper = (props: ParentProps) => {
     return (
       <Show when={linkInfo()?.linkRef || linkInfo()?.selection}>
-        <ScopedPortal scope="block">
+        <ScopedPortal mount={portalMount()}>
           <div
             class="fixed top-0 left-0 z-modal-content w-80 max-w-[calc(100vw-1rem)] text-sm menu-open-animation"
             use:floatWithElement={floatWithElementProps()}
@@ -386,7 +392,7 @@ export function FloatingLinkMenu(props: {
                 class="fixed top-0 left-0 z-modal-content"
                 use:floatWithElement={{
                   element: () => link().linkRef,
-                  useBlockBoundary: true,
+                  boundary: boundary(),
                 }}
               >
                 <Show

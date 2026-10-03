@@ -3,6 +3,7 @@ import { recordEmojiUsage } from '@core/component/Emoji/emojiUsage';
 import { type PortalScope, ScopedPortal } from '@core/component/ScopedPortal';
 import clickOutside from '@core/directive/clickOutside';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
+import type { Boundary } from '@floating-ui/dom';
 import { InlineSearchNode } from '@macro-inc/lexical-core';
 import { debounce } from '@solid-primitives/scheduled';
 import { cn, Surface } from '@ui';
@@ -37,9 +38,10 @@ const MAX_EMOJI_LIST_HEIGHT = MAX_EMOJI_LIST_ITEMS * EMOJI_ITEM_HEIGHT;
 type EmojiMenuProps = {
   menu: MenuOperations;
   editor: LexicalEditor;
-  /** whether the menu checks against block boundary in floating middleware. uses floating-ui default if false. */
-  useBlockBoundary?: boolean;
+  /** Optional clipping boundary supplied by the editor host. */
+  boundary?: Boundary;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
 };
 
 function EmojiItem(props: {
@@ -259,13 +261,13 @@ export function EmojiMenu(props: EmojiMenuProps) {
 
   return (
     <Show when={props.menu.isOpen()}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="cursor-default select-none w-48 z-modal-content menu-open-animation"
           use:floatWithSelection={{
             selection: untrack(mountSelection),
             reactiveOnContainer: props.editor.getRootElement(),
-            useBlockBoundary: props.useBlockBoundary,
+            boundary: props.boundary,
             onAvailableHeight: setMenuAvailableHeight,
           }}
           use:clickOutside={() => {

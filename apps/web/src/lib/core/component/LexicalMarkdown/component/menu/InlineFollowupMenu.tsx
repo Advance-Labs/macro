@@ -1,5 +1,6 @@
 import { type PortalScope, ScopedPortal } from '@core/component/ScopedPortal';
 import clickOutside from '@core/directive/clickOutside';
+import type { Boundary } from '@floating-ui/dom';
 import { Hotkey, Surface } from '@ui';
 import type { LexicalEditor } from 'lexical';
 import {
@@ -25,7 +26,8 @@ export function InlineFollowupMenu(props: {
   selection?: Selection | null;
   options: readonly InlineFollowupMenuOption[];
   portalScope?: PortalScope;
-  useBlockBoundary?: boolean;
+  portalMount?: HTMLElement;
+  boundary?: Boundary;
   selectedIndex?: number;
   onSelectedIndexChange?: (index: number) => void;
   onClose: () => void;
@@ -108,14 +110,14 @@ export function InlineFollowupMenu(props: {
 
   return (
     <Show when={props.open}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="w-64 max-w-[calc(100cqw-1rem-2px)] cursor-default select-none z-modal-content menu-open-animation"
           ref={(el) => {
             floatWithSelection(el, () => ({
               selection: props.selection,
               reactiveOnContainer: props.editor.getRootElement(),
-              useBlockBoundary: props.useBlockBoundary,
+              boundary: props.boundary,
             }));
             clickOutside(el, () => () => props.onClose());
           }}

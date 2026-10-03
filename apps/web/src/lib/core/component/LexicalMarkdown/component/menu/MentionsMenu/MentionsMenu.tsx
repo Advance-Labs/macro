@@ -17,6 +17,7 @@ import { useDateSearch } from '@core/util/dateSearch/useDateSearch';
 import { debouncedDependent } from '@core/util/debounce';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
 import type { EmailEntity } from '@entity';
+import type { Boundary } from '@floating-ui/dom';
 import type { HistoryItem as Item } from '@queries/history/history';
 import { Key } from '@solid-primitives/keyed';
 import { createLazyMemo } from '@solid-primitives/memo';
@@ -81,9 +82,10 @@ type MentionsMenuProps = {
   users?: Accessor<IUser[]>;
   /** pass in custom entity items to replace quickAccess data (e.g. sandbox data for onboarding) */
   entities?: Accessor<EntityItem[]>;
-  /** whether the menu checks against block boundary in floating middleware. uses floating-ui default if false. */
-  useBlockBoundary?: boolean;
+  /** Optional clipping boundary supplied by the editor host. */
+  boundary?: Boundary;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   block?: BlockName;
   anchor?: HTMLElement | null;
   onUserMention?: (mention: UserMentionRecord) => void;
@@ -623,7 +625,7 @@ function MentionsMenuInner(props: MentionsMenuProps) {
     props.anchor
       ? {
           element: () => props.anchor,
-          useBlockBoundary: props.useBlockBoundary,
+          boundary: props.boundary,
         }
       : undefined;
 
@@ -632,14 +634,14 @@ function MentionsMenuInner(props: MentionsMenuProps) {
       ? {
           selection: untrack(mountSelection),
           reactiveOnContainer: props.editor?.getRootElement(),
-          useBlockBoundary: props.useBlockBoundary,
+          boundary: props.boundary,
           onAvailableHeight: setMenuAvailableHeight,
         }
       : undefined;
 
   return (
     <Show when={menuOpen()}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="w-96 max-w-[calc(100cqw-1rem-2px)] cursor-default select-none z-modal-content menu-open-animation"
           on:touchstart={(e) => e.stopPropagation()}

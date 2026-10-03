@@ -1,11 +1,10 @@
-import { isInBlock } from '@core/block';
-import { blockElementSignal } from '@core/signal/blockElement';
 import Copy from '@phosphor/copy.svg';
 import DotsThree from '@phosphor/list.svg';
 import TextT from '@phosphor/text-t.svg';
 import TrashSimple from '@phosphor/trash-simple.svg';
 import { Dropdown } from '@ui';
-import { createSignal } from 'solid-js';
+import { createSignal, useContext } from 'solid-js';
+import { LexicalWrapperContext } from '../../../context/LexicalWrapperContext';
 
 /** Copy / Convert to text / Delete, behind a `⋯` trigger. */
 export function PasteActionsMenu(props: {
@@ -15,7 +14,8 @@ export function PasteActionsMenu(props: {
   class?: string;
 }) {
   const [open, setOpen] = createSignal(false);
-  const portalMount = isInBlock() ? blockElementSignal.get : () => undefined;
+  const wrapper = useContext(LexicalWrapperContext);
+  const portalMount = () => wrapper?.portalMount?.();
 
   return (
     <div class={props.class} on:click={(e) => e.stopPropagation()}>

@@ -290,21 +290,15 @@ export function CollabMarkdownEditor(props: CollabMarkdownEditorProps) {
 
           <DecoratorRenderer editor={editor} />
 
-          <EmojiMenu
-            editor={editor}
-            menu={emojiMenuOperations}
-            useBlockBoundary={false}
-          />
+          <EmojiMenu editor={editor} menu={emojiMenuOperations} />
           <MentionsMenu
             editor={editor}
             menu={mentionsMenuOperations}
-            useBlockBoundary={false}
             disableMentionTracking={true}
           />
           <SnippetsMenu
             editor={editor}
             menu={snippetsMenuOperations}
-            useBlockBoundary={false}
             sourceDocumentId={props.sourceId}
           />
         </div>

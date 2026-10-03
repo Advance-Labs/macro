@@ -1,5 +1,3 @@
-import { isInBlock } from '@core/block';
-import { blockElementSignal } from '@core/signal/blockElement';
 import { getScrollParent } from '@core/util/scrollParent';
 import {
   autoUpdate,
@@ -33,7 +31,7 @@ function style(el: HTMLElement, styles: Partial<JSX.CSSProperties>) {
 type FloatWithSelectionOptions = {
   selection: Selection | undefined | null;
   reactiveOnContainer?: HTMLElement | null;
-  useBlockBoundary?: boolean;
+  boundary?: Boundary;
   spacing?: number;
   floatingOptions?: Partial<ComputePositionConfig>;
   moveWithSelection?: boolean;
@@ -47,11 +45,7 @@ export function floatWithSelection(
   style(floatingEl, { position: 'fixed' });
   let cleanupAutoUpdate: () => void = () => {};
 
-  let boundary: Boundary = 'clippingAncestors';
-  if (accessor()?.useBlockBoundary && isInBlock()) {
-    const blockElement = blockElementSignal.get;
-    boundary = blockElement() ?? 'clippingAncestors';
-  }
+  const boundary = (): Boundary => accessor()?.boundary ?? 'clippingAncestors';
 
   let [currentAnchor, setCurrentAnchor] = createSignal<Range | Element | null>(
     null
@@ -92,11 +86,11 @@ export function floatWithSelection(
             ...(preferredPlacement === 'bottom-start'
               ? { fallbackPlacements: ['top-start'] as const }
               : {}),
-            boundary,
+            boundary: boundary(),
             padding: iosSafePadding(spacing),
           }),
           offset(spacing),
-          shift({ padding: spacing, boundary }),
+          shift({ padding: spacing, boundary: boundary() }),
           hide(),
         ],
         ...floatingOptions,
@@ -120,7 +114,7 @@ export function floatWithSelection(
         placement: decidedPlacement,
         middleware: [
           offset(spacing),
-          shift({ padding: iosSafePadding(spacing), boundary }),
+          shift({ padding: iosSafePadding(spacing), boundary: boundary() }),
           ...(onAvailableHeight
             ? [iosSizeMiddleware(spacing, onAvailableHeight)]
             : []),

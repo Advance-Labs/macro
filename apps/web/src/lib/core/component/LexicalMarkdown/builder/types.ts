@@ -1,6 +1,7 @@
 import type { PortalScope } from '@core/component/ScopedPortal';
 import type { ChannelWithParticipants } from '@core/user';
 import type { EmailEntity } from '@entity';
+import type { Boundary } from '@floating-ui/dom';
 import type { EditorType } from '@macro-inc/lexical-core';
 import type { HistoryItem } from '@queries/history/history';
 import type { LexicalEditor, SerializedEditorState } from 'lexical';
@@ -24,7 +25,6 @@ import type { createMenuOperations } from '../shared/inlineMenu';
 import type { UserMentionRecord } from '../utils/mentionsUtils';
 
 export interface ActionsOptions {
-  useBlockBoundary?: boolean;
   /** Extra actions to append to the default slash-menu actions. */
   additionalActions?: Action[];
   /** IDs of default actions to hide from the slash menu. */
@@ -139,6 +139,8 @@ export interface EditorComponentProps {
   autofocus?: boolean;
   class?: string;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
+  boundary?: Boundary;
   refFn?: (ref: HTMLDivElement) => void;
   onConnect?: () => void;
 }

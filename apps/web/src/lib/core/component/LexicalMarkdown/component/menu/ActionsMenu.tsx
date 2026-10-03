@@ -4,6 +4,7 @@ import { enableDatabases } from '@core/constant/featureFlags';
 import clickOutside from '@core/directive/clickOutside';
 import { fuzzyFilter } from '@core/util/fuzzy';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
+import type { Boundary } from '@floating-ui/dom';
 import { debounce } from '@solid-primitives/scheduled';
 import { cn, Surface } from '@ui';
 import type { LexicalEditor } from 'lexical';
@@ -112,8 +113,9 @@ export function ActionMenu(props: {
   menu: MenuOperations;
   anchor?: HTMLElement | null;
   portalScope?: PortalScope;
-  /** whether the menu checks against block boundary in floating middleware. uses floating-ui default if false. */
-  useBlockBoundary?: boolean;
+  portalMount?: HTMLElement;
+  /** Optional clipping boundary supplied by the editor host. */
+  boundary?: Boundary;
   /** Extra actions appended to the default action list. */
   additionalActions?: Action[];
   /** IDs of default actions to exclude from the menu. */
@@ -302,7 +304,7 @@ export function ActionMenu(props: {
     props.anchor
       ? {
           element: () => props.anchor,
-          useBlockBoundary: props.useBlockBoundary,
+          boundary: props.boundary,
         }
       : undefined;
 
@@ -311,14 +313,14 @@ export function ActionMenu(props: {
       ? {
           selection: untrack(mountSelection),
           reactiveOnContainer: props.editor.getRootElement(),
-          useBlockBoundary: props.useBlockBoundary,
+          boundary: props.boundary,
           onAvailableHeight: setMenuAvailableHeight,
         }
       : undefined;
 
   return (
     <Show when={isOpen()}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="w-60 cursor-default select-none z-modal-content menu-open-animation"
           use:floatWithElement={floatWithElementProps()}

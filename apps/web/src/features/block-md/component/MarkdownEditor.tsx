@@ -214,6 +214,7 @@ export function MarkdownEditor(props: {
     documentId,
     kind,
     documentSource,
+    element: overlayMount,
     persistedName: mdDocumentName,
     permissions,
     state: documentState,
@@ -319,6 +320,8 @@ export function MarkdownEditor(props: {
   const lexicalWrapper = createLexicalWrapper({
     type: 'markdown-sync',
     namespace: 'block-md-main',
+    portalMount: overlayMount,
+    floatingBoundary: overlayMount,
     isInteractable: isContentEditable,
     withIds: true,
   });
@@ -1085,20 +1088,20 @@ export function MarkdownEditor(props: {
         <EmojiMenu
           editor={editor}
           menu={emojiMenuOperations}
-          useBlockBoundary={true}
+          boundary={overlayMount()}
         />
 
         <MentionsMenu
           editor={editor}
           menu={mentionsMenuOperations}
-          useBlockBoundary={true}
+          boundary={overlayMount()}
           showOpenTabs
         />
 
         <TagsMenu
           editor={editor}
           menu={tagsMenuOperations}
-          useBlockBoundary={true}
+          boundary={overlayMount()}
           applyTargetLabel={tagApplyTargetLabel()}
           isApplied={(tag) => documentTags.isApplied(tag.optionId)}
           onApplyTag={(tag) => {
@@ -1110,7 +1113,7 @@ export function MarkdownEditor(props: {
         <SnippetsMenu
           editor={editor}
           menu={snippetsMenuOperations}
-          useBlockBoundary={true}
+          boundary={overlayMount()}
           sourceDocumentId={blockId}
         />
 

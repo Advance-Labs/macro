@@ -1,5 +1,6 @@
 import { type PortalScope, ScopedPortal } from '@core/component/ScopedPortal';
 import clickOutside from '@core/directive/clickOutside';
+import type { Boundary } from '@floating-ui/dom';
 import PlusIcon from '@phosphor/plus.svg';
 import { TagDot } from '@property/tags/TagDot';
 import { DEFAULT_TAG_COLOR, TAG_COLOR_OPTIONS } from '@property/tags/tagColors';
@@ -93,7 +94,8 @@ export function TagsMenu(props: {
   editor: LexicalEditor;
   menu: MenuOperations;
   portalScope?: PortalScope;
-  useBlockBoundary?: boolean;
+  portalMount?: HTMLElement;
+  boundary?: Boundary;
   applyTargetLabel?: string;
   isApplied?: (tag: TagMentionLifecycle) => boolean;
   onApplyTag?: (tag: TagMentionLifecycle) => void;
@@ -393,14 +395,14 @@ export function TagsMenu(props: {
   return (
     <>
       <Show when={props.menu.isOpen()}>
-        <ScopedPortal scope={props.portalScope}>
+        <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
           <div
             class="w-64 max-w-[calc(100cqw-1rem-2px)] cursor-default select-none z-modal-content menu-open-animation"
             ref={(el) => {
               floatWithSelection(el, () => ({
                 selection: mountSelection(),
                 reactiveOnContainer: props.editor.getRootElement(),
-                useBlockBoundary: props.useBlockBoundary,
+                boundary: props.boundary,
                 onAvailableHeight: setMenuAvailableHeight,
               }));
               clickOutside(el, () => () => closeMenu());
@@ -462,7 +464,8 @@ export function TagsMenu(props: {
         open={pendingApplyTag() !== null}
         selection={applyPromptSelection()}
         portalScope={props.portalScope}
-        useBlockBoundary={props.useBlockBoundary}
+        portalMount={props.portalMount}
+        boundary={props.boundary}
         selectedIndex={applyPromptSelectedIndex()}
         onSelectedIndexChange={setApplyPromptSelectedIndex}
         onClose={closeMenu}

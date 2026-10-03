@@ -23,11 +23,15 @@ import {
   isRectFlushWith,
   trimWhitespace,
 } from '@core/component/LexicalMarkdown/utils';
-import type { PortalScope } from '@core/component/ScopedPortal';
+import {
+  type PortalScope,
+  resolveScopedPortalMount,
+} from '@core/component/ScopedPortal';
 import { toast } from '@core/component/Toast/Toast';
 import { useUserId } from '@core/context/user';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { buildSimpleEntityUrl } from '@core/util/url';
+import type { Boundary } from '@floating-ui/dom';
 import { mergeRegister } from '@lexical/utils';
 import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
 import ArrowsOutIcon from '@phosphor/arrows-out.svg';
@@ -188,6 +192,7 @@ export function ComposeTaskTitleEditor(props: {
   onTagSelected: (tag: TagMentionLifecycle) => void;
   onDeleteTagsAtStart: () => boolean;
   portalScope?: PortalScope;
+  boundary?: Boundary;
   ref?: (el: HTMLDivElement) => void;
 }) {
   const [state, setState] = createSignal(props.value());
@@ -303,13 +308,13 @@ export function ComposeTaskTitleEditor(props: {
       <EmojiMenu
         editor={editor}
         menu={emojiMenuOperations}
-        useBlockBoundary={true}
+        boundary={props.boundary}
         portalScope={props.portalScope}
       />
       <TagsMenu
         editor={editor}
         menu={tagMenuOperations}
-        useBlockBoundary={true}
+        boundary={props.boundary}
         portalScope={props.portalScope}
       />
       <Show when={showPlaceholder()}>
@@ -845,7 +850,7 @@ export function ComposeTask(props: ComposeTaskProps) {
   const editor = editorConfig.buildHandle().lexical;
   setBodyEditor(editor);
   const portalScope = (): PortalScope =>
-    splitPanel.handle.isPopover() ? 'local' : 'block';
+    splitPanel.handle.isPopover() ? 'local' : 'split';
 
   return (
     <EntityComposer.Root tabIndex={-1} ref={setContainerRef}>
@@ -916,6 +921,11 @@ export function ComposeTask(props: ComposeTaskProps) {
             }}
             onDeleteTagsAtStart={deleteTitleTagsAtStart}
             portalScope={portalScope()}
+            boundary={resolveScopedPortalMount(
+              portalScope(),
+              containerRef(),
+              splitPanel.panelRef()
+            )}
             ref={(el) => {
               titleEditorRoot = el;
             }}

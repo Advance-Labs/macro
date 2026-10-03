@@ -64,6 +64,7 @@ export type PdfDocumentProps = {
   modificationData?: unknown;
   isNested?: boolean;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   permissions: PdfDocumentPermissions;
   locationParams?: LocationSearchParams;
   navigationTarget?: LocationBlockParams;
@@ -82,6 +83,7 @@ export function PdfDocument(props: PdfDocumentProps) {
           documentName={props.documentName}
           isNested={props.isNested}
           portalScope={props.portalScope}
+          portalMount={props.portalMount}
           permissions={props.permissions}
           locationParams={props.locationParams}
         >

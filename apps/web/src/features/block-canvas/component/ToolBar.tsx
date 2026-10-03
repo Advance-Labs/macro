@@ -168,7 +168,7 @@ export function ToolBar() {
   });
 
   return (
-    <ScopedPortal scope={canvas.portalScope()}>
+    <ScopedPortal mount={canvas.portalMount()} scope={canvas.portalScope()}>
       {/* Full-frame mobile/tablet: rest above the floating bottom chrome. */}
       <Toolbar
         size="icon-sm"

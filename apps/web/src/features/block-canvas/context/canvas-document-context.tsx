@@ -18,6 +18,7 @@ export type CanvasDocumentContextValue = {
   isNested: Accessor<boolean>;
   hotkeyScope: Accessor<string>;
   portalScope: Accessor<PortalScope>;
+  portalMount: Accessor<HTMLElement | undefined>;
   onLocationChange: Accessor<((location: CanvasView) => void) | undefined>;
   state: CanvasDocumentState;
   instanceOwner?: Owner;
@@ -29,6 +30,7 @@ export type CanvasDocumentProviderProps = {
   isNested?: boolean;
   hotkeyScope: string;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   onLocationChange?: (location: CanvasView) => void;
 };
 
@@ -50,6 +52,7 @@ export const CanvasDocumentProvider: FlowComponent<
     isNested: () => props.isNested ?? false,
     hotkeyScope: () => props.hotkeyScope,
     portalScope: () => props.portalScope ?? 'split',
+    portalMount: () => props.portalMount,
     onLocationChange: () => props.onLocationChange,
     state: createCanvasDocumentState(),
   };

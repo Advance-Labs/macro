@@ -117,7 +117,7 @@ function SignatureEditor(props: SignatureEditorProps) {
       // this is because we often prevent default onMouseDown
       noOutsidePointerEvents={false}
     >
-      <ScopedPortal scope={pdf.portalScope()}>
+      <ScopedPortal mount={pdf.portalMount()} scope={pdf.portalScope()}>
         <Dialog.Overlay
           class="dialog-overlay-open-animation flex sm:max-h-full items-center justify-center z-modal-overlay fixed inset-0 bg-modal-overlay"
           style={{

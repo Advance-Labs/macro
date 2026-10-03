@@ -1,16 +1,32 @@
 import { getSplitPanelRef } from '@components/app/split-layout/layoutUtils';
-import { isInBlock } from '@core/block';
-import { blockElementSignal } from '@core/signal/blockElement';
 import type { ComponentProps } from 'solid-js';
 import { Portal, Show } from 'solid-js/web';
 
-export type PortalScope = 'local' | 'block' | 'global' | 'split';
+export type PortalScope = 'local' | 'global' | 'split';
 
+/** Resolve a named portal scope from the owning host's DOM capabilities. */
+export function resolveScopedPortalMount(
+  scope: PortalScope | undefined,
+  searchRef?: HTMLElement,
+  splitRef?: HTMLElement | null
+): HTMLElement {
+  if (scope === 'split') {
+    return (
+      splitRef ??
+      searchRef?.closest<HTMLElement>('[data-split-panel]') ??
+      document.body
+    );
+  }
+  if (scope === 'local') {
+    return searchRef?.closest<HTMLElement>('.portal-scope') ?? document.body;
+  }
+  return document.body;
+}
 /**
  * Portal with some extra scoping logic. If passed a specific mount prop or no props at all – it is
  * just a regular solid Portal.
  * @param props.scope - The scope of the portal. If 'local' it will mount to the closest element with the
- *    '.portal-scope' class. If 'block' it will mount to the containing block element. If 'global' it will
+ *    '.portal-scope' class. If 'split' it will mount to the containing split panel. If 'global' it will
  *    mount to the document body.
  * @returns
  */
@@ -22,25 +38,13 @@ export function ScopedPortal(
 ) {
   let searchRef!: HTMLDivElement;
 
-  const mountRef = () => {
-    if (props.mount) return props.mount;
-    if (props.scope === 'block') {
-      if (isInBlock()) {
-        const blockElement = blockElementSignal.get();
-        if (blockElement) return blockElement;
-      }
-    }
-    if (props.scope === 'split') {
-      const panelElement =
-        getSplitPanelRef() || searchRef.closest('[data-split-panel]');
-      if (panelElement) return panelElement;
-    }
-    if (props.scope === 'local') {
-      const scopedElement = searchRef.closest('.portal-scope');
-      if (scopedElement) return scopedElement;
-    }
-    return document.body;
-  };
+  const mountRef = () =>
+    props.mount ??
+    resolveScopedPortalMount(
+      props.scope,
+      searchRef,
+      props.scope === 'split' ? getSplitPanelRef() : undefined
+    );
 
   return (
     <Show when={props.show !== false}>

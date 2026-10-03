@@ -13,6 +13,7 @@ import clickOutside from '@core/directive/clickOutside';
 import { debouncedDependent } from '@core/util/debounce';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
 import type { GithubPullRequestEntity } from '@entity';
+import type { Boundary } from '@floating-ui/dom';
 import PlusIcon from '@phosphor/plus.svg';
 import { useSlashMenuPullRequests } from '@queries/soup/slash-menu-pull-requests';
 import { useSystemSkillsQuery } from '@queries/storage/system-skills';
@@ -88,9 +89,10 @@ function systemSkillItem(skill: SystemSkillSummary): EntityItem {
 type SkillsMenuProps = {
   editor: LexicalEditor;
   menu: MenuOperations;
-  /** whether the menu checks against block boundary in floating middleware. uses floating-ui default if false. */
-  useBlockBoundary?: boolean;
+  /** Optional clipping boundary supplied by the editor host. */
+  boundary?: Boundary;
   portalScope?: PortalScope;
+  portalMount?: HTMLElement;
   /** Enables the combined agent menu, even before any commands arrive. */
   agentCommands?: () => AgentCommandItem[];
 };
@@ -336,13 +338,13 @@ function SkillsMenuInner(props: SkillsMenuProps) {
 
   return (
     <Show when={menuOpen()}>
-      <ScopedPortal scope={props.portalScope}>
+      <ScopedPortal mount={props.portalMount} scope={props.portalScope}>
         <div
           class="w-96 max-w-[calc(100cqw-1rem-2px)] cursor-default select-none z-modal-content menu-open-animation"
           use:floatWithSelection={{
             selection: untrack(mountSelection),
             reactiveOnContainer: props.editor.getRootElement(),
-            useBlockBoundary: props.useBlockBoundary,
+            boundary: props.boundary,
             onAvailableHeight: setMenuAvailableHeight,
           }}
           use:clickOutside={() => {

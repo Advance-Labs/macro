@@ -132,6 +132,7 @@ export function TitleEditor(props: { autoFocusOnMount?: boolean } = {}) {
     documentId,
     kind,
     documentSource,
+    element: overlayMount,
     permissions,
     state: documentState,
   } = useMarkdownDocument();
@@ -363,12 +364,12 @@ export function TitleEditor(props: { autoFocusOnMount?: boolean } = {}) {
       <EmojiMenu
         editor={editor}
         menu={emojiMenuOperations}
-        useBlockBoundary={true}
+        boundary={overlayMount()}
       />
       <TagsMenu
         editor={editor}
         menu={tagMenuOperations}
-        useBlockBoundary={true}
+        boundary={overlayMount()}
       />
       <Show when={showFallback()}>
         <div class="text-2xl font-semibold text-ink-placeholder absolute top-0 pointer-events-none">

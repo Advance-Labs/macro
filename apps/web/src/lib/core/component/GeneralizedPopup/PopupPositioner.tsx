@@ -1,5 +1,3 @@
-import { isInBlock } from '@core/block';
-import { blockElementSignal } from '@core/signal/blockElement';
 import {
   autoUpdate,
   type Boundary,
@@ -30,10 +28,9 @@ type PopupPositionerProps = {
   /** Padding kept between the popup and the boundary when shifting. Defaults to 8. */
   shiftPadding?: number;
   /**
-   * Clip the popup to the surrounding block element rather than the default
-   * clipping ancestors. Only takes effect inside a block context.
+   * Clip the popup to the supplied host rather than its clipping ancestors.
    */
-  useBlockBoundary?: boolean;
+  boundary?: Boundary;
   /** Stacking depth for the floating layer. Defaults to 2. */
   layerDepth?: 0 | 1 | 2 | 3 | 4;
   /** Classes on the positioned container, including its stacking order. */
@@ -52,12 +49,6 @@ export function PopupPositioner(props: PopupPositionerProps) {
   const [popupRef, setPopupRef] = createSignal<HTMLDivElement>();
   const [position, setPosition] = createSignal({ x: 0, y: 0 });
 
-  let boundary: Boundary = 'clippingAncestors';
-  if (props.useBlockBoundary && isInBlock()) {
-    const blockEl = blockElementSignal.get;
-    boundary = blockEl() ?? 'clippingAncestors';
-  }
-
   const updatePosition = async () => {
     const ref = popupRef();
     if (!ref) return;
@@ -67,9 +58,12 @@ export function PopupPositioner(props: PopupPositionerProps) {
         offsetMiddleware(props.offset ?? 12),
         flip({
           fallbackStrategy: 'initialPlacement',
-          boundary,
+          boundary: props.boundary ?? 'clippingAncestors',
         }),
-        shift({ padding: props.shiftPadding ?? 8, boundary }),
+        shift({
+          padding: props.shiftPadding ?? 8,
+          boundary: props.boundary ?? 'clippingAncestors',
+        }),
       ],
     });
 

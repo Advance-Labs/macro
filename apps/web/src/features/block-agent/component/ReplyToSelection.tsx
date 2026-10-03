@@ -52,14 +52,14 @@ export function ReplyToSelection(props: {
   return (
     <Show when={show() && domSelection()}>
       {(selection) => (
-        <ScopedPortal scope="block">
+        <ScopedPortal mount={props.container} scope="split">
           <button
             type="button"
             class="fixed top-0 left-0 z-highlight-menu flex items-center gap-1.5 rounded-full border border-edge bg-surface px-2.5 py-1 text-xs font-medium text-ink shadow-lg hover:overlay-hover"
             use:floatWithSelection={{
               selection: selection(),
               reactiveOnContainer: props.container,
-              useBlockBoundary: true,
+              boundary: props.container,
               moveWithSelection: true,
               floatingOptions: { placement: 'top' },
             }}

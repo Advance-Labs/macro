@@ -3,7 +3,10 @@ import { SidePanel } from '@components/app/side-panel';
 import { blockDataSignalAs, useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { createMethodRegistration } from '@core/orchestrator';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
+import {
+  blockElementSignal,
+  blockHotkeyScopeSignal,
+} from '@core/signal/blockElement';
 import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import {
   useCanComment,
@@ -28,6 +31,7 @@ import { TopBar } from './TopBar';
 
 export default function BlockPdf() {
   const documentId = useBlockId();
+  const portalMount = blockElementSignal.get;
   useBlockEntityCommands({
     id: () => documentId,
     scopeId: blockHotkeyScopeSignal.get,
@@ -58,7 +62,7 @@ export default function BlockPdf() {
         viewLocation={data()?.viewLocation}
         modificationData={data()?.documentMetadata.modificationData}
         isNested={isNested}
-        portalScope="block"
+        portalMount={portalMount()}
         permissions={{
           canComment: canComment(),
           canEdit: canEdit(),
