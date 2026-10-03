@@ -10,20 +10,17 @@ use chrono::Days;
 use chrono::{DateTime, Utc};
 use cool_asserts::assert_matches;
 use email::domain::models::{EnrichedEmailThreadPreview, PreviewView};
-use entity_access::domain::models::{
-    AnyEntityPermission, EntityAccessReceipt, OwnerAccessLevel, ViewAccessLevel,
-};
+use entity_access::domain::models::{AnyEntityPermission, EntityAccessReceipt, OwnerAccessLevel};
 use filter_ast::Expr;
 use foreign_entity::domain::{
-    models::{
-        CreateForeignEntity, ForeignEntity, ForeignEntityError, PatchForeignEntity, SourceId,
-    },
-    ports::{ForeignEntityListQuery, ForeignEntityService},
+    models::{ForeignEntity, SourceId},
+    ports::ForeignEntityListQuery,
 };
 use frecency::domain::models::{FrecencyPageRequest, FrecencyPageResponse};
 use frecency::domain::ports::MockFrecencyQueryService;
 use frecency::domain::services::FrecencyQueryServiceImpl;
 use frecency::{domain::models::AggregateFrecency, outbound::mock::MockFrecencyStorage};
+use github_pull_requests::domain::models::GithubPullRequestError;
 use item_filters::{
     ChannelThreadFilters, EntityFilters, ForeignEntityFilters,
     ast::{EntityFilterAst, foreign_entity::ForeignEntityLiteral},
@@ -261,93 +258,36 @@ fn call_record(
     }
 }
 
-fn foreign_entity_id_from_receipt(
-    receipt: EntityAccessReceipt<ViewAccessLevel>,
-) -> Result<Uuid, ForeignEntityError> {
-    let entity = receipt.entity();
-    if entity.entity_type != EntityType::ForeignEntity {
-        return Err(ForeignEntityError::BadRequest(format!(
-            "expected ForeignEntity receipt, got {:?}",
-            entity.entity_type
-        )));
-    }
-
-    Uuid::parse_str(&entity.entity_id).map_err(|_| {
-        ForeignEntityError::BadRequest("foreign entity receipt id must be a valid UUID".to_string())
-    })
-}
 use crm::domain::service::NoOpCrmService;
 use reminders::domain::service::NoOpRemindersService;
 
 #[derive(Clone)]
-struct NoopForeignEntityService;
+struct NoopPullRequestListing;
 
-impl ForeignEntityService for NoopForeignEntityService {
-    async fn get_foreign_entity(
-        &self,
-        receipt: EntityAccessReceipt<ViewAccessLevel>,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        let id = foreign_entity_id_from_receipt(receipt)?;
-        self.get_foreign_entity_by_id(id).await
-    }
-
-    async fn get_foreign_entity_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        Err(ForeignEntityError::NotFound(id))
-    }
-
-    async fn get_foreign_entities_by_foreign_entity_id(
-        &self,
-        _foreign_entity_id: &str,
-        _foreign_entity_source: Option<&str>,
-    ) -> Result<Vec<ForeignEntity>, ForeignEntityError> {
-        Ok(Vec::new())
-    }
-
-    async fn get_foreign_entities_for_user(
+impl GithubPullRequestListing for NoopPullRequestListing {
+    async fn list_pull_requests(
         &self,
         _requesting_user: Option<String>,
         _source_ids: Vec<SourceId>,
         _limit: u32,
         _query: ForeignEntityListQuery,
-    ) -> Result<Vec<ForeignEntity>, ForeignEntityError> {
+    ) -> Result<Vec<ForeignEntity>, GithubPullRequestError> {
         Ok(Vec::new())
-    }
-
-    async fn create_foreign_entity(
-        &self,
-        _create: CreateForeignEntity,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        unreachable!("NoopForeignEntityService does not create foreign entities")
-    }
-
-    async fn delete_foreign_entity(&self, _id: Uuid) -> Result<(), ForeignEntityError> {
-        unreachable!("NoopForeignEntityService does not delete foreign entities")
-    }
-
-    async fn patch_foreign_entity(
-        &self,
-        _id: Uuid,
-        _patch: PatchForeignEntity,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        unreachable!("NoopForeignEntityService does not patch foreign entities")
     }
 }
 
 #[derive(Clone)]
-struct RecordingForeignEntityService {
-    state: Arc<RecordingForeignEntityState>,
+struct RecordingPullRequestListing {
+    state: Arc<RecordingPullRequestListingState>,
 }
 
-struct RecordingForeignEntityState {
-    calls: Mutex<Vec<RecordedForeignEntityCall>>,
+struct RecordingPullRequestListingState {
+    calls: Mutex<Vec<RecordedPullRequestListingCall>>,
     entities: Vec<ForeignEntity>,
 }
 
 #[derive(Clone)]
-struct RecordedForeignEntityCall {
+struct RecordedPullRequestListingCall {
     requesting_user: Option<String>,
     source_ids: Vec<SourceId>,
     limit: u32,
@@ -393,75 +333,36 @@ fn foreign_entity_matches_literal(entity: &ForeignEntity, literal: &ForeignEntit
     }
 }
 
-impl RecordingForeignEntityService {
+impl RecordingPullRequestListing {
     fn new(entities: Vec<ForeignEntity>) -> Self {
         Self {
-            state: Arc::new(RecordingForeignEntityState {
+            state: Arc::new(RecordingPullRequestListingState {
                 calls: Mutex::new(Vec::new()),
                 entities,
             }),
         }
     }
 
-    fn calls(&self) -> Vec<RecordedForeignEntityCall> {
+    fn calls(&self) -> Vec<RecordedPullRequestListingCall> {
         self.state.calls.lock().unwrap().clone()
     }
 }
 
-impl ForeignEntityService for RecordingForeignEntityService {
-    async fn get_foreign_entity(
-        &self,
-        receipt: EntityAccessReceipt<ViewAccessLevel>,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        let id = foreign_entity_id_from_receipt(receipt)?;
-        self.get_foreign_entity_by_id(id).await
-    }
-
-    async fn get_foreign_entity_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        self.state
-            .entities
-            .iter()
-            .find(|entity| entity.id == id)
-            .cloned()
-            .ok_or(ForeignEntityError::NotFound(id))
-    }
-
-    async fn get_foreign_entities_by_foreign_entity_id(
-        &self,
-        foreign_entity_id: &str,
-        foreign_entity_source: Option<&str>,
-    ) -> Result<Vec<ForeignEntity>, ForeignEntityError> {
-        Ok(self
-            .state
-            .entities
-            .iter()
-            .filter(|entity| entity.foreign_entity_id == foreign_entity_id)
-            .filter(|entity| {
-                foreign_entity_source
-                    .map(|source| entity.foreign_entity_source == source)
-                    .unwrap_or(true)
-            })
-            .cloned()
-            .collect())
-    }
-
-    async fn get_foreign_entities_for_user(
+impl GithubPullRequestListing for RecordingPullRequestListing {
+    async fn list_pull_requests(
         &self,
         requesting_user: Option<String>,
         source_ids: Vec<SourceId>,
         limit: u32,
         query: ForeignEntityListQuery,
-    ) -> Result<Vec<ForeignEntity>, ForeignEntityError> {
+    ) -> Result<Vec<ForeignEntity>, GithubPullRequestError> {
         let filter = query.filter().clone();
 
         self.state
             .calls
             .lock()
             .unwrap()
-            .push(RecordedForeignEntityCall {
+            .push(RecordedPullRequestListingCall {
                 requesting_user,
                 source_ids: source_ids.clone(),
                 limit,
@@ -472,6 +373,7 @@ impl ForeignEntityService for RecordingForeignEntityService {
             .state
             .entities
             .iter()
+            .filter(|entity| entity.foreign_entity_source == "github_pull_request")
             .filter(|entity| {
                 source_ids.iter().any(|source_id| {
                     entity.stored_for_id.as_str() == source_id.id.as_str()
@@ -482,25 +384,6 @@ impl ForeignEntityService for RecordingForeignEntityService {
             .take(limit as usize)
             .cloned()
             .collect())
-    }
-
-    async fn create_foreign_entity(
-        &self,
-        _create: CreateForeignEntity,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        unreachable!("RecordingForeignEntityService does not create foreign entities")
-    }
-
-    async fn delete_foreign_entity(&self, _id: Uuid) -> Result<(), ForeignEntityError> {
-        unreachable!("RecordingForeignEntityService does not delete foreign entities")
-    }
-
-    async fn patch_foreign_entity(
-        &self,
-        _id: Uuid,
-        _patch: PatchForeignEntity,
-    ) -> Result<ForeignEntity, ForeignEntityError> {
-        unreachable!("RecordingForeignEntityService does not patch foreign entities")
     }
 }
 
@@ -581,6 +464,18 @@ fn foreign_entity_for_source(
     }
 }
 
+fn pull_request_for_source(
+    id: Uuid,
+    stored_for_id: impl Into<String>,
+    stored_for_auth_entity: impl Into<String>,
+    updated_at: DateTime<Utc>,
+) -> ForeignEntity {
+    let mut entity =
+        foreign_entity_for_source(id, stored_for_id, stored_for_auth_entity, updated_at);
+    entity.foreign_entity_source = "github_pull_request".to_string();
+    entity
+}
+
 fn channel_thread_message(
     channel_id: Uuid,
     thread_id: Uuid,
@@ -645,7 +540,7 @@ async fn simple_soup_includes_channel_threads() {
         comms_service.clone(),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -708,7 +603,7 @@ async fn simple_soup_includes_call_records() {
         NoopCommsService,
         call_query_service.clone(),
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -763,7 +658,7 @@ async fn simple_soup_uses_channel_thread_filters_without_touching_channel_filter
         comms_service.clone(),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -806,13 +701,20 @@ async fn simple_soup_uses_channel_thread_filters_without_touching_channel_filter
 async fn simple_soup_includes_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
     let foreign_entity_id = Uuid::from_u128(2);
-    let foreign_entity_service =
-        RecordingForeignEntityService::new(vec![foreign_entity_for_source(
+    let pull_request_listing = RecordingPullRequestListing::new(vec![
+        foreign_entity_for_source(
+            Uuid::from_u128(3),
+            user.as_ref(),
+            "user",
+            DateTime::default() + Days::new(3),
+        ),
+        pull_request_for_source(
             foreign_entity_id,
             user.as_ref(),
             "user",
             DateTime::default() + Days::new(2),
-        )]);
+        ),
+    ]);
 
     let mut soup_mock = MockSoupRepo::new();
     soup_mock
@@ -834,7 +736,7 @@ async fn simple_soup_includes_foreign_entities() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        foreign_entity_service.clone(),
+        pull_request_listing.clone(),
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -866,7 +768,7 @@ async fn simple_soup_includes_foreign_entities() {
     );
     assert_matches!(&page.items[1], SoupItem::Document(_));
 
-    let calls = foreign_entity_service.calls();
+    let calls = pull_request_listing.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].limit, 20);
     assert_eq!(calls[0].source_ids, vec![SourceId::user(user.as_ref())]);
@@ -876,13 +778,12 @@ async fn simple_soup_includes_foreign_entities() {
 #[tokio::test]
 async fn frecency_soup_does_not_query_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
-    let foreign_entity_service =
-        RecordingForeignEntityService::new(vec![foreign_entity_for_source(
-            Uuid::from_u128(42),
-            user.as_ref(),
-            "user",
-            DateTime::default(),
-        )]);
+    let pull_request_listing = RecordingPullRequestListing::new(vec![pull_request_for_source(
+        Uuid::from_u128(42),
+        user.as_ref(),
+        "user",
+        DateTime::default(),
+    )]);
 
     let mut frecency = MockFrecencyQueryService::new();
     frecency
@@ -918,7 +819,7 @@ async fn frecency_soup_does_not_query_foreign_entities() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        foreign_entity_service.clone(),
+        pull_request_listing.clone(),
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -938,14 +839,14 @@ async fn frecency_soup_does_not_query_foreign_entities() {
     .await
     .unwrap();
 
-    assert!(foreign_entity_service.calls().is_empty());
+    assert!(pull_request_listing.calls().is_empty());
 }
 
 #[tokio::test]
 async fn team_receipt_contributes_team_foreign_entity_source_id() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
     let team_id = Uuid::from_u128(100);
-    let foreign_entity_service = RecordingForeignEntityService::new(Vec::new());
+    let pull_request_listing = RecordingPullRequestListing::new(Vec::new());
 
     let mut soup_mock = MockSoupRepo::new();
     soup_mock
@@ -966,7 +867,7 @@ async fn team_receipt_contributes_team_foreign_entity_source_id() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        foreign_entity_service.clone(),
+        pull_request_listing.clone(),
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -989,7 +890,7 @@ async fn team_receipt_contributes_team_foreign_entity_source_id() {
     .await
     .unwrap();
 
-    let calls = foreign_entity_service.calls();
+    let calls = pull_request_listing.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0].source_ids,
@@ -1028,7 +929,7 @@ async fn crm_filters_without_team_receipt_are_rejected() {
             NoopCommsService,
             NoopCallRecordQueryService,
             NoOpCrmService,
-            RecordingForeignEntityService::new(Vec::new()),
+            RecordingPullRequestListing::new(Vec::new()),
             NoOpRemindersService,
         )
         .get_user_soup(
@@ -1055,13 +956,12 @@ async fn crm_filters_without_team_receipt_are_rejected() {
 #[tokio::test]
 async fn foreign_entity_filter_suppresses_non_matching_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
-    let foreign_entity_service =
-        RecordingForeignEntityService::new(vec![foreign_entity_for_source(
-            Uuid::from_u128(1),
-            user.as_ref(),
-            "user",
-            DateTime::default(),
-        )]);
+    let pull_request_listing = RecordingPullRequestListing::new(vec![pull_request_for_source(
+        Uuid::from_u128(1),
+        user.as_ref(),
+        "user",
+        DateTime::default(),
+    )]);
 
     let mut soup_mock = MockSoupRepo::new();
     soup_mock
@@ -1076,7 +976,7 @@ async fn foreign_entity_filter_suppresses_non_matching_foreign_entities() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        foreign_entity_service.clone(),
+        pull_request_listing.clone(),
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -1108,7 +1008,7 @@ async fn foreign_entity_filter_suppresses_non_matching_foreign_entities() {
     .unwrap();
 
     assert!(page.items.is_empty());
-    assert!(foreign_entity_service.calls()[0].query.filter().is_some());
+    assert!(pull_request_listing.calls()[0].query.filter().is_some());
 }
 
 #[tokio::test]
@@ -1150,7 +1050,7 @@ async fn it_should_not_query_frecency() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -1213,7 +1113,7 @@ async fn properties_are_populated_once_after_pagination() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_properties(
@@ -1288,7 +1188,7 @@ async fn frecency_is_populated_once_after_pagination() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -1358,7 +1258,7 @@ async fn properties_and_frecency_are_composed_after_pagination() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_properties_and_frecency(
@@ -1433,7 +1333,7 @@ async fn grouped_properties_are_populated_by_the_service() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     );
     let items = service
@@ -1524,7 +1424,7 @@ async fn it_should_query_frecency() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -1610,7 +1510,7 @@ async fn it_should_sort_frecency_descending() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -1710,7 +1610,7 @@ async fn frecency_should_fallback() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -1795,7 +1695,7 @@ async fn frecency_should_paginate() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -1882,7 +1782,7 @@ async fn frecency_should_resume_cursor() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -1985,7 +1885,7 @@ async fn frecency_fallback_cursor_should_resume() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_frecency(
@@ -2061,7 +1961,7 @@ async fn cursor_should_return_simple_sort() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2135,7 +2035,7 @@ async fn cursor_should_return_frecency() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2196,7 +2096,7 @@ async fn it_should_return_is_completed_true_for_completed_tasks() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2247,7 +2147,7 @@ async fn it_should_return_is_completed_false_for_incomplete_tasks() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2298,7 +2198,7 @@ async fn it_should_return_is_completed_none_for_non_tasks() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2361,7 +2261,7 @@ async fn it_should_preserve_is_completed_for_mixed_items() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2446,7 +2346,7 @@ async fn it_should_preserve_is_completed_in_by_ids_queries() {
         NoopCommsService,
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2579,7 +2479,7 @@ async fn touched_soup_orders_by_touch_and_drops_unhydrated() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_properties(
@@ -2686,7 +2586,7 @@ async fn touched_soup_projection_preserves_authoritative_attachment_facts() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_projection(
@@ -2793,7 +2693,7 @@ async fn unexpanded_touched_hydrates_projects_in_the_main_query() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -2864,7 +2764,7 @@ async fn touched_soup_full_page_builds_keyset_cursor() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -3030,7 +2930,7 @@ async fn touched_soup_hydrates_emails_with_the_unfiltered_view() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(
@@ -3096,7 +2996,7 @@ async fn touched_soup_rejects_unfoldable_filters() {
             RecordingCommsService::new(vec![]),
             NoopCallRecordQueryService,
             NoOpCrmService,
-            NoopForeignEntityService,
+            NoopPullRequestListing,
             NoOpRemindersService,
         )
         .get_user_soup(
@@ -3234,7 +3134,7 @@ async fn notified_soup_refills_after_hydration_drops_and_ends_when_exhausted() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup_with_properties(notified_request(3, vec![], EntityFilters::default()), None)
@@ -3296,7 +3196,7 @@ async fn notified_soup_full_page_builds_keyset_cursor() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(notified_request(2, vec![], EntityFilters::default()), None)
@@ -3347,7 +3247,7 @@ async fn notified_soup_caps_refill_rounds_and_keeps_a_cursor() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(notified_request(1, vec![], EntityFilters::default()), None)
@@ -3432,7 +3332,7 @@ async fn notified_soup_hydrates_channels_and_emails_with_the_request_tree() {
         comms_service.clone(),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(notified_request(20, vec![link], filters), None)
@@ -3511,7 +3411,7 @@ async fn notified_soup_narrows_the_reminder_leg_to_the_request_ids() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         reminders_service,
     )
     .get_user_soup(
@@ -3560,7 +3460,7 @@ async fn notified_soup_skips_the_reminder_leg_when_no_candidate_is_named() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         reminders_service,
     )
     .get_user_soup(
@@ -3597,7 +3497,7 @@ async fn notified_soup_rejects_unfoldable_calendar_filters() {
         RecordingCommsService::new(vec![]),
         NoopCallRecordQueryService,
         NoOpCrmService,
-        NoopForeignEntityService,
+        NoopPullRequestListing,
         NoOpRemindersService,
     )
     .get_user_soup(notified_request(20, vec![], filters), None)
