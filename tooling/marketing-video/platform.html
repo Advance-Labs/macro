@@ -69,9 +69,9 @@ const SC = { "916": 1.22, "45": 1.1, "11": 1.42, "169": 1.2 }[FMT];        // wo
 const TALL = FMT === "916";
 
 // ---------- music-driven timing ----------
-// Ambient: "Kodama Night Town" (Mixkit 114), 78.01 BPM, downbeat 11.6186 s. 20 beats = 5 bars.
-//                  mark word head  em ch dc sh db pr ag  orbit end
-const MUSIC = [["ambient", 78.01, [2, 2, 3, 1, 1, 1, 1, 1, 1, 1, 3, 3]]];
+// Upbeat: "Swish Swed" by Arulo (Mixkit 201), 120 BPM, drop downbeat 40.032 s. 16 beats = 4 bars.
+//                  lock head  em ch dc sh db pr ag  gather fold
+const MUSIC = [["upbeat", 120.0, [2, 2, 1, 1, 1, 1, 1, 1, 1, 3, 2]]];
 const STEP_T = [0];
 for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
 const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
@@ -260,7 +260,7 @@ const CARDS = [
       <div class="a nowrap" style="left:16px;right:16px;top:70px;font-size:17px;color:#e2e2e2;overflow:hidden;text-overflow:ellipsis">Updated your existing PR with the deploy fix. Fixed transient registry failures with bounded retries…</div>
     </div>` },
 ];
-const NC = CARDS.length, FIRST = 3;   // card k lives in step FIRST + k
+const NC = CARDS.length, FIRST = 2;   // card k lives in step FIRST + k
 
 // =====================================================================
 // DOM
@@ -279,7 +279,7 @@ const lock = el(`<div class="a" id="lock" style="left:0;top:0">
   <div class="a nowrap" id="wm" style="left:0;top:${-WM_SIZE * 0.62}px;font-size:${WM_SIZE}px;font-weight:620;letter-spacing:-0.05em;color:#fff;line-height:1.2">macro<span style="color:var(--c3)">.com</span></div>
 </div>`);
 const head = el(`<div class="a" id="head" style="left:-500px;width:1000px;top:0">
-  <div class="lab" style="position:relative;font-size:${TALL ? 70 : 64}px;line-height:1.12;white-space:normal">A single platform<br>for your company.</div></div>`);
+  <div class="lab" style="position:relative;font-size:${TALL ? 70 : 64}px;line-height:1.12;white-space:normal">The unified workspace<br>for your company.</div></div>`);
 const E = {};
 // measure the wordmark to center the lockup
 const GAP = 26;
@@ -311,9 +311,9 @@ let LK_X, LK_Y, LK_S;
 function buildTracks() {
   WMW = E.wm.getBoundingClientRect().width / SC;
   SH = (GAP + WMW) / 2;                                   // mark center offset when the wordmark is out
-  LK_X = Track([[1, -SH], [10, 0], [11.15, -SH], [11.98, 0]], 0.5, 0.9);
-  LK_Y = Track([[2, TALL ? -230 : -150], [3.6, 0], [11.5, TALL ? -230 : -150], [11.98, 0]], 0.55, 0.92);
-  LK_S = Track([[2, 0.8], [3.6, 1], [10, 1.3], [11.15, 1], [11.5, 0.8], [11.98, 1]], 0.5, 0.92);
+  LK_X = Track([[2.5, 0], [10.15, -SH]], 0.42, 0.9);
+  LK_Y = Track([[1, TALL ? -230 : -150], [2.5, 0]], 0.42, 0.9);
+  LK_S = Track([[1, 0.8], [2.5, 1.3], [10.15, 1]], 0.42, 0.9);
 }
 // gather layout: seven tiles around the mark (hand-placed per format), drifting gently
 const SLOTS = {
@@ -324,22 +324,32 @@ const SLOTS = {
 }[FMT];
 const ORB = [0, 0, SLOTS[0]];
 const orbitAt = (k, bt) => {
-  const [x, y] = SLOTS[1][k], d = (bt - 10) * 6;
+  const [x, y] = SLOTS[1][k], d = (bt - 9) * 3;
   return [x * (1 + 0.006 * d), y * (1 + 0.006 * d)];
 };
 
 // ---------- sound ----------
 const CUES = [];
 const cue = (bt, type, gain = 1, extra = {}) => CUES.push({ t: B(bt), type, gain, ...extra });
-const MARK_T = [0.04, 0.29, 0.54];
-MARK_T.forEach((b, i) => cue(b, "pop", 0.7, { pitch: [1, 1.26, 1.5][i] }));
-cue(1, "swoosh", 0.5);
-for (let i = 0; i < 9; i++) cue(1.06 + i * 0.045, "key", 0.32, { seed: i });
-cue(2, "swish", 0.5);
-const BEEP = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
-CARDS.forEach((_, k) => cue(FIRST + k, "beep", 0.85, { pitch: BEEP[k] }));
-CARDS.forEach((_, k) => cue(10 + k / 8, "tick", 0.38, { pitch: BEEP[k] * 1.5 }));
-cue(10, "swoosh", 0.6); cue(11, "swoosh", 0.55); cue(11.15, "chime", 0.75);
+const MARK_T = [9, 9.06, 9.12];      // the mark reassembles as the gather starts
+MARK_T.forEach((b, i) => cue(b, "pop", 0.6, { pitch: [1, 1.26, 1.5][i] }));
+cue(1, "swoosh", 0.55); cue(1.02, "click", 0.5);
+const DING = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
+CARDS.forEach((c, k) => {
+  const s0 = FIRST + k; cue(s0, "click", 0.85); cue(s0 + 0.01, "swish", 0.45);
+  const at = (f) => s0 + f;
+  if (c.key === "email") [0.15, 0.24, 0.33, 0.42, 0.55, 0.64, 0.73].forEach((f, i) => cue(at(f), "key", 0.28, { seed: i }));
+  if (c.key === "chat") cue(at(0.3), "pop", 0.55, { pitch: 1.2 });
+  if (c.key === "docs") [0.14, 0.21, 0.29, 0.36, 0.44].forEach((f, i) => cue(at(f), "key", 0.32, { seed: 20 + i }));
+  if (c.key === "sheet") [0.5, 0.62, 0.74, 0.86].forEach((f, i) => cue(at(f), "tick", 0.22, { pitch: 1 + 0.06 * i }));
+  if (c.key === "db") [0.08, 0.15, 0.22, 0.29, 0.36].forEach((f, i) => cue(at(f), "tick", 0.16, { pitch: 1.3 }));
+  if (c.key === "pr") { [0.18, 0.34, 0.5].forEach((f, i) => cue(at(f), "tick", 0.42, { pitch: [1.26, 1.5, 1.68][i] })); cue(at(0.68), "pop", 0.6, { pitch: 1.3 }); }
+  if (c.key === "agent") { cue(at(0.28), "pop", 0.5, { pitch: 1.1 }); cue(at(0.55), "blip", 0.45); }
+});
+CARDS.forEach((_, k) => cue(9 + k / 8, "pop", 0.4, { pitch: DING[k] }));
+cue(9, "swoosh", 0.6); cue(10, "swoosh", 0.6);
+for (let i = 0; i < 9; i++) cue(10.18 + i * 0.03, "key", 0.3, { seed: 40 + i });
+cue(10.5, "chime", 0.8);
 
 // =====================================================================
 // seek(t)
@@ -350,25 +360,23 @@ function seek(tIn) {
   rings.style.transform = `scale(${(1 + 0.04 * Math.sin((t / T) * TAU)).toFixed(4)})`;
 
   // ----- lockup -----
-  const lv1 = visAmt(t, 0, B(3) - 0.02, 0.3), lv2 = visAmt(t, B(10), B(11.82), 0.3);
-  const lv = lv1.o > 0.002 ? lv1 : lv2;
+  const lv = visAmt(t, B(9), B(2) + T - 0.02, 0.3);
   if (fx(E.lock, lv.o, lv.pout * 16, `translate3d(${px(LK_X(t) * LK_S(t))},${px(LK_Y(t))},0) scale(${LK_S(t).toFixed(4)})`)) {
     // the mark: three pieces, one per eighth note (and again for the orbit)
     MARK.forEach((_, i) => {
-      const at = bt >= 9 ? B(10 + i * 0.05) : B(MARK_T[i]), p = spr(t - at, 0.3, 0.8);
+      let dt = t - B(MARK_T[i]); if (dt < -0.5) dt += T; const p = spr(dt, 0.3, 0.8), at = t - dt;
       const pe = E["mk" + i]; pe.style.opacity = (t < at ? 0 : clamp(p * 1.4)).toFixed(3);
       pe.style.transform = `translate(0px,${((1 - p) * 4).toFixed(3)}px)`;
     });
     // the wordmark wipes in after the mark moves aside
-    const wOn = (bt >= 1 && bt < 3.2) || bt >= 11.15;
-    const w0 = bt >= 11 ? B(11.15) + 0.05 : B(1) + 0.08;
+    const wOn = bt < 2 || bt >= 10.15;
+    const w0 = B(10.15) + 0.02, tw = bt < 2 ? t + T : t;
     E.wm.style.left = px(MS / 2 + GAP + 0);
     E.mk.style.left = px(-MS / 2);
-    if (wOn) write(E.wm, t, w0, w0 + 0.42); else E.wm.style.display = "none";
+    if (wOn) write(E.wm, tw, w0, w0 + 0.32); else E.wm.style.display = "none";
   }
   // headline
-  const hv1 = visAmt(t, B(2) + 0.05, B(3) - 0.02, 0.36), hv2 = visAmt(t, B(11.5), B(11.82), 0.36);
-  const hv = hv1.o > 0.002 ? hv1 : hv2;
+  const hv = visAmt(t, B(1) + 0.04, B(2) - 0.02, 0.3);
   if (fx(E.head, hv.o, (1 - hv.pin) * 14 + hv.pout * 16, `translate3d(0,${px((TALL ? 0 : 20) + (1 - hv.pin) * 18)},0)`)) {}
 
   // ----- the seven graphics, one per beat -----
@@ -402,11 +410,11 @@ function seek(tIn) {
 
   // ----- orbit: all seven around the mark, then they fold into it -----
   tiles.forEach((n, k) => {
-    const at = B(10 + k / 8), v = visAmt(t, at, B(11.6), 0.3);
+    const at = B(9 + k / 8), v = visAmt(t, at, B(10.7), 0.26);
     const c = CARDS[k];
     if (!show(n, v.o)) return;
     const [ox, oy] = orbitAt(k, bt);
-    const fold = clamp(spr(t - B(11) - k * 0.025, 0.42, 1));
+    const fold = clamp(spr(t - B(10) - k * 0.02, 0.36, 1));
     const x = ox * (1 - fold), y = oy * (1 - fold) + (TALL ? 0 : 0);
     const s = ORB[2] * (0.6 + 0.4 * v.pin) * (1 - 0.85 * fold);
     n.style.filter = (1 - v.pin) * 8 + fold * 6 > 0.04 ? `blur(${((1 - v.pin) * 8 + fold * 6).toFixed(3)}px)` : "none";
@@ -416,7 +424,7 @@ function seek(tIn) {
 }
 
 // ---------- boot ----------
-window.SONGS = { ambient: ["song-ambient-kodama-night-town.mp3", 11.6186] }; // Mixkit 114
+window.SONGS = { upbeat: ["song-swish-swed-arulo.mp3", 40.0318] }; // Mixkit 201, "Swish Swed" by Arulo
 window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
 window.probe = (t) => [LK_X(t), LK_Y(t), LK_S(t), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 window.ready = Promise.all(['400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '620 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f)))
