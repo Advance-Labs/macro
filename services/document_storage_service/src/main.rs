@@ -1814,6 +1814,24 @@ async fn run() -> anyhow::Result<()> {
         graphql_entity_mutation_service,
         github_sync_service: Arc::new(github_sync_service_impl),
         foreign_entity_state,
+        legal_state: esignature::inbound::router::RouterState {
+            service: Arc::new(esignature::domain::service::Service::new(
+                esignature::outbound::postgres::Postgres::new(db.clone()),
+                esignature::outbound::pdf::Pdf,
+                esignature::outbound::mail::Mail::new(
+                    ses_client::SesClient::from_env(
+                        aws_sdk_sesv2::Client::new(&aws_config),
+                        &config.environment.to_string(),
+                    ),
+                    match config.environment {
+                        Environment::Production => "https://macro.com".into(),
+                        Environment::Develop => "https://dev.macro.com".into(),
+                        Environment::Local => "http://localhost:3000".into(),
+                    },
+                ),
+            )),
+            authorization_state: authorization_state.clone(),
+        },
         db: db.clone(),
         readonly_db: readonly_pool::ReadOnlyPool(readonly_db.clone()),
         redis_client: redis_sha_client,

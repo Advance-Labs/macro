@@ -12,6 +12,7 @@ import { EmailCompose } from '@app/features/email-compose/email-compose';
 import { MailRouteView } from '@app/features/email-view/route';
 import { GettingStartedRouteView } from '@app/features/getting-started/route';
 import { HomeRouteView } from '@app/features/home/route';
+import { LegalRouteView } from '@app/features/legal/route';
 import {
   CallsRouteView,
   FoldersRouteView,
@@ -538,3 +539,5 @@ registerComponent(
   'ui',
   lazy(() => import('@app/features/ui-gallery/UiGallery'))
 );
+
+registerComponent('legal', LegalRouteView, { splitPanelLayout: 'composable' });

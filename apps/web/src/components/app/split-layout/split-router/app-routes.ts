@@ -14,6 +14,7 @@ import { driveSplitRoute } from '@app/features/drive-view/route';
 import { emailSplitRoute } from '@app/features/email-view/route';
 import { gettingStartedRoute } from '@app/features/getting-started/route';
 import { homeSplitRoute } from '@app/features/home/route';
+import { legalRoute } from '@app/features/legal/route';
 import {
   callsRoute,
   foldersRoute,
@@ -53,6 +54,7 @@ export const appSplitRoutes = defineRoutes({
     callsRoute,
     callDetailRoute,
     companiesRoute,
+    legalRoute,
     foldersRoute,
     searchRoute,
     prDetailRoute,

@@ -327,7 +327,10 @@ export async function safeFetch<
           return ok({ contentType, body: text } as T);
         }
 
-        if (contentType.includes('application/octet-stream')) {
+        if (
+          contentType.includes('application/octet-stream') ||
+          contentType.includes('application/pdf')
+        ) {
           return ok(new Uint8Array(await response.arrayBuffer()) as T);
         }
 

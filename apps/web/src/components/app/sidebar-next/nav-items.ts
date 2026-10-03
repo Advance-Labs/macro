@@ -10,6 +10,7 @@ import EnvelopeIcon from '@phosphor/envelope.svg';
 import FolderSimpleIcon from '@phosphor/folder-simple.svg';
 import HouseIcon from '@phosphor/house.svg';
 import ListChecksIcon from '@phosphor/list-checks.svg';
+import ScalesIcon from '@phosphor/scales.svg';
 import AgentIcon from '@phosphor/sparkle.svg';
 import BellFillIcon from '@phosphor-fill/bell-fill.svg';
 import BuildingsFillIcon from '@phosphor-fill/buildings-fill.svg';
@@ -19,6 +20,7 @@ import EnvelopeFillIcon from '@phosphor-fill/envelope-fill.svg';
 import FolderSimpleFillIcon from '@phosphor-fill/folder-simple-fill.svg';
 import HouseFillIcon from '@phosphor-fill/house-fill.svg';
 import ListChecksFillIcon from '@phosphor-fill/list-checks-fill.svg';
+import ScalesFillIcon from '@phosphor-fill/scales-fill.svg';
 import AgentFillIcon from '@phosphor-fill/sparkle-fill.svg';
 import type { NavIcon } from './nav-glyph';
 
@@ -116,6 +118,15 @@ const SIDEBAR_NEXT_NAV_ITEMS = [
     iconActive: AgentFillIcon,
     hotkey: 'a',
     hotkeyToken: TOKENS.sidebar.goTo.agents,
+  },
+  {
+    id: 'legal',
+    label: 'Legal',
+    href: '/legal',
+    icon: ScalesIcon,
+    iconActive: ScalesFillIcon,
+    hotkey: 'l',
+    hotkeyToken: TOKENS.sidebar.goTo.legal,
   },
   {
     id: 'companies',

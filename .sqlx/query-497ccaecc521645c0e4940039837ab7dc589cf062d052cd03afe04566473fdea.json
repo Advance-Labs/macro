@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE legal_envelopes SET data = $1, revision = $2, completed_pdf = COALESCE($3, completed_pdf) WHERE id = $4 AND user_id = $5 AND revision = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Int8",
+        "Bytea",
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "497ccaecc521645c0e4940039837ab7dc589cf062d052cd03afe04566473fdea"
+}

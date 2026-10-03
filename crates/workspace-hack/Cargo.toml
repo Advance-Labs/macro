@@ -43,7 +43,8 @@ bzip2 = { version = "0.5", features = ["libbz2-rs-sys"] }
 bzip2-sys = { version = "0.1", default-features = false, features = ["__disabled"] }
 chacha20 = { version = "0.10", default-features = false, features = ["legacy", "rng", "zeroize"] }
 chrono = { version = "0.4", features = ["serde"] }
-cipher = { version = "0.5", default-features = false, features = ["block-padding", "rand_core", "stream-wrapper"] }
+cipher-9fbad63c4bcf4a8f = { package = "cipher", version = "0.4", default-features = false, features = ["block-padding"] }
+cipher-d8f496e17d97b5cb = { package = "cipher", version = "0.5", default-features = false, features = ["block-padding", "rand_core", "stream-wrapper"] }
 crossbeam-utils = { version = "0.8" }
 crypto-bigint = { version = "0.5", features = ["generic-array", "zeroize"] }
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
@@ -83,13 +84,15 @@ hyper-rustls-adf3d7031871b0af = { package = "hyper-rustls", version = "0.24", de
 hyper-util = { version = "0.1", features = ["client-legacy", "client-proxy", "http1", "http2", "server", "service"] }
 idna = { version = "1" }
 indexmap = { version = "2", features = ["serde"] }
-inout = { version = "0.2", default-features = false, features = ["block-padding"] }
+inout-6f8ce4dd05d13bba = { package = "inout", version = "0.2", default-features = false, features = ["block-padding"] }
+inout-c65f7effa3be6d31 = { package = "inout", version = "0.1", default-features = false, features = ["block-padding"] }
 insta = { version = "1", features = ["glob", "json"] }
 itertools = { version = "0.13" }
 lazy_static = { version = "1", default-features = false, features = ["spin_no_std"] }
 libc = { version = "0.2", features = ["extra_traits"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
-memchr = { version = "2" }
+md-5 = { version = "0.10" }
+memchr = { version = "2", features = ["use_std"] }
 mime_guess = { version = "2" }
 miniz_oxide = { version = "0.8", features = ["simd"] }
 num-bigint = { version = "0.4" }
@@ -188,7 +191,8 @@ bzip2-sys = { version = "0.1", default-features = false, features = ["__disabled
 cc = { version = "1", default-features = false, features = ["parallel"] }
 chacha20 = { version = "0.10", default-features = false, features = ["legacy", "rng", "zeroize"] }
 chrono = { version = "0.4", features = ["serde"] }
-cipher = { version = "0.5", default-features = false, features = ["block-padding", "rand_core", "stream-wrapper"] }
+cipher-9fbad63c4bcf4a8f = { package = "cipher", version = "0.4", default-features = false, features = ["block-padding"] }
+cipher-d8f496e17d97b5cb = { package = "cipher", version = "0.5", default-features = false, features = ["block-padding", "rand_core", "stream-wrapper"] }
 crossbeam-utils = { version = "0.8" }
 crypto-bigint = { version = "0.5", features = ["generic-array", "zeroize"] }
 crypto-common-6f8ce4dd05d13bba = { package = "crypto-common", version = "0.2", default-features = false, features = ["getrandom"] }
@@ -229,13 +233,15 @@ hyper-rustls-adf3d7031871b0af = { package = "hyper-rustls", version = "0.24", de
 hyper-util = { version = "0.1", features = ["client-legacy", "client-proxy", "http1", "http2", "server", "service"] }
 idna = { version = "1" }
 indexmap = { version = "2", features = ["serde"] }
-inout = { version = "0.2", default-features = false, features = ["block-padding"] }
+inout-6f8ce4dd05d13bba = { package = "inout", version = "0.2", default-features = false, features = ["block-padding"] }
+inout-c65f7effa3be6d31 = { package = "inout", version = "0.1", default-features = false, features = ["block-padding"] }
 insta = { version = "1", features = ["glob", "json"] }
 itertools = { version = "0.13" }
 lazy_static = { version = "1", default-features = false, features = ["spin_no_std"] }
 libc = { version = "0.2", features = ["extra_traits"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
-memchr = { version = "2" }
+md-5 = { version = "0.10" }
+memchr = { version = "2", features = ["use_std"] }
 mime_guess = { version = "2" }
 miniz_oxide = { version = "0.8", features = ["simd"] }
 num-bigint = { version = "0.4" }

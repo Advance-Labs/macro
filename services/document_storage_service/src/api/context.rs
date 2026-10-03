@@ -707,6 +707,12 @@ pub(crate) type DssDictationState = dictation::inbound::axum_router::DictationRo
 #[derive(Clone, FromRef)]
 pub(crate) struct ApiContext {
     pub dictation_state: DssDictationState,
+    pub legal_state: esignature::inbound::router::RouterState<
+        esignature::outbound::postgres::Postgres,
+        esignature::outbound::pdf::Pdf,
+        esignature::outbound::mail::Mail,
+        AuthorizationService,
+    >,
     pub db: PgPool,
     pub readonly_db: ReadOnlyPool,
     pub redis_client: Arc<Redis>,

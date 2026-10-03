@@ -98,6 +98,10 @@ fn api_router(state: ApiContext) -> Router {
     // cal.com validates via HMAC signature.
     let webhook_router = Router::new()
         .nest(
+            "/legal/signing",
+            esignature::inbound::router::signing_router(state.legal_state.service.clone()),
+        )
+        .nest(
             "/call",
             call::inbound::axum_router::webhook_router(
                 state.call_webhook_state.clone(),
@@ -325,6 +329,10 @@ fn api_router(state: ApiContext) -> Router {
                 .layer(ServiceBuilder::new().layer(axum::middleware::from_fn(
                     macro_middleware::connection_drop_prevention_handler,
                 ))),
+        )
+        .nest(
+            "/legal",
+            esignature::inbound::router::management_router(state.legal_state.clone()),
         )
         .nest("/recents", recents::router())
         .nest("/saved_views", saved_views::router())

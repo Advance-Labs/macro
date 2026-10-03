@@ -11,6 +11,7 @@ import { InviteWelcome } from '@app/features/gtm-invite/InviteWelcome';
 import { usePendingInviteRedemption } from '@app/features/gtm-invite/usePendingInviteRedemption';
 import { HomePreferencesProvider } from '@app/features/home/home-prefs';
 import { GlobalShareInboxConflictDialog } from '@app/features/inbox/ShareInboxConflictDialog';
+import { Signing } from '@app/features/legal/signing';
 import { IncomingMeetingInvitationsProvider } from '@app/features/meetings/incoming-meeting-invitations';
 import { MeetingRouter } from '@app/features/meetings/meeting-router';
 import { MeetingSessionProvider } from '@app/features/meetings/meeting-session-provider';
@@ -236,6 +237,7 @@ function OnboardingRoute() {
 }
 
 const ROUTES: RouteDefinition[] = [
+  { path: '/sign', component: Signing },
   { path: '/meet/*path', component: MeetingRouter },
   {
     path: '/task-slug/:taskSlug',

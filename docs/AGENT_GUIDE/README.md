@@ -15,6 +15,7 @@ verified live against a local stack (`just run_local`).
 | [channels.md](channels.md) | Channels: create, invite, message, participants, bots |
 | [tasks.md](tasks.md) | Task list and creation dialog |
 | [view-tours.md](view-tours.md) | Desktop feature flyovers, dismissal, targeting, and embedded videos |
+| [legal.md](legal.md) | Envelopes, field placement, external signing, consent, completion PDFs, and revocation |
 | [reminders.md](reminders.md) | Creating and editing reminders, scheduling controls, and safe failure verification |
 | [surfaces.md](surfaces.md) | Every other surface: inbox, email, search, files, calendar, calls, customers, activity, settings |
 | [browser-technique.md](browser-technique.md) | Generic chrome-devtools MCP lessons learned on this app |

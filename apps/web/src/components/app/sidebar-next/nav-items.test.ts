@@ -21,3 +21,17 @@ describe('reminders navigation item', () => {
     expect(disabled.some((item) => item.id === 'reminders')).toBe(false);
   });
 });
+
+describe('Legal navigation item', () => {
+  it('keeps the Legal workspace available independently of optional sections', () => {
+    const items = visibleNavItems({
+      showCalendar: false,
+      showCustomers: false,
+      showReminders: false,
+    });
+    expect(items.find((item) => item.id === 'legal')).toMatchObject({
+      label: 'Legal',
+      href: '/legal',
+    });
+  });
+});

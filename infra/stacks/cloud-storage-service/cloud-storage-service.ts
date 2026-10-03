@@ -213,6 +213,29 @@ export class CloudStorageService extends pulumi.ComponentResource {
       { parent: this }
     );
 
+    // Native eSignature invitations use the existing verified Macro identity.
+    // Restrict this role to the sender used by Legal, not arbitrary SES identities.
+    new aws.iam.RolePolicy(
+      `${BASE_NAME}-legal-invitations-${stack}`,
+      {
+        role: this.role.name,
+        policy: {
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Effect: 'Allow',
+              Action: ['ses:SendEmail'],
+              Resource: 'arn:aws:ses:us-east-1:569036502058:identity/macro.com',
+              Condition: {
+                StringEquals: { 'ses:FromAddress': 'legal@macro.com' },
+              },
+            },
+          ],
+        },
+      },
+      { parent: this }
+    );
+
     attachFrecencyTablePolicy(
       `${BASE_NAME}-role-frecency-table-att`,
       this.role,

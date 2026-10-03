@@ -49,6 +49,7 @@ import GearIcon from '@phosphor/gear.svg';
 import HomeIcon from '@phosphor/house.svg';
 import SearchIcon from '@phosphor/magnifying-glass.svg';
 import ActivityIcon from '@phosphor/pulse.svg';
+import ScalesIcon from '@phosphor/scales.svg';
 import SignOutIcon from '@phosphor/sign-out.svg';
 import { isRealNamePart, useOwnUserName } from '@queries/auth/user-name-self';
 import { debounce } from '@solid-primitives/scheduled';
@@ -76,6 +77,14 @@ export interface SidebarItem {
 }
 
 const SIDEBAR_LINKS = [
+  {
+    id: 'legal',
+    label: 'Legal',
+    href: '/legal',
+    icon: ScalesIcon,
+    hotkey: 'l',
+    hotkeyToken: TOKENS.sidebar.goTo.legal,
+  },
   {
     id: 'home',
     get label() {
