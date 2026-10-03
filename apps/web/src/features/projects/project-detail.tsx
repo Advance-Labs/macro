@@ -4,12 +4,12 @@ import {
   type DestinationTaskComposer,
   registerCreateDestination,
 } from '@app/features/command/create-destination';
+import { useNavigate } from '@app/lib/split-router';
 import {
   projectDetailRoute,
   projectTaskRoute,
   tasksSplitRoute,
-} from '@app/features/tasks-view/route';
-import { useNavigate } from '@app/lib/split-router';
+} from '@app/routes/routes';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   useSplitDisplayName,

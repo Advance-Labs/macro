@@ -30,6 +30,10 @@ use foreign_entity::{
 };
 use frecency::domain::services::FrecencyQueryServiceImpl;
 use frecency::outbound::postgres::FrecencyPgStorage;
+use github_pull_requests::{
+    domain::service::GithubPullRequestServiceImpl,
+    outbound::pg_github_pull_request_repo::PgGithubPullRequestRepo,
+};
 use macro_auth::middleware::decode_jwt::JwtValidationArgs;
 use macro_authorization::{
     InternalAuthConfig, MacroAuthJwtValidator, MacroAuthorizationServiceImpl,
@@ -253,8 +257,10 @@ async fn main() -> anyhow::Result<()> {
         frecency_storage,
     );
     let email_service_for_tools: Arc<ai_tools::ToolEmailService> = Arc::new(email_service.clone());
-    let foreign_entity_service =
-        ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone()));
+    let github_pull_request_service = GithubPullRequestServiceImpl::new(
+        ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
+        PgGithubPullRequestRepo::new(db.clone()),
+    );
     let soup_service = Arc::new(soup::domain::service::SoupImpl::new(
         soup::outbound::pg_soup_repo::PgSoupRepo::new(ReadOnlyPool(db.clone())),
         frecency_service,
@@ -262,7 +268,7 @@ async fn main() -> anyhow::Result<()> {
         channels_service,
         CallRecordQueryServiceImpl::new(PgCallRepo::new(db.clone())),
         crm::domain::service::NoOpCrmService,
-        foreign_entity_service,
+        github_pull_request_service,
         reminders::domain::service::NoOpRemindersService,
     ));
 
@@ -615,8 +621,9 @@ async fn main() -> anyhow::Result<()> {
     // Nudges the user's connected clients when import rows flip, so setup
     // sections and chat surfaces update immediately instead of on the next
     // poll (see import::outbound::gateway_notifier).
-    let import_notify =
-        import::outbound::gateway_notifier::gateway_import_notify(channels_connection_gateway);
+    let import_notify = import::outbound::gateway_notifier::gateway_import_notify(
+        channels_connection_gateway.clone(),
+    );
 
     let entity_creator = ai_tools::ToolEntityCreator {
         document_creator: document_tool_context.creator.clone(),
@@ -660,6 +667,22 @@ async fn main() -> anyhow::Result<()> {
         macro_event_broker.clone(),
     );
 
+    let databases_tool_context = ai_tools::build_databases_tool_context(
+        db.clone(),
+        entity_access_service.clone(),
+        ai_tools::ToolTableEventPublisher::Gateway(
+            databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                channels_connection_gateway.as_ref().clone(),
+            ),
+        ),
+        ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+    );
+    let databases_sql_tool_context = ai_tools::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        db.clone(),
+    );
+
     let tool_service_context = ai_tools::ToolServiceContext {
         search_service_client: search_service_client.clone(),
         email_service_client: email_service_client_external.clone(),
@@ -673,6 +696,7 @@ async fn main() -> anyhow::Result<()> {
         image_generation_tool_context: ai_tools::build_image_generation_tool_context(
             &document_tool_context,
             ai_tools::build_image_generator_from_env(),
+            recorder.clone(),
         )?,
         document_tool_context: document_tool_context.clone(),
         properties_tool_context: properties_tool_context.clone(),
@@ -689,6 +713,8 @@ async fn main() -> anyhow::Result<()> {
             user_email_service.clone(),
             entity_access_service.clone(),
         ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: import::inbound::toolset::ImportToolContext::wired(
             import_service.clone(),
         ),
@@ -696,7 +722,7 @@ async fn main() -> anyhow::Result<()> {
         channel_tool_context,
         bot_tool_context: ai_tools::build_bot_tool_context(
             db.clone(),
-            ai_tools::ToolBotEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             DocumentStorageServiceUrl::new()?.to_string(),
             pipedream_client.clone(),

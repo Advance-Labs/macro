@@ -19,6 +19,51 @@ Deleting a project shows its result without a link to the deleted project.
 Failed project deletions show `Not deleted`. Clearing projects from several tasks
 reports each task's outcome, including partial failures.
 
+## Phones with new agents enabled
+
+With `enable-chat-v3-agents`, **Agents** opens the new conversation list on phones,
+including GitHub PR state and links. Tap a row to open a full-screen conversation;
+the header back button returns to the previous screen, or Agents for a direct link.
+Portrait and landscape touch layouts have no conversation side panel. **Changes** opens a full-width,
+unified diff with **Back to conversation**; returning preserves the unsent draft.
+
+The mobile conversation list omits the desktop **New conversation**, **Agents**,
+and **Connections** controls. Use the Home composer or global create menu to start
+a conversation. Returning to the list and reopening the composer preserves the
+draft, attachments, agent, model, repository, and branch. Tap the
+agent/model control to open a searchable bottom sheet. Tap an agent to use its
+default model, or its model arrow to choose a model; **Create agent** opens the
+roster. Desktop navigation remains unchanged.
+
+The mobile Home composer is a filled, rounded input with no placeholder or
+rotating tips. Its collapsed height matches the New button, with the model
+selector and Send always visible. Tap the input to reveal attachment, microphone
+(when enabled), and repository controls; they collapse again when tapping outside.
+The editor and model picker stay mounted so collapsing preserves the draft.
+Repository and branch pickers keep the composer expanded while their search
+fields are focused, so their anchor stays in place.
+
+With the flag enabled, Home/list composers, search, the create menu, folder AI
+creation, contextual **Chat with AI**, and onboarding prompts all start new agent
+sessions. Existing legacy chat rows still open their original chats. Contextual
+chat actions use agent sessions regardless of the flag; without the flag, the
+legacy list and flag-gated composer flows remain available.
+
+While an agent works, a draft can be sent to its queue. Above the queue,
+**Send next** explicitly interrupts the current turn and sends the oldest queued
+message. The empty composer offers the same action when messages are queued;
+with a draft it offers **Send**. With no draft or queue, the busy composer offers
+**Stop**. Send-next actions disable during stopping/starting and for read-only
+sessions.
+
+Phone verification: check portrait and landscape with touch emulation. In the
+Home composer, enter multiple lines and tap Send, attach, or the model control;
+blurring the editor during the tap must not collapse or move the controls. Then exercise
+list → new conversation → back → new conversation, a row and direct session link,
+the model sheet and repository controls, queued sends, and Changes → back. Check
+that composers remain above the keyboard and neither Changes nor headers cause
+horizontal overflow.
+
 ## Uploading files with AI
 
 `UploadFile` accepts a filename and standard padded base64 contents, up to 25 MiB
@@ -38,7 +83,8 @@ permission failures should display a failed tool call without a successful resul
 `GenerateImage` takes a text prompt, renders it with Google's Nano Banana image
 model, and saves the result to static file service. An optional aspect ratio
 (`square`, `landscape`, `portrait`, `widescreen`, `tall`) controls its shape.
-The response includes `staticFileId` and the permanent image `url`; it does not
+The response includes `staticFileId`, the permanent image `url`, intrinsic pixel
+`width` and `height`, and ready-to-send `markdown`; it does not
 create a document or take a filename or destination project.
 
 For edits or variations, attach photos with the existing paperclip or use Macro
@@ -55,7 +101,14 @@ its SFS URL without a filename header or document navigation. It preserves its
 aspect ratio and fits the available width. A status appears while generation is
 pending; a failed image load shows “Preview unavailable”. The tool already renders
 the result in chat, so the assistant should not add a document mention or duplicate
-image there. In channel messages, embed the returned URL as a Markdown image.
+image there. In channel messages, copy the returned `markdown` verbatim on its own line.
+Its `<m-image>` markup preserves dimensions and fits the image within 400 × 400
+pixels, so loading it does not change the channel row height. Do not replace it
+with a plain Markdown image URL, which loses the dimensions. Agent previews also
+reserve space from the returned dimensions, including on image-load failure.
+Historical results without dimensions retain their previous rendering.
+To verify, delay the image download and compare row bounds before and after load
+at desktop and narrow widths; repeat after reopening the conversation.
 Earlier generations saved as DSS documents still render their original document
 card when viewing historical conversations.
 Refused prompts, provider failures, and hosts without a Google Generative AI key
@@ -133,11 +186,12 @@ the shimmer.
   Macro's models use the same searchable catalog as running sessions: a short
   **Recommended** list and a **More models** submenu grouped by model family,
   followed by **Agents** and **Coding agents** sections. Models have readable
-  names (for example, **Sonnet 5**) and provider or model icons aligned with the
+  names (for example, **Sonnet 5.5**) and provider or model icons aligned with the
   agent icons. The in-memory catalog offers the closed Anthropic and OpenAI chat
   models; Kimi, DeepSeek, Muse, GLM, Qwen, MiniMax, GPT OSS, and Nemotron
-  open-weight models; and Google's **Gemini 3.8 Flash**. Older Sonnet and Opus
-  versions are not offered.
+  open-weight models; and Google's **Gemini 3.8 Flash**. The Anthropic models
+  are **Sonnet 5.5**, **Opus 5.5**, and **Haiku 4.5**; older Claude versions
+  (Sonnet 5, Opus 5, Fable 5.1) are not offered.
   Selecting a model here selects
   the default runtime and applies that model to the next send, retracting the repository drawer.
   A model chosen from that catalog is remembered in local storage as the
@@ -269,10 +323,11 @@ the shimmer.
   Archived sessions are read-only: Rename and all message controls are unavailable,
   and an **Unarchive** action replaces the composer at the bottom. Archive /
   Unarchive is also available from the title dropdown.
-- Touch devices and users outside the flag retain the Owned / Running / Shared /
-  Automations / Skills list. On touch devices, conversation links open standalone
-  agent sessions or legacy chats instead of the desktop Agents workspace. A standalone legacy chat is `/app/chat/<uuid>`; doc-scoped chat
-  is `/app/md/<doc>/chat/<chat>` (split view).
+- Users without `enable-chat-v3-agents` retain the Owned / Running / Shared /
+  Automations / Skills list. With the flag enabled, touch devices use the new
+  conversation list described above. Touch conversation links open standalone
+  agent sessions or legacy chats. A standalone legacy chat is `/app/chat/<uuid>`;
+  doc-scoped chat is `/app/md/<doc>/chat/<chat>` (split view).
 
 ## Routine run history
 
@@ -519,7 +574,7 @@ existing text sizing.
 
 - Contenteditable composer (placeholder `Ask AI, @mention anything` / `Describe the edit…`).
 - Model picker button showing the current model (e.g. `Haiku 4.5`). Paid plans list
-  `Sonnet 5`, `Opus 5`, `Fable 5.1`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`;
+  `Sonnet 5.5`, `Opus 5.5`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`;
   in dev, heavy models carry a `2.5× usage` / `5× usage` hint.
   On the free plan everything but `Haiku 4.5` is
   dimmed with a lock and opens the `Smart models are premium` paywall when clicked.
@@ -692,14 +747,14 @@ On mobile the composer (and any queued prompts above it) floats in the bottom
 accessory region above the dock — same placement as channel and AI chat — so it
 stays tappable and clear of the home indicator. The box is full width; the text
 sits on top and a footer row holds the model (left, as a provider logo and
-name, e.g. `✳ Sonnet 5 ⌄`) and **Send** (right). On touch devices Enter on the
+name, e.g. `✳ Sonnet 5.5 ⌄`) and **Send** (right). On touch devices Enter on the
 virtual keyboard inserts a newline and never sends; only **Send** submits, the
 same as channel composers. This also applies to the Agents workspace session
 and new-conversation inputs and to the mobile **Ask AI** composer. On desktop
 Enter still sends and Shift+Enter inserts a newline. Tapping the model opens a
 bottom sheet listing every model the same way, with a check on the current one
 — pick a row to switch. Models read as names even when the runtime reports
-only ids: Macro Agent's `anthropic/claude-sonnet-5` shows as **Sonnet 5**. On desktop the
+only ids: Macro Agent's `anthropic/claude-sonnet-5-5` shows as **Sonnet 5.5**. On desktop the
 transcript and composer use the shared channel message width so expanding **Context** only
 grows vertically; your messages are right-aligned bubbles and the model pill
 sits above the box. Tap the session title
@@ -846,7 +901,8 @@ Existing announcement chips remain locked to the turn they announced.
 
 Sessions with a linked GitHub pull request capture that PR's diff when each
 turn ends, regardless of the coding runtime. Unpushed workspace changes and
-branches without a PR are not included. The session header gains a **Changes**
+branches without a PR are not included. The capture is the same stored diff the
+PR's Changes pane in Reviews shows for that base and head. The session header gains a **Changes**
 toggle (`aria-pressed`) with green additions and red deletions (`+N −M`); it opens a resizable
 **Changes** pane beside the transcript (drag the 1px divider between them).
 Chat sessions on Macro's in-memory harness have no repository, so they show
@@ -1097,7 +1153,7 @@ There is no periodic PR lookup polling.
 Open the model selector and hover a model to choose its reasoning effort in the
 submenu. Keyboard users open it with Right Arrow; touch users tap the model.
 Cursor and Macro's in-memory agent load the hovered model's own advertised
-choices. The selected label includes the effort, such as `Sonnet 5 · High`;
+choices. The selected label includes the effort, such as `Sonnet 5.5 · High`;
 there is no separate effort control in the input box. Models without effort
 support remain selectable through `Use <model>` (or a desktop click/Enter).
 Default keeps the model's existing behavior.

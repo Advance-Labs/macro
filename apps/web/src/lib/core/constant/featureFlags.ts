@@ -105,6 +105,22 @@ export function isFeatureEnabled(flag: Flag): boolean {
   return flag.enabled;
 }
 
+/** Databases rollout. Local HMR is on; deployed environments defer to PostHog. */
+export const enableDatabases = defineFlag({
+  key: 'enable-databases',
+  env: 'ENABLE_DATABASES',
+  default: LOCAL_ONLY || undefined,
+});
+
+/**
+ * Shows the SQL behind database answers and tool results. Off everywhere;
+ * turn on locally with VITE_SHOW_DATABASE_SQL=true.
+ */
+export const showDatabaseSql = defineFlag({
+  env: 'SHOW_DATABASE_SQL',
+  default: false,
+});
+
 /**
  * This constant reflects whether the app is running in production mode with prod backend environment
  *
@@ -113,6 +129,13 @@ export function isFeatureEnabled(flag: Flag): boolean {
 export const PROD_MODE_ENV = import.meta.env.MODE === 'production';
 
 const onInDev = DEV_MODE_ENV || undefined;
+
+// Leave the production PostHog flag disabled until archive-import rollout.
+export const enableSlackArchiveImport = defineFlag({
+  key: 'enable-slack-archive-import',
+  env: 'ENABLE_SLACK_ARCHIVE_IMPORT',
+  default: onInDev,
+});
 
 /** Shows the Reviews shortcut in Tasks; copied Reviews links remain accessible. */
 export const enableTasksReviews = defineFlag({
@@ -572,6 +595,13 @@ export function isCalendarSearchUiEnabled(): boolean {
     isFeatureEnabled(enableCalendarSearchUi)
   );
 }
+
+// Scheduling settings, calendar shortcuts, and public booking/receipt pages.
+// Off until PostHog enables it, including in dev.
+export const enableCalendarScheduling = defineFlag({
+  key: 'enable-calendar-scheduling',
+  env: 'ENABLE_CALENDAR_SCHEDULING',
+});
 
 // The "Enable calendar" prompt on phones. Off by default everywhere,
 // including dev: the mobile toast layout drops the body and the close button,
