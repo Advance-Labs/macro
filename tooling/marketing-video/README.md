@@ -8,6 +8,7 @@ change on a 120 BPM grid: 28 steps, one every other beat (14 bars), so each mome
 - `mobile.html` + `mbuild.sh`: the Macro for iPhone ad (9:16, 1:1, 16:9 from one scene; `FMT=916|11|169`), X copy in `macro-mobile-X.md`
 - `mobile2.html`: the mobile tour (liquid-glass dock intro, then Calendar, Email, More → Agents / Tasks / CRM, Team chat → @Macro → doc → task + PR). Build with `PAGE=mobile2.html OUT=macro-mobile-tour ./mbuild.sh`; Phosphor glyphs in `phx.js`
 - `platform.html`: the macro.com launch ad (mark + wordmark, "A single platform for your company.", then Email, Chat, Docs, Spreadsheets, Databases, Pull requests and Coding agents on one beat each, gathering around the mark). `FMT=916|45|11`; build with `PAGE=platform.html OUT=macro-platform FMTS="916 45 11" ./mbuild.sh`
+- `snipe.html`: "Too many apps." A scope snipes eight app tiles on the beat, then Macro drops in: "One system. Not a bunch of siloed apps." Full-color logos from Iconify's `logos` set in `applogos.js`. Build with `PAGE=snipe.html OUT=macro-snipe FMTS="916 45 11" ./mbuild.sh`
 - `PROMPT.md`: the template for new feature videos; `ROUTINE.md`: the weekday routine
 - `trailer.html`: the source. Open it in a browser to watch it play live; click to start the audio.
   Add `?t=7.25` to freeze on any time. If your browser blocks fonts over `file://`, run `npx serve .`

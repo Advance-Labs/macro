@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Macro: one system</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: "Inter"; src: url("fonts/inter-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "display"; src: url("fonts/roboto-slab-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+html.render body { display: block; min-height: 0; }
+#stage { position: relative; overflow: hidden; flex: none; background: #000; color: #dedede;
+  font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+#rings { position: absolute; width: 3200px; height: 3200px; margin: -1600px 0 0 -1600px; transform-origin: 50% 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, transparent 0 41px, rgba(255,255,255,.045) 41px 42px), radial-gradient(circle at 50% 50%, rgba(255,255,255,.035), transparent 40%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); }
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.a { position: absolute; }
+.flex { display: flex; align-items: center; }
+.head { position: absolute; left: -700px; width: 1400px; text-align: center; font-family: display; font-weight: 330; letter-spacing: -0.035em; line-height: 1.05; color: #fff; white-space: nowrap; }
+.tray { position: absolute; border-radius: 56px; background: rgba(255,255,255,.055); }
+.tray::after, .rim::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  background: linear-gradient(135deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.05) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12) 100%); }
+.tile { position: absolute; width: 150px; height: 150px; border-radius: 36px; background: #fff; box-shadow: 0 10px 26px -12px rgba(0,0,0,.55), inset 0 -2px 0 rgba(0,0,0,.06); }
+.tile svg.logo { position: absolute; left: 33px; top: 33px; width: 84px; height: 84px; }
+.hole { position: absolute; width: 110px; height: 110px; margin: -55px 0 0 -55px; }
+.cta { display: inline-flex; align-items: center; gap: 12px; height: 76px; padding: 0 34px 0 26px; border-radius: 38px; background: #fff; color: #0a0a0a; font-size: 30px; font-weight: 600; white-space: nowrap; }
+</style>
+<script src="applogos.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div id="rings"></div>
+  <div id="world"></div>
+  <svg id="ret" class="a" width="400" height="400" viewBox="-200 -200 400 400" style="overflow:visible;left:0;top:0"></svg>
+</div>
+<script>
+"use strict";
+const FMT = new URLSearchParams(location.search).get("fmt") || "916";
+const [W, H] = { "916": [1080, 1920], "45": [1080, 1350], "11": [1440, 1440], "169": [1920, 1080] }[FMT];
+const SC = { "916": 1.36, "45": 1.18, "11": 1.55, "169": 1.1 }[FMT];
+
+// ---------- music: "Swish Swed" by Arulo (Mixkit 201), 120 BPM, drop downbeat 40.032 s. 16 beats. ----------
+//                  load s1 s2 s3 s4 rapid drop line hold
+const MUSIC = [["upbeat", 120.0, [2, 1, 1, 1, 1, 2, 2, 2, 4]]];
+const STEP_T = [0];
+for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
+const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
+function B(x) { const k = Math.floor(x / BEATS), r = x - k * BEATS, i = Math.min(BEATS - 1, Math.floor(r)); return k * T + STEP_T[i] + (r - i) * (STEP_T[i + 1] - STEP_T[i]); }
+function stepAt(t) { let i = 0; while (i < BEATS - 1 && STEP_T[i + 1] <= t) i++; return i + (t - STEP_T[i]) / (STEP_T[i + 1] - STEP_T[i]); }
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, p) => a + (b - a) * p;
+const sm = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const TAU = Math.PI * 2;
+
+// Closed-form unit step response of a damped spring.
+// resp = undamped period (s), damp = damping ratio (<1 gives a tiny overshoot).
+function spr(t, resp = 0.42, damp = 0.82) {
+  if (t <= 0) return 0;
+  const w = TAU / resp;
+  if (damp >= 1) { const e = Math.exp(-w * t); return 1 - e * (1 + w * t); }
+  const wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return 1 - e * (Math.cos(wd * t) + (damp * w / wd) * Math.sin(wd * t));
+}
+// Free response from displacement x0 and velocity v0 (used after a drag release).
+function free(t, x0, v0, resp, damp) {
+  const w = TAU / resp, wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return e * (x0 * Math.cos(wd * t) + ((v0 + damp * w * x0) / wd) * Math.sin(wd * t));
+}
+const mj = (x) => { x = clamp(x); return x * x * x * (10 + x * (-15 + 6 * x)); }; // minimum-jerk
+const bell = (x) => (x <= 0 || x >= 1 ? 0 : 16 * x * x * (1 - x) * (1 - x));
+
+// A value that changes target many times is the sum of one spring per change.
+// Periodic: every change also contributes from the previous loop (t + T), so the
+// last frame flows into the first with matching position and velocity.
+function Track(evs, resp = 0.42, damp = 0.82) {
+  const E = evs.map(([bt, v, r, d]) => ({ t: B(bt), v, r: r ?? resp, d: d ?? damp }));
+  const n = E.length;
+  E.forEach((e, i) => { e.dv = e.v - E[(i + n - 1) % n].v; });
+  const base = E[n - 1].v;
+  const f = (t) => {
+    let v = base;
+    for (const e of E) if (e.dv !== 0) v += e.dv * (spr(t - e.t, e.r, e.d) + spr(t + T - e.t, e.r, e.d));
+    return v;
+  };
+  f.target = (t) => {
+    let best = -Infinity, v = base;
+    for (const e of E) for (const tt of [e.t, e.t - T]) if (tt <= t && tt > best) { best = tt; v = e.v; }
+    return v;
+  };
+  return f;
+}
+
+// Cursor path: sum of minimum-jerk moves, each with a slight perpendicular arc.
+function Path(segs) {
+  const S = segs.map(([b0, b1, x, y, bow]) => ({ t0: B(b0), t1: B(b1), x, y, bow: bow ?? 0.07 }));
+  const n = S.length;
+  S.forEach((s, i) => { const p = S[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = S[n - 1].x, by = S[n - 1].y;
+  return (t) => {
+    let x = bx, y = by;
+    for (const s of S) for (const tt of [t, t + T]) {
+      const u = (tt - s.t0) / (s.t1 - s.t0);
+      if (u <= 0) continue;
+      const m = mj(u), bb = bell(u) * s.bow;
+      x += s.dx * m - s.dy * bb;
+      y += s.dy * m + s.dx * bb;
+    }
+    return [x, y];
+  };
+}
+
+// Content enter/exit: its own timing, so swapped text never overlaps.
+function visAmt(t, tin, tout, inResp = 0.3) {
+  const f = (tt) => {
+    if (tt < tin) return null;
+    const pin = spr(tt - tin, inResp, 1);
+    const pout = tout == null ? 0 : sm((tt - tout) / 0.11);
+    return { pin, pout, o: pin * (1 - pout) };
+  };
+  let r = f(t) || { pin: 0, pout: 0, o: 0 };
+  if (tout != null && tout > T) { // only windows that wrap past the loop point
+    const r2 = f(t + T);
+    if (r2 && r2.o > r.o) r = r2;
+  }
+  return r;
+}
+
+
+
+// ---------- the apps ----------
+const APPS = ["slack-icon", "google-gmail", "google-meet", "zoom-icon", "notion-icon", "linear-icon", "microsoft-teams", "asana-icon"];
+const SHOTS = [1, 2, 3, 4, 5, 5.25, 5.5, 5.75];              // steps: four on the beat, then four on the eighths
+const ORDER = [0, 1, 2, 3, 7, 6, 5, 4];                         // which tile each shot takes (the bottom row right to left)
+const HIT = [[14, -10], [-12, 8], [8, 14], [-16, -6], [10, 6], [-8, -14], [16, 10], [-6, 12]];  // off-center impacts
+const TRAY_Y = 40, TW = 700, TH = 360;
+const tileXY = (i) => [-255 + (i % 4) * 170, TRAY_Y - 85 + Math.floor(i / 4) * 170];
+const MARK = ["M0 10.014v6.801a.75.75 0 0 0 .225.513l2.742 2.644 2.002-.8v-7.099l-2.97-2.859z", "M4.078 4.8v5.786l1.36 1.309v1.313L12.481 20l2.002-.8-.001-7.1L6.078 4z", "M13.594 4.8v5.786l1.36 1.311-.013 1.3L22 20 24 19.2V12.42a.75.75 0 0 0-.225-.533L15.595 4z"];
+const markSVG = (s, c) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${c}" style="display:block">${MARK.map((d) => `<path d="${d}"/>`).join("")}</svg>`;
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), world = $("world"), rings = $("rings"), ret = $("ret");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+rings.style.left = W / 2 + "px"; rings.style.top = H / 2 + "px";
+world.style.transform = `translate(${W / 2}px,${H / 2}px) scale(${SC})`;
+const add = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); const n = d.firstElementChild; world.appendChild(n); return n; };
+const hole = () => `<svg class="hole" viewBox="-55 -55 110 110">${[0, 50, 105, 160, 205, 255, 310].map((a, k) => {
+  const r = [44, 30, 50, 36, 46, 28, 40][k], ra = (a * Math.PI) / 180, bx = Math.cos(ra) * r * 0.55 + Math.sin(ra) * 6, by = Math.sin(ra) * r * 0.55 - Math.cos(ra) * 6;
+  return `<path d="M0 0L${bx.toFixed(1)} ${by.toFixed(1)}L${(Math.cos(ra) * r).toFixed(1)} ${(Math.sin(ra) * r).toFixed(1)}" stroke="rgba(30,30,32,.55)" stroke-width="2" fill="none" stroke-linecap="round"/>`; }).join("")}
+  <circle r="15" fill="rgba(0,0,0,.18)"/><circle r="10" fill="#141416"/><circle r="10" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/></svg>`;
+
+const tray = add(`<div class="tray rim"></div>`);
+const tiles = APPS.map((n, i) => add(`<div class="tile" id="tile${i}">${window.APPLOGOS[n].replace("<svg", '<svg class="logo"')}<div class="a" id="hole${i}" style="left:${75 + HIT[i][0]}px;top:${75 + HIT[i][1]}px">${hole()}</div><div class="a" id="flash${i}" style="inset:0;border-radius:inherit;background:#fff"></div></div>`));
+const macroTile = add(`<div class="tile rim" id="mtile" style="width:170px;height:170px;border-radius:42px;background:#0b0b0c;box-shadow:0 18px 40px -14px rgba(0,0,0,.8)"><div class="a" style="left:35px;top:35px">${markSVG(100, "#fff")}</div></div>`);
+const ring = add(`<div class="a" id="ring" style="width:0;height:0;border-radius:50%"></div>`);
+const head1 = add(`<div class="head" style="font-size:${FMT === "916" ? 104 : 96}px">Too many apps.</div>`);
+const head2 = add(`<div class="head" style="font-size:${FMT === "916" ? 112 : 104}px">One system.</div>`);
+const sub = add(`<div class="head" style="font-family:Inter;font-weight:400;letter-spacing:-0.01em;font-size:34px;color:#9e9e9e">Not a bunch of siloed apps.</div>`);
+const cta = add(`<div class="a" style="left:-600px;width:1200px;text-align:center"><div class="cta">${markSVG(34, "#0a0a0a")}Get Macro</div></div>`);
+const url = add(`<div class="head" style="font-family:Inter;font-weight:500;letter-spacing:-0.01em;font-size:24px;color:#808080">macro.com</div>`);
+const RETICLE = (stroke, w, w2) => `<circle r="58" fill="none" stroke="${stroke}" stroke-width="${w}"/><circle r="40" fill="none" stroke="${stroke}" stroke-width="${w2}" opacity=".6"/>
+  ${[[0, -72, 0, -22], [0, 22, 0, 72], [-72, 0, -22, 0], [22, 0, 72, 0]].map(([a, b, c, d]) => `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round"/>`).join("")}`;
+ret.innerHTML = `<g id="retG"><g opacity=".55">${RETICLE("#000", 8, 5)}</g>${RETICLE("#fff", 3.2, 2)}<circle r="6" fill="#000" opacity=".5"/><circle r="4.5" fill="#ff3b30"/></g>`;
+const retG = $("retG");
+
+// ---------- layout per format ----------
+const HEAD_Y = { "916": -430, "45": -380, "11": -380, "169": -380 }[FMT];
+const SUB_Y = HEAD_Y + 132, CTA_Y = { "916": 360, "45": 300, "11": 300, "169": 300 }[FMT];
+
+// ---------- the scope: glides tile to tile, locks just before each beat ----------
+const RET = (() => {
+  const segs = [[B(0.55), B(0.9), 0, TRAY_Y]];
+  SHOTS.forEach((sh, k) => {
+    const [x, y] = tileXY(ORDER[k]), ts = B(sh) - 0.03, dur = k < 4 ? 0.3 : 0.17;
+    segs.push([ts - dur, ts, x + HIT[ORDER[k]][0], y + HIT[ORDER[k]][1]]);
+  });
+  segs.push([B(5.75) + 0.2, B(6) + 0.1, 0, TRAY_Y + 260]);
+  const S = segs.map(([t0, t1, x, y]) => ({ t0, t1, x, y }));
+  const n = S.length;
+  S.forEach((s, i) => { const p = S[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = S[n - 1].x, by = S[n - 1].y;
+  return (t) => { let x = bx, y = by; for (const s of S) { const u = (t - s.t0) / (s.t1 - s.t0); if (u <= 0) continue; const m = mj(u), bb = bell(u) * 0.06; x += s.dx * m - s.dy * bb; y += s.dy * m + s.dx * bb; } return [x, y]; };
+})();
+const shotT = SHOTS.map((s) => B(s));
+
+// ---------- sound ----------
+const CUES = [];
+const cue = (t, type, gain = 1, extra = {}) => CUES.push({ t, type, gain, ...extra });
+APPS.forEach((_, i) => cue(B(0.05 + i * 0.0625), "tick", 0.32, { pitch: [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888, 2][i] }));
+shotT.forEach((ts, k) => {
+  cue(ts - 0.07, "tick", 0.28, { pitch: 2 });                     // lock
+  cue(ts, "shot", k < 4 ? 1 : 0.85);
+  if (k < 4) { cue(ts + 0.2, "tink", 0.35, { pitch: 1 + 0.08 * k }); cue(ts + 0.12, "swish", 0.25); }
+});
+cue(B(6), "swoosh", 0.6); cue(B(6) + 0.36, "enter", 0.9); cue(B(6) + 0.38, "chime", 0.7);
+cue(B(7), "swish", 0.45); cue(B(7.25), "pop", 0.6, { pitch: 1.2 }); cue(B(8.85), "swoosh", 0.4);
+
+// =====================================================================
+// seek(t)
+// =====================================================================
+const px = (v) => v.toFixed(3) + "px";
+function show(n, o) { if (o <= 0.002) { n.style.display = "none"; return false; } n.style.display = ""; n.style.opacity = Math.min(1, o).toFixed(4); return true; }
+function fx(n, o, blur, tr) { if (!show(n, o)) return false; n.style.filter = blur > 0.04 ? `blur(${blur.toFixed(3)}px)` : "none"; n.style.transform = tr || "none"; return true; }
+const END = () => B(8.85);
+
+function seek(tIn) {
+  const t = ((tIn % T) + T) % T, bt = stepAt(t);
+  const outP = sm((t - END()) / 0.32);                       // everything clears for the loop
+  rings.style.transform = `scale(${(1 + 0.03 * Math.sin((t / T) * TAU)).toFixed(4)})`;
+  // camera shake on each shot
+  let shake = 0; for (const ts of shotT) { const d = t - ts; if (d >= 0 && d < 0.25) shake += Math.exp(-d / 0.05) * Math.sin(d * 90); }
+  world.style.transform = `translate(${px(W / 2 + shake * 5)},${px(H / 2 - Math.abs(shake) * 3)}) scale(${SC})`;
+
+  // headline swap
+  const h1 = visAmt(t, 0.02, B(6) - 0.02, 0.3);
+  fx(head1, h1.o, (1 - h1.pin) * 14 + h1.pout * 16, `translate3d(0,${px(HEAD_Y - 60 + (1 - h1.pin) * 20)},0)`);
+  const h2 = visAmt(t, B(6) + 0.04, END(), 0.32);
+  fx(head2, h2.o * (1 - outP), (1 - h2.pin) * 14 + outP * 16, `translate3d(0,${px(HEAD_Y - 60 + (1 - h2.pin) * 20)},0)`);
+  const s2 = visAmt(t, B(7), END(), 0.32);
+  fx(sub, s2.o * (1 - outP), (1 - s2.pin) * 10 + outP * 16, `translate3d(0,${px(SUB_Y - 20 + (1 - s2.pin) * 14)},0)`);
+  const c2 = visAmt(t, B(7.25), END(), 0.28);
+  fx(cta, c2.o * (1 - outP), (1 - c2.pin) * 10 + outP * 16, `translate3d(0,${px(CTA_Y - 38 + (1 - c2.pin) * 16)},0) scale(${(0.94 + 0.06 * spr(t - B(7.25), 0.3, 0.6)).toFixed(4)})`);
+  const u2 = visAmt(t, B(7.4), END(), 0.3);
+  fx(url, u2.o * (1 - outP), outP * 16, `translate3d(0,${px(CTA_Y + 62)},0)`);
+
+  // tray: full, then shrinks around Macro
+  const shrink = spr(t - B(5.75) - 0.25, 0.42, 0.85);
+  const tw = lerp(TW, 210, shrink), th = lerp(TH, 210, shrink), tr0 = spr(t, 0.3, 1);
+  const tv = (t < 0.001 ? 0 : 1) * (1 - outP);
+  if (fx(tray, tv * tr0, outP * 14, `scale(${(0.96 + 0.04 * tr0).toFixed(4)})`)) {
+    Object.assign(tray.style, { left: px(-tw / 2), top: px(TRAY_Y - th / 2), width: px(tw), height: px(th), borderRadius: px(lerp(56, 52, shrink)) });
+  }
+
+  // tiles: pop in on sixteenths, get hit, fall out of the tray
+  tiles.forEach((n, i) => {
+    const tin = B(0.05 + i * 0.0625), k = ORDER.indexOf(i), ts = shotT[k];
+    const p = spr(t - tin, 0.26, 0.75);
+    if (t < tin) { n.style.display = "none"; return; }
+    const d = t - ts, fallT = d - 0.1;
+    const [x0, y0] = tileXY(i);
+    let x = x0, y = y0, rot = 0, sc = 0.6 + 0.4 * p, o = clamp(p * 1.5), blur = (1 - clamp(p)) * 6;
+    if (d >= 0) {
+      x += Math.exp(-d / 0.05) * Math.sin(d * 120) * 10;            // impact shake
+      sc *= 1 - 0.06 * Math.exp(-d / 0.06);
+      if (fallT > 0) { y += 0.5 * 5200 * fallT * fallT - 260 * fallT; rot = (i % 2 ? 1 : -1) * 260 * fallT; x += (i % 2 ? 1 : -1) * 140 * fallT; o *= 1 - sm((fallT - 0.22) / 0.25); blur += fallT * 10; }
+    }
+    if (!fx(n, o, blur, `translate3d(${px(x - 75)},${px(y - 75)},0) rotate(${rot.toFixed(2)}deg) scale(${sc.toFixed(4)})`)) return;
+    show($("hole" + i), d >= 0 ? 1 : 0);
+    if (d >= 0) $("hole" + i).style.transform = `scale(${(0.4 + 0.6 * spr(d, 0.08, 1)).toFixed(3)})`;
+    show($("flash" + i), d >= 0 && d < 0.12 ? 0.9 * (1 - d / 0.12) : 0);
+  });
+  // impact ring at the hit point
+  let rk = -1; for (let k = 0; k < SHOTS.length; k++) if (t >= shotT[k] && t < shotT[k] + 0.3) rk = k;
+  if (rk >= 0) {
+    const d = t - shotT[rk], [x0, y0] = tileXY(ORDER[rk]), hp = HIT[ORDER[rk]], r = 20 + 160 * (1 - Math.exp(-d / 0.08));
+    show(ring, (1 - d / 0.3) * 0.8);
+    Object.assign(ring.style, { left: px(x0 + hp[0] - r), top: px(y0 + hp[1] - r), width: px(2 * r), height: px(2 * r), boxShadow: `inset 0 0 0 ${px(3 * (1 - d / 0.3))} rgba(255,255,255,.9)` });
+  } else ring.style.display = "none";
+
+  // Macro drops in
+  const md = t - B(6);
+  if (md < 0 || outP >= 1) macroTile.style.display = "none";
+  else {
+    const p = spr(md, 0.42, 0.62), y = TRAY_Y - 700 * (1 - p), sq = Math.exp(-Math.max(0, md - 0.32) / 0.08) * (md > 0.32 ? 1 : 0);
+    fx(macroTile, clamp(md * 8) * (1 - outP), outP * 14 + (1 - clamp(p)) * 4, `translate3d(${px(-85)},${px(y - 85)},0) scale(${(1 + 0.06 * sq).toFixed(3)},${(1 - 0.06 * sq).toFixed(3)})`);
+  }
+
+  // scope
+  const rv = visAmt(t, B(0.55), B(6) + 0.1, 0.25);
+  if (show(ret, rv.o)) {
+    const [wx, wy] = RET(t);
+    let kick = 0; for (const ts of shotT) { const d = t - ts; if (d >= 0 && d < 0.3) kick += Math.exp(-d / 0.06); }
+    let lock = 0; for (const ts of shotT) { const d = ts - t; if (d >= 0 && d < 0.14) lock = Math.max(lock, 1 - d / 0.14); }
+    const s = SC * (1 + 0.12 * kick + 0.25 * (1 - rv.pin) - 0.08 * lock);
+    ret.style.left = px(W / 2 + wx * SC + shake * 5 - 200); ret.style.top = px(H / 2 + wy * SC - kick * 10 - 200);
+    retG.setAttribute("transform", `scale(${s.toFixed(4)}) rotate(${(kick * 6).toFixed(2)})`);
+  }
+}
+
+// ---------- boot ----------
+window.SONGS = { upbeat: ["song-swish-swed-arulo.mp3", 40.0318] };
+window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
+window.probe = (t) => { const r = RET(t); return [r[0], r[1], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; };
+window.ready = Promise.all(['400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f))).then(() => document.fonts.ready).then(() => { seek(0); return true; });
+const params = new URLSearchParams(location.search);
+if (params.has("render")) document.documentElement.classList.add("render");
+else {
+  const fit = () => { const k = Math.min(innerWidth / W, innerHeight / H); Object.assign(stage.style, { position: "fixed", left: "50%", top: "50%", transformOrigin: "50% 50%", transform: `translate(-50%,-50%) scale(${k})` }); };
+  addEventListener("resize", fit); fit();
+  const at = params.has("t") ? parseFloat(params.get("t")) : null;
+  window.ready.then(() => { if (at != null) { seek(at); return; } const t0 = performance.now(); const loop = () => { seek((performance.now() - t0) / 1000); requestAnimationFrame(loop); }; requestAnimationFrame(loop); });
+}
+</script>
+</body>
+</html>

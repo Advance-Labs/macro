@@ -163,6 +163,22 @@ def beep(pitch=1.0):
     return norm(y)
 
 
+def shot():
+    """A punchy, cartoonish snipe: sharp crack, a pitched-down thump and a short tail."""
+    n = int(0.42 * SR)
+    crack = band(noise(n, 501), 1800, 11000) * env(n, 0.0002, 0.010)
+    body = band(noise(n, 502), 250, 1800) * env(n, 0.0004, 0.035)
+    thump = sweep(190, 42, n) * env(n, 0.0008, 0.07)
+    tail = band(noise(n, 503), 700, 4000) * env(n, 0.004, 0.14)
+    return norm(1.0 * crack + 0.7 * body + 0.9 * thump + 0.12 * tail)
+
+
+def tink(pitch=1.0):
+    n = int(0.3 * SR)
+    y = sum(g * sine(f * pitch, n) * env(n, 0.0005, tau) for f, g, tau in [(3150, 1, 0.07), (4730, 0.6, 0.05), (6120, 0.35, 0.03)])
+    return norm(y)
+
+
 def hover():
     n = int(0.05 * SR)
     return norm(sine(1240, n) * env(n, 0.001, 0.012))
@@ -183,10 +199,12 @@ SYNTH = {
     "release": lambda c: release(),
     "hover": lambda c: hover(),
     "beep": lambda c: beep(c.get("pitch", 1.0)),
+    "shot": lambda c: shot(),
+    "tink": lambda c: tink(c.get("pitch", 1.0)),
 }
 LEVEL = {  # per-type bus level (linear, relative to the UI bus)
     "click": 1.0, "key": 0.55, "enter": 0.8, "tick": 0.55, "pop": 0.55, "blip": 0.5, "chime": 0.5,
-    "swish": 0.35, "swoosh": 0.4, "grab": 0.8, "stretch": 0.35, "release": 0.5, "hover": 0.35, "beep": 0.55,
+    "swish": 0.35, "swoosh": 0.4, "grab": 0.8, "stretch": 0.35, "release": 0.5, "hover": 0.35, "beep": 0.55, "shot": 1.9, "tink": 0.4,
 }
 
 
