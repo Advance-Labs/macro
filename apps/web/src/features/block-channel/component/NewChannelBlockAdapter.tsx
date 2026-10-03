@@ -303,19 +303,17 @@ function NewTop(props: { channelId: string }) {
 }
 
 export function NewChannelBlockAdapter(props: BlockChannelProps) {
-  // Every other block gets its hotkey scope from `BlockContainer`, which the
-  // channel block does not render — so set `blockHotkeyScopeSignal` here or
-  // `useBlockEntityCommands` would register nothing at all. Commands go on
-  // the split scope so they keep working while focus sits on split chrome
-  // (header, toolbar, panel div) and across in-split navigation — same as
-  // BlockContainer. The adapter requires a split panel, so unlike
-  // BlockContainer it needs no fallback DOM scope of its own.
+  // Commands use the split scope so header and toolbar focus keep them active.
+  // Retain the legacy scope publication for remaining adapter consumers.
   const splitPanel = useSplitPanelOrThrow();
   blockHotkeyScopeSignal.set(splitPanel.splitHotkeyScope);
-  useBlockEntityCommands();
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
   const channelId = useBlockId();
+  useBlockEntityCommands({
+    id: () => channelId,
+    scopeId: () => splitPanel.splitHotkeyScope,
+  });
   const blockHandle = blockHandleSignal.get;
   const [searchParams, setSearchParams] = useSearchParams();
   const [routeSearch] = createSearchParams(channelsSearch);

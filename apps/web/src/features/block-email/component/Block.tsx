@@ -6,6 +6,7 @@ import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toEntityLoadError } from '@core/component/EntityLoadGate';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { buildEntityData } from '@entity';
 import { useThreadQuery } from '@queries/email/thread';
 import { representativeThreadMessage } from '@queries/email/thread-subject';
@@ -43,7 +44,11 @@ export default function BlockEmail() {
     });
   });
 
-  useBlockEntityCommands({ resolveEntity: commandEntity });
+  useBlockEntityCommands({
+    id: threadId,
+    scopeId: blockHotkeyScopeSignal.get,
+    resolveEntity: commandEntity,
+  });
 
   // The gate owns the load policy: structural errors are authoritative even
   // over cached data, a transport failure over cached data still renders the

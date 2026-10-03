@@ -21,12 +21,15 @@ export type BlockCanvasProps = {
 };
 
 export default function BlockCanvas(props: BlockCanvasProps) {
-  useBlockEntityCommands();
   const documentId = useBlockId();
   const isNested = useIsNestedBlock();
   const nestedContext = useBlockNestedContext<'canvas'>();
   const canEdit = useCanEdit();
   const hotkeyScope = blockHotkeyScopeSignal.get;
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: hotkeyScope,
+  });
   const file = blockFileSignal.get;
   const blockHandle = blockHandleSignal.get;
   const [locationParams] = useSearchParams();

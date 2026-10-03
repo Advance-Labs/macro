@@ -3,6 +3,7 @@ import { SidePanel } from '@components/app/side-panel';
 import { blockDataSignalAs, useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { createMethodRegistration } from '@core/orchestrator';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import {
   useCanComment,
@@ -26,8 +27,11 @@ import { Tabs } from './Tabs';
 import { TopBar } from './TopBar';
 
 export default function BlockPdf() {
-  useBlockEntityCommands();
   const documentId = useBlockId();
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const isNested = useIsNestedBlock();
   const target = isNested
     ? () => undefined

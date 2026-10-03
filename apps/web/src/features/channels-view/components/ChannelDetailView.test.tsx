@@ -1,3 +1,4 @@
+import type { UseBlockEntityCommandsOptions } from '@app/features/next-soup/actions/use-block-entity-commands';
 import type { ChannelTargetRequest } from '@channel/Channel/ChannelSurface';
 import type { ChannelEntity } from '@entity/types/entity';
 import { cleanup, render, screen } from '@solidjs/testing-library';
@@ -6,13 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   routeSearch: vi.fn((): { seek?: string } => ({})),
+  entityCommands: vi.fn<(options: UseBlockEntityCommandsOptions) => void>(),
 }));
 vi.mock('@app/lib/split-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@app/lib/split-router')>()),
   createSearchParams: () => [mocks.routeSearch()],
 }));
 vi.mock('@app/features/next-soup/actions', () => ({
-  useBlockEntityCommands: vi.fn(),
+  useBlockEntityCommands: mocks.entityCommands,
 }));
 vi.mock('@components/app/split-layout/layoutUtils', () => ({
   useSplitPanelOrThrow: () => ({ splitHotkeyScope: 'test' }),
@@ -52,6 +54,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Chat detail navigation', () => {
+  it('keeps command identity reactive when the hosted channel changes', () => {
+    const [selected, setSelected] = createSignal(channel);
+    render(() => <ChannelDetailView channel={selected()} />);
+    const options = mocks.entityCommands.mock.calls[0][0];
+    expect(options.id()).toBe('channel');
+    expect(options.scopeId()).toBe('test');
+
+    const next = { ...channel, id: 'next-channel' };
+    setSelected(next);
+    expect(options.id()).toBe('next-channel');
+    expect(options.resolveEntity?.()).toBe(next);
+    expect(mocks.entityCommands).toHaveBeenCalledTimes(1);
+  });
   it('passes an explicit destination to the channel surface', () => {
     render(() => <ChannelDetailView channel={channel} target={replyTarget} />);
     expect(screen.getByTestId('target').textContent).toBe(

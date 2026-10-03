@@ -25,6 +25,7 @@ import { useUserId } from '@core/context/user';
 import { blockDataSignal } from '@core/internal/BlockLoader';
 import { isMobile } from '@core/mobile/isMobile';
 import { createMethodRegistration } from '@core/orchestrator';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import { useCanEdit, useGetPermissions } from '@core/signal/permissions';
 import { getDisplayName, tryMacroId } from '@core/user';
@@ -65,8 +66,11 @@ export default function SpreadsheetBlock(props: { share?: string }) {
 }
 
 function SpreadsheetBlockContent(props: { share?: string }) {
-  useBlockEntityCommands();
   const documentId = useBlockId();
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const name = useBlockDocumentName('New Spreadsheet');
   const canEdit = useCanEdit();
   const userId = useUserId();

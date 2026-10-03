@@ -4,6 +4,7 @@ import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { SidePanel } from '@components/app/side-panel';
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { DebouncedNotificationReadMarker } from '@notifications';
 import { Show } from 'solid-js';
@@ -12,8 +13,11 @@ import { Chat } from './Chat';
 import { ChatSidePanelSections } from './sidepanel/ChatSidePanelSections';
 
 export default function ChatBlock() {
-  useBlockEntityCommands();
   const blockId = useBlockId();
+  useBlockEntityCommands({
+    id: () => blockId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const notificationSource = useGlobalNotificationSource();
   const name = useBlockDocumentName(DEFAULT_CHAT_NAME);
 

@@ -167,8 +167,8 @@ export function EmailDetailView(props: {
     });
   });
   useBlockEntityCommands({
-    id: props.thread.id,
-    scopeId: panel.splitHotkeyScope,
+    id: () => props.thread.id,
+    scopeId: () => panel.splitHotkeyScope,
     resolveEntity: commandEntity,
     onDeleted: closeThread,
     onEmailReminderSaved: async () => {

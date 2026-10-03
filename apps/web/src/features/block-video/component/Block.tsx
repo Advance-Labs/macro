@@ -1,12 +1,18 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { FileSidePanelSections, SidePanel } from '@components/app/side-panel';
+import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { blockData } from '../signal/blockData';
 import { TopBar } from './TopBar';
 import { VideoContent } from './VideoContent';
 
 export default function BlockVideo() {
-  useBlockEntityCommands();
+  const documentId = useBlockId();
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   return (
     <DocumentBlockContainer>
       <div class="size-full select-none overscroll-none overflow-hidden flex flex-col relative">

@@ -40,8 +40,8 @@ export function FileDetailBreadcrumbItem(props: {
   useSplitDisplayName(documentName);
 
   useBlockEntityCommands({
-    id: documentId(),
-    scopeId: panel.splitHotkeyScope,
+    id: documentId,
+    scopeId: () => panel.splitHotkeyScope,
     onDeleted: props.onClose,
     resolveEntity: () =>
       buildEntityData({

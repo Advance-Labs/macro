@@ -53,8 +53,8 @@ export function MarkdownDetailBreadcrumbItem(props: {
   };
 
   useBlockEntityCommands({
-    id: props.documentId,
-    scopeId: panel.splitHotkeyScope,
+    id: () => props.documentId,
+    scopeId: () => panel.splitHotkeyScope,
     onDeleted: props.onClose,
     resolveEntity: () =>
       buildEntityData({

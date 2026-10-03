@@ -13,6 +13,7 @@ import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useBlockId } from '@core/block';
 import { LoadErrorPanel } from '@core/component/EntityLoadGate';
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
+import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { nativeNetworkStatus } from '@core/mobile/native-network-status';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
@@ -53,6 +54,14 @@ function AgentBlockContent(props: {
   active: boolean;
   notificationSource: NotificationSource;
 }) {
+  const splitPanel = useContext(SplitPanelContext);
+  let attachHotkeys: ((element: Element) => void) | undefined;
+  let hotkeyScope = splitPanel?.splitHotkeyScope;
+  if (!splitPanel) {
+    const [attach, scopeId] = useHotkeyDOMScope('agent');
+    attachHotkeys = attach;
+    hotkeyScope = scopeId;
+  }
   const [params] = useSearchParams();
   const routeTarget = createAgentRouteTarget();
   const [searchTarget, setSearchTarget] = createSignal(
@@ -146,13 +155,14 @@ function AgentBlockContent(props: {
           active={props.active}
           notificationSource={props.notificationSource}
         />
-        <div class="size-full overflow-hidden flex">
+        <div ref={attachHotkeys} class="size-full overflow-hidden flex">
           {/* Collapsed by default, like the other conversation-shaped blocks —
             the transcript wants the width; `]` or the header button opens it. */}
           <SidePanel.Layout defaultOpen={false} floating>
             <AgentSidePanelSections />
             <AgentSplitHeader
               session={session()}
+              hotkeyScope={hotkeyScope}
               title={metadata()?.title ?? undefined}
             />
             <AgentPreviewBanner />

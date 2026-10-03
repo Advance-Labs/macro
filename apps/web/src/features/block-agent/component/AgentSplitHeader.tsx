@@ -86,6 +86,7 @@ export function agentSessionTitle(
  */
 export function AgentSplitHeader(props: {
   session: AgentSessionResponse | undefined;
+  hotkeyScope: string | undefined;
   /** The fold's session title, preferred over the harness fallback. */
   title?: string;
 }) {
@@ -118,7 +119,11 @@ export function AgentSplitHeader(props: {
           : session.status.kind,
     };
   };
-  useBlockEntityCommands({ resolveEntity: entity });
+  useBlockEntityCommands({
+    id: sessionId,
+    scopeId: () => props.hotkeyScope,
+    resolveEntity: entity,
+  });
   const openShare = useShareModal(() => {
     const session = entity();
     if (!session) return;

@@ -35,9 +35,12 @@ false && fileSelector;
 const PROJECT_ENTITY_TYPES = ['document', 'task', 'chat', 'project', 'email'];
 
 const Block: Component = () => {
-  useBlockEntityCommands();
   const [isDragging, setIsDragging] = createSignal(false);
   const projectId = useBlockId();
+  useBlockEntityCommands({
+    id: () => projectId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const isSpecialProject = getIsSpecialProject(projectId);
 
   const handleFileUpload = async (files: UploadInput[]) => {

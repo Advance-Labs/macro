@@ -18,8 +18,8 @@ export function ChannelDetailView(props: {
   const panel = useSplitPanelOrThrow();
   const [search] = createSearchParams(channelsSearch);
   useBlockEntityCommands({
-    id: props.channel.id,
-    scopeId: panel.splitHotkeyScope,
+    id: () => props.channel.id,
+    scopeId: () => panel.splitHotkeyScope,
     resolveEntity: () => props.channel,
   });
 

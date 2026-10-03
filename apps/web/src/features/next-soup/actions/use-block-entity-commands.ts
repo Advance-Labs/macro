@@ -7,22 +7,20 @@ import { useAllProperties } from '@app/features/property/editor/hooks/useAllProp
 import { openPropertyEditor } from '@app/features/property/editor/state/propertyEditor';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
-import { useMaybeBlockId } from '@core/block';
 import { useQuickAccess } from '@core/context/quickAccess';
 import { useUserId } from '@core/context/user';
 import { HotkeyTags } from '@core/hotkey/constants';
 import { createHotkeyGroup, registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import {
   type EntityData,
   isDocumentEntity,
   isEmailEntity,
   isTaskEntity,
-} from '@entity';
+} from '@entity/types/entity';
 import { SYSTEM_PROPERTY_IDS } from '@property/constants';
 import type { Property, PropertyDefinitionDomain } from '@property/types';
-import { createEffect, onCleanup } from 'solid-js';
+import { type Accessor, createEffect, on, onCleanup } from 'solid-js';
 import type { EntityActionNavigationEvent } from './entity-action-context';
 import {
   makeAddTagAction,
@@ -41,8 +39,8 @@ import {
 } from './index';
 
 /**
- * Common manipulations scoped to the current block.
- * This should be called and mounted
+ * Common manipulations scoped to an explicitly owned entity and hotkey scope.
+ * Call under the host's Solid owner so registrations dispose with the host.
  * Note: several of these do not register with an actual hot key so that they
  * can be found by the command menu.
  *
@@ -55,24 +53,16 @@ import {
  * query must not suspend.
  */
 export type UseBlockEntityCommandsOptions = {
-  id?: string;
-  scopeId?: string;
+  id: Accessor<string | undefined>;
+  scopeId: Accessor<string | undefined>;
   resolveEntity?: () => EntityData | undefined;
   onDeleted?: () => void;
   onEmailReminderSaved?: () => void | Promise<void>;
 };
 
 export const useBlockEntityCommands = (
-  options: UseBlockEntityCommandsOptions = {}
+  options: UseBlockEntityCommandsOptions
 ) => {
-  const blockId = options.id ?? useMaybeBlockId();
-
-  if (!blockId) {
-    throw new Error(
-      'useBlockEntityCommands requires an explicit id or an enclosing block'
-    );
-  }
-
   const quickAccess = useQuickAccess();
   const userId = useUserId();
   const notificationSource = useGlobalNotificationSource();
@@ -112,7 +102,9 @@ export const useBlockEntityCommands = (
   const getEntity = (): EntityData | undefined => {
     const provided = options.resolveEntity?.();
     if (provided) return provided;
-    const item = quickAccess.getById(blockId);
+    const id = options.id();
+    if (!id) return undefined;
+    const item = quickAccess.getById(id);
     if (item?.kind === 'entity') return item.data;
     return undefined;
   };
@@ -236,8 +228,7 @@ export const useBlockEntityCommands = (
     return true;
   };
 
-  createEffect(() => {
-    const scopeId = options.scopeId ?? blockHotkeyScopeSignal.get();
+  const registerCommands = (scopeId: string | undefined) => {
     if (!scopeId) return;
 
     const group = createHotkeyGroup();
@@ -497,9 +488,12 @@ export const useBlockEntityCommands = (
       scopeId,
       description: 'Copy ID',
       keyDownHandler: () => {
-        copyEntityIdAction.executeById(blockId);
+        const id = options.id();
+        if (!id) return false;
+        copyEntityIdAction.executeById(id);
         return true;
       },
+      condition: () => Boolean(options.id()),
       displayPriority: 10,
       tags: [HotkeyTags.SelectionModification],
     }).withGroup(group);
@@ -643,5 +637,7 @@ export const useBlockEntityCommands = (
     onCleanup(() => {
       group.dispose();
     });
-  });
+  };
+
+  createEffect(on(options.scopeId, registerCommands));
 };

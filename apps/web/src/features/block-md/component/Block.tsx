@@ -55,9 +55,11 @@ function ManagedTopBar() {
 }
 
 export default function MarkdownBlockAdapter(props: BlockMarkdownProps) {
-  useBlockEntityCommands();
-
   const documentId = useBlockId();
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const canAutofocus = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
   const currentBlockName = useBlockAliasedName();

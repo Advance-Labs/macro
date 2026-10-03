@@ -59,8 +59,8 @@ function SessionCommands(props: {
 }) {
   const panel = useSplitPanelOrThrow();
   useBlockEntityCommands({
-    id: props.entity.id,
-    scopeId: panel.splitHotkeyScope,
+    id: () => props.entity.id,
+    scopeId: () => panel.splitHotkeyScope,
     resolveEntity: () => props.entity,
     onDeleted: props.onDeleted,
   });

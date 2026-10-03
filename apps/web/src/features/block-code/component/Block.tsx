@@ -2,6 +2,7 @@ import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { FileSidePanelSections, SidePanel } from '@components/app/side-panel';
 import { useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import {
   blockMetadataSignal,
   blockTextSignal,
@@ -28,9 +29,12 @@ const UploadedWorkbook = lazy(
 );
 
 export default function BlockCode() {
-  useBlockEntityCommands();
   const isNestedBlock = useIsNestedBlock();
   const documentId = useBlockId();
+  useBlockEntityCommands({
+    id: () => documentId,
+    scopeId: blockHotkeyScopeSignal.get,
+  });
   const blockMetadata = blockMetadataSignal.get;
   const blockText = blockTextSignal.get;
   const setBlockText = blockTextSignal.set;

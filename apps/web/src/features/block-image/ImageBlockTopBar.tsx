@@ -68,8 +68,8 @@ export function ImageBlockTopBar(props: {
   ];
 
   useBlockEntityCommands({
-    id: props.documentId,
-    scopeId: panel.splitHotkeyScope,
+    id: () => props.documentId,
+    scopeId: () => panel.splitHotkeyScope,
     resolveEntity: () =>
       buildEntityData({
         id: props.documentId,

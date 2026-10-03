@@ -136,7 +136,11 @@ vi.mock('@components/app/split-layout/components/SplitLabel', () => ({
 vi.mock('./AgentComposer', () => ({ AgentComposer: () => null }));
 vi.mock('./AgentPullRequestChip', () => ({ AgentPullRequestChip: () => null }));
 vi.mock('./AgentSplitHeader', () => ({
-  AgentSplitHeader: () => null,
+  AgentSplitHeader: (props: { hotkeyScope: string | undefined }) => (
+    <button data-testid="agent-header" data-command-scope={props.hotkeyScope}>
+      Agent header
+    </button>
+  ),
   agentSessionTitle: () => 'Agent session',
   sessionRepositoryUrl: () => undefined,
 }));
@@ -192,6 +196,34 @@ it('preserves an imperative agent target across Home route cleanup', () => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+describe('agent command scope ownership', () => {
+  it('passes the split-wide scope without creating a content scope', () => {
+    const panel = {
+      isPanelActive: () => false,
+      splitHotkeyScope: 'split-scope',
+    } as SplitPanelContextType;
+    const view = render(() => (
+      <SplitPanelContext.Provider value={panel}>
+        <BlockAgent />
+      </SplitPanelContext.Provider>
+    ));
+    expect(view.getByTestId('agent-header').dataset.commandScope).toBe(
+      'split-scope'
+    );
+    expect(view.container.querySelector('[data-hotkey-scope]')).toBeNull();
+  });
+
+  it('attaches a local DOM scope outside a split', () => {
+    const view = render(() => <BlockAgent />);
+    const header = view.getByTestId('agent-header');
+    const scope = header.closest('[data-hotkey-scope]');
+    expect(scope).not.toBeNull();
+    expect(header.dataset.commandScope).toBe(
+      scope?.getAttribute('data-hotkey-scope')
+    );
+  });
 });
 
 describe.each(['Home', 'Agents'] as const)('%s session host', (host) => {
