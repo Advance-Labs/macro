@@ -71,7 +71,16 @@ fn draft() -> CalendarEventDraft {
 #[derive(Default)]
 struct FakeMutations {
     created: Mutex<Vec<CalendarEventDraft>>,
-    fail_create: bool,
+    create_error: Mutex<Option<CalendarMutationError>>,
+}
+
+impl FakeMutations {
+    fn failing_with(error: CalendarMutationError) -> Self {
+        Self {
+            create_error: Mutex::new(Some(error)),
+            ..Self::default()
+        }
+    }
 }
 
 impl CalendarMutationService for FakeMutations {
@@ -82,8 +91,8 @@ impl CalendarMutationService for FakeMutations {
         _calendar_id: Option<Uuid>,
         draft: CalendarEventDraft,
     ) -> Result<CalendarEvent, CalendarMutationError> {
-        if self.fail_create {
-            return Err(CalendarMutationError::NoWritableCalendar);
+        if let Some(error) = self.create_error.lock().unwrap().take() {
+            return Err(error);
         }
         self.created.lock().unwrap().push(draft);
         Ok(sample_event())
@@ -233,7 +242,7 @@ async fn the_meeting_is_minted_as_the_requester_and_written_into_the_draft() {
     let links = FakeMeetingLinks::default();
     let calendar_id = Uuid::from_u128(3);
 
-    let event = create_event_with_macro_call(
+    let created = create_event_with_macro_call(
         &mutations,
         &links,
         "macro|owner@example.com",
@@ -246,7 +255,8 @@ async fn the_meeting_is_minted_as_the_requester_and_written_into_the_draft() {
     )
     .await
     .unwrap();
-    assert_eq!(event.id, Uuid::from_u128(7));
+    assert_eq!(created.event.id, Uuid::from_u128(7));
+    assert_eq!(created.meeting_link.url, URL);
 
     let requests = links.requests.lock().unwrap();
     let (requester, request) = requests.first().expect("one meeting minted");
@@ -268,31 +278,60 @@ async fn the_meeting_is_minted_as_the_requester_and_written_into_the_draft() {
 }
 
 #[tokio::test]
-async fn a_failed_calendar_write_cancels_the_fresh_meeting() {
-    let mutations = FakeMutations {
-        fail_create: true,
-        ..FakeMutations::default()
-    };
-    let links = FakeMeetingLinks::default();
+async fn a_calendar_write_refused_before_the_provider_cancels_the_fresh_meeting() {
+    for refused in [
+        CalendarMutationError::NoWritableCalendar,
+        CalendarMutationError::ReadOnly,
+        CalendarMutationError::InvalidInput("bad".to_string()),
+        CalendarMutationError::ReauthRequired("expired".to_string()),
+        CalendarMutationError::ProviderRejected("nope".to_string()),
+    ] {
+        let mutations = FakeMutations::failing_with(refused);
+        let links = FakeMeetingLinks::default();
 
-    let error = create_event_with_macro_call(
-        &mutations,
-        &links,
-        "macro|owner@example.com",
-        None,
-        None,
-        draft(),
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        CreateEventWithMacroCallError::Calendar(CalendarMutationError::NoWritableCalendar)
-    ));
-    assert_eq!(
-        *links.cancelled.lock().unwrap(),
-        vec![("macro|owner@example.com".to_string(), Uuid::from_u128(42))]
-    );
+        let error = create_event_with_macro_call(
+            &mutations,
+            &links,
+            "macro|owner@example.com",
+            None,
+            None,
+            draft(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, CreateEventWithMacroCallError::Calendar(_)));
+        assert_eq!(
+            *links.cancelled.lock().unwrap(),
+            vec![("macro|owner@example.com".to_string(), Uuid::from_u128(42))]
+        );
+    }
+}
+
+/// `PersistFailed` means Google already holds the event with its link, and a
+/// transport failure may mean the same; revoking the meeting would strand
+/// every attendee on a dead link.
+#[tokio::test]
+async fn an_event_that_may_have_reached_the_provider_keeps_its_meeting() {
+    for ambiguous in [
+        CalendarMutationError::PersistFailed("db down".to_string()),
+        CalendarMutationError::Retryable("timeout".to_string()),
+    ] {
+        let mutations = FakeMutations::failing_with(ambiguous);
+        let links = FakeMeetingLinks::default();
+
+        let error = create_event_with_macro_call(
+            &mutations,
+            &links,
+            "macro|owner@example.com",
+            None,
+            None,
+            draft(),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, CreateEventWithMacroCallError::Calendar(_)));
+        assert!(links.cancelled.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

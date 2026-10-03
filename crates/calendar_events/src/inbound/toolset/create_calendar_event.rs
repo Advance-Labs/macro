@@ -41,8 +41,9 @@ updates or deletion. Fails if the user has no writable calendar connected.\n\
 For video conferencing pick at most one of `addMacroCall` (a Macro meeting link, the \
 default choice for a Macro user's meeting) or `addGoogleMeet` (a Google Meet conference). \
 A Macro call is created for the user, scheduled to the event's times, and its join link is \
-written into the event's location and description so every attendee's invitation carries it; \
-the returned event's `location` holds the link.\n\
+appended to the event's description so every attendee's invitation carries it; it also \
+becomes the event's `location` unless a physical `location` was supplied. The returned \
+event's `macroCallUrl` holds the link.\n\
 \n\
 Set `eventType` to \"out_of_office\" to mark the user as out of office (e.g. \"mark me out \
 of office Thursday\"). Out-of-office events must land on the user's primary calendar (omit \
@@ -215,8 +216,8 @@ where
             out_of_office,
         };
 
-        let event = if self.add_macro_call {
-            create_event_with_macro_call(
+        if self.add_macro_call {
+            let created = create_event_with_macro_call(
                 &*service_context.mutations,
                 &*service_context.meeting_links,
                 &requester_id,
@@ -225,14 +226,15 @@ where
                 draft,
             )
             .await
-            .map_err(macro_call_create_tool_error)?
-        } else {
-            service_context
-                .mutations
-                .create_event(&requester_id, None, self.calendar_id, draft)
-                .await
-                .map_err(|error| mutation_tool_error("create the calendar event", error))?
-        };
+            .map_err(macro_call_create_tool_error)?;
+            return Ok(ToolCalendarEvent::from_event_with_macro_call(&created));
+        }
+
+        let event = service_context
+            .mutations
+            .create_event(&requester_id, None, self.calendar_id, draft)
+            .await
+            .map_err(|error| mutation_tool_error("create the calendar event", error))?;
 
         Ok(ToolCalendarEvent::from_event(&event))
     }

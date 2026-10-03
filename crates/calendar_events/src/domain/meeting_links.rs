@@ -68,11 +68,20 @@ pub enum MeetingLinkError {
     Failed(String),
 }
 
+/// A created event together with the Macro call it carries.
+#[derive(Clone, Debug)]
+pub struct EventWithMacroCall {
+    /// The event as the provider echoed it back.
+    pub event: CalendarEvent,
+    /// The meeting written into the event's description and location.
+    pub meeting_link: MeetingLink,
+}
+
 /// Failures creating an event that carries a Macro call.
 #[derive(Debug, thiserror::Error)]
 pub enum CreateEventWithMacroCallError {
-    /// The calendar write failed. Any meeting minted for it was cancelled
-    /// on a best-effort basis.
+    /// The calendar write failed. A meeting minted for it was cancelled on a
+    /// best-effort basis unless the event may have reached the provider.
     #[error(transparent)]
     Calendar(#[from] CalendarMutationError),
     /// The meeting link could not be minted; nothing was written to the
@@ -111,8 +120,10 @@ pub fn attach_macro_call(
 ///
 /// The meeting is minted first so the single invitation attendees receive
 /// already names the call, instead of an invitation followed by an update.
-/// A failed calendar write cancels the fresh meeting on a best-effort basis
-/// so it does not linger in the user's meeting list.
+/// A calendar write known to have failed before reaching the provider
+/// cancels the fresh meeting on a best-effort basis so it does not linger
+/// in the user's meeting list; an outcome that may have left the event (and
+/// its link) at the provider keeps the meeting alive.
 #[tracing::instrument(skip_all, err)]
 pub async fn create_event_with_macro_call<M, L>(
     mutations: &M,
@@ -121,7 +132,7 @@ pub async fn create_event_with_macro_call<M, L>(
     email_link_id: Option<Uuid>,
     calendar_id: Option<Uuid>,
     mut draft: CalendarEventDraft,
-) -> Result<CalendarEvent, CreateEventWithMacroCallError>
+) -> Result<EventWithMacroCall, CreateEventWithMacroCallError>
 where
     M: CalendarMutationService,
     L: MeetingLinkProvider,
@@ -154,9 +165,18 @@ where
         .create_event(requester_id, email_link_id, calendar_id, draft)
         .await
     {
-        Ok(event) => Ok(event),
+        Ok(event) => Ok(EventWithMacroCall {
+            event,
+            meeting_link: link,
+        }),
         Err(error) => {
-            if let Err(cancel_error) = meeting_links
+            if event_may_carry_link(&error) {
+                tracing::warn!(
+                    error = ?error,
+                    meeting_id = %link.id,
+                    "keeping the meeting: the event carrying its link may have been written"
+                );
+            } else if let Err(cancel_error) = meeting_links
                 .cancel_meeting_link(requester_id, link.id)
                 .await
             {
@@ -169,6 +189,21 @@ where
             Err(error.into())
         }
     }
+}
+
+/// Whether a failed create may still have left an event at the provider.
+///
+/// `PersistFailed` means the provider accepted the event and only Macro's
+/// copy lagged; `Retryable` covers transport failures whose delivery is
+/// unknown, including a timeout after the write landed. Cancelling the
+/// meeting in either case would strand attendees on a dead link, so an
+/// unused meeting is the lesser cost. Every other variant is decided before
+/// the provider write.
+fn event_may_carry_link(error: &CalendarMutationError) -> bool {
+    matches!(
+        error,
+        CalendarMutationError::PersistFailed(_) | CalendarMutationError::Retryable(_)
+    )
 }
 
 #[cfg(test)]

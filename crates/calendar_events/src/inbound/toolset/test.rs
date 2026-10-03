@@ -599,6 +599,7 @@ async fn create_with_a_macro_call_mints_a_meeting_and_writes_its_link_into_the_e
         .await
         .unwrap();
     assert_eq!(response.event_id, Uuid::from_u128(7));
+    assert_eq!(response.macro_call_url.as_deref(), Some(MEETING_URL));
 
     let requests = meeting_links.requests.lock().unwrap();
     let request = requests.first().expect("one meeting minted");
@@ -647,6 +648,7 @@ async fn mcp_toolset_accepts_add_macro_call() {
         .unwrap();
 
     assert_eq!(event["eventId"], Uuid::from_u128(7).to_string());
+    assert_eq!(event["macroCallUrl"], MEETING_URL);
     assert_eq!(meeting_links.requests.lock().unwrap().len(), 1);
     assert_eq!(mutations.created.lock().unwrap().len(), 1);
 }

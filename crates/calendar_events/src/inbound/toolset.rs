@@ -23,7 +23,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    meeting_links::{CreateEventWithMacroCallError, MeetingLinkError},
+    meeting_links::{CreateEventWithMacroCallError, EventWithMacroCall, MeetingLinkError},
     models::{
         CalendarAttendeeInput, CalendarEvent, EventReminderOverride, EventReminders, EventTime,
         OutOfOfficeAutoDeclineMode, OutOfOfficeProperties,
@@ -354,6 +354,9 @@ pub struct ToolCalendarEvent {
     pub organizer_email: Option<String>,
     /// Conference join URL, when a conference is attached.
     pub conference_url: Option<String>,
+    /// Join URL of the Macro call created with the event, when
+    /// CreateCalendarEvent was asked for one.
+    pub macro_call_url: Option<String>,
     /// Whether the user's calendar prohibits modifying this event.
     pub is_read_only: bool,
     /// Calendar the event belongs to, when known.
@@ -427,8 +430,16 @@ impl ToolCalendarEvent {
             attendee_count: event.attendees.len(),
             organizer_email: event.organizer_email.clone(),
             conference_url: event.conference_url.clone(),
+            macro_call_url: None,
             is_read_only: event.is_read_only,
             calendar_id: event.calendar_id,
+        }
+    }
+
+    fn from_event_with_macro_call(created: &EventWithMacroCall) -> Self {
+        Self {
+            macro_call_url: Some(created.meeting_link.url.clone()),
+            ..Self::from_event(&created.event)
         }
     }
 }
