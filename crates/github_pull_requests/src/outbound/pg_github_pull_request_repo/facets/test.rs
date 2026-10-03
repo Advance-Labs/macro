@@ -13,8 +13,9 @@ use uuid::Uuid;
 use super::super::PgGithubPullRequestRepo;
 use crate::domain::{
     models::{
-        GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE, GithubAuthorFacet, GithubPullRequestFacets,
-        GithubPullRequestRow, GithubPullRequestStatus, GithubRepositoryFacet,
+        GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE, GithubLabelFacet, GithubPullRequestFacets,
+        GithubPullRequestLabel, GithubPullRequestRow, GithubPullRequestStatus,
+        GithubPullRequestUser, GithubRepositoryFacet, GithubUserFacet,
     },
     ports::{GithubPullRequestFacetRepository, GithubPullRequestRepository},
 };
@@ -121,21 +122,121 @@ async fn facets_count_each_visible_pull_request_once_by_repository_and_author(po
                 count: 2,
             }],
             authors: vec![
-                GithubAuthorFacet {
+                GithubUserFacet {
                     github_user_id: "42".to_string(),
                     login: Some("octocat".to_string()),
                     count: 1,
                 },
-                GithubAuthorFacet {
+                GithubUserFacet {
                     github_user_id: "7".to_string(),
                     login: None,
                     count: 1,
                 },
             ],
+            assignees: Vec::new(),
+            labels: Vec::new(),
         }
     );
 }
 
+fn assignee(github_user_id: &str, login: &str) -> GithubPullRequestUser {
+    GithubPullRequestUser {
+        github_user_id: github_user_id.to_string(),
+        login: Some(login.to_string()),
+    }
+}
+
+fn label(name: &str, color: &str) -> GithubPullRequestLabel {
+    GithubPullRequestLabel {
+        name: name.to_string(),
+        color: Some(color.to_string()),
+    }
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn facets_count_assignees_and_labels_once_per_visible_pull_request(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool.clone());
+
+    store_for(&pool, "macro/app/pull/7", USER, "user").await;
+    store_for(&pool, "macro/app/pull/7", TEAM, "team").await;
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            assignees: vec![assignee("42", "octocat"), assignee("7", "hubot")],
+            labels: vec![label("bug", "000000")],
+            ..row("macro/app/pull/7", Some(99), 7)
+        })
+            .into(),
+    )
+    .await
+    .unwrap();
+
+    store_for(&pool, "macro/app/pull/8", USER, "user").await;
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            assignees: vec![assignee("42", "octocat-renamed")],
+            labels: vec![label("bug", "d73a4a"), label("docs", "0075ca")],
+            github_updated_at: Some(chrono::Utc::now()),
+            ..row("macro/app/pull/8", Some(99), 8)
+        })
+            .into(),
+    )
+    .await
+    .unwrap();
+
+    store_for(
+        &pool,
+        "macro/other/pull/1",
+        "macro|other@example.com",
+        "user",
+    )
+    .await;
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            assignees: vec![assignee("9", "invisible")],
+            labels: vec![label("secret", "ffffff")],
+            ..row("macro/other/pull/1", Some(100), 1)
+        })
+            .into(),
+    )
+    .await
+    .unwrap();
+
+    let facets = repo
+        .github_pull_request_facets(vec![SourceId::user(USER), SourceId::new(TEAM, "team")])
+        .await
+        .expect("facets should load");
+
+    assert_eq!(
+        facets.assignees,
+        vec![
+            GithubUserFacet {
+                github_user_id: "42".to_string(),
+                login: Some("octocat-renamed".to_string()),
+                count: 2,
+            },
+            GithubUserFacet {
+                github_user_id: "7".to_string(),
+                login: Some("hubot".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        facets.labels,
+        vec![
+            GithubLabelFacet {
+                name: "bug".to_string(),
+                color: Some("d73a4a".to_string()),
+                count: 2,
+            },
+            GithubLabelFacet {
+                name: "docs".to_string(),
+                color: Some("0075ca".to_string()),
+                count: 1,
+            },
+        ]
+    );
+}
 async fn set_synced_at(pool: &PgPool, github_key: &str, timestamp: &str) {
     let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
         .unwrap()
@@ -192,4 +293,48 @@ async fn facet_names_follow_sync_time_instead_of_pull_request_update_time(pool: 
     assert_eq!(facets.authors[0].login.as_deref(), Some("new-login"));
     assert_eq!(facets.repositories[0].count, 2);
     assert_eq!(facets.authors[0].count, 2);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn assignee_logins_and_label_colors_follow_sync_time(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool.clone());
+    for (key, number, login, color, github_updated_at, synced_at) in [
+        (
+            "macro/app/pull/1",
+            1,
+            "old-login",
+            "000000",
+            "2026-05-02T00:00:00Z",
+            "2026-05-03T00:00:00Z",
+        ),
+        (
+            "macro/app/pull/2",
+            2,
+            "new-login",
+            "ffffff",
+            "2026-05-01T00:00:00Z",
+            "2026-05-04T00:00:00Z",
+        ),
+    ] {
+        store_for(&pool, key, USER, "user").await;
+        let mut pull_request = row(key, Some(99), number);
+        pull_request.assignees = vec![assignee("42", login)];
+        pull_request.labels = vec![label("bug", color)];
+        pull_request.github_updated_at = Some(
+            chrono::DateTime::parse_from_rfc3339(github_updated_at)
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        );
+        repo.upsert_row(&(&pull_request).into()).await.unwrap();
+        set_synced_at(&pool, key, synced_at).await;
+    }
+
+    let facets = repo
+        .github_pull_request_facets(vec![SourceId::user(USER)])
+        .await
+        .unwrap();
+    assert_eq!(facets.assignees[0].login.as_deref(), Some("new-login"));
+    assert_eq!(facets.labels[0].color.as_deref(), Some("ffffff"));
+    assert_eq!(facets.assignees[0].count, 2);
+    assert_eq!(facets.labels[0].count, 2);
 }

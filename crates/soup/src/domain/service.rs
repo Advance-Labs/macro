@@ -34,7 +34,9 @@ use frecency::domain::{
     },
     ports::FrecencyQueryService,
 };
-use github_pull_requests::domain::ports::GithubPullRequestListing;
+use github_pull_requests::domain::{
+    models::GithubPullRequestSortDirection, ports::GithubPullRequestListing,
+};
 use item_filters::ast::{
     EntityFilterAst, LiteralTree,
     channel::{ChannelLiteral, ChannelThreadLiteral},
@@ -1070,6 +1072,7 @@ where
                 foreign_entity_ids.len() as u32,
                 foreign_entity_query,
                 legs.github_pull_request_filter.clone(),
+                SoupSortDirection::Desc,
             ),
             self.handle_reminder_request(reminder_request),
         );
@@ -1300,6 +1303,7 @@ where
         limit: u32,
         query: Option<ForeignEntityListQuery>,
         github_pull_request_filter: LiteralTree<GithubPullRequestLiteral>,
+        sort_direction: SoupSortDirection,
     ) -> Result<impl Iterator<Item = SoupCandidate>, SoupErr> {
         let Some(query) = query else {
             return Ok(Either::Left(None.into_iter()));
@@ -1313,6 +1317,10 @@ where
                     limit,
                     query,
                     github_pull_request_filter,
+                    match sort_direction {
+                        SoupSortDirection::Asc => GithubPullRequestSortDirection::Asc,
+                        SoupSortDirection::Desc => GithubPullRequestSortDirection::Desc,
+                    },
                 )
                 .await?
                 .into_iter()
@@ -1641,6 +1649,7 @@ where
                     limit as u32,
                     foreign_entity_query,
                     github_pull_request_filter,
+                    sort_direction,
                 );
 
                 let (
