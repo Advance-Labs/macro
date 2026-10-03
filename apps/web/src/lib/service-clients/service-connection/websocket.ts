@@ -1,4 +1,3 @@
-import { createBlockEffect, inBlock } from '@core/block';
 import { ENABLE_BEARER_TOKEN_AUTH } from '@core/constant/featureFlags';
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { fetchToken } from '@core/util/fetchWithToken';
@@ -12,7 +11,6 @@ import {
 } from '@macro-inc/collaboration/websocket';
 import { createWebsocketStateSignal } from '@macro-inc/collaboration/websocket/solid/state-signal';
 import { getMacroApiToken } from '@service-auth/fetch';
-import { createCallback } from '@solid-primitives/rootless';
 import type { ToWebsocketMessage } from './generated/schemas/toWebsocketMessage';
 import { instrumentGatewaySocket } from './presence-telemetry';
 
@@ -78,17 +76,6 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
 }
 
 export const state = createWebsocketStateSignal(ws);
-// TODO: add type mapping on the websocket event
-export function createConnectionBlockWebsocketEffect(
-  callback: (data: FromWebsocketMessage) => void
-) {
-  createBlockEffect(() => {
-    const wrappedCallback = createCallback((data) => {
-      return inBlock(callback)(data);
-    });
-    createSocketEffect(ws, wrappedCallback);
-  });
-}
 
 export function createConnectionWebsocketEffect(
   callback: (data: FromWebsocketMessage) => void

@@ -38,7 +38,6 @@ vi.mock('@app/features/activity/open-entity-in-split', () => ({
 vi.mock('@service-connection/websocket', () => ({
   ws: { send() {}, addEventListener() {}, removeEventListener() {} },
   state: () => 'closed',
-  createConnectionBlockWebsocketEffect() {},
   createConnectionWebsocketEffect() {},
   parseWebsocketPayload: () => undefined,
 }));

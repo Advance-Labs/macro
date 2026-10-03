@@ -52,7 +52,6 @@ vi.mock('@solid-primitives/resize-observer', () => ({
 vi.mock('@service-connection/websocket', () => ({
   ws: { send() {}, addEventListener() {}, removeEventListener() {} },
   state: () => 'closed',
-  createConnectionBlockWebsocketEffect() {},
   createConnectionWebsocketEffect() {},
   parseWebsocketPayload: () => undefined,
 }));

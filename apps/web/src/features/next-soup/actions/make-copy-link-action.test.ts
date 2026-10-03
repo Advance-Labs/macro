@@ -22,7 +22,6 @@ vi.mock('@core/util/url', () => ({
 vi.mock('@service-connection/websocket', () => ({
   ws: { addEventListener: vi.fn(), send: vi.fn() },
   state: () => 'closed',
-  createConnectionBlockWebsocketEffect: vi.fn(),
   createConnectionWebsocketEffect: vi.fn(),
 }));
 vi.mock('@service-storage/websocket', () => ({

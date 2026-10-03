@@ -39,7 +39,6 @@ import {
   onCleanup,
   useContext,
 } from 'solid-js';
-import { createStore, type SetStoreFunction, type Store } from 'solid-js/store';
 import {
   type BlockAlias,
   type BlockName,
@@ -440,19 +439,14 @@ type BlockEffect = (...args: any[]) => any;
  * @param {BlockEffect} fn - The function to be used as a block effect.
  */
 export const [globalBlockEffects] = createSignal<BlockEffect[]>([]);
-export const [globalBlockRenderEffects] = createSignal<BlockEffect[]>([]);
 
 /** @deprecated */
 export function createBlockEffect(fn: BlockEffect): void {
   globalBlockEffects().push(fn);
 }
 
-export function createBlockRenderEffect(fn: BlockEffect): void {
-  globalBlockRenderEffects().push(fn);
-}
-
 /**
- * A component that provides the scope and context for blocks, including signals, stores, and effects.
+ * A component that provides the scope and context for block signals, resources, and effects.
  */
 export const Block = <Name extends BlockName>(
   props: FlowProps<{
@@ -464,7 +458,6 @@ export const Block = <Name extends BlockName>(
 ) => {
   const [state] = createSignal<BlockState>({
     entities: new Map(),
-    memos: new Map(),
     id: props.id,
     name: props.name,
     nested: props.nested,
@@ -474,7 +467,6 @@ export const Block = <Name extends BlockName>(
 
   onCleanup(() => {
     state().entities.clear();
-    state().memos.clear();
   });
 
   const blockComponent = createComponent(BlockContext.Provider, {
@@ -815,60 +807,6 @@ export function createBlockSignal<T>(
   >;
 }
 
-export type BlockStore<T> = [Store<T>, SetStoreFunction<T>] & {
-  (): T;
-  get: Store<T>;
-  set: SetStoreFunction<T>;
-};
-
-/**
- * Creates a block-scoped store to set and get state.
- *
- * Should only be defined at the top level of a module.
- *
- * @template T - The type of the store value, must be an object.
- * @param {T} initialValue - The initial value for the store.
- * @returns {BlockStore<T>} A block store object.
- *
- * @example
- *
- * // traditional usage
- * function UserInfo() {
- *   const [user, setUser] = userStore;
- *   createEffect(() => {
- *     console.log(user.name, 'is', user.age, 'years old');
- *   });
- *   return (
- *     <div>
- *       <p>
- *         User: {user.name} (Age: {user.age})
- *       </p>
- *       <button onClick={() => setUser('name', 'Bob')}>Set Name to Bob</button>
- *       <button onClick={() => setUser('age', (a) => a + 1)}>
- *         Increment Age
- *       </button>
- *     </div>
- *   );
- * }
- *
- * // simpler setter
- * function UserUpdate() {
- *   const setUser = userStore.set;
- *   return (
- *     <div>
- *       <button onClick={() => setUser('name', 'Alice')}>
- *         Set Name to Alice
- *       </button>
- *     </div>
- *   );
- * }
- */
-export function createBlockStore<T extends object>(
-  initialValue: T
-): BlockStore<T> {
-  return createBlockEntity(createStore, structuredClone(initialValue)) as any;
-}
-
 type BlockInitializedResource<T, R = unknown> = [
   get: InitializedResource<T>,
   set: ResourceActions<T, R>,
@@ -964,86 +902,8 @@ export function createBlockResource<T, S, R>(
   ) as any;
 }
 
-type BlockMemo<T> = Accessor<T>;
-
-/**
- * Creates a block-scoped memo that derives a value from other reactive dependencies.
- *
- * The memo provides referential stability, which is crucial when working with arrays or objects
- * that are derived from multiple reactive sources.
- *
- * Should only be defined at the top level of a module.
- *
- * @deprecated
- * @template T - The type of the memo value.
- * @param {() => T} fn - A function that computes the derived value.
- * @param equal - An optional function that is used to see if the memo should trigger an update
- * @returns {BlockMemo<T>} A block memo object.
- *
- * @example
- * const xSignal = createBlockSignal(0);
- * const ySignal = createBlockSignal(0);
- *
- * // Without memo (not referentially stable)
- * const unstableArray = () => [xSignal(), ySignal()];
- *
- * // With block memo (referentially stable)
- * const stableArray = createBlockMemo(() => [xSignal(), ySignal()]);
- *
- * function PointDisplay() {
- *   return (
- *     <>
- *       <div>Current Point: ({xSignal()}, {ySignal()})</div>
- *       <ChildComponent point={stableArray()} />
- *       <button onClick={() => xSignal.set(x => x + 1)}>Increment X</button>
- *       <button onClick={() => ySignal.set(y => y + 1)}>Increment Y</button>
- *     </>
- *   );
- * }
- *
- * function ChildComponent(props: { point: number[] }) {
- *   // This effect will run only when the array reference changes
- *   createEffect(() => {
- *     console.log("Point updated:", props.point);
- *   });
- *
- *   return <div>Child sees: ({props.point[0]}, {props.point[1]})</div>;
- * }
- */
-export function createBlockMemo<T>(
-  fn: (...args: any[]) => T,
-  equal?: (prev: T | undefined, next: T) => boolean
-): BlockMemo<T | undefined> {
-  const value = createBlockSignal<T | undefined>(undefined, {
-    equals: equal as any,
-    internal: true,
-  });
-  const isInitialized = createBlockSignal(false, {
-    internal: true,
-  });
-
-  createBlockEffect(() => {
-    if (!isInBlock()) return;
-
-    value.set(fn() as any);
-    isInitialized.set(true);
-  });
-
-  const memoFn = () => {
-    const get = value.get;
-    if (!isInitialized()) {
-      value.set(fn() as any);
-      isInitialized.set(true);
-    }
-    return get();
-  };
-
-  return memoFn as BlockMemo<T>;
-}
-
 type BlockState<Name extends BlockName = BlockName> = {
   entities: Map<symbol, [any, any]>;
-  memos: Map<symbol, () => any>;
   id: string;
   name: Name;
   nested?: NestedState<Name>;
