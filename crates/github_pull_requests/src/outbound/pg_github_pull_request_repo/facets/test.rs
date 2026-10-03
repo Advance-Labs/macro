@@ -125,3 +125,61 @@ async fn facets_count_each_visible_pull_request_once_by_repository_and_author(po
         }
     );
 }
+
+async fn set_synced_at(pool: &PgPool, github_key: &str, timestamp: &str) {
+    let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp)
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    sqlx::query!(
+        "UPDATE github_pull_request SET updated_at = $2 WHERE github_key = $1",
+        github_key,
+        timestamp,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn facet_names_follow_sync_time_instead_of_pull_request_update_time(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool.clone());
+    for (key, number, repository, login, github_updated_at, synced_at) in [
+        (
+            "macro/app/pull/1",
+            1,
+            "app",
+            "old-login",
+            "2026-05-02T00:00:00Z",
+            "2026-05-03T00:00:00Z",
+        ),
+        (
+            "macro/renamed/pull/2",
+            2,
+            "renamed",
+            "new-login",
+            "2026-05-01T00:00:00Z",
+            "2026-05-04T00:00:00Z",
+        ),
+    ] {
+        store_for(&pool, key, USER, "user").await;
+        let mut pull_request = row(key, Some(99), number);
+        pull_request.repo = repository.to_string();
+        pull_request.author_login = Some(login.to_string());
+        pull_request.github_updated_at = Some(
+            chrono::DateTime::parse_from_rfc3339(github_updated_at)
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        );
+        repo.upsert_row(&pull_request).await.unwrap();
+        set_synced_at(&pool, key, synced_at).await;
+    }
+
+    let facets = repo
+        .github_pull_request_facets(vec![SourceId::user(USER)])
+        .await
+        .unwrap();
+    assert_eq!(facets.repositories[0].repository, "macro/renamed");
+    assert_eq!(facets.authors[0].login.as_deref(), Some("new-login"));
+    assert_eq!(facets.repositories[0].count, 2);
+    assert_eq!(facets.authors[0].count, 2);
+}

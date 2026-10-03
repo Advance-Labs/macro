@@ -39,7 +39,7 @@ impl GithubPullRequestFacetRepository for PgGithubPullRequestRepo {
                 gpr.repository_id AS "repository_id!",
                 (ARRAY_AGG(
                     gpr.owner || '/' || gpr.repo
-                    ORDER BY COALESCE(gpr.github_updated_at, gpr.updated_at) DESC
+                    ORDER BY gpr.updated_at DESC, gpr.github_key
                 ))[1] AS "repository!",
                 COUNT(*) AS "count!"
             FROM github_pull_request gpr
@@ -72,7 +72,7 @@ impl GithubPullRequestFacetRepository for PgGithubPullRequestRepo {
                 gpr.author_github_user_id AS "github_user_id!",
                 (ARRAY_AGG(
                     gpr.author_login
-                    ORDER BY COALESCE(gpr.github_updated_at, gpr.updated_at) DESC
+                    ORDER BY gpr.updated_at DESC, gpr.github_key
                 ) FILTER (WHERE gpr.author_login IS NOT NULL))[1] AS login,
                 COUNT(*) AS "count!"
             FROM github_pull_request gpr
