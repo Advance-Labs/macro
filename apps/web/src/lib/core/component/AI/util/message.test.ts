@@ -51,24 +51,47 @@ function buildToolCallHeavyItems(count: number): ChatStream[] {
 }
 
 /* Mirrors generatingMessage(): rebuild the whole message on every update.
-   Count array iteration instead of elapsed time so CI load cannot affect the
-   result. Spreading accumulated parts visits every copied element. */
-function countTickIteration(items: ChatStream[]): number {
+   Count iteration and native array copies instead of elapsed time so CI load
+   cannot affect the result. Build tick inputs before counting their conversion. */
+function countTickArrayWork(items: ChatStream[]): number {
+  const ticks: ChatStream[][] = [];
+  for (let i = 1; i <= items.length; i++) {
+    ticks.push(items.slice(0, i));
+  }
+
   const iterate = Array.prototype[Symbol.iterator];
-  let visited = 0;
-  // A mock wrapper itself iterates argument arrays, so use a direct override.
+  const concat = Array.prototype.concat;
+  const slice = Array.prototype.slice;
+  let work = 0;
+  // Mock wrappers themselves iterate argument arrays, so use direct overrides.
   Array.prototype[Symbol.iterator] = function (this: unknown[]) {
-    visited += this.length;
+    work += this.length;
     return iterate.call(this);
+  };
+  Array.prototype.concat = function (this: unknown[], ...values: unknown[]) {
+    const result = concat.apply(this, values);
+    work += result.length;
+    return result;
+  };
+  Array.prototype.slice = function (
+    this: unknown[],
+    start?: number,
+    end?: number
+  ) {
+    const result = slice.call(this, start, end);
+    work += result.length;
+    return result;
   };
 
   try {
-    for (let i = 1; i <= items.length; i++) {
-      asChatMessage(items.slice(0, i));
+    for (let i = 0; i < ticks.length; i++) {
+      asChatMessage(ticks[i]);
     }
-    return visited;
+    return work;
   } finally {
     Array.prototype[Symbol.iterator] = iterate;
+    Array.prototype.concat = concat;
+    Array.prototype.slice = slice;
   }
 }
 
@@ -105,8 +128,8 @@ describe('asChatMessage', () => {
        whole stream once per incoming chunk, that O(n^2) per call becomes
        O(n^3) over the life of a "did a bunch of tool calls" turn — this is
        what made those responses stay slow even after the bufferedStream fix. */
-    const smallWork = countTickIteration(buildToolCallHeavyItems(60));
-    const largeWork = countTickIteration(buildToolCallHeavyItems(120));
+    const smallWork = countTickArrayWork(buildToolCallHeavyItems(60));
+    const largeWork = countTickArrayWork(buildToolCallHeavyItems(120));
 
     // Doubling input: quadratic work is ~4x; cubic accumulator copying is ~8x.
     expect(largeWork).toBeLessThanOrEqual(smallWork * 5);
