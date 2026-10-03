@@ -208,3 +208,36 @@ test('Support inbox, independent Tasks, agent configuration, and embedded custom
   await page.waitForTimeout(1800);
   expect(errors).toEqual([]);
 });
+
+test('Manually created tracking tickets keep customer replies disabled', async ({
+  page,
+}) => {
+  await page.goto('/src/features/support/browser-test/index.html');
+  await page.getByRole('button', { name: 'New ticket' }).click();
+  await page
+    .getByLabel('Subject', { exact: true })
+    .fill('Track a customer escalation');
+  await page.getByLabel('Customer name').fill('Jordan Chen');
+  await page.getByLabel('Customer email').fill('jordan@acme.com');
+  await page
+    .getByLabel('Message', { exact: true })
+    .fill('Customer raised this during a call.');
+  await page
+    .getByRole('button', { name: 'Create ticket', exact: true })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Reply to customer' })
+  ).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Add note' })).toBeVisible();
+  await expect(page.locator('.support-conversation')).toContainText(
+    'Tracking ticket'
+  );
+  await page
+    .getByLabel('Reply composer')
+    .fill('Engineering follow-up tracked internally.');
+  await page.getByRole('button', { name: 'Add note' }).click();
+  await expect(page.locator('.internal-note')).toContainText(
+    'Engineering follow-up'
+  );
+  await expect(page.getByLabel('Ticket status')).toHaveValue('open');
+});

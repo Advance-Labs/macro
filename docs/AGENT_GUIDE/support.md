@@ -1,6 +1,6 @@
 # Support
 
-Support is a team workspace at `/support`, also available through the sidebar (`g u`) and split components. Customer tickets have their own lifecycle: Open, In progress, Waiting on customer, Waiting on team, and Resolved. New customer messages reopen a ticket; public teammate and agent replies move it to Waiting on customer. Internal notes do not change the customer lifecycle.
+Support is a team workspace at `/support`, also available through the sidebar (`g u`) and split components. Customer tickets have their own lifecycle: Open, In progress, Waiting on customer, Waiting on team, and Resolved. New customer messages reopen a ticket; public teammate and agent replies move it to Waiting on customer. Internal notes do not change the customer lifecycle. Manually created tickets track customer issues with internal notes; public replies require a website or email conversation, and their agent output stays in draft form.
 
 The left panel provides Open, Assigned to me, Unassigned, High priority, Recent activity, Resolved, and All tickets. The main inbox searches subject, customer, company, and message preview. Lists page in batches of 100; use Load more for larger backlogs. Conversation reads show the latest 200 messages. Tickets support assignment, priority, resolution/reopening, and pausing the agent per ticket.
 

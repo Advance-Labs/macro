@@ -239,6 +239,10 @@ impl Service {
         author: Author,
     ) -> Result<()> {
         validate_content(&reply.content)?;
+        if reply.public && !has_customer_channel(ticket.source) {
+            return Err(Error::Invalid("This is a tracking ticket. Use internal notes; customer replies require an email or website conversation.".into()));
+        }
+
         if reply.id.get_version_num() != 7 {
             return Err(Error::Invalid("message id must be UUIDv7".into()));
         }
@@ -635,7 +639,7 @@ impl Service {
             return self.repository.finish_job(job, Some(due)).await;
         }
         validate_content(&answer.content)?;
-        if dispatches(&config.settings, &answer) {
+        if has_customer_channel(current.source) && dispatches(&config.settings, &answer) {
             let reply = Reply {
                 id: agent_message_id(job.trigger_id),
                 content: public_content(&answer.content),
@@ -651,6 +655,9 @@ impl Service {
         }
         self.repository.finish_job(job, None).await
     }
+}
+fn has_customer_channel(source: Source) -> bool {
+    matches!(source, Source::Widget | Source::Email)
 }
 fn same_grounding(previous: &TeamSettings, current: &TeamSettings) -> bool {
     previous.user_id == current.user_id
@@ -764,6 +771,12 @@ mod tests {
         ticket.last_customer_at = Some(now + Duration::seconds(1));
         assert!(eligible(&settings, &ticket, trigger));
         assert!(!eligible(&Settings::default(), &ticket, trigger));
+    }
+    #[test]
+    fn tracking_tickets_cannot_claim_to_send_customer_replies() {
+        assert!(!has_customer_channel(Source::Manual));
+        assert!(has_customer_channel(Source::Widget));
+        assert!(has_customer_channel(Source::Email));
     }
     #[test]
     fn changed_grounding_requires_regeneration() {

@@ -403,7 +403,7 @@ function TicketConversation(props: {
   const ticket = () => props.detail().ticket;
   const [content, setContent] = createSignal('');
   const [mentions, setMentions] = createSignal<unknown[]>([]);
-  const [internal, setInternal] = createSignal(false);
+  const [internal, setInternal] = createSignal(ticket().source === 'manual');
   const [editorKey, setEditorKey] = createSignal(0);
   let pending: import('../core/types').Reply | undefined;
   const update = (patch: import('../core/types').TicketPatch) =>
@@ -435,7 +435,7 @@ function TicketConversation(props: {
     );
   const suggestion = () => {
     setContent(ticket().draft!.content);
-    setInternal(false);
+    setInternal(ticket().source === 'manual');
     setMentions([]);
     setEditorKey((n) => n + 1);
   };
@@ -446,7 +446,11 @@ function TicketConversation(props: {
           ‹ Inbox
         </button>
         <span class="support-status">
-          {ticket().source === 'email' ? '✉ Email' : '◌ Chat'}
+          {ticket().source === 'email'
+            ? '✉ Email'
+            : ticket().source === 'manual'
+              ? 'Tracking'
+              : '◌ Chat'}
         </span>
         <button
           class="support-secondary"
@@ -470,6 +474,12 @@ function TicketConversation(props: {
               {ticket().customer.name} · {ticket().customer.email}
             </p>
           </div>
+          <Show when={ticket().source === 'manual'}>
+            <p class="support-explainer">
+              Tracking ticket · add internal notes here. Customer replies are
+              available on email and website conversations.
+            </p>
+          </Show>
           <div class="support-message-list">
             <For each={props.detail().messages}>
               {(message) => (
@@ -530,6 +540,7 @@ function TicketConversation(props: {
             <div class="support-composer-tabs">
               <button
                 classList={{ active: !internal() }}
+                disabled={ticket().source === 'manual'}
                 onClick={() => setInternal(false)}
               >
                 Reply to customer
@@ -1023,6 +1034,10 @@ function NewTicketForm(props: {
     >
       <div class="support-eyebrow">START A CONVERSATION</div>
       <h2>New ticket</h2>
+      <p>
+        Create a tracking ticket with a customer summary. Email and website
+        conversations automatically create tickets you can reply to.
+      </p>
       <For each={['subject', 'name', 'email', 'content'] as const}>
         {(key) => (
           <label>
