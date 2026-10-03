@@ -428,6 +428,7 @@ dependencies = [
  "entity_registry_db_utils",
  "futures",
  "github",
+ "github_pull_requests",
  "harness_id",
  "harnesses",
  "initiative",
@@ -8156,6 +8157,7 @@ name = "github_pull_requests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-s3",
  "axum",
  "chrono",
  "entity_access",

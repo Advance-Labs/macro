@@ -1,3 +1,4 @@
+mod sparse;
 use super::*;
 
 #[test]
@@ -41,6 +42,8 @@ fn pull_request_details(
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     }
 }
 
@@ -179,6 +182,8 @@ fn pull_request_response_serializes_with_camel_case_fields() {
             assignees: None,
             labels: None,
             reviews: None,
+            base: None,
+            head: None,
         }],
     };
 
@@ -315,6 +320,8 @@ fn pull_request_enrichment_copies_details_fields() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
 
     let enriched = EnrichedGithubPullRequest::from_details(reference.clone(), details);
@@ -373,6 +380,8 @@ fn pull_request_foreign_entity_metadata_serializes_enriched_pull_request() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(reference, details);
 
@@ -501,6 +510,8 @@ fn pull_request_foreign_entity_metadata_keeps_fresh_arrays() {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(pull_request_reference(), details);
     let existing_metadata = serde_json::json!({
@@ -835,69 +846,6 @@ fn stored_comments_do_not_hide_incoming_review_decisions() {
     }
 }
 
-#[test]
-fn sparse_typed_updates_keep_omissions_and_replace_supplied_empty_values() {
-    use super::GithubPullRequestWrite;
-    let original = GithubPullRequestRow {
-        draft: true,
-        assignees: vec![GithubPullRequestUser {
-            github_user_id: "7".into(),
-            login: None,
-        }],
-        labels: vec![GithubPullRequestLabel {
-            name: "bug".into(),
-            color: None,
-        }],
-        reviews: vec![GithubPullRequestReview {
-            reviewer_github_user_id: "8".into(),
-            reviewer_login: None,
-            state: GithubPullRequestReviewState::Approved,
-            submitted_at: None,
-        }],
-        ..GithubPullRequestRow::from_metadata(&serde_json::json!({
-            "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
-            "url":"https://github.com/macro/app/pull/7", "displayName":"PR",
-            "requestedReviewerGithubUserIds":["8"], "participantGithubUserIds":["7"]
-        }))
-        .unwrap()
-    };
-    let sparse = GithubPullRequestWrite::from_metadata(&serde_json::json!({
-        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
-        "url":"https://github.com/macro/app/pull/7", "displayName":"PR", "status":"closed",
-        "participantGithubUserIds":["9"],
-        "reviews":[{"reviewerGithubUserId":"8", "state":"commented"}]
-    }))
-    .unwrap();
-    let merged = sparse.merge(Some(original));
-    assert!(merged.draft);
-    assert_eq!(merged.assignees.len(), 1);
-    assert_eq!(merged.labels.len(), 1);
-    assert_eq!(merged.participant_github_user_ids, vec!["7", "9"]);
-    assert_eq!(
-        merged.reviews[0].state,
-        GithubPullRequestReviewState::Approved
-    );
-    assert_eq!(
-        merged.review_decision,
-        Some(GithubPullRequestReviewDecision::Approved)
-    );
-    let supplied = GithubPullRequestWrite {
-        draft: Some(false),
-        assignees: Some(vec![]),
-        labels: Some(vec![]),
-        requested_reviewer_github_user_ids: Some(vec![]),
-        ..sparse
-    };
-    let merged = supplied.merge(Some(merged));
-    assert!(!merged.draft);
-    assert!(merged.assignees.is_empty());
-    assert!(merged.labels.is_empty());
-    assert!(merged.requested_reviewer_github_user_ids.is_empty());
-    assert_eq!(
-        merged.review_decision,
-        Some(GithubPullRequestReviewDecision::Approved)
-    );
-}
 fn stored_record(pull_request: &EnrichedGithubPullRequest) -> ForeignEntity {
     ForeignEntity {
         id: uuid::Uuid::nil(),
@@ -934,51 +882,6 @@ fn stored_response_falls_back_to_record_status_without_overriding_a_known_row_st
 }
 
 #[test]
-fn existing_typed_row_ignores_the_entire_fallback() {
-    use super::GithubPullRequestWrite;
-    let base = GithubPullRequestWrite::from_metadata(&serde_json::json!({
-        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
-        "url":"https://github.com/macro/app/pull/7", "displayName":"PR",
-        "title":"existing", "participantGithubUserIds":["7"],
-        "reviews":[{"reviewerGithubUserId":"8", "state":"approved"}]
-    }))
-    .unwrap();
-    let existing = GithubPullRequestWrite {
-        title: Some("existing".into()),
-        ..base.clone()
-    }
-    .merge(None);
-    let fallback = GithubPullRequestWrite {
-        title: Some("fallback".into()),
-        status: Some(GithubPullRequestStatus::Closed),
-        participant_github_user_ids: Some(vec!["9".into()]),
-        reviews: Some(vec![review(
-            "10",
-            GithubPullRequestReviewState::ChangesRequested,
-            1,
-        )]),
-        ..base.clone()
-    }
-    .merge(None);
-    let incoming = GithubPullRequestWrite {
-        title: None,
-        status: None,
-        participant_github_user_ids: None,
-        reviews: None,
-        initial_row: Some(fallback),
-        ..base
-    };
-    let merged = incoming.merge(Some(existing.clone()));
-    assert_eq!(merged, existing);
-    assert_eq!(merged.participant_github_user_ids, vec!["7"]);
-    assert_eq!(merged.reviews.len(), 1);
-    assert_eq!(
-        merged.review_decision,
-        Some(GithubPullRequestReviewDecision::Approved)
-    );
-}
-
-#[test]
 fn stored_response_url_follows_the_row_repository_identity() {
     let record = stored_record(&EnrichedGithubPullRequest::from_reference(
         pull_request_reference(),
@@ -997,39 +900,6 @@ fn stored_response_url_follows_the_row_repository_identity() {
         record.metadata["url"],
         "https://github.com/macro/app/pull/7"
     );
-}
-
-#[test]
-fn mismatched_fallback_key_or_number_is_rejected() {
-    use super::GithubPullRequestWrite;
-    let write = GithubPullRequestWrite::from_metadata(&serde_json::json!({
-        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
-        "url":"https://github.com/macro/app/pull/7", "displayName":"PR"
-    }))
-    .unwrap();
-    let fallback = GithubPullRequestWrite {
-        title: Some("wrong row".into()),
-        ..write.clone()
-    }
-    .merge(None);
-    for invalid in [
-        GithubPullRequestRow {
-            github_key: "other/app/pull/7".into(),
-            ..fallback.clone()
-        },
-        GithubPullRequestRow {
-            number: 8,
-            ..fallback.clone()
-        },
-    ] {
-        let merged = GithubPullRequestWrite {
-            initial_row: Some(invalid),
-            ..write.clone()
-        }
-        .merge(None);
-        assert_eq!(merged, write.merge(None));
-        assert_eq!(merged.title, None);
-    }
 }
 
 #[test]
@@ -1054,4 +924,31 @@ fn stored_comment_author_ids_intentionally_remain_json_integers() {
     let wire = serde_json::to_value(response).unwrap();
     assert_eq!(wire["authorGithubUserId"], "583231");
     assert_eq!(wire["comments"][0]["authorId"], serde_json::json!(583231));
+}
+#[test]
+fn stored_refs_carry_forward_when_a_write_omits_them() {
+    let mut stored = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    stored.base = Some(GitRef {
+        name: Some("main".to_string()),
+        sha: Some("base-sha".to_string()),
+    });
+    stored.head = Some(GitRef {
+        name: Some("feature".to_string()),
+        sha: Some("head-sha".to_string()),
+    });
+    let existing = stored.foreign_entity_metadata(None).unwrap();
+
+    let merged = EnrichedGithubPullRequest::from_reference(pull_request_reference())
+        .foreign_entity_metadata(Some(&existing))
+        .unwrap();
+    let row = GithubPullRequestRow::from_metadata(&merged).unwrap();
+
+    assert_eq!(
+        row.base.and_then(|base| base.sha).as_deref(),
+        Some("base-sha")
+    );
+    assert_eq!(
+        row.head.and_then(|head| head.name).as_deref(),
+        Some("feature")
+    );
 }

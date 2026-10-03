@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::domain::{
     models::{
-        EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
+        EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE, GitRef,
         GithubAppInstallationSource, GithubAuthenticatedUser, GithubError,
         GithubInstallationAccessToken, GithubKey, GithubPullRequestCheckRun,
         GithubPullRequestComment, GithubPullRequestDetails, GithubPullRequestStatus,
@@ -1360,6 +1360,11 @@ fn expected_pull_request_metadata(
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: Some(GitRef {
+            name: Some("feature/some-branch".to_string()),
+            sha: None,
+        }),
     })
     .unwrap()
 }
@@ -1544,6 +1549,8 @@ fn backfilled_pull_request(title: &str) -> EnrichedGithubPullRequest {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     }
 }
 
@@ -1574,6 +1581,12 @@ fn expected_pull_request_metadata_from_details(
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        // The fixture's webhook supplies the head even when live details omit it.
+        head: Some(GitRef {
+            name: Some("feature/some-branch".to_string()),
+            sha: None,
+        }),
     })
     .unwrap()
 }
@@ -1637,6 +1650,8 @@ fn pull_request_details(
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     }
 }
 

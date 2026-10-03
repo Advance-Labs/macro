@@ -3,13 +3,19 @@
 #[cfg(test)]
 mod test;
 
+mod changes;
 mod diff;
 mod key;
 mod pull_request;
 
 use chrono::{DateTime, Utc};
 use foreign_entity::domain::models::{ForeignEntity, ForeignEntityError, SourceId};
+use git_patch::wire::GitRefDto;
 
+pub use changes::{
+    GithubPullRequestChangesError, GithubPullRequestChangeset, changeset_id, changeset_patch_key,
+    github_key_of,
+};
 pub use diff::{
     ChangesetRange, GitRef, GithubPullRequestDiff, GithubPullRequestDiffError, PullRequestRef,
     RepositorySlug,
@@ -93,6 +99,10 @@ pub struct GithubPullRequestRow {
     pub reviews: Vec<GithubPullRequestReview>,
     /// Where the review stands, derived from `reviews` and the outstanding review requests.
     pub review_decision: Option<GithubPullRequestReviewDecision>,
+    /// The branch and commit the pull request merges into, when known.
+    pub base: Option<GitRef>,
+    /// The branch and commit carrying the pull request's changes, when known.
+    pub head: Option<GitRef>,
 }
 
 impl GithubPullRequestRow {
@@ -132,6 +142,8 @@ impl GithubPullRequestRow {
             requested_reviewer_github_user_ids: pull_request
                 .requested_reviewer_github_user_ids
                 .unwrap_or_default(),
+            base: pull_request.base,
+            head: pull_request.head,
         })
     }
 }
@@ -173,6 +185,10 @@ pub struct GithubPullRequestWrite {
     pub labels: Option<Vec<GithubPullRequestLabel>>,
     /// Reviews, if supplied.
     pub reviews: Option<Vec<GithubPullRequestReview>>,
+    /// Base ref, if supplied; its name and SHA form one update.
+    pub base: Option<GitRef>,
+    /// Head ref, if supplied; its name and SHA form one update.
+    pub head: Option<GitRef>,
 }
 
 impl GithubPullRequestWrite {
@@ -207,6 +223,8 @@ impl GithubPullRequestWrite {
             assignees: pull_request.assignees.clone(),
             labels: pull_request.labels.clone(),
             reviews: pull_request.reviews.clone(),
+            base: pull_request.base.clone(),
+            head: pull_request.head.clone(),
         })
     }
 
@@ -238,6 +256,8 @@ impl GithubPullRequestWrite {
                 labels: Vec::new(),
                 reviews: Vec::new(),
                 review_decision: None,
+                base: None,
+                head: None,
             });
         row.repository_id = self.repository_id.or(row.repository_id);
         row.number = self.number;
@@ -260,6 +280,12 @@ impl GithubPullRequestWrite {
         }
         if let Some(labels) = &self.labels {
             row.labels = labels.clone();
+        }
+        if let Some(base) = &self.base {
+            row.base = Some(base.clone());
+        }
+        if let Some(head) = &self.head {
+            row.head = Some(head.clone());
         }
         row.participant_github_user_ids = row
             .participant_github_user_ids
@@ -303,6 +329,8 @@ impl From<&GithubPullRequestRow> for GithubPullRequestWrite {
             assignees: Some(row.assignees.clone()),
             labels: Some(row.labels.clone()),
             reviews: Some(row.reviews.clone()),
+            base: row.base.clone(),
+            head: row.head.clone(),
         }
     }
 }
@@ -377,6 +405,12 @@ pub struct StoredGithubPullRequest {
     /// When GitHub last updated the pull request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_updated_at: Option<DateTime<Utc>>,
+    /// The branch and commit the pull request merges into, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<GitRefDto>,
+    /// The branch and commit carrying the pull request's changes, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head: Option<GitRefDto>,
 }
 
 impl StoredGithubPullRequest {
@@ -420,6 +454,8 @@ impl StoredGithubPullRequest {
             comments: pull_request.comments.unwrap_or_default(),
             checks: pull_request.checks.unwrap_or_default(),
             github_updated_at: row.github_updated_at,
+            base: row.base.map(Into::into),
+            head: row.head.map(Into::into),
         })
     }
 }

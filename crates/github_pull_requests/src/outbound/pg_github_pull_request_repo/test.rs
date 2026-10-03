@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use super::PgGithubPullRequestRepo;
 use crate::domain::{
     models::{
-        GithubPullRequestLabel, GithubPullRequestReview, GithubPullRequestReviewDecision,
+        GitRef, GithubPullRequestLabel, GithubPullRequestReview, GithubPullRequestReviewDecision,
         GithubPullRequestReviewState, GithubPullRequestRow, GithubPullRequestStatus,
         GithubPullRequestUser,
     },
@@ -47,6 +47,8 @@ fn row(github_key: &str, repository_id: Option<i64>) -> GithubPullRequestRow {
         labels: Vec::new(),
         reviews: Vec::new(),
         review_decision: Some(GithubPullRequestReviewDecision::ReviewRequired),
+        base: None,
+        head: None,
     }
 }
 
@@ -313,6 +315,14 @@ async fn lookup_reads_back_the_stored_row(pool: PgPool) {
             submitted_at: None,
         }],
         review_decision: Some(GithubPullRequestReviewDecision::ChangesRequested),
+        base: Some(GitRef {
+            name: Some("main".to_string()),
+            sha: Some("base-sha".to_string()),
+        }),
+        head: Some(GitRef {
+            name: Some("feature".to_string()),
+            sha: Some("head-sha".to_string()),
+        }),
         ..row("macro/app/pull/7", Some(99))
     };
     repo.upsert_row(&(&stored).into())
@@ -327,4 +337,63 @@ async fn lookup_reads_back_the_stored_row(pool: PgPool) {
         repo.pull_request_row("macro/app/pull/8").await.unwrap(),
         None
     );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn partial_git_refs_replace_name_and_sha_together(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool);
+    let original = GithubPullRequestRow {
+        base: Some(GitRef {
+            name: Some("main".to_string()),
+            sha: Some("old-base-sha".to_string()),
+        }),
+        head: Some(GitRef {
+            name: Some("feature".to_string()),
+            sha: Some("old-head-sha".to_string()),
+        }),
+        ..row("macro/app/pull/7", Some(99))
+    };
+    for partial in [
+        Some(GitRef {
+            name: Some("new-branch".to_string()),
+            sha: None,
+        }),
+        Some(GitRef {
+            name: None,
+            sha: Some("new-sha".to_string()),
+        }),
+        Some(GitRef {
+            name: None,
+            sha: None,
+        }),
+        None,
+    ] {
+        for update_base in [true, false] {
+            repo.upsert_row(&(&original).into()).await.unwrap();
+            let mut incoming = row("macro/app/pull/7", Some(99));
+            let mut expected = original.clone();
+            let expected_ref = match &partial {
+                Some(git_ref) if git_ref.name.is_some() || git_ref.sha.is_some() => {
+                    Some(git_ref.clone())
+                }
+                Some(_) => None,
+                None if update_base => original.base.clone(),
+                None => original.head.clone(),
+            };
+            if update_base {
+                incoming.base = partial.clone();
+                expected.base = expected_ref;
+            } else {
+                incoming.head = partial.clone();
+                expected.head = expected_ref;
+            }
+            repo.upsert_row(&(&incoming).into()).await.unwrap();
+
+            assert_eq!(
+                repo.pull_request_row("macro/app/pull/7").await.unwrap(),
+                Some(expected),
+                "update_base={update_base}, partial={partial:?}",
+            );
+        }
+    }
 }

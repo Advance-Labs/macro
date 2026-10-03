@@ -342,6 +342,8 @@ fn pull_request(status: GithubPullRequestStatus) -> EnrichedGithubPullRequest {
         assignees: None,
         labels: None,
         reviews: None,
+        base: None,
+        head: None,
     }
 }
 
@@ -619,6 +621,8 @@ async fn upsert_writes_the_row_from_the_merged_metadata() {
             labels: Vec::new(),
             reviews: Vec::new(),
             review_decision: Some(GithubPullRequestReviewDecision::ReviewRequired),
+            base: None,
+            head: None,
         }]
     );
 }
