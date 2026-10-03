@@ -141,7 +141,7 @@ impl<R: GithubRepo, U: GithubOauth, F: Auth, E: GithubPullRequestService> Github
         self.repo
             .get_github_link_by_user_id(macro_user_id)
             .await
-            .map_err(|e| GithubError::Internal(e.into()))
+            .map_err(Self::link_lookup_error)
     }
 
     #[tracing::instrument(skip(self), err)]
