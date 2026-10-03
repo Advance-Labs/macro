@@ -8,7 +8,7 @@ The left panel provides Open, Assigned to me, Unassigned, High priority, Recent 
 
 Create a team-shared Macro Task or link an existing team-shared Task by document ID from a ticket. Each ticket may link up to 20 Tasks. Open linked Tasks in the normal Markdown/Task surface. Completing or deleting a Task does not resolve or delete its ticket. New Tasks include a tracked Macro reference to the canonical Support conversation.
 
-New intake resolves the customer's email through the owning CRM service in the team's scope, respecting CRM visibility and its killswitch. This association supplies internal customer context, never access to previous conversations for a visitor who merely provides the same email. Company and contact records have a Support history tab; a ticket opens its linked company in CRM.
+New intake resolves the customer's email through the owning CRM service in the team's scope, respecting CRM visibility and its killswitch. This association supplies internal customer context, never access to previous conversations for a visitor who merely provides the same email. Company and contact records have a Support history tab; a ticket opens its linked company in CRM. CRM opens preserve the selected ticket and company/contact scope in pane-local router state. Shared `/support?ticket=<id>&companyId=<id>&contactId=<id>` links initialize that same scope; each Support pane keeps its own scope.
 
 The production composer and transcript use Macro's shared Markdown editor and renderer. Canonical channel posts go through the existing message command boundary, preserving mentions, references, and backlinks. Use Conversation & references to open that channel. Customer replies are sent from Support so their public/private classification is explicit; ordinary channel posts are internal workspace communication and are not automatically forwarded to visitors or email.
 
@@ -33,7 +33,7 @@ From the repository root, use a migrated local Postgres database and run `cargo 
 From `apps/web`, run:
 
 ```sh
-bunx vitest run src/features/support/core/types.test.ts src/features/crm/core/record.test.ts src/features/crm/views/record-detail.test.tsx src/features/crm/architecture.test.ts
+bunx vitest run src/features/support/navigation.test.ts src/features/support/core/types.test.ts src/features/crm/core/record.test.ts src/features/crm/views/record-detail.test.tsx src/features/crm/architecture.test.ts
 bun run type-check
 bun run build
 bunx playwright test --config src/features/support/browser-test/playwright.config.ts
