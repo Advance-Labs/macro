@@ -50,14 +50,26 @@ function buildToolCallHeavyItems(count: number): ChatStream[] {
   return items;
 }
 
-/* Mirrors how ChatMessages.tsx's generatingMessage() actually calls this:
-   once per stream update, on the whole array received so far. */
-function simulateTicks(items: ChatStream[]): number {
-  const start = performance.now();
-  for (let i = 1; i <= items.length; i++) {
-    asChatMessage(items.slice(0, i));
+/* Mirrors generatingMessage(): rebuild the whole message on every update.
+   Count array iteration instead of elapsed time so CI load cannot affect the
+   result. Spreading accumulated parts visits every copied element. */
+function countTickIteration(items: ChatStream[]): number {
+  const iterate = Array.prototype[Symbol.iterator];
+  let visited = 0;
+  // A mock wrapper itself iterates argument arrays, so use a direct override.
+  Array.prototype[Symbol.iterator] = function (this: unknown[]) {
+    visited += this.length;
+    return iterate.call(this);
+  };
+
+  try {
+    for (let i = 1; i <= items.length; i++) {
+      asChatMessage(items.slice(0, i));
+    }
+    return visited;
+  } finally {
+    Array.prototype[Symbol.iterator] = iterate;
   }
-  return performance.now() - start;
 }
 
 describe('asChatMessage', () => {
@@ -93,11 +105,10 @@ describe('asChatMessage', () => {
        whole stream once per incoming chunk, that O(n^2) per call becomes
        O(n^3) over the life of a "did a bunch of tool calls" turn — this is
        what made those responses stay slow even after the bufferedStream fix. */
-    const smallTime = simulateTicks(buildToolCallHeavyItems(300));
-    const largeTime = simulateTicks(buildToolCallHeavyItems(600));
+    const smallWork = countTickIteration(buildToolCallHeavyItems(60));
+    const largeWork = countTickIteration(buildToolCallHeavyItems(120));
 
-    /* Doubling input: linear is ~2x, quadratic ~4x, cubic (the bug) ~8x.
-       5x sits clearly between quadratic and cubic. */
-    expect(largeTime).toBeLessThan(smallTime * 5 + 20);
+    // Doubling input: quadratic work is ~4x; cubic accumulator copying is ~8x.
+    expect(largeWork).toBeLessThanOrEqual(smallWork * 5);
   });
 });
