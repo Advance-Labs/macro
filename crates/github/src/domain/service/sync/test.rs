@@ -33,7 +33,10 @@ use foreign_entity::domain::{
     },
     ports::{ForeignEntityListQuery, ForeignEntityService},
 };
-use github_pull_requests::domain::service::GithubPullRequestServiceImpl;
+use github_pull_requests::domain::{
+    models::GithubPullRequestRow, ports::GithubPullRequestRepository,
+    service::GithubPullRequestServiceImpl,
+};
 use macro_user_id::user_id::MacroUserIdStr;
 use model::document::{DocumentBasic, DocumentMetadata};
 use model_entity::Entity;
@@ -1177,7 +1180,7 @@ type TestSyncServiceImpl = GithubSyncServiceImpl<
     StubDocumentService,
     StubSyncRepo,
     StubSyncClient,
-    GithubPullRequestServiceImpl<StubForeignEntityService>,
+    TestPullRequestService,
     StubNotificationIngress,
     StubRealtime,
 >;
@@ -1204,11 +1207,37 @@ impl std::ops::DerefMut for TestGithubSyncService {
 
 type TestServiceWithForeignEntityService = (TestGithubSyncService, StubForeignEntityService);
 
+type TestPullRequestService =
+    GithubPullRequestServiceImpl<StubForeignEntityService, NoPullRequestRows>;
+
+struct NoPullRequestRows;
+
+impl GithubPullRequestRepository for NoPullRequestRows {
+    type Err = std::convert::Infallible;
+
+    async fn github_key_for(
+        &self,
+        _repository_id: i64,
+        _number: i64,
+    ) -> Result<Option<String>, Self::Err> {
+        Ok(None)
+    }
+
+    async fn upsert_row(&self, _row: &GithubPullRequestRow) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    async fn rename_row(&self, _from: &str, _to: &str) -> Result<(), Self::Err> {
+        Ok(())
+    }
+}
+
 fn pull_request_service(
     foreign_entity_service: &StubForeignEntityService,
-) -> Arc<GithubPullRequestServiceImpl<StubForeignEntityService>> {
+) -> Arc<TestPullRequestService> {
     Arc::new(GithubPullRequestServiceImpl::new(
         foreign_entity_service.clone(),
+        NoPullRequestRows,
     ))
 }
 
@@ -1303,6 +1332,7 @@ fn expected_pull_request_metadata(
         github_key: "my-org/my-repo/pull/42".to_string(),
         owner: "my-org".to_string(),
         repo: "my-repo".to_string(),
+        repository_id: None,
         number: 42,
         url: "https://github.com/my-org/my-repo/pull/42".to_string(),
         display_name: "my-org/my-repo#42".to_string(),
@@ -1316,6 +1346,9 @@ fn expected_pull_request_metadata(
         comments: None,
         checks: None,
         participant_github_user_ids: None,
+        draft: None,
+        requested_reviewer_github_user_ids: None,
+        github_updated_at: None,
     })
     .unwrap()
 }
@@ -1480,6 +1513,7 @@ fn backfilled_pull_request(title: &str) -> EnrichedGithubPullRequest {
         github_key: "my-org/my-repo/pull/42".to_string(),
         owner: "my-org".to_string(),
         repo: "my-repo".to_string(),
+        repository_id: None,
         number: 42,
         url: "https://github.com/my-org/my-repo/pull/42".to_string(),
         display_name: "my-org/my-repo#42".to_string(),
@@ -1493,6 +1527,9 @@ fn backfilled_pull_request(title: &str) -> EnrichedGithubPullRequest {
         comments: None,
         checks: None,
         participant_github_user_ids: None,
+        draft: None,
+        requested_reviewer_github_user_ids: None,
+        github_updated_at: None,
     }
 }
 
@@ -1503,6 +1540,7 @@ fn expected_pull_request_metadata_from_details(
         github_key: "my-org/my-repo/pull/42".to_string(),
         owner: "my-org".to_string(),
         repo: "my-repo".to_string(),
+        repository_id: None,
         number: 42,
         url: "https://github.com/my-org/my-repo/pull/42".to_string(),
         display_name: "my-org/my-repo#42".to_string(),
@@ -1516,6 +1554,9 @@ fn expected_pull_request_metadata_from_details(
         comments: details.comments.clone(),
         checks: details.checks.clone(),
         participant_github_user_ids: details.participant_github_user_ids.clone(),
+        draft: None,
+        requested_reviewer_github_user_ids: None,
+        github_updated_at: None,
     })
     .unwrap()
 }
@@ -1563,6 +1604,7 @@ fn pull_request_details(
     GithubPullRequestDetails {
         title: title.to_string(),
         state: "open".to_string(),
+        repository_id: None,
         merged_at: None,
         additions,
         deletions,
@@ -1572,6 +1614,9 @@ fn pull_request_details(
         comments,
         checks,
         participant_github_user_ids: None,
+        draft: None,
+        requested_reviewer_github_user_ids: None,
+        github_updated_at: None,
     }
 }
 
