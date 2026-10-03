@@ -1,3 +1,4 @@
+import { changesSearch } from '@app/features/agent-changes/changes-search';
 import { tasksSplitRoute } from '@app/features/tasks-view/route';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { defineRoute, useNavigate, useParams } from '@app/lib/split-router';
@@ -59,6 +60,7 @@ export const reviewsPrRoute = defineRoute({
     namespace: 'block',
     id: `pr:${foreignEntityId}`,
   }),
+  search: [changesSearch.namespace],
   toReference: ({ foreignEntityId }) => ({ type: 'pr', id: foreignEntityId }),
 });
 

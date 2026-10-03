@@ -52,6 +52,8 @@ describe('application route search ownership', () => {
     ['/agents/session-1', 'the agents workspace'],
     ['/coders/session-1', 'a coding session'],
     ['/agent/session-1', 'the agent block'],
+    ['/reviews/pr/pr-1', 'a pull request in Reviews'],
+    ['/pr/pr-1', 'a standalone pull request'],
   ])('keeps the changes pane state on %s (%s)', (pathname) => {
     expect(roundTrip(pathname, viewerState, false)).toContain(viewerState);
     expect(roundTrip(pathname, viewerState, true)).toContain(viewerState);
