@@ -604,6 +604,47 @@ async fn list_includes_me_filters_to_participant_metadata(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn list_includes_me_matches_every_linked_github_identity(pool: PgPool) {
+    let repo = PgForeignEntityRepo::new(pool.clone());
+    let listing = PgGithubPullRequestRepo::new(pool.clone());
+    let macro_id = "macro|user@example.com";
+    insert_github_link(&pool, macro_id, "42").await;
+    sqlx::query!(
+        r#"
+        INSERT INTO github_links (id, macro_id, fusionauth_user_id, github_username, github_user_id)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        Uuid::now_v7(),
+        macro_id,
+        Uuid::now_v7(),
+        "gh-99",
+        "99",
+    )
+    .execute(&pool)
+    .await
+    .expect("second github link should be inserted");
+
+    let first = insert_pr_with_participants(&repo, "first-pr", macro_id, Some(&["42"])).await;
+    let second = insert_pr_with_participants(&repo, "second-pr", macro_id, Some(&["99"])).await;
+    insert_pr_with_participants(&repo, "unrelated-pr", macro_id, Some(&["7"])).await;
+    insert_pr_with_participants(&repo, "legacy-pr", macro_id, None).await;
+
+    let entities = listing
+        .list_pull_requests(
+            Some(macro_id.to_string()),
+            vec![SourceId::user(macro_id)],
+            10,
+            filter_query(includes_me_filter()),
+        )
+        .await
+        .expect("includes_me should match both linked identities");
+
+    assert_eq!(ids(&entities).len(), 2);
+    assert!(ids(&entities).contains(&first.id));
+    assert!(ids(&entities).contains(&second.id));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn list_includes_me_without_github_link_returns_empty(pool: PgPool) {
     let repo = PgForeignEntityRepo::new(pool.clone());
     let listing = PgGithubPullRequestRepo::new(pool.clone());

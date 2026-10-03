@@ -645,6 +645,38 @@ async fn get_for_user_includes_me_matches_nothing(pool: PgPool) {
     assert!(entities.is_empty());
 }
 
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn get_for_user_rejects_negated_and_nested_includes_me(pool: PgPool) {
+    let repo = PgForeignEntityRepo::new(pool);
+    let macro_id = "macro|user@example.com";
+    insert_pr_with_participants(&repo, "involved-pr", macro_id, Some(&["42"])).await;
+
+    let filters = [
+        Expr::is_not(Expr::val(ForeignEntityLiteral::IncludesMe)),
+        Expr::and(
+            Expr::val(ForeignEntityLiteral::ForeignEntitySource(
+                "github_pull_request".to_string(),
+            )),
+            Expr::or(
+                Expr::val(ForeignEntityLiteral::Id(Uuid::now_v7())),
+                Expr::is_not(Expr::val(ForeignEntityLiteral::IncludesMe)),
+            ),
+        ),
+    ];
+    for filter in filters {
+        let entities = repo
+            .get_foreign_entities_for_user(
+                Some(macro_id.to_string()),
+                vec![SourceId::user(macro_id)],
+                10,
+                filter_query(Some(Arc::new(filter))),
+            )
+            .await
+            .expect("unsupported includes_me placement should fail closed");
+        assert!(entities.is_empty());
+    }
+}
+
 /// Insert a `foreign_entity`-scoped notification and the matching per-user row so the
 /// notification done/seen predicates have something to match against.
 async fn insert_foreign_entity_notification(

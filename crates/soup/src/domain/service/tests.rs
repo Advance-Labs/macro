@@ -373,6 +373,7 @@ impl GithubPullRequestListing for RecordingPullRequestListing {
             .state
             .entities
             .iter()
+            .filter(|entity| entity.foreign_entity_source == "github_pull_request")
             .filter(|entity| {
                 source_ids.iter().any(|source_id| {
                     entity.stored_for_id.as_str() == source_id.id.as_str()
@@ -461,6 +462,18 @@ fn foreign_entity_for_source(
         created_at: DateTime::default(),
         updated_at,
     }
+}
+
+fn pull_request_for_source(
+    id: Uuid,
+    stored_for_id: impl Into<String>,
+    stored_for_auth_entity: impl Into<String>,
+    updated_at: DateTime<Utc>,
+) -> ForeignEntity {
+    let mut entity =
+        foreign_entity_for_source(id, stored_for_id, stored_for_auth_entity, updated_at);
+    entity.foreign_entity_source = "github_pull_request".to_string();
+    entity
 }
 
 fn channel_thread_message(
@@ -688,12 +701,20 @@ async fn simple_soup_uses_channel_thread_filters_without_touching_channel_filter
 async fn simple_soup_includes_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
     let foreign_entity_id = Uuid::from_u128(2);
-    let pull_request_listing = RecordingPullRequestListing::new(vec![foreign_entity_for_source(
-        foreign_entity_id,
-        user.as_ref(),
-        "user",
-        DateTime::default() + Days::new(2),
-    )]);
+    let pull_request_listing = RecordingPullRequestListing::new(vec![
+        foreign_entity_for_source(
+            Uuid::from_u128(3),
+            user.as_ref(),
+            "user",
+            DateTime::default() + Days::new(3),
+        ),
+        pull_request_for_source(
+            foreign_entity_id,
+            user.as_ref(),
+            "user",
+            DateTime::default() + Days::new(2),
+        ),
+    ]);
 
     let mut soup_mock = MockSoupRepo::new();
     soup_mock
@@ -757,7 +778,7 @@ async fn simple_soup_includes_foreign_entities() {
 #[tokio::test]
 async fn frecency_soup_does_not_query_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
-    let pull_request_listing = RecordingPullRequestListing::new(vec![foreign_entity_for_source(
+    let pull_request_listing = RecordingPullRequestListing::new(vec![pull_request_for_source(
         Uuid::from_u128(42),
         user.as_ref(),
         "user",
@@ -935,7 +956,7 @@ async fn crm_filters_without_team_receipt_are_rejected() {
 #[tokio::test]
 async fn foreign_entity_filter_suppresses_non_matching_foreign_entities() {
     let user = MacroUserIdStr::parse_from_str("macro|test@example.com").unwrap();
-    let pull_request_listing = RecordingPullRequestListing::new(vec![foreign_entity_for_source(
+    let pull_request_listing = RecordingPullRequestListing::new(vec![pull_request_for_source(
         Uuid::from_u128(1),
         user.as_ref(),
         "user",

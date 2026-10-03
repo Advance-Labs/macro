@@ -102,10 +102,13 @@ fn notification_truth_table(expr: &Expr<ForeignEntityLiteral>) -> Option<u8> {
     })
 }
 
-/// Literals that cannot be represented in the metadata jsonpath and must be lifted into dedicated
-/// SQL predicates instead.
+/// Literals that cannot be represented in the metadata jsonpath. Notification states are lifted
+/// into SQL predicates; IncludesMe fails closed in this generic repository.
 fn is_hoisted_literal(literal: &ForeignEntityLiteral) -> bool {
-    matches!(literal, ForeignEntityLiteral::NotificationState(_))
+    matches!(
+        literal,
+        ForeignEntityLiteral::IncludesMe | ForeignEntityLiteral::NotificationState(_)
+    )
 }
 
 fn contains_hoisted_literal(expr: &Expr<ForeignEntityLiteral>) -> bool {
@@ -171,9 +174,8 @@ fn foreign_entity_literal_jsonpath(literal: &ForeignEntityLiteral) -> String {
         ForeignEntityLiteral::ForeignEntitySource(source) => {
             jsonpath_text_eq("foreignEntitySource", source)
         }
-        // IncludesMe names a source-specific participant the generic store cannot resolve, so it
-        // matches nothing here. Notification literals are hoisted by extract_hoisted_filters; if
-        // one slips through, match nothing rather than everything.
+        // IncludesMe cannot be resolved in this generic repository, and notification literals
+        // require dedicated SQL predicates. extract_hoisted_filters rejects either if unhandled.
         ForeignEntityLiteral::IncludesMe | ForeignEntityLiteral::NotificationState(_) => {
             "(1 == 0)".to_string()
         }
@@ -381,7 +383,7 @@ impl ForeignEntityRepository for PgForeignEntityRepo {
             Ok(hoisted) => hoisted.unwrap_or_default(),
             Err(UnsupportedHoistedFilter) => {
                 tracing::warn!(
-                    "mixed metadata/notification literal under Or/Not in a foreign entity filter is unsupported; returning no results"
+                    "IncludesMe or mixed metadata/notification literal under Or/Not in a foreign entity filter is unsupported; returning no results"
                 );
                 return Ok(Vec::new());
             }

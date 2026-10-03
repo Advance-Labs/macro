@@ -23,7 +23,7 @@ struct ListingQuery<'a> {
     source_auth_entities: &'a [String],
     sort_method: SimpleSortMethod,
     filter_jsonpath: Option<&'a str>,
-    participant_github_user_id: Option<&'a str>,
+    participant_github_user_ids: Option<&'a [String]>,
     /// Macro user id used to scope the per-user notification state predicates.
     /// When a notification filter is requested but this is `None`, nothing matches.
     notification_user_id: Option<&'a str>,
@@ -211,7 +211,7 @@ impl PgGithubPullRequestRepo {
             source_auth_entities,
             sort_method,
             filter_jsonpath,
-            participant_github_user_id,
+            participant_github_user_ids,
             notification_user_id,
             notification_sets,
             cursor_id,
@@ -262,8 +262,8 @@ impl PgGithubPullRequestRepo {
                     )
                   )
                   AND (
-                    $8::text IS NULL
-                    OR (fe.metadata -> 'participantGithubUserIds') ? $8::text
+                    $8::text[] IS NULL
+                    OR (fe.metadata -> 'participantGithubUserIds') ?| $8::text[]
                   )
                   AND (
                     $9::int[] IS NULL
@@ -302,7 +302,7 @@ impl PgGithubPullRequestRepo {
             cursor_value,
             cursor_id,
             limit,
-            participant_github_user_id,
+            participant_github_user_ids,
             notification_sets,
             notification_user_id,
             GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
@@ -311,10 +311,10 @@ impl PgGithubPullRequestRepo {
         .await
     }
 
-    async fn github_user_id_for_macro_user(
+    async fn github_user_ids_for_macro_user(
         &self,
         macro_user_id: &str,
-    ) -> Result<Option<String>, sqlx::Error> {
+    ) -> Result<Vec<String>, sqlx::Error> {
         sqlx::query_scalar!(
             r#"
             SELECT github_user_id
@@ -323,7 +323,7 @@ impl PgGithubPullRequestRepo {
             "#,
             macro_user_id,
         )
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await
     }
 }
@@ -368,15 +368,16 @@ impl GithubPullRequestListingRepository for PgGithubPullRequestRepo {
             return Ok(Vec::new());
         }
 
-        let participant_github_user_id = if includes_me {
+        let participant_github_user_ids = if includes_me {
             let Some(requesting_user) = requesting_user.as_deref() else {
                 return Ok(Vec::new());
             };
-            match self.github_user_id_for_macro_user(requesting_user).await? {
-                Some(github_user_id) => Some(github_user_id),
+            let github_user_ids = self.github_user_ids_for_macro_user(requesting_user).await?;
+            if github_user_ids.is_empty() {
                 // No linked GitHub identity: the user participates in nothing.
-                None => return Ok(Vec::new()),
+                return Ok(Vec::new());
             }
+            Some(github_user_ids)
         } else {
             None
         };
@@ -399,7 +400,7 @@ impl GithubPullRequestListingRepository for PgGithubPullRequestRepo {
             source_auth_entities: &source_auth_entities,
             sort_method: *query.sort_method(),
             filter_jsonpath: filter_jsonpath.as_deref(),
-            participant_github_user_id: participant_github_user_id.as_deref(),
+            participant_github_user_ids: participant_github_user_ids.as_deref(),
             notification_user_id,
             notification_sets: notification_sets.as_deref(),
             cursor_id: cursor_id.copied(),
