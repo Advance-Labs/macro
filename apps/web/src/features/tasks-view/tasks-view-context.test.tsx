@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   dockOpen: (): boolean => false,
   dockText: (): string => '',
 }));
-vi.mock('@app/lib/split-router', () => ({
+vi.mock('@app/split-router', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({}),
   createSearchParams: () => [
@@ -36,12 +36,12 @@ vi.mock('./tasks-tab-search', () => ({
   tasksTabSearch: {},
   tasksTabSearchCodec: { serialize: () => ({}) },
 }));
-vi.mock('./route', () => ({
+vi.mock('@app/routes/routes', () => ({
   taskDetailRoute: {},
   tasksProjectsRoute: {},
   tasksSplitRoute: {},
+  reviewsSplitRoute: {},
 }));
-vi.mock('@app/features/reviews-view/route', () => ({ reviewsSplitRoute: {} }));
 vi.mock('@app/lib/analytics/posthog', () => ({
   useFeatureFlag: () => () => ({ enabled: mocks.projectsEnabled() }),
 }));
