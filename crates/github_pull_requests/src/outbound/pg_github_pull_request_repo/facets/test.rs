@@ -53,6 +53,10 @@ fn row(github_key: &str, repository_id: Option<i64>, number: i64) -> GithubPullR
         requested_reviewer_github_user_ids: Vec::new(),
         participant_github_user_ids: Vec::new(),
         github_updated_at: None,
+        assignees: Vec::new(),
+        labels: Vec::new(),
+        reviews: Vec::new(),
+        review_decision: None,
     }
 }
 
@@ -62,27 +66,33 @@ async fn facets_count_each_visible_pull_request_once_by_repository_and_author(po
 
     store_for(&pool, "macro/app/pull/7", USER, "user").await;
     store_for(&pool, "macro/app/pull/7", TEAM, "team").await;
-    repo.upsert_row(&row("macro/app/pull/7", Some(99), 7))
+    repo.upsert_row(&(&row("macro/app/pull/7", Some(99), 7)).into())
         .await
         .unwrap();
 
     store_for(&pool, "macro/renamed/pull/8", TEAM, "team").await;
-    repo.upsert_row(&GithubPullRequestRow {
-        repo: "renamed".to_string(),
-        author_github_user_id: Some("7".to_string()),
-        author_login: None,
-        github_updated_at: Some(chrono::Utc::now()),
-        ..row("macro/renamed/pull/8", Some(99), 8)
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            repo: "renamed".to_string(),
+            author_github_user_id: Some("7".to_string()),
+            author_login: None,
+            github_updated_at: Some(chrono::Utc::now()),
+            ..row("macro/renamed/pull/8", Some(99), 8)
+        })
+            .into(),
+    )
     .await
     .unwrap();
 
     store_for(&pool, "macro/app/pull/9", USER, "user").await;
-    repo.upsert_row(&GithubPullRequestRow {
-        author_github_user_id: None,
-        author_login: None,
-        ..row("macro/app/pull/9", None, 9)
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            author_github_user_id: None,
+            author_login: None,
+            ..row("macro/app/pull/9", None, 9)
+        })
+            .into(),
+    )
     .await
     .unwrap();
 
@@ -93,7 +103,7 @@ async fn facets_count_each_visible_pull_request_once_by_repository_and_author(po
         "user",
     )
     .await;
-    repo.upsert_row(&row("macro/other/pull/1", Some(100), 1))
+    repo.upsert_row(&(&row("macro/other/pull/1", Some(100), 1)).into())
         .await
         .unwrap();
 
@@ -170,7 +180,7 @@ async fn facet_names_follow_sync_time_instead_of_pull_request_update_time(pool: 
                 .unwrap()
                 .with_timezone(&chrono::Utc),
         );
-        repo.upsert_row(&pull_request).await.unwrap();
+        repo.upsert_row(&(&pull_request).into()).await.unwrap();
         set_synced_at(&pool, key, synced_at).await;
     }
 

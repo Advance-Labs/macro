@@ -34,7 +34,7 @@ use foreign_entity::domain::{
     ports::{ForeignEntityListQuery, ForeignEntityService},
 };
 use github_pull_requests::domain::{
-    models::GithubPullRequestRow, ports::GithubPullRequestRepository,
+    models::GithubPullRequestWrite, ports::GithubPullRequestRepository,
     service::GithubPullRequestServiceImpl,
 };
 use macro_user_id::user_id::MacroUserIdStr;
@@ -1223,7 +1223,7 @@ impl GithubPullRequestRepository for NoPullRequestRows {
         Ok(None)
     }
 
-    async fn upsert_row(&self, _row: &GithubPullRequestRow) -> Result<(), Self::Err> {
+    async fn upsert_row(&self, _row: &GithubPullRequestWrite) -> Result<(), Self::Err> {
         Ok(())
     }
 
@@ -1349,6 +1349,9 @@ fn expected_pull_request_metadata(
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     })
     .unwrap()
 }
@@ -1530,6 +1533,9 @@ fn backfilled_pull_request(title: &str) -> EnrichedGithubPullRequest {
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     }
 }
 
@@ -1557,6 +1563,9 @@ fn expected_pull_request_metadata_from_details(
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     })
     .unwrap()
 }
@@ -1617,6 +1626,9 @@ fn pull_request_details(
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     }
 }
 

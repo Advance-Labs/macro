@@ -14,7 +14,9 @@ pub use pull_request::{
     EnrichGithubPullRequestsProxyRequest, EnrichGithubPullRequestsResponse,
     EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
     GithubPullRequestCheckRun, GithubPullRequestComment, GithubPullRequestDetails,
-    GithubPullRequestRef, GithubPullRequestStatus,
+    GithubPullRequestLabel, GithubPullRequestRef, GithubPullRequestReview,
+    GithubPullRequestReviewDecision, GithubPullRequestReviewState, GithubPullRequestStatus,
+    GithubPullRequestUser, latest_reviews,
 };
 
 /// A pull request's latest data, for the record stored for one source.
@@ -78,6 +80,14 @@ pub struct GithubPullRequestRow {
     pub participant_github_user_ids: Vec<String>,
     /// When GitHub last updated the pull request.
     pub github_updated_at: Option<DateTime<Utc>>,
+    /// The users assigned to the pull request.
+    pub assignees: Vec<GithubPullRequestUser>,
+    /// The pull request's labels.
+    pub labels: Vec<GithubPullRequestLabel>,
+    /// Each reviewer's latest submitted review.
+    pub reviews: Vec<GithubPullRequestReview>,
+    /// Where the review stands, derived from `reviews` and the outstanding review requests.
+    pub review_decision: Option<GithubPullRequestReviewDecision>,
 }
 
 impl GithubPullRequestRow {
@@ -100,14 +110,201 @@ impl GithubPullRequestRow {
             draft: pull_request.draft.unwrap_or(false),
             author_github_user_id: pull_request.author_id.map(|id| id.to_string()),
             author_login: pull_request.author_login,
-            requested_reviewer_github_user_ids: pull_request
-                .requested_reviewer_github_user_ids
-                .unwrap_or_default(),
             participant_github_user_ids: pull_request
                 .participant_github_user_ids
                 .unwrap_or_default(),
             github_updated_at: pull_request.github_updated_at,
+            assignees: pull_request.assignees.unwrap_or_default(),
+            labels: pull_request.labels.unwrap_or_default(),
+            review_decision: GithubPullRequestReviewDecision::derive(
+                pull_request.reviews.as_deref().unwrap_or_default(),
+                pull_request
+                    .requested_reviewer_github_user_ids
+                    .as_deref()
+                    .unwrap_or_default(),
+            ),
+            reviews: pull_request.reviews.unwrap_or_default(),
+            requested_reviewer_github_user_ids: pull_request
+                .requested_reviewer_github_user_ids
+                .unwrap_or_default(),
         })
+    }
+}
+
+/// Sparse typed-column update. `None` means the source did not supply that field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GithubPullRequestWrite {
+    /// Source-derived row used only when the shared typed row is missing.
+    pub initial_row: Option<GithubPullRequestRow>,
+    /// The association key.
+    pub github_key: String,
+    /// Numeric repository id, if supplied.
+    pub repository_id: Option<i64>,
+    /// Pull request number.
+    pub number: i64,
+    /// Repository owner.
+    pub owner: String,
+    /// Repository name.
+    pub repo: String,
+    /// Title, if supplied.
+    pub title: Option<String>,
+    /// Status, if supplied.
+    pub status: Option<GithubPullRequestStatus>,
+    /// Draft flag, if supplied.
+    pub draft: Option<bool>,
+    /// Author id, if supplied.
+    pub author_github_user_id: Option<String>,
+    /// Author login, if supplied.
+    pub author_login: Option<String>,
+    /// Review requests, if supplied.
+    pub requested_reviewer_github_user_ids: Option<Vec<String>>,
+    /// Participants, if supplied.
+    pub participant_github_user_ids: Option<Vec<String>>,
+    /// GitHub update time, if supplied.
+    pub github_updated_at: Option<DateTime<Utc>>,
+    /// Assignees, if supplied.
+    pub assignees: Option<Vec<GithubPullRequestUser>>,
+    /// Labels, if supplied.
+    pub labels: Option<Vec<GithubPullRequestLabel>>,
+    /// Reviews, if supplied.
+    pub reviews: Option<Vec<GithubPullRequestReview>>,
+}
+
+impl GithubPullRequestWrite {
+    /// Read a sparse update from record metadata.
+    pub fn from_metadata(metadata: &serde_json::Value) -> Option<Self> {
+        let pull_request: EnrichedGithubPullRequest =
+            serde_json::from_value(metadata.clone()).ok()?;
+        Self::from_enriched(&pull_request)
+    }
+
+    /// Retain which fields enrichment supplied, rather than projecting a complete row.
+    pub fn from_enriched(pull_request: &EnrichedGithubPullRequest) -> Option<Self> {
+        Some(Self {
+            initial_row: None,
+            github_key: pull_request.github_key.clone(),
+            repository_id: pull_request
+                .repository_id
+                .and_then(|id| i64::try_from(id).ok()),
+            number: i64::try_from(pull_request.number).ok()?,
+            owner: pull_request.owner.clone(),
+            repo: pull_request.repo.clone(),
+            title: pull_request.name.clone(),
+            status: pull_request.status,
+            draft: pull_request.draft,
+            author_github_user_id: pull_request.author_id.map(|id| id.to_string()),
+            author_login: pull_request.author_login.clone(),
+            requested_reviewer_github_user_ids: pull_request
+                .requested_reviewer_github_user_ids
+                .clone(),
+            participant_github_user_ids: pull_request.participant_github_user_ids.clone(),
+            github_updated_at: pull_request.github_updated_at,
+            assignees: pull_request.assignees.clone(),
+            labels: pull_request.labels.clone(),
+            reviews: pull_request.reviews.clone(),
+        })
+    }
+
+    /// Merge into a complete row. Supplied collections replace assignees, labels and requests;
+    /// participants accumulate, and reviews retain each reviewer's latest decision.
+    pub fn merge(&self, existing: Option<GithubPullRequestRow>) -> GithubPullRequestRow {
+        let mut row = existing
+            .or_else(|| {
+                self.initial_row
+                    .as_ref()
+                    .filter(|row| row.github_key == self.github_key && row.number == self.number)
+                    .cloned()
+            })
+            .unwrap_or_else(|| GithubPullRequestRow {
+                github_key: self.github_key.clone(),
+                repository_id: None,
+                number: self.number,
+                owner: self.owner.clone(),
+                repo: self.repo.clone(),
+                title: None,
+                status: None,
+                draft: false,
+                author_github_user_id: None,
+                author_login: None,
+                requested_reviewer_github_user_ids: Vec::new(),
+                participant_github_user_ids: Vec::new(),
+                github_updated_at: None,
+                assignees: Vec::new(),
+                labels: Vec::new(),
+                reviews: Vec::new(),
+                review_decision: None,
+            });
+        row.repository_id = self.repository_id.or(row.repository_id);
+        row.number = self.number;
+        row.owner = self.owner.clone();
+        row.repo = self.repo.clone();
+        row.title = self.title.clone().or(row.title);
+        row.status = self.status.or(row.status);
+        row.draft = self.draft.unwrap_or(row.draft);
+        row.author_github_user_id = self
+            .author_github_user_id
+            .clone()
+            .or(row.author_github_user_id);
+        row.author_login = self.author_login.clone().or(row.author_login);
+        row.github_updated_at = self.github_updated_at.or(row.github_updated_at);
+        if let Some(requests) = &self.requested_reviewer_github_user_ids {
+            row.requested_reviewer_github_user_ids = requests.clone();
+        }
+        if let Some(assignees) = &self.assignees {
+            row.assignees = assignees.clone();
+        }
+        if let Some(labels) = &self.labels {
+            row.labels = labels.clone();
+        }
+        row.participant_github_user_ids = row
+            .participant_github_user_ids
+            .into_iter()
+            .chain(self.participant_github_user_ids.clone().unwrap_or_default())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        row.reviews = latest_reviews(
+            row.reviews
+                .into_iter()
+                .chain(self.reviews.clone().unwrap_or_default()),
+        );
+        row.review_decision = GithubPullRequestReviewDecision::derive(
+            &row.reviews,
+            &row.requested_reviewer_github_user_ids,
+        );
+        row
+    }
+}
+
+impl From<&GithubPullRequestRow> for GithubPullRequestWrite {
+    fn from(row: &GithubPullRequestRow) -> Self {
+        Self {
+            initial_row: None,
+            github_key: row.github_key.clone(),
+            repository_id: row.repository_id,
+            number: row.number,
+            owner: row.owner.clone(),
+            repo: row.repo.clone(),
+            title: row.title.clone(),
+            status: row.status,
+            draft: Some(row.draft),
+            author_github_user_id: row.author_github_user_id.clone(),
+            author_login: row.author_login.clone(),
+            requested_reviewer_github_user_ids: Some(
+                row.requested_reviewer_github_user_ids.clone(),
+            ),
+            participant_github_user_ids: Some(row.participant_github_user_ids.clone()),
+            github_updated_at: row.github_updated_at,
+            assignees: Some(row.assignees.clone()),
+            labels: Some(row.labels.clone()),
+            reviews: Some(row.reviews.clone()),
+        }
+    }
+}
+
+impl From<GithubPullRequestRow> for GithubPullRequestWrite {
+    fn from(row: GithubPullRequestRow) -> Self {
+        Self::from(&row)
     }
 }
 

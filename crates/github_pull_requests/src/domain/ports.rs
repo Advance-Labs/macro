@@ -12,7 +12,7 @@ use macro_user_id::user_id::MacroUserIdStr;
 
 use super::models::{
     EnrichedGithubPullRequest, GithubPullRequestError, GithubPullRequestFacets,
-    GithubPullRequestRow, GithubRepositoryIdentity, UpsertGithubPullRequest,
+    GithubPullRequestWrite, GithubRepositoryIdentity, UpsertGithubPullRequest,
     UpsertedGithubPullRequest,
 };
 
@@ -62,11 +62,11 @@ pub trait GithubPullRequestRepository: Send + Sync + 'static {
         number: i64,
     ) -> impl Future<Output = Result<Option<String>, Self::Err>> + Send;
 
-    /// Store a pull request's typed columns. A row without a repository id keeps the one it
-    /// has.
+    /// Atomically merge supplied typed columns with the shared row. Omitted fields retain
+    /// stored values. Concurrent creation and updates for the same key serialize before reading.
     fn upsert_row(
         &self,
-        row: &GithubPullRequestRow,
+        row: &GithubPullRequestWrite,
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
     /// Move the row stored under `from` to `to`. When `to` already has a row, the row under

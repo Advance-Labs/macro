@@ -38,6 +38,9 @@ fn pull_request_details(
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     }
 }
 
@@ -173,6 +176,9 @@ fn pull_request_response_serializes_with_camel_case_fields() {
             draft: None,
             requested_reviewer_github_user_ids: None,
             github_updated_at: None,
+            assignees: None,
+            labels: None,
+            reviews: None,
         }],
     };
 
@@ -306,6 +312,9 @@ fn pull_request_enrichment_copies_details_fields() {
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     };
 
     let enriched = EnrichedGithubPullRequest::from_details(reference.clone(), details);
@@ -361,6 +370,9 @@ fn pull_request_foreign_entity_metadata_serializes_enriched_pull_request() {
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(reference, details);
 
@@ -486,6 +498,9 @@ fn pull_request_foreign_entity_metadata_keeps_fresh_arrays() {
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     };
     let enriched = EnrichedGithubPullRequest::from_details(pull_request_reference(), details);
     let existing_metadata = serde_json::json!({
@@ -595,4 +610,369 @@ fn pull_request_foreign_entity_metadata_carries_existing_participants_forward() 
         metadata.get("participantGithubUserIds"),
         Some(&serde_json::json!(["7"]))
     );
+}
+
+fn review(
+    reviewer: &str,
+    state: GithubPullRequestReviewState,
+    minute: u32,
+) -> GithubPullRequestReview {
+    GithubPullRequestReview {
+        reviewer_github_user_id: reviewer.to_string(),
+        reviewer_login: None,
+        state,
+        submitted_at: Some(
+            chrono::DateTime::parse_from_rfc3339(&format!("2026-09-26T12:{minute:02}:00Z"))
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        ),
+    }
+}
+
+#[test]
+fn decisions_outrank_comments_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for state in [Approved, ChangesRequested, Dismissed] {
+        for (decision_minute, comment_minute) in [(1, 2), (2, 1)] {
+            let decision = review("8", state, decision_minute);
+            let comment = review("8", Commented, comment_minute);
+            for reviews in [
+                [decision.clone(), comment.clone()],
+                [comment.clone(), decision.clone()],
+            ] {
+                assert_eq!(latest_reviews(reviews), vec![decision.clone()]);
+            }
+        }
+    }
+}
+
+#[test]
+fn decisions_outrank_comments_with_missing_timestamps() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for state in [Approved, ChangesRequested, Dismissed] {
+        for (decision_missing_time, comment_missing_time) in
+            [(true, false), (false, true), (true, true)]
+        {
+            let mut decision = review("8", state, 1);
+            let mut comment = review("8", Commented, 2);
+            if decision_missing_time {
+                decision.submitted_at = None;
+            }
+            if comment_missing_time {
+                comment.submitted_at = None;
+            }
+            for reviews in [
+                [decision.clone(), comment.clone()],
+                [comment.clone(), decision.clone()],
+            ] {
+                assert_eq!(latest_reviews(reviews), vec![decision.clone()]);
+            }
+        }
+    }
+}
+
+#[test]
+fn decisions_keep_timestamp_ordering_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Dismissed};
+
+    for (earlier, later) in [
+        (Approved, ChangesRequested),
+        (ChangesRequested, Dismissed),
+        (Dismissed, Approved),
+    ] {
+        let earlier = review("8", earlier, 1);
+        let later = review("8", later, 2);
+        for reviews in [
+            [earlier.clone(), later.clone()],
+            [later.clone(), earlier.clone()],
+        ] {
+            assert_eq!(latest_reviews(reviews), vec![later.clone()]);
+        }
+    }
+}
+
+#[test]
+fn timed_decisions_outrank_untimed_decisions_in_both_orders() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Dismissed};
+
+    for (untimed, timed) in [
+        (Approved, ChangesRequested),
+        (ChangesRequested, Dismissed),
+        (Dismissed, Approved),
+    ] {
+        let mut untimed = review("8", untimed, 1);
+        untimed.submitted_at = None;
+        let timed = review("8", timed, 2);
+        for reviews in [
+            [untimed.clone(), timed.clone()],
+            [timed.clone(), untimed.clone()],
+        ] {
+            assert_eq!(latest_reviews(reviews), vec![timed.clone()]);
+        }
+    }
+}
+
+#[test]
+fn a_later_comment_does_not_replace_an_approval() {
+    let latest = latest_reviews([
+        review("8", GithubPullRequestReviewState::Approved, 1),
+        review("8", GithubPullRequestReviewState::Commented, 2),
+        review("9", GithubPullRequestReviewState::Commented, 1),
+        review("9", GithubPullRequestReviewState::ChangesRequested, 2),
+    ]);
+
+    assert_eq!(
+        latest.iter().map(|review| review.state).collect::<Vec<_>>(),
+        vec![
+            GithubPullRequestReviewState::Approved,
+            GithubPullRequestReviewState::ChangesRequested,
+        ]
+    );
+}
+
+#[test]
+fn a_dismissal_replaces_an_approval() {
+    let latest = latest_reviews([
+        review("8", GithubPullRequestReviewState::Approved, 1),
+        review("8", GithubPullRequestReviewState::Dismissed, 1),
+    ]);
+
+    assert_eq!(latest[0].state, GithubPullRequestReviewState::Dismissed);
+}
+
+#[test]
+fn review_decision_prefers_changes_requested_then_approval_then_requests() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented};
+    let requested = vec!["10".to_string()];
+
+    assert_eq!(
+        GithubPullRequestReviewDecision::derive(
+            &[review("8", Approved, 1), review("9", ChangesRequested, 1)],
+            &requested
+        ),
+        Some(GithubPullRequestReviewDecision::ChangesRequested)
+    );
+    assert_eq!(
+        GithubPullRequestReviewDecision::derive(&[review("8", Approved, 1)], &requested),
+        Some(GithubPullRequestReviewDecision::Approved)
+    );
+    assert_eq!(
+        GithubPullRequestReviewDecision::derive(&[review("8", Commented, 1)], &requested),
+        Some(GithubPullRequestReviewDecision::ReviewRequired)
+    );
+    assert_eq!(
+        GithubPullRequestReviewDecision::derive(&[review("8", Commented, 1)], &[]),
+        None
+    );
+}
+
+#[test]
+fn stored_reviews_merge_per_reviewer() {
+    let mut existing = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    existing.reviews = Some(vec![
+        review("8", GithubPullRequestReviewState::Approved, 1),
+        review("9", GithubPullRequestReviewState::Commented, 1),
+    ]);
+    let existing = existing.foreign_entity_metadata(None).unwrap();
+    let mut incoming = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    incoming.reviews = Some(vec![review(
+        "9",
+        GithubPullRequestReviewState::ChangesRequested,
+        2,
+    )]);
+
+    let merged = incoming.foreign_entity_metadata(Some(&existing)).unwrap();
+    let row = GithubPullRequestRow::from_metadata(&merged).unwrap();
+
+    assert_eq!(
+        row.reviews
+            .iter()
+            .map(|review| (review.reviewer_github_user_id.as_str(), review.state))
+            .collect::<Vec<_>>(),
+        vec![
+            ("8", GithubPullRequestReviewState::Approved),
+            ("9", GithubPullRequestReviewState::ChangesRequested),
+        ]
+    );
+    assert_eq!(
+        row.review_decision,
+        Some(GithubPullRequestReviewDecision::ChangesRequested)
+    );
+}
+
+#[test]
+fn stored_comments_do_not_hide_incoming_review_decisions() {
+    use GithubPullRequestReviewState::{Approved, ChangesRequested, Commented, Dismissed};
+
+    for (state, expected_decision) in [
+        (Approved, Some(GithubPullRequestReviewDecision::Approved)),
+        (
+            ChangesRequested,
+            Some(GithubPullRequestReviewDecision::ChangesRequested),
+        ),
+        (Dismissed, None),
+    ] {
+        let decision = review("8", state, 1);
+        let comment = review("8", Commented, 2);
+        for (stored, incoming) in [
+            (comment.clone(), decision.clone()),
+            (decision.clone(), comment.clone()),
+        ] {
+            let mut existing = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+            existing.reviews = Some(vec![stored]);
+            let existing = existing.foreign_entity_metadata(None).unwrap();
+            let mut updated = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+            updated.reviews = Some(vec![incoming]);
+
+            let metadata = updated.foreign_entity_metadata(Some(&existing)).unwrap();
+            let row = GithubPullRequestRow::from_metadata(&metadata).unwrap();
+
+            assert_eq!(row.reviews, vec![decision.clone()]);
+            assert_eq!(row.review_decision, expected_decision);
+        }
+    }
+}
+
+#[test]
+fn sparse_typed_updates_keep_omissions_and_replace_supplied_empty_values() {
+    use super::GithubPullRequestWrite;
+    let original = GithubPullRequestRow {
+        draft: true,
+        assignees: vec![GithubPullRequestUser {
+            github_user_id: "7".into(),
+            login: None,
+        }],
+        labels: vec![GithubPullRequestLabel {
+            name: "bug".into(),
+            color: None,
+        }],
+        reviews: vec![GithubPullRequestReview {
+            reviewer_github_user_id: "8".into(),
+            reviewer_login: None,
+            state: GithubPullRequestReviewState::Approved,
+            submitted_at: None,
+        }],
+        ..GithubPullRequestRow::from_metadata(&serde_json::json!({
+            "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
+            "url":"https://github.com/macro/app/pull/7", "displayName":"PR",
+            "requestedReviewerGithubUserIds":["8"], "participantGithubUserIds":["7"]
+        }))
+        .unwrap()
+    };
+    let sparse = GithubPullRequestWrite::from_metadata(&serde_json::json!({
+        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
+        "url":"https://github.com/macro/app/pull/7", "displayName":"PR", "status":"closed",
+        "participantGithubUserIds":["9"],
+        "reviews":[{"reviewerGithubUserId":"8", "state":"commented"}]
+    }))
+    .unwrap();
+    let merged = sparse.merge(Some(original));
+    assert!(merged.draft);
+    assert_eq!(merged.assignees.len(), 1);
+    assert_eq!(merged.labels.len(), 1);
+    assert_eq!(merged.participant_github_user_ids, vec!["7", "9"]);
+    assert_eq!(
+        merged.reviews[0].state,
+        GithubPullRequestReviewState::Approved
+    );
+    assert_eq!(
+        merged.review_decision,
+        Some(GithubPullRequestReviewDecision::Approved)
+    );
+    let supplied = GithubPullRequestWrite {
+        draft: Some(false),
+        assignees: Some(vec![]),
+        labels: Some(vec![]),
+        requested_reviewer_github_user_ids: Some(vec![]),
+        ..sparse
+    };
+    let merged = supplied.merge(Some(merged));
+    assert!(!merged.draft);
+    assert!(merged.assignees.is_empty());
+    assert!(merged.labels.is_empty());
+    assert!(merged.requested_reviewer_github_user_ids.is_empty());
+    assert_eq!(
+        merged.review_decision,
+        Some(GithubPullRequestReviewDecision::Approved)
+    );
+}
+
+#[test]
+fn existing_typed_row_ignores_the_entire_fallback() {
+    use super::GithubPullRequestWrite;
+    let base = GithubPullRequestWrite::from_metadata(&serde_json::json!({
+        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
+        "url":"https://github.com/macro/app/pull/7", "displayName":"PR",
+        "title":"existing", "participantGithubUserIds":["7"],
+        "reviews":[{"reviewerGithubUserId":"8", "state":"approved"}]
+    }))
+    .unwrap();
+    let existing = GithubPullRequestWrite {
+        title: Some("existing".into()),
+        ..base.clone()
+    }
+    .merge(None);
+    let fallback = GithubPullRequestWrite {
+        title: Some("fallback".into()),
+        status: Some(GithubPullRequestStatus::Closed),
+        participant_github_user_ids: Some(vec!["9".into()]),
+        reviews: Some(vec![review(
+            "10",
+            GithubPullRequestReviewState::ChangesRequested,
+            1,
+        )]),
+        ..base.clone()
+    }
+    .merge(None);
+    let incoming = GithubPullRequestWrite {
+        title: None,
+        status: None,
+        participant_github_user_ids: None,
+        reviews: None,
+        initial_row: Some(fallback),
+        ..base
+    };
+    let merged = incoming.merge(Some(existing.clone()));
+    assert_eq!(merged, existing);
+    assert_eq!(merged.participant_github_user_ids, vec!["7"]);
+    assert_eq!(merged.reviews.len(), 1);
+    assert_eq!(
+        merged.review_decision,
+        Some(GithubPullRequestReviewDecision::Approved)
+    );
+}
+
+#[test]
+fn mismatched_fallback_key_or_number_is_rejected() {
+    use super::GithubPullRequestWrite;
+    let write = GithubPullRequestWrite::from_metadata(&serde_json::json!({
+        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
+        "url":"https://github.com/macro/app/pull/7", "displayName":"PR"
+    }))
+    .unwrap();
+    let fallback = GithubPullRequestWrite {
+        title: Some("wrong row".into()),
+        ..write.clone()
+    }
+    .merge(None);
+    for invalid in [
+        GithubPullRequestRow {
+            github_key: "other/app/pull/7".into(),
+            ..fallback.clone()
+        },
+        GithubPullRequestRow {
+            number: 8,
+            ..fallback.clone()
+        },
+    ] {
+        let merged = GithubPullRequestWrite {
+            initial_row: Some(invalid),
+            ..write.clone()
+        }
+        .merge(None);
+        assert_eq!(merged, write.merge(None));
+        assert_eq!(merged.title, None);
+    }
 }

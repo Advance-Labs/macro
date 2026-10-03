@@ -10,7 +10,7 @@ use foreign_entity::domain::{
     ports::{ForeignEntityListQuery, ForeignEntityService},
 };
 use github_pull_requests::domain::{
-    models::GithubPullRequestRow, ports::GithubPullRequestRepository,
+    models::GithubPullRequestWrite, ports::GithubPullRequestRepository,
     service::GithubPullRequestServiceImpl,
 };
 use macro_user_id::{
@@ -227,6 +227,9 @@ fn default_pull_request_details() -> GithubPullRequestDetails {
         draft: None,
         requested_reviewer_github_user_ids: None,
         github_updated_at: None,
+        assignees: None,
+        labels: None,
+        reviews: None,
     }
 }
 
@@ -621,7 +624,7 @@ impl GithubPullRequestRepository for NoPullRequestRows {
         Ok(None)
     }
 
-    async fn upsert_row(&self, _row: &GithubPullRequestRow) -> Result<(), Self::Err> {
+    async fn upsert_row(&self, _row: &GithubPullRequestWrite) -> Result<(), Self::Err> {
         Ok(())
     }
 
