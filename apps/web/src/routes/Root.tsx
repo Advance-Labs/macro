@@ -1,5 +1,5 @@
 import { DEFAULT_ROUTE } from '@app/constants/defaultRoute';
-import { ROUTER_BASE } from '@app/constants/routerBase';
+import { ROUTER_BASE, ROUTER_BASE_CONCAT } from '@app/constants/routerBase';
 import { makeEmailAuthComponents } from '@app/features/auth/EmailAuth';
 import { Login } from '@app/features/auth/Login';
 import { MobileAuthWelcome } from '@app/features/auth/mobile-onboarding/MobileAuthWelcome';
@@ -125,6 +125,10 @@ import {
   Show,
 } from 'solid-js';
 import { useReminderAlerts } from '../features/reminders/reminder-alerts';
+import {
+  BookingReceiptPage,
+  PublicBookingPage,
+} from '../features/scheduling/public-booking';
 import { BasePathComponent } from './BasePath';
 import { TaskRoute } from './TaskRoute';
 
@@ -236,6 +240,8 @@ function OnboardingRoute() {
 }
 
 const ROUTES: RouteDefinition[] = [
+  { path: '/book/:profile/:slug?', component: PublicBookingPage },
+  { path: '/booking/:id', component: BookingReceiptPage },
   { path: '/meet/*path', component: MeetingRouter },
   {
     path: '/task-slug/:taskSlug',
@@ -530,16 +536,33 @@ function InitialInteractiveOnboardingModal() {
   );
 }
 
-/** Meeting links have a focused shell and never enter app onboarding. */
+/** Meeting and booking links have a focused shell and skip app onboarding. */
 function AppRouteLayout(props: RouteSectionProps) {
   const location = useLocation();
   return (
-    <IncomingMeetingInvitationsProvider>
-      <Show when={!isMeetingPath(location.pathname)} fallback={props.children}>
-        <Layout {...props} />
-        <InitialInteractiveOnboardingModal />
-      </Show>
-    </IncomingMeetingInvitationsProvider>
+    <Show
+      when={
+        !(
+          location.pathname.startsWith(`${ROUTER_BASE_CONCAT}book/`) ||
+          location.pathname.startsWith(`${ROUTER_BASE_CONCAT}booking/`)
+        )
+      }
+      fallback={
+        <div class="h-dvh overflow-y-auto bg-page text-ink">
+          {props.children}
+        </div>
+      }
+    >
+      <IncomingMeetingInvitationsProvider>
+        <Show
+          when={!isMeetingPath(location.pathname)}
+          fallback={props.children}
+        >
+          <Layout {...props} />
+          <InitialInteractiveOnboardingModal />
+        </Show>
+      </IncomingMeetingInvitationsProvider>
+    </Show>
   );
 }
 

@@ -16,6 +16,7 @@ import { createMemo, createSignal, onCleanup } from 'solid-js';
 import { settingsTabToSlug } from './settingsTabsConfig';
 
 export type SettingsTab =
+  | 'Calendar'
   | 'Account'
   | 'API Keys'
   | 'Notifications'
