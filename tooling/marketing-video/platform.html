@@ -337,7 +337,7 @@ cue(1, "swoosh", 0.55); cue(1.02, "click", 0.5);
 const DING = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
 CARDS.forEach((c, k) => {
   const s0 = FIRST + k; cue(s0, "click", 0.85); cue(s0 + 0.01, "swish", 0.45);
-  const at = (f) => s0 + f;
+  const at = (f) => s0 + f * 0.6;
   if (c.key === "email") [0.15, 0.24, 0.33, 0.42, 0.55, 0.64, 0.73].forEach((f, i) => cue(at(f), "key", 0.28, { seed: i }));
   if (c.key === "chat") cue(at(0.3), "pop", 0.55, { pitch: 1.2 });
   if (c.key === "docs") [0.14, 0.21, 0.29, 0.36, 0.44].forEach((f, i) => cue(at(f), "key", 0.32, { seed: 20 + i }));
@@ -388,7 +388,7 @@ function seek(tIn) {
     const lv_ = visAmt(t, tin + 0.02, tout, 0.24);
     fx(hero[k].lab, lv_.o, (1 - lv_.pin) * 10 + lv_.pout * 14, `translate3d(0,${px(top - LBL_GAP - (TALL ? 92 : 80) + (1 - lv_.pin) * 14)},0)`);
     if (!on) return;
-    const p = "h" + k, a = (f) => tin + f * (tout - tin);
+    const p = "h" + k, a = (f) => tin + f * 0.6 * (tout - tin);   // settle early: a card is on for one beat
     if (c.key === "email") {
       E[p + "gen"].style.opacity = (0.45 + 0.55 * (0.5 + 0.5 * Math.cos((t - tin) * 9))).toFixed(3);
       write(E[p + "b0"], t, a(0.12), a(0.3)); write(E[p + "b1"], t, a(0.25), a(0.6)); write(E[p + "b2"], t, a(0.5), a(0.86));
