@@ -1,3 +1,6 @@
+import { FileDetailLayout } from '@app/components/entity-detail/FileEntityDetail';
+import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
+import { downloadFileOperation } from '@app/components/entity-detail/file-detail-operations';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { CanvasDocument } from '@block-canvas/component/CanvasDocument';
 import { useCanvasDocument } from '@block-canvas/context/canvas-document-context';
@@ -10,14 +13,12 @@ import {
 import { downloadFile } from '@filesystem/download';
 import { useSearchParams } from '@solidjs/router';
 import type { JSX } from 'solid-js';
-import { FileDetailLayout, FileDetailLoadGate } from '../components/FileDetail';
-import { downloadFileOperation } from '../components/file-detail-operations';
+import { FileDetailLoadGate } from '../components/FileDetail';
 import {
   type CanvasDocumentData,
   loadCanvasDocument,
 } from '../queries/canvas-document';
 import { documentDownloadName } from '../util/document-download-name';
-import type { FileDetailContext } from '../util/file-detail-context';
 
 export type CanvasDetailContext = FileDetailContext<CanvasDocumentData>;
 

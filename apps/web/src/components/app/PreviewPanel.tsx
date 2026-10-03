@@ -1,3 +1,4 @@
+import { FileEntityDetail } from '@app/components/entity-detail/FileEntityDetail';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import type { BlockOrchestrator } from '@core/orchestrator';
 import { createContextProvider } from '@solid-primitives/context';
@@ -8,9 +9,12 @@ import {
   createRenderEffect,
   createSignal,
   type JSX,
+  lazy,
+  Match,
   on,
   Show,
   Suspense,
+  Switch,
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ViewShell } from '../view-shell/ViewShell';
@@ -18,6 +22,7 @@ import type {
   PreviewBlockTarget,
   PreviewPanelSelection,
 } from './previewTarget';
+import { SidePanel } from './side-panel';
 import {
   createPriorityCollapseController,
   PriorityCollapseOverflowSensor,
@@ -27,6 +32,13 @@ import {
   type SplitPanelContextType,
 } from './split-layout/context';
 
+const ImageBlock = lazy(async () => ({
+  default: (await import('@app/features/block-image/ImageBlock')).ImageBlock,
+}));
+const ImageBlockTopBar = lazy(async () => ({
+  default: (await import('@app/features/block-image/ImageBlockTopBar'))
+    .ImageBlockTopBar,
+}));
 export const [PreviewPanelContext, useMaybePreviewPanel] =
   createContextProvider(
     (props: {
@@ -167,7 +179,8 @@ export type PreviewPanelProps = {
   navigationRequest?: number;
   /** Live selection metadata when a row opened this route. */
   selectedEntity?: PreviewPanelSelection;
-  orchestrator: BlockOrchestrator;
+  /** Only the remaining legacy feature previews require an orchestrator. */
+  orchestrator?: BlockOrchestrator;
   splitPanelContext: SplitPanelContextType;
   onFocusOut?: VoidFunction;
   ref?: (el: HTMLElement) => void;
@@ -185,6 +198,10 @@ function sameLocation(left: PreviewBlockTarget, right: PreviewBlockTarget) {
 function PreviewBlock(
   props: PreviewPanelProps & { target: PreviewBlockTarget }
 ) {
+  const orchestrator = props.orchestrator;
+  if (!orchestrator)
+    throw new Error('Legacy previews require a block orchestrator');
+
   const blockInstance = createMemo<
     ReturnType<BlockOrchestrator['createBlockInstance']> | undefined
   >((previous) => {
@@ -194,7 +211,7 @@ function PreviewBlock(
       return previous;
     }
 
-    return props.orchestrator.createBlockInstance(blockType, blockId, {
+    return orchestrator.createBlockInstance(blockType, blockId, {
       aliasContext,
       params,
     });
@@ -214,7 +231,7 @@ function PreviewBlock(
     }
   );
   const locate = async (target: PreviewBlockTarget) => {
-    const handle = await props.orchestrator.getBlockHandle(
+    const handle = await orchestrator.getBlockHandle(
       target.blockId,
       target.blockType
     );
@@ -250,6 +267,57 @@ function PreviewBlock(
   );
 }
 
+function ImagePreview(
+  props: PreviewPanelProps & { target: PreviewBlockTarget }
+) {
+  const navigation = createMemo(
+    () => ({ target: props.target, request: props.navigationRequest ?? 0 }),
+    undefined,
+    {
+      equals: (a, b) =>
+        a.request === b.request && sameLocation(a.target, b.target),
+    }
+  );
+
+  return (
+    <PreviewFrame
+      splitPanelContext={props.splitPanelContext}
+      onFocusOut={props.onFocusOut}
+      ref={props.ref}
+      headerLeading={props.headerLeading}
+      locationKey={navigation}
+    >
+      <PreviewPanelContext
+        previewTarget={props.target}
+        previewEntity={props.selectedEntity}
+        onFocusOut={props.onFocusOut}
+      >
+        <SidePanel.Root persistKey="image" defaultOpen={false} floating>
+          <ImageBlock documentId={props.target.blockId}>
+            {(context, content) => (
+              <FileEntityDetail
+                documentId={context.documentId}
+                data={context.data}
+                documentMetadata={context.documentMetadata}
+                userAccessLevel={context.userAccessLevel}
+                onDownload={context.download}
+                content={content}
+              >
+                {(detailContext) => (
+                  <ImageBlockTopBar
+                    documentId={context.documentId}
+                    context={detailContext}
+                  />
+                )}
+              </FileEntityDetail>
+            )}
+          </ImageBlock>
+        </SidePanel.Root>
+      </PreviewPanelContext>
+    </PreviewFrame>
+  );
+}
+
 /**
  * Renders an admitted block target inline. Hosts use createPreviewSelectionGuard
  * before changing the target so conflicts never replace their current detail view.
@@ -258,7 +326,16 @@ export function PreviewPanel(props: PreviewPanelProps) {
   return (
     <div class="flex size-full min-h-0">
       <Show when={props.target}>
-        {(target) => <PreviewBlock {...props} target={target()} />}
+        {(target) => (
+          <Switch>
+            <Match when={target().blockType === 'image'}>
+              <ImagePreview {...props} target={target()} />
+            </Match>
+            <Match when={true}>
+              <PreviewBlock {...props} target={target()} />
+            </Match>
+          </Switch>
+        )}
       </Show>
     </div>
   );

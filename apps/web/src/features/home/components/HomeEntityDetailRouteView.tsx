@@ -5,6 +5,7 @@ import {
 import type { EntityDetailTarget } from '@app/components/entity-detail/entity-detail-target';
 import { ViewBreadcrumbs, ViewShell } from '@app/components/view-shell';
 import { channelsSearch } from '@app/features/channels-view/channels-route';
+import { FileDetailBreadcrumbItem } from '@app/features/drive-view/components/FileDetailBreadcrumbItem';
 import { createSearchParams, useParams } from '@app/lib/split-router';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
 import { ChannelDetailTopBar } from '@channel/Channel/ChannelDetail';
@@ -88,8 +89,10 @@ function HomeEntityDetailBody(props: {
   target: EntityDetailTarget;
   value: Accessor<string>;
   navigationRequest: number | string;
+  onClose: () => void;
 }) {
   const panel = useSplitPanelOrThrow();
+  const { openPreview } = useHomeView();
   const documentShareTarget = () => {
     const blockAlias = entityDetailBlockType(props.target);
     return props.target.type === 'document' && blockAlias
@@ -135,25 +138,56 @@ function HomeEntityDetailBody(props: {
             };
             const channel = () =>
               context.type === 'channel' ? context : undefined;
+            const image = () =>
+              context.type === 'document' &&
+              entityDetailBlockType(props.target) === 'image'
+                ? context
+                : undefined;
 
             return (
               <>
                 <HomeEntityDisplayName name={name} />
-                <ViewBreadcrumbs.Item
-                  value={props.value()}
-                  metadata={props.target}
-                  order={1}
-                >
-                  {(item) => (
-                    <ViewBreadcrumbs.Button
-                      isActive={item.isActive()}
-                      onClick={item.onSelect}
-                      tooltip={name()}
+                <Show
+                  when={image()}
+                  fallback={
+                    <ViewBreadcrumbs.Item
+                      value={props.value()}
+                      metadata={props.target}
+                      order={1}
                     >
-                      <span class="truncate">{name()}</span>
-                    </ViewBreadcrumbs.Button>
+                      {(item) => (
+                        <ViewBreadcrumbs.Button
+                          isActive={item.isActive()}
+                          onClick={item.onSelect}
+                          tooltip={name()}
+                        >
+                          <span class="truncate">{name()}</span>
+                        </ViewBreadcrumbs.Button>
+                      )}
+                    </ViewBreadcrumbs.Item>
+                  }
+                >
+                  {(imageContext) => (
+                    <FileDetailBreadcrumbItem
+                      value={props.value()}
+                      metadata={props.target}
+                      order={1}
+                      documentMetadata={imageContext().documentMetadata}
+                      userAccessLevel={imageContext().userAccessLevel}
+                      blockType="image"
+                      operations={imageContext().operations}
+                      onClose={props.onClose}
+                      onDuplicate={(id) =>
+                        openPreview({
+                          type: 'document',
+                          id,
+                          fileType:
+                            imageContext().documentMetadata.fileType ?? 'image',
+                        })
+                      }
+                    />
                   )}
-                </ViewBreadcrumbs.Item>
+                </Show>
                 <Show when={channel()}>
                   {(current) => (
                     <ChannelDetailTopBar
@@ -194,11 +228,12 @@ function HomeDirectDetail(props: {
           </ViewBreadcrumbs.ReturnButton>
         )}
       </ViewBreadcrumbs.Item>
-      <SidePanel.Root>
+      <SidePanel.Root persistKey="home">
         <HomeEntityDetailBody
           target={props.target}
           value={value}
           navigationRequest={props.navigationRequest}
+          onClose={props.closePreview}
         />
       </SidePanel.Root>
     </ViewBreadcrumbs.Root>

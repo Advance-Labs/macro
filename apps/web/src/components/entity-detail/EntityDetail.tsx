@@ -1,3 +1,5 @@
+import { ImageBlock } from '@app/features/block-image/ImageBlock';
+import type { ImageDocumentData } from '@app/features/block-image/queries/image-document';
 import {
   CanvasDetail,
   type CanvasDetailContext,
@@ -6,10 +8,6 @@ import {
   CodeDetail,
   type CodeDetailContext,
 } from '@app/features/drive-view/views/CodeDetail';
-import {
-  ImageDetail,
-  type ImageDetailContext,
-} from '@app/features/drive-view/views/ImageDetail';
 import {
   MarkdownDetail,
   type MarkdownDetailContext,
@@ -50,12 +48,14 @@ import {
   untrack,
 } from 'solid-js';
 import type { EntityDetailTarget } from './entity-detail-target';
+import { FileEntityDetail } from './FileEntityDetail';
+import type { FileDetailContext } from './file-detail-context';
 
 type DocumentDetailContext =
   | MarkdownDetailContext
   | CodeDetailContext
   | CanvasDetailContext
-  | ImageDetailContext
+  | FileDetailContext<ImageDocumentData>
   | VideoDetailContext
   | PdfDetailContext
   | UnknownDetailContext;
@@ -214,9 +214,20 @@ export function EntityDetail(props: EntityDetailProps) {
         </CanvasDetail>
       </Match>
       <Match when={blockType() === 'image'}>
-        <ImageDetail documentId={props.target.id}>
-          {(context) => <>{renderChildren(context)}</>}
-        </ImageDetail>
+        <ImageBlock documentId={props.target.id}>
+          {(context, content) => (
+            <FileEntityDetail
+              documentId={context.documentId}
+              data={context.data}
+              documentMetadata={context.documentMetadata}
+              userAccessLevel={context.userAccessLevel}
+              onDownload={context.download}
+              content={content}
+            >
+              {(context) => <>{renderChildren(context)}</>}
+            </FileEntityDetail>
+          )}
+        </ImageBlock>
       </Match>
       <Match when={blockType() === 'video'}>
         <VideoDetail documentId={props.target.id}>

@@ -226,7 +226,7 @@ export function DriveDetailView() {
   return (
     <>
       <DriveDetailAncestorBreadcrumbs orderOffset={breadcrumbOrderOffset()} />
-      <SidePanel.Root floating>
+      <SidePanel.Root floating persistKey="documents">
         <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
           <Show when={!hasBlockHeader()}>
             <DriveDetailTopBar />

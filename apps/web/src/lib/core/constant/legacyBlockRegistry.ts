@@ -15,7 +15,6 @@ export const LegacyBlockRegistry = [
   'contact',
   'database',
   'email',
-  'image',
   'initiative',
   'md',
   'pdf',

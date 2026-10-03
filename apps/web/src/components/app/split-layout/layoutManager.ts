@@ -21,9 +21,11 @@ import deepEqual from 'fast-deep-equal';
 import {
   type Accessor,
   batch,
+  createComponent,
   createMemo,
   createSignal,
   type JSXElement,
+  lazy,
   onCleanup,
   untrack,
 } from 'solid-js';
@@ -43,6 +45,11 @@ import { createHistory, type History } from './history';
 import { DEFAULT_SPLIT_MIN_WIDTH } from './splitContentSizing';
 
 const ENABLE_DEFAULT_ALWAYS_IN_HISTORY = false;
+
+const StandaloneImageBlock = lazy(async () => ({
+  default: (await import('@app/features/block-image/ImageBlockTopBar'))
+    .StandaloneImageBlock,
+}));
 
 export type SplitId = string & { readonly SplitId: unique symbol };
 type SplitKey = `${BlockName | BlockAlias | 'component'}:${string}`;
@@ -547,6 +554,17 @@ function createPinnedMount(
     };
   }
 
+  if (content.type === 'image') {
+    const [meta, setMeta] = createStore<ComponentMeta>({ kind: 'image' });
+    return {
+      kind: 'component',
+      name: 'image',
+      element: () =>
+        createComponent(StandaloneImageBlock, { documentId: content.id }),
+      meta,
+      updateMeta: (data) => setMeta({ kind: 'image', ...data }),
+    };
+  }
   const blockType = resolveBlockAlias(content.type);
   const handle = orchestrator.createBlockInstance(blockType, content.id, {
     aliasContext: content.aliasContext,

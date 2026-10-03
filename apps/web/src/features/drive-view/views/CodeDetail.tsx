@@ -1,3 +1,6 @@
+import { FileDetailLayout } from '@app/components/entity-detail/FileEntityDetail';
+import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
+import { downloadFileOperation } from '@app/components/entity-detail/file-detail-operations';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import {
   type CodeBlockMode,
@@ -14,15 +17,13 @@ import {
   type Setter,
   Show,
 } from 'solid-js';
-import { FileDetailLayout, FileDetailLoadGate } from '../components/FileDetail';
-import { downloadFileOperation } from '../components/file-detail-operations';
+import { FileDetailLoadGate } from '../components/FileDetail';
 import {
   type CodeDocumentData,
   loadCodeDocument,
   saveCodeDocument,
 } from '../queries/code-document';
 import { documentDownloadName } from '../util/document-download-name';
-import type { FileDetailContext } from '../util/file-detail-context';
 
 export type CodeDetailContext = FileDetailContext<CodeDocumentData>;
 

@@ -1,3 +1,4 @@
+import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
 import { FindAndReplace } from '@block-md/component/FindAndReplace';
 import {
   MarkdownDocument,
@@ -34,7 +35,6 @@ import {
   Suspense,
   Switch,
 } from 'solid-js';
-import type { FileDetailContext } from '../util/file-detail-context';
 
 export type MarkdownDetailContext = FileDetailContext<MarkdownDocumentData>;
 

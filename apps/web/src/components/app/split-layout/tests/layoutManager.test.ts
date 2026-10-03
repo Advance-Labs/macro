@@ -108,6 +108,66 @@ function createMockOrchestrator(): BlockOrchestrator {
 }
 
 describe('layoutManager', () => {
+  describe('direct image mounting', () => {
+    it('mounts a legacy image target as a component without the orchestrator', () => {
+      createRoot((dispose) => {
+        const orchestrator = createMockOrchestrator();
+        const manager = createSplitLayout(orchestrator, [
+          { type: 'image', id: 'image-1' },
+        ]);
+        expect(manager.splits()[0].mount).toMatchObject({
+          kind: 'component',
+          name: 'image',
+        });
+        expect(manager.splits()[0].content).toMatchObject({
+          type: 'image',
+          id: 'image-1',
+        });
+        expect(orchestrator.createBlockInstance).not.toHaveBeenCalled();
+        dispose();
+      });
+    });
+
+    it('replaces remaining legacy content with an image component', () => {
+      createRoot((dispose) => {
+        const orchestrator = createMockOrchestrator();
+        const manager = createSplitLayout(orchestrator, [
+          { type: 'md', id: 'markdown-1' },
+        ]);
+        const split = manager.getSplit(manager.splits()[0].id)!;
+        split.replace({ next: { type: 'image', id: 'image-1' } });
+        expect(manager.splits()[0].mount.kind).toBe('component');
+        expect(orchestrator.createBlockInstance).toHaveBeenCalledTimes(1);
+        expect(orchestrator.createBlockInstance).toHaveBeenCalledWith(
+          'md',
+          'markdown-1',
+          expect.any(Object)
+        );
+        dispose();
+      });
+    });
+
+    it('mounts image popovers directly and retains duplicate admission', () => {
+      createRoot((dispose) => {
+        const orchestrator = createMockOrchestrator();
+        const manager = createSplitLayout(orchestrator, [
+          { type: 'component', id: 'home' },
+        ]);
+        const content = { type: 'image', id: 'image-1' } as const;
+        const popover = manager.createPopoverSplit({ content });
+        expect(popover).toBeDefined();
+        expect(manager.popovers().get(popover!.id)?.mount).toMatchObject({
+          kind: 'component',
+          name: 'image',
+        });
+        expect(manager.createPopoverSplit({ content })).toBeUndefined();
+        expect(orchestrator.createBlockInstance).not.toHaveBeenCalled();
+        popover!.close();
+        expect(manager.getActivePopovers()).toHaveLength(0);
+        dispose();
+      });
+    });
+  });
   it('tracks content navigator replacement as a reactive host lifecycle', () => {
     createRoot((dispose) => {
       const manager = createSplitLayout(createMockOrchestrator(), [

@@ -1,55 +1,13 @@
-import {
-  DocumentFileSidePanelSections,
-  SidePanel,
-} from '@components/app/side-panel';
-import {
-  getPermissions,
-  hasPermissions,
-  Permissions,
-} from '@core/component/SharePermissions';
 import SpinnerIcon from '@phosphor/spinner.svg';
-import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
-import type { DocumentMetadata } from '@service-storage/generated/schemas/documentMetadata';
 import { Button } from '@ui';
 import {
   createResource,
   ErrorBoundary,
   type JSX,
   Match,
-  type ParentProps,
   Suspense,
   Switch,
 } from 'solid-js';
-
-export type FileDetailLayoutProps = ParentProps<{
-  documentId: string;
-  documentMetadata: DocumentMetadata;
-  userAccessLevel: AccessLevel;
-  defaultSidePanelOpen?: boolean;
-}>;
-
-export function FileDetailLayout(props: FileDetailLayoutProps) {
-  const permissions = () => getPermissions(props.userAccessLevel);
-  const canEdit = () => hasPermissions(permissions(), Permissions.CAN_EDIT);
-
-  return (
-    <SidePanel.Layout
-      floating
-      defaultOpen={props.defaultSidePanelOpen ?? false}
-      persistKey={`file:${props.documentId}`}
-      headerToggle={false}
-    >
-      <DocumentFileSidePanelSections
-        documentId={props.documentId}
-        documentName={props.documentMetadata.documentName}
-        canEdit={canEdit()}
-      />
-      <div class="relative size-full min-h-0 min-w-0 overflow-hidden">
-        {props.children}
-      </div>
-    </SidePanel.Layout>
-  );
-}
 
 function FileDetailBodyState(props: {
   label: string;

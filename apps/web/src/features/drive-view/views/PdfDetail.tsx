@@ -1,3 +1,5 @@
+import { FileDetailLayout } from '@app/components/entity-detail/FileEntityDetail';
+import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
 import { AskMacroButton } from '@app/features/chat/ChatWithAgentButton';
 import {
   PdfDocument,
@@ -35,9 +37,8 @@ import Printer from '@phosphor/printer.svg';
 import { useSearchParams } from '@solidjs/router';
 import type { JSX } from 'solid-js';
 import { Show } from 'solid-js';
-import { FileDetailLayout, FileDetailLoadGate } from '../components/FileDetail';
+import { FileDetailLoadGate } from '../components/FileDetail';
 import { loadPdfDocument, type PdfDocumentData } from '../queries/pdf-document';
-import type { FileDetailContext } from '../util/file-detail-context';
 
 export type PdfDetailContext = FileDetailContext<PdfDocumentData>;
 

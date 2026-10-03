@@ -14,7 +14,7 @@ import {
 import type { QueryClient } from '@tanstack/solid-query';
 import type { Accessor } from 'solid-js';
 import { match } from 'ts-pattern';
-import type { BlockName } from '../block';
+import type { BlockName } from '../../constants/block-registry';
 
 function isSoupEntityTag(
   itemType: ItemType

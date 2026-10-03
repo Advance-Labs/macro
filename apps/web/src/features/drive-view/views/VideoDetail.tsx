@@ -1,7 +1,9 @@
+import { FileDetailLayout } from '@app/components/entity-detail/FileEntityDetail';
+import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
+import { downloadFileOperation } from '@app/components/entity-detail/file-detail-operations';
 import { VideoContent } from '@block-video/component/VideoContent';
 import type { JSX } from 'solid-js';
-import { FileDetailLayout, FileDetailLoadGate } from '../components/FileDetail';
-import { downloadFileOperation } from '../components/file-detail-operations';
+import { FileDetailLoadGate } from '../components/FileDetail';
 import { getFileDocumentBlob } from '../queries/file-document';
 import {
   loadVideoDocument,
@@ -9,7 +11,6 @@ import {
 } from '../queries/video-document';
 import { documentDownloadName } from '../util/document-download-name';
 import { downloadWithProgress } from '../util/download-with-progress';
-import type { FileDetailContext } from '../util/file-detail-context';
 
 export type VideoDetailContext = FileDetailContext<VideoDocumentData>;
 

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render } from '@solidjs/testing-library';
-import { createSignal, onCleanup, onMount } from 'solid-js';
+import { createSignal, type JSX, onCleanup, onMount } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PreviewPanel,
@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   goToLatest: vi.fn(),
   mounts: vi.fn(),
   unmounts: vi.fn(),
+  imageMounts: vi.fn(),
+  imageUnmounts: vi.fn(),
 }));
 
 vi.mock('@core/hotkey/hotkeys', () => ({
@@ -27,6 +29,52 @@ vi.mock('./split-layout/components/PriorityCollapseOverflowSensor', () => ({
     collapser: {},
   }),
   PriorityCollapseOverflowSensor: () => null,
+}));
+vi.mock('@app/features/block-image/ImageBlock', () => ({
+  ImageBlock: (props: {
+    documentId: string;
+    children?: (context: unknown, content: JSX.Element) => JSX.Element;
+  }) => {
+    onMount(mocks.imageMounts);
+    onCleanup(mocks.imageUnmounts);
+    const preview = useMaybePreviewPanel();
+    const content = (
+      <div>
+        <span data-testid="image">{props.documentId}</span>
+        <span data-testid="selection">{preview?.previewEntity()?.id}</span>
+        <input aria-label="Image preview focus" />
+      </div>
+    );
+    return (
+      props.children?.(
+        {
+          documentId: props.documentId,
+          data: {},
+          documentMetadata: { documentId: props.documentId },
+          userAccessLevel: 'view',
+          download: () => {},
+        },
+        content
+      ) ?? content
+    );
+  },
+}));
+vi.mock('@app/components/entity-detail/FileEntityDetail', () => ({
+  FileEntityDetail: (props: {
+    content: JSX.Element;
+    children?: (context: unknown) => JSX.Element;
+  }) => (
+    <>
+      {props.children?.({})}
+      {props.content}
+    </>
+  ),
+}));
+vi.mock('@app/features/block-image/ImageBlockTopBar', () => ({
+  ImageBlockTopBar: () => null,
+}));
+vi.mock('./side-panel', () => ({
+  SidePanel: { Root: (props: { children: unknown }) => props.children },
 }));
 
 afterEach(() => {
@@ -190,5 +238,78 @@ describe('preview block navigation', () => {
     view.setSelectedEntity(refreshed);
     expect(view.previewEntity()).toBe(refreshed);
     expect(view.getByTestId('selection').textContent).toBe('channel-1');
+  });
+});
+
+const image = (id: string): PreviewBlockTarget => ({
+  blockType: 'image',
+  blockId: id,
+  aliasContext: undefined,
+});
+
+describe('direct image previews', () => {
+  it('does not require an orchestrator for an image preview', async () => {
+    const view = render(() => (
+      <PreviewPanel
+        target={image('image-1')}
+        splitPanelContext={{} as PreviewPanelProps['splitPanelContext']}
+      />
+    ));
+    await flush();
+    expect(view.getByTestId('image').textContent).toBe('image-1');
+  });
+  it('renders without creating a legacy instance or requesting a handle', async () => {
+    const view = setup(image('image-1'));
+    await flush();
+
+    expect(view.getByTestId('image').textContent).toBe('image-1');
+    expect(view.createBlockInstance).not.toHaveBeenCalled();
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
+  });
+
+  it('keeps the image mounted for repeated selections and navigation requests', async () => {
+    const view = setup(image('image-1'));
+    await flush();
+    const focus = view.getByLabelText('Image preview focus');
+    fireEvent.pointerDown(focus);
+    view.setTarget(image('image-1'));
+    view.requestNavigation();
+    await flush();
+
+    expect(view.getByLabelText('Image preview focus')).toBe(focus);
+    expect(mocks.imageMounts).toHaveBeenCalledTimes(1);
+    expect(mocks.imageUnmounts).not.toHaveBeenCalled();
+    expect(view.createBlockInstance).not.toHaveBeenCalled();
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
+  });
+
+  it('passes live selection metadata to the direct image host', async () => {
+    const selection: PreviewPanelSelection = {
+      type: 'document',
+      id: 'image-1',
+      fileType: 'png',
+    };
+    const view = setup(image('image-1'), selection);
+    await flush();
+
+    expect(view.getByTestId('selection').textContent).toBe('image-1');
+    view.setSelectedEntity({ ...selection, id: 'selected-image' });
+    expect(view.getByTestId('selection').textContent).toBe('selected-image');
+  });
+
+  it('disposes the image host when selecting a remaining legacy feature', async () => {
+    const view = setup(image('image-1'));
+    await flush();
+    view.setTarget(channel('channel-1'));
+    await flush();
+
+    expect(mocks.imageUnmounts).toHaveBeenCalledTimes(1);
+    expect(view.queryByTestId('image')).toBeNull();
+    expect(view.createBlockInstance).toHaveBeenCalledTimes(1);
+    expect(view.createBlockInstance).toHaveBeenCalledWith(
+      'channel',
+      'channel-1',
+      expect.any(Object)
+    );
   });
 });

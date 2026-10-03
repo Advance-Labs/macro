@@ -1571,7 +1571,12 @@ export function ShareTrigger(props: {
   copyLink?: () => void;
 }) {
   const isAuthenticated = useIsAuthenticated();
-  const inBlock = isInBlock();
+  const inBlock =
+    props.id === undefined ||
+    props.blockType === undefined ||
+    props.hotkeyScope === undefined
+      ? isInBlock()
+      : false;
   const contextualBlockType =
     props.blockType === undefined
       ? inBlock
