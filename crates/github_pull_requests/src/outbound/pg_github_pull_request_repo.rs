@@ -112,14 +112,18 @@ impl GithubPullRequestRepository for PgGithubPullRequestRepo {
                         .map_err(|error| sqlx::Error::Decode(error.into()))?,
                     reviews,
                     review_decision,
-                    base: (stored.base_ref.is_some() || stored.base_sha.is_some()).then_some(GitRef {
-                        name: stored.base_ref,
-                        sha: stored.base_sha,
-                    }),
-                    head: (stored.head_ref.is_some() || stored.head_sha.is_some()).then_some(GitRef {
-                        name: stored.head_ref,
-                        sha: stored.head_sha,
-                    }),
+                    base: (stored.base_ref.is_some() || stored.base_sha.is_some()).then_some(
+                        GitRef {
+                            name: stored.base_ref,
+                            sha: stored.base_sha,
+                        },
+                    ),
+                    head: (stored.head_ref.is_some() || stored.head_sha.is_some()).then_some(
+                        GitRef {
+                            name: stored.head_ref,
+                            sha: stored.head_sha,
+                        },
+                    ),
                 })
             })
             .transpose()?;
