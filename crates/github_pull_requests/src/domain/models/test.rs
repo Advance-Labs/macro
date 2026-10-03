@@ -898,6 +898,40 @@ fn sparse_typed_updates_keep_omissions_and_replace_supplied_empty_values() {
         Some(GithubPullRequestReviewDecision::Approved)
     );
 }
+fn stored_record(pull_request: &EnrichedGithubPullRequest) -> ForeignEntity {
+    ForeignEntity {
+        id: uuid::Uuid::nil(),
+        foreign_entity_id: pull_request.github_key.clone(),
+        foreign_entity_source: GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE.to_string(),
+        metadata: pull_request.foreign_entity_metadata(None).unwrap(),
+        stored_for_id: "macro|viewer@example.com".to_string(),
+        stored_for_auth_entity: "user".to_string(),
+        created_at: utc_datetime("2026-05-25T18:54:21Z"),
+        updated_at: utc_datetime("2026-05-25T18:54:21Z"),
+    }
+}
+
+#[test]
+fn stored_response_falls_back_to_record_status_without_overriding_a_known_row_status() {
+    let mut pull_request = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    pull_request.status = Some(GithubPullRequestStatus::Open);
+    let record = stored_record(&pull_request);
+    let mut row = GithubPullRequestRow::from_metadata(&record.metadata).unwrap();
+    row.status = None;
+    assert_eq!(
+        StoredGithubPullRequest::from_record(&record, Some(row.clone()))
+            .unwrap()
+            .status,
+        Some(GithubPullRequestStatus::Open)
+    );
+    row.status = Some(GithubPullRequestStatus::Merged);
+    assert_eq!(
+        StoredGithubPullRequest::from_record(&record, Some(row))
+            .unwrap()
+            .status,
+        Some(GithubPullRequestStatus::Merged)
+    );
+}
 
 #[test]
 fn existing_typed_row_ignores_the_entire_fallback() {
@@ -945,6 +979,27 @@ fn existing_typed_row_ignores_the_entire_fallback() {
 }
 
 #[test]
+fn stored_response_url_follows_the_row_repository_identity() {
+    let record = stored_record(&EnrichedGithubPullRequest::from_reference(
+        pull_request_reference(),
+    ));
+    let mut row = GithubPullRequestRow::from_metadata(&record.metadata).unwrap();
+    row.owner = "current-owner".to_string();
+    row.repo = "renamed".to_string();
+    row.github_key = "current-owner/renamed/pull/7".to_string();
+    let response = StoredGithubPullRequest::from_record(&record, Some(row)).unwrap();
+    assert_eq!(
+        response.url,
+        "https://github.com/current-owner/renamed/pull/7"
+    );
+    assert_eq!(response.github_key, "current-owner/renamed/pull/7");
+    assert_eq!(
+        record.metadata["url"],
+        "https://github.com/macro/app/pull/7"
+    );
+}
+
+#[test]
 fn mismatched_fallback_key_or_number_is_rejected() {
     use super::GithubPullRequestWrite;
     let write = GithubPullRequestWrite::from_metadata(&serde_json::json!({
@@ -975,4 +1030,28 @@ fn mismatched_fallback_key_or_number_is_rejected() {
         assert_eq!(merged, write.merge(None));
         assert_eq!(merged.title, None);
     }
+}
+
+#[test]
+fn stored_response_without_a_row_uses_the_record_identity_and_status() {
+    let mut pull_request = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    pull_request.status = Some(GithubPullRequestStatus::Closed);
+    let response =
+        StoredGithubPullRequest::from_record(&stored_record(&pull_request), None).unwrap();
+    assert_eq!(response.url, pull_request.url);
+    assert_eq!(response.status, Some(GithubPullRequestStatus::Closed));
+}
+
+#[test]
+fn stored_comment_author_ids_intentionally_remain_json_integers() {
+    let mut pull_request = EnrichedGithubPullRequest::from_reference(pull_request_reference());
+    pull_request.author_id = Some(583231);
+    let mut comment = pull_request_comment();
+    comment.author_id = Some(583231);
+    pull_request.comments = Some(vec![comment]);
+    let response =
+        StoredGithubPullRequest::from_record(&stored_record(&pull_request), None).unwrap();
+    let wire = serde_json::to_value(response).unwrap();
+    assert_eq!(wire["authorGithubUserId"], "583231");
+    assert_eq!(wire["comments"][0]["authorId"], serde_json::json!(583231));
 }

@@ -41,12 +41,12 @@ fn row(github_key: &str, repository_id: Option<i64>) -> GithubPullRequestRow {
         author_github_user_id: Some("42".to_string()),
         author_login: Some("octocat".to_string()),
         requested_reviewer_github_user_ids: vec!["8".to_string()],
-        participant_github_user_ids: vec!["8".to_string(), "42".to_string()],
+        participant_github_user_ids: vec!["42".to_string(), "8".to_string()],
         github_updated_at: None,
         assignees: Vec::new(),
         labels: Vec::new(),
         reviews: Vec::new(),
-        review_decision: None,
+        review_decision: Some(GithubPullRequestReviewDecision::ReviewRequired),
     }
 }
 
@@ -291,4 +291,40 @@ async fn sparse_update_preserves_rich_row_and_supplied_empty_collections_replace
     assert_eq!(stored.labels, serde_json::json!([]));
     assert!(stored.requested_reviewer_github_user_ids.is_empty());
     assert_eq!(stored.review_decision.as_deref(), Some("approved"));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn lookup_reads_back_the_stored_row(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool);
+    let stored = GithubPullRequestRow {
+        draft: true,
+        assignees: vec![GithubPullRequestUser {
+            github_user_id: "7".to_string(),
+            login: Some("hubot".to_string()),
+        }],
+        labels: vec![GithubPullRequestLabel {
+            name: "bug".to_string(),
+            color: Some("d73a4a".to_string()),
+        }],
+        reviews: vec![GithubPullRequestReview {
+            reviewer_github_user_id: "8".to_string(),
+            reviewer_login: None,
+            state: GithubPullRequestReviewState::ChangesRequested,
+            submitted_at: None,
+        }],
+        review_decision: Some(GithubPullRequestReviewDecision::ChangesRequested),
+        ..row("macro/app/pull/7", Some(99))
+    };
+    repo.upsert_row(&(&stored).into())
+        .await
+        .expect("upsert should succeed");
+
+    assert_eq!(
+        repo.pull_request_row("macro/app/pull/7").await.unwrap(),
+        Some(stored)
+    );
+    assert_eq!(
+        repo.pull_request_row("macro/app/pull/8").await.unwrap(),
+        None
+    );
 }

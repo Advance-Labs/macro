@@ -34,7 +34,8 @@ use foreign_entity::domain::{
     ports::{ForeignEntityListQuery, ForeignEntityService},
 };
 use github_pull_requests::domain::{
-    models::GithubPullRequestWrite, ports::GithubPullRequestRepository,
+    models::{GithubPullRequestRow, GithubPullRequestWrite},
+    ports::GithubPullRequestRepository,
     service::GithubPullRequestServiceImpl,
 };
 use macro_user_id::user_id::MacroUserIdStr;
@@ -1229,6 +1230,13 @@ impl GithubPullRequestRepository for NoPullRequestRows {
 
     async fn rename_row(&self, _from: &str, _to: &str) -> Result<(), Self::Err> {
         Ok(())
+    }
+
+    async fn pull_request_row(
+        &self,
+        _github_key: &str,
+    ) -> Result<Option<GithubPullRequestRow>, Self::Err> {
+        Ok(None)
     }
 }
 
