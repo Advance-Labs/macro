@@ -176,10 +176,10 @@ impl GithubPullRequestRepository for PgGithubPullRequestRepo {
                 labels = EXCLUDED.labels,
                 reviews = EXCLUDED.reviews,
                 review_decision = EXCLUDED.review_decision,
-                base_ref = COALESCE(EXCLUDED.base_ref, github_pull_request.base_ref),
-                base_sha = COALESCE(EXCLUDED.base_sha, github_pull_request.base_sha),
-                head_ref = COALESCE(EXCLUDED.head_ref, github_pull_request.head_ref),
-                head_sha = COALESCE(EXCLUDED.head_sha, github_pull_request.head_sha),
+                base_ref = CASE WHEN $22::bool THEN EXCLUDED.base_ref ELSE github_pull_request.base_ref END,
+                base_sha = CASE WHEN $22::bool THEN EXCLUDED.base_sha ELSE github_pull_request.base_sha END,
+                head_ref = CASE WHEN $23::bool THEN EXCLUDED.head_ref ELSE github_pull_request.head_ref END,
+                head_sha = CASE WHEN $23::bool THEN EXCLUDED.head_sha ELSE github_pull_request.head_sha END,
                 updated_at = NOW()
             "#,
             row.github_key,
@@ -203,6 +203,8 @@ impl GithubPullRequestRepository for PgGithubPullRequestRepo {
             row.base.as_ref().and_then(|base| base.sha.as_deref()),
             row.head.as_ref().and_then(|head| head.name.as_deref()),
             row.head.as_ref().and_then(|head| head.sha.as_deref()),
+            row.base.is_some(),
+            row.head.is_some(),
         )
         .execute(&mut *tx)
         .await?;

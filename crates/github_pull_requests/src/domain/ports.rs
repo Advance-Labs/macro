@@ -73,6 +73,7 @@ pub trait GithubPullRequestRepository: Send + Sync + 'static {
 
     /// Atomically merge supplied typed columns with the shared row. Omitted fields retain
     /// stored values. Concurrent creation and updates for the same key serialize before reading.
+    /// A provided base/head ref replaces its name and SHA together, including missing components.
     fn upsert_row(
         &self,
         row: &GithubPullRequestWrite,
