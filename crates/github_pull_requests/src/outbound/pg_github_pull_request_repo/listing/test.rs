@@ -653,10 +653,12 @@ async fn list_includes_me_matches_every_linked_github_identity(pool: PgPool) {
     .await
     .expect("second github link should be inserted");
 
-    let first = insert_pr_with_participants(&repo, "first-pr", macro_id, Some(&["42"])).await;
-    let second = insert_pr_with_participants(&repo, "second-pr", macro_id, Some(&["99"])).await;
-    insert_pr_with_participants(&repo, "unrelated-pr", macro_id, Some(&["7"])).await;
-    insert_pr_with_participants(&repo, "legacy-pr", macro_id, None).await;
+    let first =
+        insert_pr_with_participants(&pool, &repo, "first-pr", macro_id, Some(&["42"])).await;
+    let second =
+        insert_pr_with_participants(&pool, &repo, "second-pr", macro_id, Some(&["99"])).await;
+    insert_pr_with_participants(&pool, &repo, "unrelated-pr", macro_id, Some(&["7"])).await;
+    insert_pr_with_participants(&pool, &repo, "legacy-pr", macro_id, None).await;
 
     let entities = listing
         .list_pull_requests(
