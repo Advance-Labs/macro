@@ -69,9 +69,9 @@ const SC = { "916": 1.22, "45": 1.1, "11": 1.42, "169": 1.2 }[FMT];        // wo
 const TALL = FMT === "916";
 
 // ---------- music-driven timing ----------
-// Upbeat: "Swish Swed" by Arulo (Mixkit 201), 120 BPM, drop downbeat 40.032 s. 16 beats = 4 bars.
-//                  lock head  em ch dc sh db pr ag  gather fold
-const MUSIC = [["upbeat", 120.0, [2, 2, 1, 1, 1, 1, 1, 1, 1, 3, 2]]];
+// Upbeat: "Swish Swed" by Arulo (Mixkit 201), time-stretched 120 → 100 BPM (pitch kept); drop downbeat 48.038 s.
+// 20 beats = 5 bars.  lock head, ten surfaces one beat each, gather, fold
+const MUSIC = [["upbeat", 100.0, [2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3]]];
 const STEP_T = [0];
 for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
 const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
@@ -196,6 +196,19 @@ const CARDS = [
   { key: "chat", label: "Chat", w: 740, h: 330, html: (p) => `
     ${bubble(p + "c0", "l", photo("julia"), "Julia", "Dana wants to invite her team.<br>Are we still on for Thursday?", "top:0")}
     ${bubble(p + "c1", "r", photo("jacob"), "Jacob", `<span class="men">@Claude</span>, draft a follow-up based on<br>${ref(calIc, "Demo Call Sep 14th")} and ${ref(callIc, "the transcript")}.`, "top:146px")}` },
+  { key: "calls", label: "Calls", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:26px;top:22px;gap:10px;font-size:18px;font-weight:600;color:#eee"><span style="width:9px;height:9px;border-radius:50%;background:var(--ok)"></span>Demo call · Northwind<span style="font-weight:400;color:var(--c4);font-size:15px">12:04</span></div>
+      <div class="a flex" style="right:22px;top:16px;gap:6px">${photo("jacob", 30)}${photo("julia", 30)}<div class="av flex" style="width:30px;height:30px;justify-content:center;background:#2a2a2c;font-size:13px;font-weight:600;color:#ddd">D</div></div>
+      <div class="a" style="left:24px;top:66px;width:476px;height:318px;border-radius:18px;background:url(img/call-main-feed.webp) center/cover"></div>
+      <div class="a rim" style="left:338px;top:270px;width:148px;height:100px;border-radius:12px;background:url(img/call-pip-feed.webp) center/cover;box-shadow:0 8px 20px -8px #000a"></div>
+      <div class="a nowrap" style="left:522px;top:70px;font-size:14px;font-weight:500;color:var(--c4)">Live transcript</div>
+      ${[["Dana", "Can my whole team join on Thursday?"], ["Jacob", "Yes, I’ll add them to the invite."], ["Macro", "Noted. Added Dana’s team to Thursday’s invite."]].map(([w, x], k) =>
+        `<div class="a" id="${p}l${k}" style="left:522px;width:256px;top:${102 + k * 92}px;font-size:16px;line-height:22px;color:#e6e6e6"><div style="font-size:13px;font-weight:600;color:${w === "Macro" ? "var(--a0)" : "var(--c3)"};margin-bottom:3px">${w}</div>${x}</div>`).join("")}
+      <div class="a flex" style="left:24px;width:476px;bottom:22px;justify-content:center;gap:12px">
+        ${["microphone", "video-camera"].map((n) => `<div class="flex" style="width:46px;height:46px;border-radius:50%;justify-content:center;background:rgba(255,255,255,.08)">${px_(n, 22, "#e6e6e6")}</div>`).join("")}
+        <div class="flex" style="height:46px;padding:0 20px;border-radius:23px;background:#e5484d;color:#fff;font-size:16px;font-weight:600">Leave</div></div>
+    </div>` },
   { key: "docs", label: "Docs", w: 800, h: 470, html: (p) => `
     <div class="card" style="inset:0">
       <div class="a nowrap" style="left:44px;top:42px;font-size:30px;font-weight:600;color:#f2f2f2">Q3 launch plan</div>
@@ -259,6 +272,23 @@ const CARDS = [
         <span class="btn" style="background:rgba(47,196,107,.12);color:var(--ok);font-size:14px">${px_("git-merge", 16, "var(--ok)")}Merge</span></div>
       <div class="a nowrap" style="left:16px;right:16px;top:70px;font-size:17px;color:#e2e2e2;overflow:hidden;text-overflow:ellipsis">Updated your existing PR with the deploy fix. Fixed transient registry failures with bounded retries…</div>
     </div>` },
+  { key: "agents", label: "AI agents", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:28px;top:24px;gap:10px;font-size:18px;font-weight:600;color:#eee">${px_("sparkle", 20, "var(--a0)")}Weekly customer digest<span class="pill" style="background:rgba(255,255,255,.06);color:var(--c2);font-weight:400">${ic("wide-claude", 14, "#d9895a")}Claude</span></div>
+      <div class="a nowrap" style="right:28px;top:28px;font-size:14px;color:var(--c4)">Runs every Friday</div>
+      <div class="a" style="right:28px;top:72px"><div class="bub" style="font-size:19px;line-height:27px;padding:12px 18px">Summarize this week’s customer calls<br>and update the CRM.</div></div>
+      ${[["Searched 12 calls and 48 emails", "magnifying-glass"], ["Read the Northwind pilot thread", "envelope"], ["Updated 3 companies in CRM", "building-office"], ["Drafted the weekly digest", "file"]].map(([x, n], k) =>
+        `<div class="a flex nowrap" id="${p}s${k}" style="left:28px;top:${186 + k * 50}px;gap:12px;font-size:18px;color:#e4e4e4"><span id="${p}c${k}">${px_("check-circle-fill", 20, "var(--ok)")}</span>${px_(n, 18, "var(--c3)")}${x}</div>`).join("")}
+      <div class="a flex nowrap" id="${p}out" style="left:28px;bottom:26px;gap:10px;font-size:17px;color:var(--c3)">Output ${ref(docIc, "Weekly customer digest")}</div>
+    </div>` },
+  { key: "memory", label: "Team memory", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:28px;top:24px;gap:10px;font-size:20px;font-weight:600;color:#eee">${px_("database", 22, "var(--a0)")}Team memory</div>
+      <div class="a nowrap" style="right:28px;top:28px;font-size:14px;color:var(--c4)">Shared with your team and agents</div>
+      ${[["Dana Whitfield is Northwind’s buyer", "envelope", "Re: Rollout"], ["Launch ships Thursday, owners in the plan", "hash-straight", "#launch"], ["Deploys retry transient registry errors", "git-pull-request", "PR #482"], ["Maya owns the Northwind deal", "building-office", "CRM"], ["Dana’s team joins the Thursday call", "phone-call", "Demo call"]].map(([x, n, src], k) =>
+        `<div class="a flex nowrap" id="${p}m${k}" style="left:28px;right:28px;top:${82 + k * 56}px;height:46px;gap:12px;font-size:18px;color:#e6e6e6;border-bottom:1px solid rgba(255,255,255,.05)">${px_("sparkle", 16, "var(--c4)")}${x}<span class="pill" style="margin-left:auto;background:rgba(255,255,255,.06);color:var(--c2);font-weight:400">${px_(n, 15, "var(--c3)")}${src}</span></div>`).join("")}
+      <div class="a flex nowrap" style="left:28px;bottom:24px;gap:10px;font-size:16px;color:var(--c3)">${ic("wide-claude", 16, "#d9895a")}<span><span class="men">@Claude</span> who owns Northwind? <span style="color:#e6e6e6">Maya, from the CRM and the Sep 14 call.</span></span></div>
+    </div>` },
 ];
 const NC = CARDS.length, FIRST = 2;   // card k lives in step FIRST + k
 
@@ -311,27 +341,27 @@ let LK_X, LK_Y, LK_S;
 function buildTracks() {
   WMW = E.wm.getBoundingClientRect().width / SC;
   SH = (GAP + WMW) / 2;                                   // mark center offset when the wordmark is out
-  LK_X = Track([[2.5, 0], [10.15, -SH]], 0.42, 0.9);
+  LK_X = Track([[2.5, 0], [13.15, -SH]], 0.42, 0.9);
   LK_Y = Track([[1, TALL ? -230 : -150], [2.5, 0]], 0.42, 0.9);
-  LK_S = Track([[1, 0.8], [2.5, 1.3], [10.15, 1]], 0.42, 0.9);
+  LK_S = Track([[1, 0.8], [2.5, 1.3], [13.15, 1]], 0.42, 0.9);
 }
 // gather layout: seven tiles around the mark (hand-placed per format), drifting gently
 const SLOTS = {
-  "916": [0.5, [[0, -650], [-222, -360], [222, -360], [-222, 360], [222, 360], [-222, 650], [222, 650]]],
-  "45": [0.34, [[-330, -390], [0, -390], [330, -390], [-350, 0], [350, 0], [-175, 390], [175, 390]]],
-  "11": [0.36, [[-330, -330], [0, -330], [330, -330], [-358, 0], [358, 0], [-175, 330], [175, 330]]],
-  "169": [0.3, [[-560, -250], [-280, -250], [280, -250], [560, -250], [-420, 250], [0, 250], [420, 250]]],
+  "916": [0.42, [[-205, -665], [205, -665], [-205, -395], [205, -395], [-282, 0], [282, 0], [-205, 395], [205, 395], [-205, 665], [205, 665]]],
+  "45": [0.29, [[-360, -400], [-120, -400], [120, -400], [360, -400], [-360, 0], [360, 0], [-360, 400], [-120, 400], [120, 400], [360, 400]]],
+  "11": [0.3, [[-375, -330], [-125, -330], [125, -330], [375, -330], [-370, 0], [370, 0], [-375, 330], [-125, 330], [125, 330], [375, 330]]],
+  "169": [0.26, [[-640, -250], [-320, -250], [0, -250], [320, -250], [640, -250], [-640, 250], [-320, 250], [0, 250], [320, 250], [640, 250]]],
 }[FMT];
 const ORB = [0, 0, SLOTS[0]];
 const orbitAt = (k, bt) => {
-  const [x, y] = SLOTS[1][k], d = (bt - 9) * 3;
+  const [x, y] = SLOTS[1][k], d = (bt - 12) * 3;
   return [x * (1 + 0.006 * d), y * (1 + 0.006 * d)];
 };
 
 // ---------- sound ----------
 const CUES = [];
 const cue = (bt, type, gain = 1, extra = {}) => CUES.push({ t: B(bt), type, gain, ...extra });
-const MARK_T = [9, 9.06, 9.12];      // the mark reassembles as the gather starts
+const MARK_T = [12, 12.06, 12.12];      // the mark reassembles as the gather starts
 MARK_T.forEach((b, i) => cue(b, "pop", 0.6, { pitch: [1, 1.26, 1.5][i] }));
 cue(1, "swoosh", 0.55); cue(1.02, "click", 0.5);
 const DING = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
@@ -345,11 +375,14 @@ CARDS.forEach((c, k) => {
   if (c.key === "db") [0.08, 0.15, 0.22, 0.29, 0.36].forEach((f, i) => cue(at(f), "tick", 0.16, { pitch: 1.3 }));
   if (c.key === "pr") { [0.18, 0.34, 0.5].forEach((f, i) => cue(at(f), "tick", 0.42, { pitch: [1.26, 1.5, 1.68][i] })); cue(at(0.68), "pop", 0.6, { pitch: 1.3 }); }
   if (c.key === "agent") { cue(at(0.28), "pop", 0.5, { pitch: 1.1 }); cue(at(0.55), "blip", 0.45); }
+  if (c.key === "calls") { cue(at(0.05), "blip", 0.5); [0.25, 0.5, 0.75].forEach((f) => cue(at(f), "pop", 0.4, { pitch: 1.15 })); }
+  if (c.key === "agents") [0.15, 0.32, 0.49, 0.66].forEach((f, i) => cue(at(f), "tick", 0.4, { pitch: [1.26, 1.335, 1.498, 1.682][i] }));
+  if (c.key === "memory") [0.1, 0.22, 0.34, 0.46, 0.58].forEach((f, i) => cue(at(f), "tick", 0.3, { pitch: 1.12 + 0.12 * i }));
 });
-CARDS.forEach((_, k) => cue(9 + k / 8, "pop", 0.4, { pitch: DING[k] }));
-cue(9, "swoosh", 0.6); cue(10, "swoosh", 0.6);
-for (let i = 0; i < 9; i++) cue(10.18 + i * 0.03, "key", 0.3, { seed: 40 + i });
-cue(10.5, "chime", 0.8);
+CARDS.forEach((_, k) => cue(12 + k / 12, "pop", 0.38, { pitch: DING[k % 7] * (k >= 7 ? 2 : 1) }));
+cue(12, "swoosh", 0.6); cue(13, "swoosh", 0.6);
+for (let i = 0; i < 9; i++) cue(13.18 + i * 0.03, "key", 0.3, { seed: 40 + i });
+cue(13.5, "chime", 0.8);
 
 // =====================================================================
 // seek(t)
@@ -360,7 +393,7 @@ function seek(tIn) {
   rings.style.transform = `scale(${(1 + 0.04 * Math.sin((t / T) * TAU)).toFixed(4)})`;
 
   // ----- lockup -----
-  const lv = visAmt(t, B(9), B(2) + T - 0.02, 0.3);
+  const lv = visAmt(t, B(12), B(2) + T - 0.02, 0.3);
   if (fx(E.lock, lv.o, lv.pout * 16, `translate3d(${px(LK_X(t) * LK_S(t))},${px(LK_Y(t))},0) scale(${LK_S(t).toFixed(4)})`)) {
     // the mark: three pieces, one per eighth note (and again for the orbit)
     MARK.forEach((_, i) => {
@@ -369,8 +402,8 @@ function seek(tIn) {
       pe.style.transform = `translate(0px,${((1 - p) * 4).toFixed(3)}px)`;
     });
     // the wordmark wipes in after the mark moves aside
-    const wOn = bt < 2 || bt >= 10.15;
-    const w0 = B(10.15) + 0.02, tw = bt < 2 ? t + T : t;
+    const wOn = bt < 2 || bt >= 13.15;
+    const w0 = B(13.15) + 0.02, tw = bt < 2 ? t + T : t;
     E.wm.style.left = px(MS / 2 + GAP + 0);
     E.mk.style.left = px(-MS / 2);
     if (wOn) write(E.wm, tw, w0, w0 + 0.32); else E.wm.style.display = "none";
@@ -405,16 +438,19 @@ function seek(tIn) {
     else if (c.key === "pr") {
       [0, 1, 2].forEach((i) => { const at = a(0.18 + i * 0.16), q = spr(t - at, 0.22, 0.7); E[p + "k" + i].style.transform = `scale(${(t < at ? 0 : q).toFixed(3)})`; });
       const mp = spr(t - a(0.68), 0.25, 0.7); E[p + "merge"].style.transform = `scale(${(0.9 + 0.1 * mp).toFixed(3)})`; E[p + "merge"].style.opacity = (0.35 + 0.65 * clamp(mp)).toFixed(3);
-    } else if (c.key === "agent") { pop(E[p + "a0"], t, tin, 14); pop(E[p + "a1"], t, a(0.28), 14); pop(E[p + "a2"], t, a(0.55), 14); }
+    } else if (c.key === "calls") { [0, 1, 2].forEach((i) => pop(E[p + "l" + i], t, a(0.2 + i * 0.25), 8)); }
+    else if (c.key === "agents") { [0, 1, 2, 3].forEach((i) => { pop(E[p + "s" + i], t, a(0.1 + i * 0.17), 8); const q = spr(t - a(0.15 + i * 0.17), 0.22, 0.7); E[p + "c" + i].style.display = "inline-block"; E[p + "c" + i].style.transform = `scale(${(t < a(0.15 + i * 0.17) ? 0 : q).toFixed(3)})`; }); pop(E[p + "out"], t, a(0.8), 6); }
+    else if (c.key === "memory") { for (let i = 0; i < 5; i++) pop(E[p + "m" + i], t, a(0.05 + i * 0.12), 8); }
+    else if (c.key === "agent") { pop(E[p + "a0"], t, tin, 14); pop(E[p + "a1"], t, a(0.28), 14); pop(E[p + "a2"], t, a(0.55), 14); }
   });
 
   // ----- orbit: all seven around the mark, then they fold into it -----
   tiles.forEach((n, k) => {
-    const at = B(9 + k / 8), v = visAmt(t, at, B(10.7), 0.26);
+    const at = B(12 + k / 12), v = visAmt(t, at, B(13.7), 0.26);
     const c = CARDS[k];
     if (!show(n, v.o)) return;
     const [ox, oy] = orbitAt(k, bt);
-    const fold = clamp(spr(t - B(10) - k * 0.02, 0.36, 1));
+    const fold = clamp(spr(t - B(13) - k * 0.015, 0.4, 1));
     const x = ox * (1 - fold), y = oy * (1 - fold) + (TALL ? 0 : 0);
     const s = ORB[2] * (0.6 + 0.4 * v.pin) * (1 - 0.85 * fold);
     n.style.filter = (1 - v.pin) * 8 + fold * 6 > 0.04 ? `blur(${((1 - v.pin) * 8 + fold * 6).toFixed(3)}px)` : "none";
@@ -424,7 +460,7 @@ function seek(tIn) {
 }
 
 // ---------- boot ----------
-window.SONGS = { upbeat: ["song-swish-swed-arulo.mp3", 40.0318] }; // Mixkit 201, "Swish Swed" by Arulo
+window.SONGS = { upbeat: ["song-swish-swed-arulo-100.wav", 48.0382] }; // Mixkit 201, "Swish Swed" by Arulo, atempo 0.8333
 window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
 window.probe = (t) => [LK_X(t), LK_Y(t), LK_S(t), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 window.ready = Promise.all(['400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '620 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f)))
