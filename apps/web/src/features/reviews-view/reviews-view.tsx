@@ -36,7 +36,7 @@ import { ReviewsSidebar } from './components/ReviewsSidebar';
 import { createReviewsListController } from './primitives/create-reviews-list-controller';
 import { useReviewsFacetsQuery } from './queries/use-reviews-facets-query';
 import { useReviewsQuery } from './queries/use-reviews-query';
-import { searchReviews } from './reviews-filter';
+import { effectiveReviewsFilters, searchReviews } from './reviews-filter';
 import { reviewsHostedContent } from './reviews-hosted-content';
 import { reviewsTabSearch, reviewsTabSearchCodec } from './reviews-tab-search';
 import {
@@ -83,6 +83,8 @@ function ReviewsRoot() {
     githubLink.isPending ? undefined : githubLink.data?.username;
   const authorId = () =>
     githubLink.isPending ? undefined : githubLink.data?.userId;
+  const activeFilters = () =>
+    effectiveReviewsFilters(filters(), Boolean(authorId()));
   const listEnabled = () =>
     listVisible() &&
     (!scopeMatchesViewerGithubId(scope()) || Boolean(authorId()));
@@ -90,7 +92,7 @@ function ReviewsRoot() {
     sort,
     () => ({
       scope: scope(),
-      filters: filters(),
+      filters: activeFilters(),
       viewerGithubUserId: authorId(),
     }),
     listEnabled
@@ -164,7 +166,7 @@ function ReviewsRoot() {
       content: () => <GithubLabelPill name={label.name} color={label.color} />,
     })),
     hasGithubIdentity: Boolean(authorId()),
-    selected: filters(),
+    selected: activeFilters(),
     onFilterChange: changeFilter,
     onClearFilters: clearFilters,
   });
@@ -238,7 +240,7 @@ function ReviewsRoot() {
                 : githubLink.data?.status
           }
           search={search()}
-          hasFilters={activeReviewsFilterCount(filters()) > 0}
+          hasFilters={activeReviewsFilterCount(activeFilters()) > 0}
           onClearFilters={clearFilters}
           onClearSearch={clearSearch}
           onOpen={openReview}

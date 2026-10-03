@@ -17,6 +17,7 @@ import {
   type GithubPullRequestWithDetails,
   useRefreshGithubPullRequest,
 } from '@queries/storage/github-pull-requests';
+import { githubPullRequestChangesKeys } from '@queries/storage/keys';
 import { useQueryClient } from '@tanstack/solid-query';
 import { Button, cn, Layer, Scroll } from '@ui';
 import { type Accessor, createMemo, Show, Suspense } from 'solid-js';
@@ -56,6 +57,15 @@ export function usePrDetail(foreignEntityId: Accessor<string>) {
   const discussionSource = createPrDiscussionSource();
   const data = (): PrForeignEntityData | undefined =>
     query.isPending ? undefined : query.data;
+  const invalidateRefreshedPullRequest = async () => {
+    const id = foreignEntityId();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: prForeignEntityQueryKey(id) }),
+      queryClient.invalidateQueries({
+        queryKey: githubPullRequestChangesKeys.summary(id).queryKey,
+      }),
+    ]);
+  };
   useRefreshGithubPullRequest(
     () => {
       const pullRequest = data()?.pullRequest;
@@ -69,10 +79,7 @@ export function usePrDetail(foreignEntityId: Accessor<string>) {
         url: pullRequest.url,
       };
     },
-    () =>
-      void queryClient.invalidateQueries({
-        queryKey: prForeignEntityQueryKey(foreignEntityId()),
-      })
+    () => void invalidateRefreshedPullRequest()
   );
   return { query, data, discussionSource };
 }
@@ -162,7 +169,10 @@ export function PrDetailContent(props: PrDetailBodyProps) {
         }
       >
         <SidePanel.Layout headerToggle={false} floating>
-          <PrSidePanelSections enrichment={props.data?.pullRequest} />
+          <PrSidePanelSections
+            enrichment={props.data?.pullRequest}
+            status={props.status}
+          />
           <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
             <AgentChangesSplit>
               <PrDetailBody

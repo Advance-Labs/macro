@@ -1,4 +1,13 @@
 import type { GithubPullRequestEntity } from '@entity';
+import type { ReviewsFilterSelection } from './reviews-types';
+
+/** Keep saved viewer-specific filters inactive until a GitHub identity is available. */
+export function effectiveReviewsFilters(
+  filters: ReviewsFilterSelection,
+  hasGithubIdentity: boolean
+): ReviewsFilterSelection {
+  return hasGithubIdentity ? filters : { ...filters, review: [] };
+}
 
 export function isAuthoredBy(
   review: GithubPullRequestEntity,

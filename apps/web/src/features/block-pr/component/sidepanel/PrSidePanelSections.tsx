@@ -8,6 +8,7 @@ import { PrAgentSessionsSection } from './PrAgentSessionsSection';
 
 export function PrSidePanelSections(props: {
   enrichment?: GithubPullRequestWithDetails;
+  status: 'pending' | 'error' | 'success';
 }) {
   return (
     <>
@@ -46,7 +47,10 @@ export function PrSidePanelSections(props: {
         <GithubPullRequestChecksContent enrichment={props.enrichment} />
       </SidePanel.Section>
 
-      <PrAgentSessionsSection url={props.enrichment?.url} />
+      <PrAgentSessionsSection
+        url={props.enrichment?.url}
+        prStatus={props.status}
+      />
     </>
   );
 }

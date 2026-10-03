@@ -62,6 +62,8 @@ why the tab is unavailable.
 Search, filter, and sort controls appear above the list. Filters cover
 repository, author, assignee, label, and, when a GitHub identity is linked,
 reviews (Reviewed by you, Not reviewed by you, and Awaiting review from you).
+Saved review selections stay inactive, including their filter badge and empty-state
+copy, while the GitHub identity is unavailable; they resume when it returns.
 Sort offers Recently updated, Least recently updated, Newest, and Oldest. When visible PRs
 have GitHub labels, a Labels section below Favorites lists them with their
 colors; choosing a label shows only PRs with it, and choosing it again clears
@@ -81,7 +83,8 @@ global Favorites sidebar or command menu.
 Select a PR to open `/app/reviews/pr/<foreignEntityId>` in the Reviews shell.
 Opening a PR refreshes it from GitHub in the background for viewers with a
 linked GitHub account, so labels, reviewers, and review state catch up without
-waiting for GitHub's next webhook.
+waiting for GitHub's next webhook. A successful refresh also reloads the Changes
+summary, so new commits replace the previous diff range.
 Its breadcrumb returns to the Reviews list. Old `/app/pr/<id>` links redirect
 to the Reviews detail. When the flag is off, the Reviews shortcut is hidden and
 opening `/app/reviews` redirects to `/app/tasks` after flags load. Copied PR
@@ -97,6 +100,10 @@ leave the PR or close its split. The first view of a base and head reads GitHub;
 views, and agent sessions linked to the same PR, reuse the stored diff. An
 unavailable or oversized PR is explained in the pane.
 
+The Agent sessions side-panel section distinguishes loading PR details, loading
+sessions, failed requests, and an empty result. Failed session requests offer Retry.
+Hover a truncated session name to see its full name.
+
 Check all five tab URLs, the Labels section, author avatars and display names, row selection and
 context menu, favorites add/remove and collapse/empty visibility, filters, sort,
 illustrated empty states, loading, errors, and pagination after filtering. Use
@@ -104,7 +111,8 @@ Open in new split from a PR row's context menu; verify the Reviews list stays in
 the original split and the PR appears beside it. Open a favorite from the global
 sidebar, return through the breadcrumb, and open a copied link in a second split.
 Open a PR's Changes pane; check the file tree, a file's diff, **Unified / Split**,
-refresh, and that reloading with `s<N>.changes.pane` in the URL restores the pane.
+refresh after new commits, and that reloading with `s<N>.changes.pane` in the URL
+restores the pane. Check session loading/error/empty copy and full-name tooltips.
 Use existing PRs and do not modify hosted data.
 
 ## Create a task

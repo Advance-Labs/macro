@@ -13,8 +13,8 @@ import {
   useUnlinkAgentSessionPullRequestMutation,
 } from '@queries/agent-session/pull-requests';
 import { useQuickAccessAgentSessionsQuery } from '@queries/soup/quick-access-agent-sessions';
-import { Button, Dropdown } from '@ui';
-import { For, Show } from 'solid-js';
+import { Button, Dropdown, Tooltip } from '@ui';
+import { For, Match, Show, Switch } from 'solid-js';
 
 const pullRequestKey = (url: string) =>
   url.replace(/^https:\/\/github\.com\//i, '').toLowerCase();
@@ -48,19 +48,21 @@ function LinkedSessionRow(props: { sessionId: string; url: string }) {
 
   return (
     <div class="flex h-6 min-w-0 items-center gap-2">
-      <button
-        type="button"
-        class="min-w-0 truncate text-left disabled:text-ink-placeholder"
-        disabled={!session()}
-        onClick={(event) =>
-          layout?.openWithSplit(
-            { type: 'agent', id: props.sessionId },
-            { preferNewSplit: event.shiftKey }
-          )
-        }
-      >
-        <AgentSessionMentionLabel label={label()} />
-      </button>
+      <Tooltip label={label()} class="min-w-0 flex-1">
+        <button
+          type="button"
+          class="w-full min-w-0 truncate text-left disabled:text-ink-placeholder"
+          disabled={!session()}
+          onClick={(event) =>
+            layout?.openWithSplit(
+              { type: 'agent', id: props.sessionId },
+              { preferNewSplit: event.shiftKey }
+            )
+          }
+        >
+          <AgentSessionMentionLabel label={label()} />
+        </button>
+      </Tooltip>
       <Show when={linkedByPerson()}>
         <Button
           variant="ghost"
@@ -132,40 +134,70 @@ function LinkSessionPicker(props: {
 }
 
 /** Agent sessions linked to a pull request, from either side of the link. */
-export function PrAgentSessionsSection(props: { url?: string }) {
+export function PrAgentSessionsSection(props: {
+  url?: string;
+  prStatus: 'pending' | 'error' | 'success';
+}) {
   const sessions = usePullRequestAgentSessionsQuery(() => props.url);
   const sessionIds = () => (sessions.isSuccess ? sessions.data : []);
 
   return (
     <SidePanel.Section id="pr-agent-sessions" title="Agent sessions" order={30}>
-      <Show
-        when={props.url}
-        fallback={<div class="text-ink-placeholder">No agent sessions</div>}
-      >
-        {(url) => (
-          <div class="flex flex-col gap-1 text-xs">
-            <Show
-              when={sessionIds().length > 0}
-              fallback={
-                <div class="text-ink-placeholder">
-                  {sessions.isError
-                    ? 'Agent sessions couldn’t be loaded'
-                    : 'No agent sessions'}
-                </div>
-              }
-            >
-              <For each={sessionIds()}>
-                {(sessionId) => (
-                  <LinkedSessionRow sessionId={sessionId} url={url()} />
-                )}
-              </For>
-            </Show>
-            <div>
-              <LinkSessionPicker url={url()} linkedSessionIds={sessionIds()} />
-            </div>
+      <Switch>
+        <Match when={props.prStatus === 'error'}>
+          <div class="text-ink-placeholder">
+            Pull request details couldn’t be loaded
           </div>
-        )}
-      </Show>
+        </Match>
+        <Match when={!props.url}>
+          <div class="text-ink-placeholder" role="status">
+            {props.prStatus === 'pending'
+              ? 'Loading pull request details…'
+              : 'Pull request URL isn’t available'}
+          </div>
+        </Match>
+        <Match when={sessions.isPending}>
+          <div class="text-ink-placeholder" role="status">
+            Loading agent sessions…
+          </div>
+        </Match>
+        <Match when={sessions.isError}>
+          <div class="text-ink-placeholder">
+            Agent sessions couldn’t be loaded
+          </div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => void sessions.refetch()}
+          >
+            Retry
+          </Button>
+        </Match>
+        <Match when={sessions.isSuccess && props.url}>
+          {(url) => (
+            <div class="flex flex-col gap-1 text-xs">
+              <Show
+                when={sessionIds().length > 0}
+                fallback={
+                  <div class="text-ink-placeholder">No agent sessions</div>
+                }
+              >
+                <For each={sessionIds()}>
+                  {(sessionId) => (
+                    <LinkedSessionRow sessionId={sessionId} url={url()} />
+                  )}
+                </For>
+              </Show>
+              <div>
+                <LinkSessionPicker
+                  url={url()}
+                  linkedSessionIds={sessionIds()}
+                />
+              </div>
+            </div>
+          )}
+        </Match>
+      </Switch>
     </SidePanel.Section>
   );
 }
