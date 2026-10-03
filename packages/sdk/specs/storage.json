@@ -35023,7 +35023,7 @@
             "items": {
               "$ref": "#/components/schemas/GithubPullRequestComment"
             },
-            "description": "Comments from the pull request's conversation, reviews, and review threads."
+            "description": "Comments from the pull request's conversation, reviews, and review threads.\nComment `authorId` intentionally retains the shared numeric GitHub comment contract;\nconvert it to a decimal string before comparing it with `authorGithubUserId`."
           },
           "deletions": {
             "type": ["integer", "null"],

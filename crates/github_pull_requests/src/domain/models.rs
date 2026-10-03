@@ -364,6 +364,8 @@ pub struct StoredGithubPullRequest {
     /// Where the review stands, derived from `reviews` and the outstanding review requests.
     pub review_decision: Option<GithubPullRequestReviewDecision>,
     /// Comments from the pull request's conversation, reviews, and review threads.
+    /// Comment `authorId` intentionally retains the shared numeric GitHub comment contract;
+    /// convert it to a decimal string before comparing it with `authorGithubUserId`.
     pub comments: Vec<GithubPullRequestComment>,
     /// The latest check runs on the pull request's head commit.
     pub checks: Vec<GithubPullRequestCheckRun>,
@@ -385,6 +387,10 @@ impl StoredGithubPullRequest {
         let row = row
             .or_else(|| GithubPullRequestRow::from_metadata(&record.metadata))
             .ok_or(GithubPullRequestError::NotFound(record.id))?;
+        let url = format!(
+            "https://github.com/{}/{}/pull/{}",
+            row.owner, row.repo, row.number
+        );
 
         Ok(Self {
             id: record.id,
@@ -392,9 +398,9 @@ impl StoredGithubPullRequest {
             owner: row.owner,
             repo: row.repo,
             number: row.number,
-            url: pull_request.url,
+            url,
             title: row.title.or(pull_request.name),
-            status: row.status,
+            status: row.status.or(pull_request.status),
             draft: row.draft,
             author_login: row.author_login,
             author_github_user_id: row.author_github_user_id,

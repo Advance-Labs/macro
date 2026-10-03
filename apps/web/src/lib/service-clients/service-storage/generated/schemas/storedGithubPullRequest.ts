@@ -37,7 +37,9 @@ export interface StoredGithubPullRequest {
   authorLogin?: StoredGithubPullRequestAuthorLogin;
   /** The latest check runs on the pull request's head commit. */
   checks: GithubPullRequestCheckRun[];
-  /** Comments from the pull request's conversation, reviews, and review threads. */
+  /** Comments from the pull request's conversation, reviews, and review threads.
+Comment `authorId` intentionally retains the shared numeric GitHub comment contract;
+convert it to a decimal string before comparing it with `authorGithubUserId`. */
   comments: GithubPullRequestComment[];
   /**
    * Lines deleted across the pull request's changes.

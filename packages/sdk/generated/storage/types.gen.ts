@@ -11918,6 +11918,8 @@ export type StoredGithubPullRequest = {
     checks: Array<GithubPullRequestCheckRun>;
     /**
      * Comments from the pull request's conversation, reviews, and review threads.
+     * Comment `authorId` intentionally retains the shared numeric GitHub comment contract;
+     * convert it to a decimal string before comparing it with `authorGithubUserId`.
      */
     comments: Array<GithubPullRequestComment>;
     /**

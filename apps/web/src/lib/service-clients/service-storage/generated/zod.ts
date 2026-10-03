@@ -13638,7 +13638,7 @@ export const getGithubPullRequestResponse = zod
           .describe('A comment associated with a GitHub pull request.')
       )
       .describe(
-        "Comments from the pull request's conversation, reviews, and review threads."
+        "Comments from the pull request's conversation, reviews, and review threads.\nComment `authorId` intentionally retains the shared numeric GitHub comment contract;\nconvert it to a decimal string before comparing it with `authorGithubUserId`."
       ),
     deletions: zod
       .number()
