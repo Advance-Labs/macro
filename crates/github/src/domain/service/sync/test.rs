@@ -34,7 +34,8 @@ use foreign_entity::domain::{
     ports::{ForeignEntityListQuery, ForeignEntityService},
 };
 use github_pull_requests::domain::{
-    models::GithubPullRequestWrite, ports::GithubPullRequestRepository,
+    models::{GithubPullRequestRow, GithubPullRequestWrite},
+    ports::GithubPullRequestRepository,
     service::GithubPullRequestServiceImpl,
 };
 use macro_user_id::user_id::MacroUserIdStr;

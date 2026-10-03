@@ -41,12 +41,12 @@ fn row(github_key: &str, repository_id: Option<i64>) -> GithubPullRequestRow {
         author_github_user_id: Some("42".to_string()),
         author_login: Some("octocat".to_string()),
         requested_reviewer_github_user_ids: vec!["8".to_string()],
-        participant_github_user_ids: vec!["8".to_string(), "42".to_string()],
+        participant_github_user_ids: vec!["42".to_string(), "8".to_string()],
         github_updated_at: None,
         assignees: Vec::new(),
         labels: Vec::new(),
         reviews: Vec::new(),
-        review_decision: None,
+        review_decision: Some(GithubPullRequestReviewDecision::ReviewRequired),
     }
 }
 
