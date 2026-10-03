@@ -3,6 +3,8 @@
 #[cfg(test)]
 mod test;
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use filter_ast::Expr;
 use foreign_entity::domain::{
@@ -26,7 +28,6 @@ struct ListingQuery<'a> {
     source_auth_entities: &'a [String],
     sort_method: SimpleSortMethod,
     filter_jsonpath: Option<&'a str>,
-    participant_github_user_ids: Option<&'a [String]>,
     /// Macro user id used to scope the per-user notification state predicates.
     /// When a notification filter is requested but this is `None`, nothing matches.
     notification_user_id: Option<&'a str>,
@@ -252,7 +253,6 @@ impl PgGithubPullRequestRepo {
             source_auth_entities,
             sort_method,
             filter_jsonpath,
-            participant_github_user_ids,
             notification_user_id,
             notification_sets,
             cursor_id,
@@ -286,7 +286,7 @@ impl PgGithubPullRequestRepo {
                     END AS sort_at
                 FROM foreign_entity fe
                 LEFT JOIN github_pull_request gpr ON gpr.github_key = fe.foreign_entity_id
-                WHERE fe.foreign_entity_source = $11::text
+                WHERE fe.foreign_entity_source = $10::text
                   AND EXISTS (
                     SELECT 1
                     FROM source_ids s
@@ -305,11 +305,7 @@ impl PgGithubPullRequestRepo {
                     )
                   )
                   AND (
-                    $8::text[] IS NULL
-                    OR (fe.metadata -> 'participantGithubUserIds') ?| $8::text[]
-                  )
-                  AND (
-                    $12::text IS NULL
+                    $11::text IS NULL
                     OR (gpr.github_key IS NOT NULL AND jsonb_path_match(
                         jsonb_build_object(
                             'repositoryId', gpr.repository_id,
@@ -319,21 +315,21 @@ impl PgGithubPullRequestRepo {
                             'requestedReviewers', to_jsonb(gpr.requested_reviewer_github_user_ids),
                             'participants', to_jsonb(gpr.participant_github_user_ids)
                         ),
-                        ($12::text)::jsonpath
+                        ($11::text)::jsonpath
                     ))
                   )
                   AND (
-                    $9::int[] IS NULL
-                    OR ($10::text IS NOT NULL AND (
+                    $8::int[] IS NULL
+                    OR ($9::text IS NOT NULL AND (
                         SELECT COALESCE(bit_or(CASE un.state
                             WHEN 'unseen' THEN 1 WHEN 'seen' THEN 2 WHEN 'done' THEN 4 END), 0)
                         FROM notification n
                         JOIN user_notification un ON un.notification_id = n.id
-                        WHERE un.user_id = $10::text
+                        WHERE un.user_id = $9::text
                           AND un.deleted_at IS NULL
                           AND n.event_item_type = 'foreign_entity'
                           AND n.event_item_id = fe.id::text
-                    ) = ANY($9::int[]))
+                    ) = ANY($8::int[]))
                   )
                 ORDER BY
                     fe.foreign_entity_source,
@@ -364,7 +360,6 @@ impl PgGithubPullRequestRepo {
             cursor_value,
             cursor_id,
             limit,
-            participant_github_user_ids,
             notification_sets,
             notification_user_id,
             GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
@@ -432,18 +427,28 @@ impl GithubPullRequestListingRepository for PgGithubPullRequestRepo {
             return Ok(Vec::new());
         }
 
-        let participant_github_user_ids = if includes_me {
+        // Match `fef: me` against every GitHub identity linked to the requesting user.
+        let involves_me = if includes_me {
             let Some(requesting_user) = requesting_user.as_deref() else {
                 return Ok(Vec::new());
             };
             let github_user_ids = self.github_user_ids_for_macro_user(requesting_user).await?;
-            if github_user_ids.is_empty() {
-                // No linked GitHub identity: the user participates in nothing.
+            let Some(involves_me) = github_user_ids
+                .into_iter()
+                .map(|id| Expr::val(GithubPullRequestLiteral::Involves(id)))
+                .reduce(Expr::or)
+            else {
                 return Ok(Vec::new());
-            }
-            Some(github_user_ids)
+            };
+            Some(involves_me)
         } else {
             None
+        };
+        let github_pull_request_filter = match (github_pull_request_filter, involves_me) {
+            (Some(filter), Some(involves_me)) => {
+                Some(Expr::and(Arc::unwrap_or_clone(filter), involves_me))
+            }
+            (filter, involves_me) => filter.map(Arc::unwrap_or_clone).or(involves_me),
         };
 
         let notification_sets: Option<Vec<i32>> = notification_matches.map(|table| {
@@ -453,13 +458,13 @@ impl GithubPullRequestListingRepository for PgGithubPullRequestRepo {
         });
         // Notification states are scoped to the requesting user's per-user notification row.
         // Without a requesting user the predicate matches nothing, so an active notification
-        // filter yields no results (consistent with the participant filter above).
+        // filter yields no results (consistent with `fef: me` above).
         let notification_user_id = requesting_user.as_deref();
 
         let (source_ids, source_auth_entities) = source_id_parts(&source_ids);
         let (cursor_id, cursor_value) = query.vals();
         let github_pull_request_jsonpath = github_pull_request_filter
-            .as_deref()
+            .as_ref()
             .map(github_pull_request_expr_jsonpath);
 
         self.fetch_listing(ListingQuery {
@@ -467,7 +472,6 @@ impl GithubPullRequestListingRepository for PgGithubPullRequestRepo {
             source_auth_entities: &source_auth_entities,
             sort_method: *query.sort_method(),
             filter_jsonpath: filter_jsonpath.as_deref(),
-            participant_github_user_ids: participant_github_user_ids.as_deref(),
             notification_user_id,
             notification_sets: notification_sets.as_deref(),
             cursor_id: cursor_id.copied(),
