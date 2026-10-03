@@ -25,6 +25,24 @@ export type FilterFieldMeta = {
   domain?: unknown[];
 };
 
+function githubRepositoryId(value: unknown): number {
+  if (
+    (typeof value !== 'string' || !/^\d+$/.test(value)) &&
+    typeof value !== 'number'
+  ) {
+    throw new RangeError(
+      'GitHub repository ID must be a positive safe integer'
+    );
+  }
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new RangeError(
+      'GitHub repository ID must be a positive safe integer'
+    );
+  }
+  return id;
+}
+
 /*
  * When adding a filter, update FILTER_TARGETS and FilterTargetsMeta. New
  * targets also require TARGETS; entity targets additionally require
@@ -185,7 +203,7 @@ export const FILTER_TARGETS = {
   ghprf: {
     githubPullRequestRepositoryId: {
       backend: 'repo',
-      formatValue: (value) => Number(value),
+      formatValue: githubRepositoryId,
     },
     githubPullRequestAuthorId: { backend: 'au' },
     githubPullRequestStatus: { backend: 'st' },
