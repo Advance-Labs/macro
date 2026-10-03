@@ -15,8 +15,8 @@ use super::{
     models::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestRow,
-        GithubPullRequestStatus, GithubRepositoryIdentity, UpsertGithubPullRequest,
-        UpsertedGithubPullRequest,
+        GithubPullRequestStatus, GithubPullRequestWrite, GithubRepositoryIdentity,
+        UpsertGithubPullRequest, UpsertedGithubPullRequest,
     },
     ports::{
         GithubPullRequestFacetRepository, GithubPullRequestFacetService,
@@ -114,16 +114,18 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
             .map_err(repository_error)
     }
 
-    /// Write a pull request's typed columns from a record's metadata. Rows are derived data, so
+    /// Write supplied typed columns without collapsing omitted fields. Rows are derived data, so
     /// a failure is logged rather than failing the write of the record itself.
-    async fn store_row(&self, metadata: &serde_json::Value, repository_id: Option<i64>) -> bool {
-        let Some(mut row) = GithubPullRequestRow::from_metadata(metadata) else {
+    async fn store_row(
+        &self,
+        pull_request: &EnrichedGithubPullRequest,
+        records: &[ForeignEntity],
+    ) -> bool {
+        let Some(mut row) = GithubPullRequestWrite::from_enriched(pull_request) else {
             tracing::warn!("pull request metadata has no typed columns");
             return false;
         };
-        if repository_id.is_some() {
-            row.repository_id = repository_id;
-        }
+        row.initial_row = initialization_row(records, &row.github_key, row.number);
 
         match self.repo.upsert_row(&row).await {
             Ok(()) => true,
@@ -157,7 +159,7 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
         } = upsert;
         self.follow_rename(&pull_request).await?;
 
-        let records = self.stored_records(&pull_request.github_key).await?;
+        let mut records = self.stored_records(&pull_request.github_key).await?;
         let existing = records.iter().find(|record| {
             record.stored_for_id == stored_for.id
                 && record.stored_for_auth_entity == stored_for.auth_entity
@@ -195,7 +197,8 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
                     .await?
             }
         };
-        self.store_row(&foreign_entity.metadata, None).await;
+        records.push(foreign_entity.clone());
+        self.store_row(&pull_request, &records).await;
 
         Ok(UpsertedGithubPullRequest {
             foreign_entity,
@@ -215,8 +218,9 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
     ) -> Result<Vec<ForeignEntity>, GithubPullRequestError> {
         let mut refreshed = Vec::new();
         let mut first_error = None;
-        for record in self.stored_records(&pull_request.github_key).await? {
-            match self.refresh_record(pull_request, &record).await {
+        let mut records = self.stored_records(&pull_request.github_key).await?;
+        for record in &records {
+            match self.refresh_record(pull_request, record).await {
                 Ok(record) => refreshed.push(record),
                 Err(error) => {
                     tracing::error!(
@@ -233,8 +237,11 @@ impl<F: ForeignEntityService, R: GithubPullRequestRepository> GithubPullRequestS
         if let Some(error) = first_error {
             return Err(error);
         }
-        if let Some(latest) = refreshed.iter().max_by_key(|record| record.updated_at) {
-            self.store_row(&latest.metadata, None).await;
+        if !refreshed.is_empty() {
+            // Sparse serialization can clear optional source scalars. Keep the pre-refresh
+            // records as initialization-only evidence; an existing typed row ignores them.
+            records.extend(refreshed.iter().cloned());
+            self.store_row(pull_request, &records).await;
         }
         Ok(refreshed)
     }
@@ -264,8 +271,17 @@ where
             .await
             .map_err(repository_error)?;
             for metadata in &pull_requests {
-                if self.store_row(metadata, Some(repository_id)).await {
-                    indexed += 1;
+                let Some(mut row) = GithubPullRequestWrite::from_metadata(metadata) else {
+                    tracing::warn!("pull request metadata has no typed columns");
+                    continue;
+                };
+                row.repository_id = Some(repository_id);
+                match self.repo.upsert_row(&row).await {
+                    Ok(()) => indexed += 1,
+                    Err(error) => tracing::error!(
+                        error=?error, github_key=%row.github_key,
+                        "failed to store pull request row"
+                    ),
                 }
             }
         }
@@ -336,6 +352,22 @@ where
             .await
             .map_err(repository_error)
     }
+}
+
+/// Fold sparse source metadata in a stable order, retaining fields omitted by later sources.
+fn initialization_row(
+    records: &[ForeignEntity],
+    github_key: &str,
+    number: i64,
+) -> Option<GithubPullRequestRow> {
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_by_key(|record| (record.updated_at, record.id));
+    records
+        .into_iter()
+        .filter(|record| record.foreign_entity_id == github_key)
+        .filter_map(|record| GithubPullRequestWrite::from_metadata(&record.metadata))
+        .filter(|write| write.github_key == github_key && write.number == number)
+        .fold(None, |row, write| Some(write.merge(row)))
 }
 
 fn repository_error(error: impl Into<anyhow::Error>) -> GithubPullRequestError {

@@ -1,3 +1,4 @@
+mod initialization;
 mod refresh;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
@@ -23,8 +24,8 @@ use crate::domain::{
     models::{
         EnrichedGithubPullRequest, GITHUB_PULL_REQUEST_FOREIGN_ENTITY_SOURCE,
         GithubPullRequestError, GithubPullRequestFacets, GithubPullRequestReviewDecision,
-        GithubPullRequestRow, GithubPullRequestStatus, GithubRepositoryIdentity,
-        UpsertGithubPullRequest,
+        GithubPullRequestRow, GithubPullRequestStatus, GithubPullRequestWrite,
+        GithubRepositoryIdentity, UpsertGithubPullRequest,
     },
     ports::{
         GithubPullRequestFacetRepository, GithubPullRequestFacetService,
@@ -211,20 +212,15 @@ impl GithubPullRequestRepository for StubPullRequestRows {
             .map(|row| row.github_key))
     }
 
-    async fn upsert_row(&self, row: &GithubPullRequestRow) -> Result<(), Self::Err> {
+    async fn upsert_row(&self, row: &GithubPullRequestWrite) -> Result<(), Self::Err> {
         let mut rows = self.rows.lock().unwrap();
-        match rows
+        if let Some(existing) = rows
             .iter_mut()
             .find(|existing| existing.github_key == row.github_key)
         {
-            Some(existing) => {
-                let repository_id = row.repository_id.or(existing.repository_id);
-                *existing = GithubPullRequestRow {
-                    repository_id,
-                    ..row.clone()
-                };
-            }
-            None => rows.push(row.clone()),
+            *existing = row.merge(Some(existing.clone()));
+        } else {
+            rows.push(row.merge(None));
         }
         Ok(())
     }
@@ -878,4 +874,46 @@ async fn facets_reject_a_receipt_for_anything_but_a_team() {
 
     assert!(matches!(result, Err(GithubPullRequestError::BadRequest(_))));
     assert!(rows.facet_requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn index_rebuild_keeps_richer_shared_row_when_latest_record_is_sparse() {
+    let rows = StubPullRequestRows::default();
+    let rich = serde_json::json!({
+        "githubKey": GITHUB_KEY, "owner": "macro", "repo": "app", "number": 7,
+        "url": "https://github.com/macro/app/pull/7", "displayName": "PR",
+        "draft": true, "assignees": [{"githubUserId":"7"}], "labels": [{"name":"bug"}],
+        "requestedReviewerGithubUserIds": ["8"], "participantGithubUserIds": ["7"]
+    });
+    rows.rows
+        .lock()
+        .unwrap()
+        .push(GithubPullRequestRow::from_metadata(&rich).unwrap());
+    rows.stored.lock().unwrap().push((
+        "macro".into(),
+        "app".into(),
+        serde_json::json!({
+            "githubKey": GITHUB_KEY, "owner": "macro", "repo": "app", "number": 7,
+            "url": "https://github.com/macro/app/pull/7", "displayName": "PR",
+            "status": "closed"
+        }),
+    ));
+    let service = service(&StubForeignEntityService::default(), &rows);
+    assert_eq!(
+        service
+            .index_repositories(&[GithubRepositoryIdentity {
+                id: 99,
+                owner: "macro".into(),
+                name: "app".into(),
+            }])
+            .await
+            .unwrap(),
+        1
+    );
+    let result = rows.rows();
+    assert!(result[0].draft);
+    assert_eq!(result[0].assignees.len(), 1);
+    assert_eq!(result[0].labels.len(), 1);
+    assert_eq!(result[0].requested_reviewer_github_user_ids, vec!["8"]);
+    assert_eq!(result[0].status, Some(GithubPullRequestStatus::Closed));
 }

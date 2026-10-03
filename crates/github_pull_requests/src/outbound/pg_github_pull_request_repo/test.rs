@@ -54,7 +54,7 @@ fn row(github_key: &str, repository_id: Option<i64>) -> GithubPullRequestRow {
 async fn upsert_stores_a_row_found_by_repository_and_number(pool: PgPool) {
     let repo = PgGithubPullRequestRepo::new(pool.clone());
 
-    repo.upsert_row(&row("macro/app/pull/7", Some(99)))
+    repo.upsert_row(&(&row("macro/app/pull/7", Some(99)).into()))
         .await
         .expect("upsert should succeed");
 
@@ -69,7 +69,7 @@ async fn upsert_stores_a_row_found_by_repository_and_number(pool: PgPool) {
 async fn upsert_without_a_repository_id_keeps_the_one_the_row_has(pool: PgPool) {
     let repo = PgGithubPullRequestRepo::new(pool.clone());
 
-    repo.upsert_row(&row("macro/app/pull/7", None))
+    repo.upsert_row(&(&row("macro/app/pull/7", None)).into())
         .await
         .expect("upsert should succeed");
     assert_eq!(
@@ -77,13 +77,16 @@ async fn upsert_without_a_repository_id_keeps_the_one_the_row_has(pool: PgPool) 
         Some((None, "app".to_string(), Some("open".to_string())))
     );
 
-    repo.upsert_row(&row("macro/app/pull/7", Some(99)))
+    repo.upsert_row(&(&row("macro/app/pull/7", Some(99)).into()))
         .await
         .expect("upsert should succeed");
-    repo.upsert_row(&GithubPullRequestRow {
-        status: Some(GithubPullRequestStatus::Merged),
-        ..row("macro/app/pull/7", None)
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            status: Some(GithubPullRequestStatus::Merged),
+            ..row("macro/app/pull/7", None)
+        })
+            .into(),
+    )
     .await
     .expect("upsert should succeed");
 
@@ -96,7 +99,7 @@ async fn upsert_without_a_repository_id_keeps_the_one_the_row_has(pool: PgPool) 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn rename_moves_the_row_or_drops_it_when_the_new_key_has_one(pool: PgPool) {
     let repo = PgGithubPullRequestRepo::new(pool.clone());
-    repo.upsert_row(&row("macro/app/pull/7", Some(99)))
+    repo.upsert_row(&(&row("macro/app/pull/7", Some(99)).into()))
         .await
         .unwrap();
 
@@ -109,16 +112,22 @@ async fn rename_moves_the_row_or_drops_it_when_the_new_key_has_one(pool: PgPool)
         Some("macro/renamed/pull/7".to_string())
     );
 
-    repo.upsert_row(&GithubPullRequestRow {
-        number: 8,
-        ..row("macro/app/pull/8", Some(99))
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            number: 8,
+            ..row("macro/app/pull/8", Some(99))
+        })
+            .into(),
+    )
     .await
     .unwrap();
-    repo.upsert_row(&GithubPullRequestRow {
-        number: 9,
-        ..row("macro/renamed/pull/8", None)
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            number: 9,
+            ..row("macro/renamed/pull/8", None)
+        })
+            .into(),
+    )
     .await
     .unwrap();
     repo.rename_row("macro/app/pull/8", "macro/renamed/pull/8")
@@ -133,24 +142,27 @@ async fn rename_moves_the_row_or_drops_it_when_the_new_key_has_one(pool: PgPool)
 async fn upsert_stores_assignees_labels_and_reviews(pool: PgPool) {
     let repo = PgGithubPullRequestRepo::new(pool.clone());
 
-    repo.upsert_row(&GithubPullRequestRow {
-        assignees: vec![GithubPullRequestUser {
-            github_user_id: "7".to_string(),
-            login: Some("hubot".to_string()),
-        }],
-        labels: vec![GithubPullRequestLabel {
-            name: "bug".to_string(),
-            color: Some("d73a4a".to_string()),
-        }],
-        reviews: vec![GithubPullRequestReview {
-            reviewer_github_user_id: "8".to_string(),
-            reviewer_login: Some("monalisa".to_string()),
-            state: GithubPullRequestReviewState::Approved,
-            submitted_at: None,
-        }],
-        review_decision: Some(GithubPullRequestReviewDecision::Approved),
-        ..row("macro/app/pull/7", Some(99))
-    })
+    repo.upsert_row(
+        &(&GithubPullRequestRow {
+            assignees: vec![GithubPullRequestUser {
+                github_user_id: "7".to_string(),
+                login: Some("hubot".to_string()),
+            }],
+            labels: vec![GithubPullRequestLabel {
+                name: "bug".to_string(),
+                color: Some("d73a4a".to_string()),
+            }],
+            reviews: vec![GithubPullRequestReview {
+                reviewer_github_user_id: "8".to_string(),
+                reviewer_login: Some("monalisa".to_string()),
+                state: GithubPullRequestReviewState::Approved,
+                submitted_at: None,
+            }],
+            review_decision: Some(GithubPullRequestReviewDecision::Approved),
+            ..row("macro/app/pull/7", Some(99))
+        })
+            .into(),
+    )
     .await
     .expect("upsert should succeed");
 
@@ -180,4 +192,103 @@ async fn upsert_stores_assignees_labels_and_reviews(pool: PgPool) {
         }])
     );
     assert_eq!(stored.3.as_deref(), Some("approved"));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn concurrent_sparse_writes_merge_on_missing_row(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool.clone());
+    let base = row("macro/app/pull/7", Some(99));
+    let title = crate::domain::models::GithubPullRequestWrite {
+        title: Some("independent title".into()),
+        ..(&base).into()
+    };
+    let mut title = title;
+    title.draft = None;
+    title.assignees = None;
+    title.labels = None;
+    title.requested_reviewer_github_user_ids = None;
+    title.participant_github_user_ids = None;
+    title.reviews = None;
+    let mut other = crate::domain::models::GithubPullRequestWrite::from(&base);
+    other.title = None;
+    other.status = None;
+    other.draft = Some(true);
+    other.assignees = Some(vec![GithubPullRequestUser {
+        github_user_id: "7".into(),
+        login: None,
+    }]);
+    let (first, second) = tokio::join!(repo.upsert_row(&title), repo.upsert_row(&other));
+    first.unwrap();
+    second.unwrap();
+    let stored = sqlx::query!(
+        "SELECT title, draft, assignees, requested_reviewer_github_user_ids FROM github_pull_request WHERE github_key = $1",
+        base.github_key,
+    ).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored.title.as_deref(), Some("independent title"));
+    assert!(stored.draft);
+    assert_eq!(stored.assignees.as_array().unwrap().len(), 1);
+    assert_eq!(stored.requested_reviewer_github_user_ids, vec!["8"]);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn sparse_update_preserves_rich_row_and_supplied_empty_collections_replace_it(pool: PgPool) {
+    let repo = PgGithubPullRequestRepo::new(pool.clone());
+    let mut original = row("macro/app/pull/7", Some(99));
+    original.draft = true;
+    original.assignees = vec![GithubPullRequestUser {
+        github_user_id: "7".into(),
+        login: None,
+    }];
+    original.labels = vec![GithubPullRequestLabel {
+        name: "bug".into(),
+        color: None,
+    }];
+    original.reviews = vec![GithubPullRequestReview {
+        reviewer_github_user_id: "8".into(),
+        reviewer_login: None,
+        state: GithubPullRequestReviewState::Approved,
+        submitted_at: None,
+    }];
+    repo.upsert_row(&(&original).into()).await.unwrap();
+    let sparse = crate::domain::models::GithubPullRequestWrite::from_metadata(&serde_json::json!({
+        "githubKey":"macro/app/pull/7", "owner":"macro", "repo":"app", "number":7,
+        "url":"https://github.com/macro/app/pull/7", "displayName":"PR", "status":"closed",
+        "participantGithubUserIds":["9"],
+        "reviews":[{"reviewerGithubUserId":"8", "state":"commented"}]
+    }))
+    .unwrap();
+    repo.upsert_row(&sparse).await.unwrap();
+    let stored = sqlx::query!(
+        "SELECT draft, assignees, labels, requested_reviewer_github_user_ids, participant_github_user_ids, reviews, review_decision FROM github_pull_request WHERE github_key = $1",
+        original.github_key,
+    ).fetch_one(&pool).await.unwrap();
+    assert!(stored.draft);
+    assert_eq!(stored.assignees.as_array().unwrap().len(), 1);
+    assert_eq!(stored.labels.as_array().unwrap().len(), 1);
+    assert_eq!(stored.requested_reviewer_github_user_ids, vec!["8"]);
+    assert!(
+        stored
+            .participant_github_user_ids
+            .contains(&"9".to_string())
+    );
+    assert_eq!(stored.reviews[0]["state"], "approved");
+    assert_eq!(stored.review_decision.as_deref(), Some("approved"));
+    repo.upsert_row(&crate::domain::models::GithubPullRequestWrite {
+        draft: Some(false),
+        assignees: Some(vec![]),
+        labels: Some(vec![]),
+        requested_reviewer_github_user_ids: Some(vec![]),
+        ..sparse
+    })
+    .await
+    .unwrap();
+    let stored = sqlx::query!(
+        "SELECT draft, assignees, labels, requested_reviewer_github_user_ids, review_decision FROM github_pull_request WHERE github_key = $1",
+        original.github_key,
+    ).fetch_one(&pool).await.unwrap();
+    assert!(!stored.draft);
+    assert_eq!(stored.assignees, serde_json::json!([]));
+    assert_eq!(stored.labels, serde_json::json!([]));
+    assert!(stored.requested_reviewer_github_user_ids.is_empty());
+    assert_eq!(stored.review_decision.as_deref(), Some("approved"));
 }
