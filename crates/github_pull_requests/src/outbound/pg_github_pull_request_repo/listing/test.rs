@@ -729,6 +729,7 @@ async fn list_includes_me_matches_every_linked_github_identity(pool: PgPool) {
             10,
             filter_query(includes_me_filter()),
             None,
+            GithubPullRequestSortDirection::Desc,
         )
         .await
         .expect("includes_me should match both linked identities");
