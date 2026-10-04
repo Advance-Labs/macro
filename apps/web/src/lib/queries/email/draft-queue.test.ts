@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   onCacheChanged: vi.fn(),
   onMutationSettled: vi.fn(),
   client: undefined as Client | undefined,
+  host: undefined as object | undefined,
 }));
 vi.mock('@core/component/Toast/Toast', () => ({ toast: { failure: vi.fn() } }));
 vi.mock('@core/constant/featureFlags', () => ({
@@ -23,11 +24,7 @@ vi.mock('@macro-inc/observability', () => ({
   Telemetry: { error: vi.fn() },
 }));
 vi.mock('@service-storage/graphql-soup', () => ({
-  getGraphqlCacheHost: () => ({
-    readRecordsByKeys: mocks.readRecordsByKeys,
-    onCacheChanged: mocks.onCacheChanged,
-    onMutationSettled: mocks.onMutationSettled,
-  }),
+  getGraphqlCacheHost: () => mocks.host,
   getGraphqlSoupClient: () => mocks.client,
   graphqlCacheEnabled: () => true,
 }));
@@ -42,6 +39,7 @@ vi.mock('./thread', () => ({ fetchAndCacheThread: vi.fn() }));
 
 import {
   deleteEmailDraftQueued,
+  draftQueueActive,
   readEmailDraft,
   saveEmailDraftQueued,
   watchEmailDrafts,
@@ -66,6 +64,29 @@ const args: GraphqlSaveEmailDraftArgs = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.host = {
+    readRecordsByKeys: mocks.readRecordsByKeys,
+    onCacheChanged: mocks.onCacheChanged,
+    onMutationSettled: mocks.onMutationSettled,
+  };
+});
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+it('keeps drafts on the queue when the cache engine reads the draft fragments', async () => {
+  mocks.readRecordsByKeys.mockResolvedValue({ revision: '1', records: [] });
+  expect(draftQueueActive('graphql')).toBe(true);
+  await settle();
+  expect(draftQueueActive('graphql')).toBe(true);
+});
+
+it('moves drafts off the queue when an older native cache rejects the draft fragments', async () => {
+  mocks.readRecordsByKeys.mockRejectedValue(
+    new Error('unknown field `GraphqlSoupEmailMessage.calendarInvitations`')
+  );
+  draftQueueActive('graphql');
+  await settle();
+  expect(draftQueueActive('graphql')).toBe(false);
 });
 
 async function setup() {
