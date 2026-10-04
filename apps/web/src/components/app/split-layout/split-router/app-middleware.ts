@@ -25,6 +25,7 @@ import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import { URL_PARAMS as CALL_URL_PARAMS } from '@block-call/constants';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
 import { URL_PARAMS as MD_URL_PARAMS } from '@block-md/constants';
+import { markdownDetailSearch } from '@block-md/markdown-route';
 import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
 import { match } from 'ts-pattern';
 import { appSplitRoutes } from './app-routes';
@@ -176,6 +177,24 @@ function migrateLegacySearch({
     .when(
       (id) => id === 'home-document' || id === 'home-preview',
       () => homeDocumentMapping
+    )
+    .when(
+      (id) =>
+        id === 'drive-document' ||
+        id === 'drive-folder-document' ||
+        id === 'drive-tab-document',
+      () => {
+        const { documentType } = routeParams(to.location.route);
+        if (!['md', 'task', 'snippet', 'skill'].includes(String(documentType)))
+          return;
+        return {
+          namespace: markdownDetailSearch.namespace,
+          fields: [
+            [MD_URL_PARAMS.commentId, 'commentId'],
+            [MD_URL_PARAMS.nodeId, 'nodeId'],
+          ] as const,
+        };
+      }
     )
     .with(CALENDAR_ROUTE_ID, () => ({
       namespace: CALENDAR_SEARCH_NAMESPACE,

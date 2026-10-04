@@ -632,6 +632,11 @@ when the document has not loaded yet. Verify both comments arriving before the
 editor and comments arriving after it. Once loaded, click elsewhere in the
 document, then click the same notification again: it should revisit the comment,
 while background comment refreshes should leave the user's position alone.
+Also check canonical `/app/drive/md/<id>?comment_id=<comment-id>` links and
+folder-scoped Drive links. Opening an Inbox row at a Markdown comment uses the
+document's existing detail pane when one is open, including a Home or Tasks
+pane. Verify its list route and filters stay unchanged and any editor draft
+survives repeated jumps to the same comment.
 
 When checking desktop margin placement, scroll a long document while an embed
 or image above the highlighted text changes height. Scroll anchoring may keep

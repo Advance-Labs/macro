@@ -1,4 +1,9 @@
 import { createAgentRouteTarget } from '@app/features/block-agent/primitives/create-agent-route-target';
+import {
+  markdownDetailSearch,
+  markdownDetailSearchCodec,
+  markdownLocationUpdates,
+} from '@app/features/block-md/markdown-route';
 import { createMarkdownRouteNavigation } from '@app/features/block-md/primitives/create-markdown-route-navigation';
 import { createPdfRouteTarget } from '@app/features/block-pdf/primitives/create-pdf-route-target';
 import type {
@@ -24,7 +29,9 @@ import {
 
 afterEach(cleanup);
 
-function setup(location: SearchLocation) {
+function setup(
+  location: SearchLocation | { type: 'comment'; commentId: string }
+) {
   let entry: SplitRouterLayoutEntry<string> | undefined;
   const layout: SplitRouterLayout<string> = {
     snapshot: () => ({ entries: entry ? [entry] : [] }),
@@ -38,7 +45,18 @@ function setup(location: SearchLocation) {
     activate: () => {},
     subscribe: () => () => {},
   };
-  const target = searchLocationTarget('document', location);
+  const target =
+    location.type === 'comment'
+      ? {
+          namespace: markdownDetailSearch.namespace,
+          params: markdownDetailSearchCodec.serialize({
+            ...markdownDetailSearch.defaults,
+            documentId: 'document',
+            commentId: location.commentId,
+            seek: 'first',
+          })!,
+        }
+      : searchLocationTarget('document', location);
   const query = new URLSearchParams();
   replaceSplitSearchParams(query, [
     { location: { search: { [target.namespace]: target.params } } },
@@ -81,7 +99,12 @@ function setup(location: SearchLocation) {
     router,
     replay: () =>
       router.navigate('pane', route.to(), {
-        search: searchLocationUpdates('document', location),
+        search:
+          location.type === 'comment'
+            ? markdownLocationUpdates('document', {
+                commentId: location.commentId,
+              })
+            : searchLocationUpdates('document', location),
       }),
   };
 }
@@ -90,6 +113,18 @@ it('delivers cold and repeated Markdown targets, but never to another document i
   const test = setup({ type: 'md', nodeId: 'node' });
   expect(test.navigateMarkdown).toHaveBeenCalledExactlyOnceWith({
     node_id: 'node',
+  });
+  test.replay();
+  await test.router.settled();
+  expect(test.navigateMarkdown).toHaveBeenCalledTimes(2);
+  test.setDocument('other-document');
+  expect(test.navigateMarkdown).toHaveBeenCalledTimes(2);
+});
+
+it('delivers cold and repeated Markdown comment targets through feature-owned params', async () => {
+  const test = setup({ type: 'comment', commentId: 'comment' });
+  expect(test.navigateMarkdown).toHaveBeenCalledExactlyOnceWith({
+    comment_id: 'comment',
   });
   test.replay();
   await test.router.settled();

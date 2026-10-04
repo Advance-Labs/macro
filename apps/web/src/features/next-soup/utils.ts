@@ -39,6 +39,8 @@ import {
   goToChannelLatest,
   goToChannelMessage,
 } from '@block-channel/utils/link';
+import { URL_PARAMS as MARKDOWN_URL_PARAMS } from '@block-md/constants';
+import { markdownLocationUpdates } from '@block-md/markdown-route';
 import type {
   ReferredFrom,
   SplitContent,
@@ -750,8 +752,6 @@ export const openEntityInSplitFromUnifiedList = async (
     return;
   }
 
-  const blockOrchestrator = splitManager.getOrchestrator();
-
   if (entity.type === 'channel' && entity.unreadNotifications !== undefined) {
     try {
       entity = await hydrateChannelNotificationSelection(
@@ -783,9 +783,14 @@ export const openEntityInSplitFromUnifiedList = async (
           threadId: channelMessageTarget.threadId,
         }
       : undefined);
-  const commentParams =
+  const commentTarget =
     !target && entity.type === 'document'
-      ? getDocumentCommentTarget(entity)?.params
+      ? getDocumentCommentTarget(entity)
+      : undefined;
+  const commentParams = commentTarget?.params;
+  const markdownCommentId =
+    commentTarget && resolveBlockAlias(commentTarget.blockName) === 'md'
+      ? commentParams?.[MARKDOWN_URL_PARAMS.commentId]
       : undefined;
 
   const sourceContent =
@@ -797,12 +802,12 @@ export const openEntityInSplitFromUnifiedList = async (
       : undefined;
   const referredFrom = options.referredFrom ?? sourceListView;
 
-  // Construct hosted content before opening the split so details do not mount
-  // legacy blocks. Comment targets keep their document block.
+  // Compose hosted details before opening, including route-owned Markdown comments.
   const hostedContent =
     reviewsHostedContent(content) ??
     driveHostedContent(content, {
-      allowDocuments: !isTouchDevice() && !commentParams,
+      allowDocuments:
+        !isTouchDevice() && (!commentParams || !!markdownCommentId),
     });
   let splitContent: SplitContent = hostedContent ?? {
     ...content,
@@ -823,7 +828,11 @@ export const openEntityInSplitFromUnifiedList = async (
     }
   };
   const result = splitManager.openWithSplit(splitContent, {
-    search: target ? searchLocationUpdates(content.id, target) : undefined,
+    search: target
+      ? searchLocationUpdates(content.id, target)
+      : markdownCommentId
+        ? markdownLocationUpdates(content.id, { commentId: markdownCommentId })
+        : undefined,
     onApplied: markNotificationsSeen,
     referredFrom,
     activate: true,
@@ -845,14 +854,17 @@ export const openEntityInSplitFromUnifiedList = async (
     markNotificationsSeen();
   }
 
-  if (commentParams && entity.type === 'document') {
-    // An already-open document ignores new split params.
-    await navigateDocumentEntityToComment(entity, blockOrchestrator);
+  if (commentParams && entity.type === 'document' && !markdownCommentId) {
+    // Other document features retain their existing imperative comment delivery.
+    await navigateDocumentEntityToComment(
+      entity,
+      splitManager.getOrchestrator()
+    );
   } else if (!target && openChannelAtLatest) {
     // Force the scroll-to-bottom even when the channel is already open in a
     // (preview) split, where reopen: 'latest' only reactivates the parked
     // split without re-pinning it to the newest message.
-    await goToChannelLatest(blockOrchestrator, content.id);
+    await goToChannelLatest(splitManager.getOrchestrator(), content.id);
   }
 };
 

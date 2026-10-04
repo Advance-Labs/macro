@@ -12,13 +12,19 @@ export function createMarkdownRouteNavigation(
   createEffect(
     on(
       () =>
-        [search.nodeId, search.seek, search.documentId, documentId()] as const,
-      ([nodeId]) => {
-        if (
-          nodeId &&
-          (!search.documentId || search.documentId === documentId())
-        )
-          navigate({ [URL_PARAMS.nodeId]: nodeId });
+        [
+          search.nodeId,
+          search.commentId,
+          search.seek,
+          search.documentId,
+          documentId(),
+        ] as const,
+      ([nodeId, commentId]) => {
+        if (search.documentId && search.documentId !== documentId()) return;
+        const params: Record<string, string> = {};
+        if (nodeId) params[URL_PARAMS.nodeId] = nodeId;
+        if (commentId) params[URL_PARAMS.commentId] = commentId;
+        if (nodeId || commentId) navigate(params);
       }
     )
   );

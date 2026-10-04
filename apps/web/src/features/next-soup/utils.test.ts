@@ -1995,13 +1995,16 @@ describe('getDocumentCommentTarget', () => {
     );
 
     expect(openWithSplit).toHaveBeenCalledWith(
-      { type: 'md', id: 'doc-1', params: { comment_id: 'comment-1' } },
+      expect.objectContaining({ type: 'component', id: 'documents' }),
       expect.objectContaining({ activate: true })
     );
-    expect(getBlockHandle).toHaveBeenCalledWith('doc-1', 'md');
-    expect(goToLocationFromParams).toHaveBeenCalledWith({
-      comment_id: 'comment-1',
+    expect(targetSearch(openWithSplit, 'markdown-detail')).toMatchObject({
+      documentId: ['doc-1'],
+      commentId: ['comment-1'],
+      seek: [expect.any(String)],
     });
+    expect(getBlockHandle).not.toHaveBeenCalled();
+    expect(goToLocationFromParams).not.toHaveBeenCalled();
   });
 
   it('carries the comment through the Inbox preview route', () => {

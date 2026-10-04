@@ -1,4 +1,5 @@
 import { agentsRouteId } from '@app/features/agents-view/core/route';
+import { markdownLocationUpdates } from '@app/features/block-md/markdown-route';
 import { CALENDAR_PREFERENCES_KEY } from '@app/features/calendar/calendar-preferences';
 import { driveHostedContent } from '@app/features/drive-view/drive-hosted-content';
 import { driveDestination } from '@app/features/drive-view/drive-route-navigation';
@@ -1110,6 +1111,51 @@ describe('layoutManager', () => {
       }
     );
 
+    it.each([
+      '/drive/folder/folder/md/entity',
+      '/home/md/entity',
+      '/tasks/entity',
+    ])(
+      'routes repeated comments to the owner in %s without replacing its list or mount',
+      async (ownerPath) => {
+        const { manager, router, dispose } = ingressRouter(
+          `${ownerPath}/~/search?s0.drive.filter=keep`
+        );
+        await router.settled();
+        const [owner, source] = manager.splits();
+        const ownerRoute = router.route(owner.id);
+        const mount = owner.mount;
+        let previousSeek: string[] | undefined;
+        for (let request = 0; request < 2; request += 1) {
+          manager.openWithSplit(
+            { type: 'md', id: 'entity' },
+            {
+              handle: manager.getSplit(source.id),
+              search: markdownLocationUpdates('entity', {
+                commentId: 'comment',
+              }),
+            }
+          );
+          await router.settled();
+          const target = router.search(owner.id, 'markdown-detail');
+          expect(target).toMatchObject({
+            documentId: ['entity'],
+            commentId: ['comment'],
+          });
+          expect(target?.seek).not.toEqual(previousSeek);
+          previousSeek = target?.seek;
+          expect(router.route(owner.id)).toEqual(ownerRoute);
+          expect(
+            manager.splits().find((split) => split.id === owner.id)?.mount
+          ).toBe(mount);
+          expect(router.route(source.id)?.matches[0].id).toBe('view-search');
+          expect(manager.splits()).toHaveLength(2);
+        }
+        router.dispose();
+        dispose();
+      }
+    );
+
     it.each([false, true])(
       'preserves native search navigation and list context (animated: %s)',
       async (animated) => {
@@ -1900,6 +1946,27 @@ describe('layoutManager', () => {
       dispose();
     });
 
+    it.each([
+      '/md/document-1',
+      '/drive/md/document-1',
+      '/drive/folder/folder/md/document-1',
+    ])(
+      'migrates external Markdown comments and nodes into route search on %s',
+      async (path) => {
+        const { manager, router, dispose } = ingressRouter(
+          `${path}?comment_id=comment&node_id=node`
+        );
+        await router.settled();
+        expect(
+          router.search(manager.splits()[0].id, 'markdown-detail')
+        ).toMatchObject({
+          commentId: ['comment'],
+          nodeId: ['node'],
+        });
+        router.dispose();
+        dispose();
+      }
+    );
     it('normalizes legacy search per detail pane without overriding canonical values', async () => {
       const { manager, location, router, dispose } = ingressRouter(
         '/mail/one/~/channels/c1/~/mail/two/~/mail' +

@@ -63,9 +63,10 @@ export function searchLocationTarget(
       params: markdownDetailSearchCodec.serialize({
         documentId: entityId,
         nodeId: target.nodeId,
+        commentId: '',
         seek,
       })!,
-      fields: ['documentId', 'nodeId', 'seek'],
+      fields: ['documentId', 'nodeId', 'commentId', 'seek'],
     }))
     .with({ type: 'pdf' }, (target) => ({
       namespace: pdfDetailSearch.namespace,
