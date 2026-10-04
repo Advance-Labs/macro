@@ -5,6 +5,7 @@ import { toCalendarAccounts } from './use-calendar-accounts';
 const link = (id: string, overrides: Partial<EmailLink> = {}): EmailLink =>
   ({
     id,
+    provider: 'GMAIL',
     macro_id: 'macro|self',
     email_address: `${id}@example.com`,
     needs_calendar_permission: false,
@@ -17,14 +18,24 @@ const link = (id: string, overrides: Partial<EmailLink> = {}): EmailLink =>
 describe('toCalendarAccounts', () => {
   it('offers turn-off for an inbox that already has calendar', () => {
     expect(toCalendarAccounts([link('a')], 'macro|self')).toEqual([
-      { linkId: 'a', emailAddress: 'a@example.com', action: 'turnOff' },
+      {
+        provider: 'GMAIL',
+        linkId: 'a',
+        emailAddress: 'a@example.com',
+        action: 'turnOff',
+      },
     ]);
   });
 
   it('offers enable for an inbox missing calendar permission', () => {
     const links = [link('a', { needs_calendar_permission: true })];
     expect(toCalendarAccounts(links, 'macro|self')).toEqual([
-      { linkId: 'a', emailAddress: 'a@example.com', action: 'enable' },
+      {
+        provider: 'GMAIL',
+        linkId: 'a',
+        emailAddress: 'a@example.com',
+        action: 'enable',
+      },
     ]);
   });
 
@@ -56,7 +67,12 @@ describe('toCalendarAccounts', () => {
   it('drops delegated inboxes the viewer does not own', () => {
     const links = [link('own'), link('shared', { macro_id: 'macro|other' })];
     expect(toCalendarAccounts(links, 'macro|self')).toEqual([
-      { linkId: 'own', emailAddress: 'own@example.com', action: 'turnOff' },
+      {
+        provider: 'GMAIL',
+        linkId: 'own',
+        emailAddress: 'own@example.com',
+        action: 'turnOff',
+      },
     ]);
   });
 

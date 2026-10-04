@@ -14,5 +14,14 @@ pub mod mutations;
 pub mod ports;
 /// Calendar reminder dispatch policy.
 pub mod reminder_dispatch;
+/// Confirmed, durable organizer event replacement.
+pub mod replacement;
 /// Calendar business policy.
 pub mod service;
+
+/// Composition of provider-specific calendar capabilities.
+pub mod providers;
+
+/// Microsoft calendar synchronization policy and ports.
+#[cfg(feature = "outlook")]
+pub mod outlook;

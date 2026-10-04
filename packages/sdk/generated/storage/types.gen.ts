@@ -3222,7 +3222,7 @@ export type CompleteUploads = {
  * what protects a conference is that omitting the field leaves it untouched,
  * so an unrelated edit never disturbs it.
  */
-export type ConferenceProvider = 'google_meet' | 'other';
+export type ConferenceProvider = 'microsoft_teams' | 'google_meet' | 'other';
 
 /**
  * How a group's conditions combine.

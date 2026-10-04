@@ -1,4 +1,8 @@
-import type { ApiSortMethod } from '../../../generated/email/types.gen';
+import type { EmailConnectionProviders } from '../../../generated/auth/types.gen';
+import type {
+  ApiSortMethod,
+  TransferRecoveryResponse,
+} from '../../../generated/email/types.gen';
 import { paginate, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import type { SearchOpts } from '../search';
@@ -44,6 +48,23 @@ export class EmailNamespace {
     return Link.list(this.client);
   }
 
+  /** Providers the server currently permits this caller to connect. */
+  async connectionProviders(): Promise<EmailConnectionProviders> {
+    return unwrap(await this.client.auth.emailConnectionProviders());
+  }
+
+  /** Recover a draft move using its original operation UUID; never starts a new move.
+   * An empty committed result fences the old move so it cannot commit later. */
+  async recoverDraftTransfer(
+    operationId: string
+  ): Promise<TransferRecoveryResponse> {
+    return unwrap(
+      await this.client.email.recoverDraftTransfer({
+        path: { id: operationId },
+      })
+    );
+  }
+
   /** Send a new email message. */
   send(opts: SendEmailOptions): Promise<EmailMessage | undefined> {
     return EmailMessage.send(this.client, opts);
@@ -65,7 +86,7 @@ export class EmailNamespace {
             ...(opts?.sort ? { sort_method: opts.sort } : {}),
             ...(cursor ? { cursor } : {}),
           },
-        }),
+        })
       );
       return {
         items: page.items.map((t) => EmailThread.byId(this.client, t.id)),
@@ -97,7 +118,7 @@ export class EmailNamespace {
   /** Block an email sender. */
   async blockSender(email: string): Promise<void> {
     unwrap(
-      await this.client.email.blockSender({ body: { email_address: email } }),
+      await this.client.email.blockSender({ body: { email_address: email } })
     );
   }
 
@@ -106,7 +127,7 @@ export class EmailNamespace {
     unwrap(
       await this.client.email.unblockSender({
         body: { email_address: email },
-      }),
+      })
     );
   }
 

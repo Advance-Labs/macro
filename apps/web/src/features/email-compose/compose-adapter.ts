@@ -27,12 +27,14 @@ import ArrowSquareOut from '@phosphor-icons/core/regular/arrow-square-out.svg?co
 import ExclamationIcon from '@phosphor-icons/core/regular/exclamation-mark.svg?component-solid';
 import { queryClient } from '@queries/client';
 import {
+  completeDraftAttachment,
   useAddForwardedAttachmentsMutation,
   useRemoveDraftAttachmentMutation,
   useRemoveForwardedAttachmentMutation,
   useUploadDraftAttachmentsMutation,
 } from '@queries/email/attachment';
 import {
+  transferEmailDraft,
   useDeleteDraftMutation,
   useSaveDraftMutation,
 } from '@queries/email/draft';
@@ -56,6 +58,7 @@ import {
 import { useMailAccountsQuery } from '@queries/email/mail-accounts';
 import {
   fetchAndCacheThread,
+  fetchFreshEmailThread,
   type ThreadQueryTransport,
   useSendMessageMutation,
   useUnscheduleMessageMutation,
@@ -65,6 +68,8 @@ import type { ApiThread } from '@service-email/generated/schemas';
 import type { InfiniteData } from '@tanstack/solid-query';
 import { confirmDialog } from '@ui';
 import { type Accessor, getOwner } from 'solid-js';
+import { createMessageOperationSource } from '../email-message/queries/message-operation';
+import { toEmailThread } from '../email-thread/queries/thread-source';
 import {
   type ComposeNoticeOptions,
   type DraftClientHandles,
@@ -178,6 +183,7 @@ export function createEmailComposeContext(
 
   return {
     draftLifecycle: emailDraftLifecycleSource,
+    operations: createMessageOperationSource,
     recipientName: (id) => getDisplayName(tryMacroId(id)),
     recordMention: (sourceId, targetId) => {
       void trackMention(sourceId, 'document', targetId).catch(reportError);
@@ -254,6 +260,20 @@ export function createEmailComposeContext(
       reportError,
     },
     drafts: {
+      async transferDraft(input) {
+        const result = await transferEmailDraft(input);
+        return {
+          draftId: result.message_id,
+          threadId: result.thread_id,
+          attachments: result.attachments,
+        };
+      },
+      async reloadDraft(draftId, threadId) {
+        const thread = await fetchFreshEmailThread(threadId, draftId);
+        return toEmailThread(thread).messages.find(
+          (message) => message.db_id === draftId && message.is_draft
+        );
+      },
       get readDraft() {
         return queueActive() ? readEmailDraft : undefined;
       },
@@ -454,6 +474,7 @@ export function createEmailComposeContext(
         }),
     },
     attachmentStorage: {
+      completeAttachment: completeDraftAttachment,
       uploadAttachments: ({ draftId, inboxId, ...input }) =>
         upload.mutateAsync({
           ...input,

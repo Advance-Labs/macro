@@ -57,7 +57,7 @@ use roles_and_permissions::{
 use sqlx::PgPool;
 use tokio_util::task::TaskTracker;
 
-use crate::microsoft_token_cipher::MicrosoftTokenCipher;
+use authentication_service::domain::microsoft::MicrosoftAuth;
 use authentication_service::service::signup_policy::SignupPolicy;
 use cursor_api_key::cipher::CursorApiKeyCipher;
 
@@ -138,9 +138,11 @@ pub(crate) type AuthorizationService = MacroAuthorizationServiceImpl<MacroAuthJw
 #[derive(Clone, FromRef)]
 pub(crate) struct ApiContext {
     pub db: PgPool,
+    pub inbox_connections:
+        Arc<email::domain::inbox_entitlement::InboxConnectionService<email::outbound::EmailPgRepo>>,
     pub github_link_service: Arc<GithubLinkServiceType>,
     pub auth_client: Arc<fusionauth::FusionAuthClient>,
-    pub microsoft_token_cipher: Option<Arc<dyn MicrosoftTokenCipher>>,
+    pub microsoft_auth: Option<Arc<dyn MicrosoftAuth>>,
     /// Encrypts users' Cursor API keys.
     pub cursor_api_key_cipher: Arc<dyn CursorApiKeyCipher>,
     /// Owner-bound Codex OAuth lifecycle and cloud target settings.

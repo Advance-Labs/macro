@@ -111,7 +111,11 @@ function createCalendarSettingsControls(isNarrow: () => boolean) {
     calendarView.closeEventDetails();
     match(account.action)
       .with('enable', () => {
-        startAddInbox({ scopes: 'calendar' });
+        void startAddInbox({
+          scopes: 'calendar',
+          provider: account.provider,
+          reconnectLinkId: account.linkId,
+        });
       })
       .with('turnOff', () => {
         setTurnOffTarget({

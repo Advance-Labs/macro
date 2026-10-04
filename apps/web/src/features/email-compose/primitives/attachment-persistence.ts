@@ -10,6 +10,7 @@ import type { EmailFormContextValue } from './email-form-types';
 type AttachmentState = Pick<
   EmailFormContextValue['attachments'],
   | 'list'
+  | 'markUploadComplete'
   | 'assignAttachmentId'
   | 'clearAttachmentId'
   | 'removeByFile'
@@ -41,6 +42,7 @@ export function createAttachmentPersistence(options: {
   inboxId: Accessor<string | undefined>;
   services: Pick<
     EmailAttachmentStorage,
+    | 'completeAttachment'
     | 'uploadAttachments'
     | 'addForwardedAttachments'
     | 'removeAttachment'
@@ -110,6 +112,17 @@ export function createAttachmentPersistence(options: {
       // All work has settled; rethrow this save's own upload failure.
       if (run) await run;
       if (!stillCurrent()) return;
+      for (const attachment of options.attachments.list()) {
+        if (attachment.type === 'remote' && attachment.uploadPending) {
+          await options.services.completeAttachment({
+            draftId,
+            attachmentId: attachment.attachmentId,
+            inboxId: inbox.inboxId,
+          });
+          if (stillCurrent())
+            options.attachments.markUploadComplete(attachment.attachmentId);
+        }
+      }
       const forwarded = options.attachments
         .list()
         .filter((attachment) => attachment.type === 'forwarded');

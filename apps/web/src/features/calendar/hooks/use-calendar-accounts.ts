@@ -9,6 +9,7 @@ type CalendarAccountAction = 'enable' | 'turnOff';
 /** A viewer-owned inbox rendered as a manageable calendar account. */
 export interface CalendarAccount {
   linkId: string;
+  provider: EmailLink['provider'];
   emailAddress: string;
   action: CalendarAccountAction;
 }
@@ -34,6 +35,7 @@ export function toCalendarAccounts(
     .sort((a, b) => Number(b.is_primary) - Number(a.is_primary))
     .map((link) => ({
       linkId: link.id,
+      provider: link.provider,
       emailAddress: link.email_address,
       action: link.needs_calendar_permission ? 'enable' : 'turnOff',
     }));
@@ -44,6 +46,9 @@ export function useCalendarAccounts() {
   const linksQuery = useEmailLinksQuery();
   const userId = useUserId();
   return createMemo<CalendarAccount[]>(() =>
-    toCalendarAccounts(linksQuery.data?.links ?? [], userId())
+    toCalendarAccounts(
+      linksQuery.isSuccess ? linksQuery.data.links : [],
+      userId()
+    )
   );
 }

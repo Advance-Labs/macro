@@ -1,9 +1,11 @@
+#![recursion_limit = "256"]
 #![allow(unused)]
 
 mod api;
 mod backfill_completion_service;
 mod backfill_init_service;
 mod backfill_outbox;
+mod composition;
 mod config;
 mod outbound;
 mod pubsub;

@@ -13,10 +13,11 @@ import type {
   OutOfOfficeProperties,
   UpdateCalendarEventRequest,
 } from '../../../generated/calendar/types.gen';
-import { MacroError } from '../../utils';
+import { MacroError, unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
 import { MacroEntity } from '../entity';
 import { Calendar } from './calendar';
+import { CalendarReplacement } from './replacement';
 
 /** Fields to change on an event; omitted fields are left untouched. */
 export interface UpdateEventOptions {
@@ -38,8 +39,8 @@ export interface UpdateEventOptions {
   transparency?: EventTransparency;
   /** Replacement reminder configuration. */
   reminders?: EventReminders;
-  /** `google_meet` attaches a fresh Meet, `none` detaches; omit to leave the
-   * conference untouched. */
+  /** Provider conference change; omit to retain it. Outlook removal requires a
+   * separately confirmed replacement via prepareReplacement(). */
   conference?: ConferenceChange;
   /** Replacement out-of-office properties, applied only to an event that is
    * already out-of-office. */
@@ -94,7 +95,7 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
   protected async fetch(): Promise<CalendarEventRecord> {
     throw new MacroError(
       `calendar event ${this.id} has no fetch-by-id endpoint; read the record ` +
-        `returned by calendar.createEvent / event.update / event.rsvp instead`,
+        `returned by calendar.createEvent / event.update / event.rsvp instead`
     );
   }
 
@@ -107,7 +108,7 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
   /** A handle seeded with a synced event record; reads resolve without a fetch. */
   static fromRecord(
     client: MacroClient,
-    record: CalendarEventRecord,
+    record: CalendarEventRecord
   ): CalendarEvent {
     return new CalendarEvent(client, record.id, record);
   }
@@ -141,7 +142,7 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
 
   /** The calendar the canonical source belongs to, when known. */
   readonly calendar = this.mappedField('calendarId', (id) =>
-    id ? Calendar.byId(this.client, id) : undefined,
+    id ? Calendar.byId(this.client, id) : undefined
   );
 
   /** The full synced event record. Available on a seeded handle (from create /
@@ -156,7 +157,7 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
       client.calendar.updateCalendarEvent({
         path: { event_id: this.id },
         body: toUpdateBody(options),
-      }),
+      })
     );
     return CalendarEvent.fromRecord(this.client, record);
   }
@@ -171,8 +172,44 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
           scope: options.scope,
           recurrenceId: options.recurrenceId,
         },
-      }),
+      })
     );
+  }
+
+  /** Preview an organizer replacement without cancelling or sending invitations.
+   * Review replacement.status() before explicitly calling replacement.confirm(). */
+  async prepareReplacement(options: {
+    removeConference: boolean;
+    recurrenceId?: string;
+    calendar?: Calendar;
+  }): Promise<CalendarReplacement> {
+    const preview = unwrap(
+      await this.client.calendar.prepareCalendarReplacement({
+        path: { event_id: this.id },
+        body: {
+          removeConference: options.removeConference,
+          recurrenceId: options.recurrenceId,
+          calendarId: options.calendar?.id,
+        },
+      })
+    );
+    return new CalendarReplacement(this.client, preview.operationId);
+  }
+
+  /** Open this calendar copy in its provider for actions unavailable through its API. */
+  async providerUrl(
+    options: { recurrenceId?: string; calendar?: Calendar } = {}
+  ): Promise<string | undefined> {
+    const result = unwrap(
+      await this.client.calendar.calendarEventProviderUrl({
+        path: { event_id: this.id },
+        query: {
+          recurrenceId: options.recurrenceId,
+          calendarId: options.calendar?.id,
+        },
+      })
+    );
+    return result.url ?? undefined;
   }
 
   /** Record the requester's RSVP and return a handle to the synced record. */
@@ -186,7 +223,7 @@ export class CalendarEvent extends MacroEntity<CalendarEventRecord> {
           recurrenceId: options.recurrenceId,
           calendarId: options.calendar?.id,
         },
-      }),
+      })
     );
     return CalendarEvent.fromRecord(this.client, record);
   }

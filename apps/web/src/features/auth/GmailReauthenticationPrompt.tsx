@@ -22,10 +22,12 @@ export function GmailReauthenticationPrompt() {
 
   useKeyedPersistentToasts({
     items: () =>
-      (linksQuery.data?.links ?? []).filter((link) => link.needs_reauth),
+      (linksQuery.isSuccess ? linksQuery.data.links : []).filter(
+        (link) => link.needs_reauth
+      ),
     key: (link) => link.id,
     toast: (link, dismiss) => ({
-      title: 'Reconnect Gmail',
+      title: 'Reconnect inbox',
       content(): string {
         return `Sync stopped for ${link.email_address}. Reconnect to restore email sync.`;
       },
@@ -36,7 +38,10 @@ export function GmailReauthenticationPrompt() {
             // Suppress re-prompting until the inbox recovers; on native the page
             // stays mounted while the OAuth flow runs.
             dismiss();
-            startAddInbox();
+            void startAddInbox({
+              reconnectLinkId: link.id,
+              provider: link.provider,
+            });
           },
         },
       ],

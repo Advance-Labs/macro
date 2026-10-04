@@ -1,8 +1,8 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { useUserId } from '@core/context/user';
 import { useAddInboxFlow } from '@core/email-link';
-import GmailIcon from '@icon/mcp-gmail.svg';
 import ArrowUpRightIcon from '@phosphor/arrow-up-right.svg';
+import EnvelopeIcon from '@phosphor/envelope.svg';
 import SpinnerIcon from '@phosphor/spinner-gap.svg';
 import { invalidateEmailLinks, useEmailLinksQuery } from '@queries/email/link';
 import { cn, Layer } from '@ui';
@@ -26,7 +26,7 @@ const LINKS_POLL_MS = 5_000;
  * return needs a pre-redirect baseline that survives the reload. */
 const CONNECT_BASELINE_KEY = 'onboarding-flow-email-baseline';
 
-/** Connect Google accounts. On web the add-inbox flow is a full-page OAuth
+/** Connect email accounts. On web the add-inbox flow is a full-page OAuth
  * redirect; the flow's persisted step brings the user back here. */
 export function EmailStep(props: {
   onContinue: () => void;
@@ -111,7 +111,7 @@ export function EmailStep(props: {
               <div class="flex h-11 w-full items-center gap-2.5 rounded-xl border border-ink/[0.05] bg-surface px-3.5 text-sm">
                 <Show
                   when={typeof link.photo_url === 'string' && link.photo_url}
-                  fallback={<GmailIcon class="size-4 shrink-0" />}
+                  fallback={<EnvelopeIcon class="size-4 shrink-0" />}
                 >
                   {(photoUrl) => (
                     <img
@@ -146,7 +146,7 @@ export function EmailStep(props: {
                   connecting() === undefined && 'hover:border-ink/10'
                 )}
               >
-                <GmailIcon class="size-4 shrink-0" />
+                <EnvelopeIcon class="size-4 shrink-0" />
                 <span class="min-w-0 truncate font-medium text-ink">
                   {slot}
                 </span>

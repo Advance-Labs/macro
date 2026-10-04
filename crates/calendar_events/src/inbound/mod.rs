@@ -15,3 +15,7 @@ pub mod mutation_router;
 /// AI toolset adapter exposing calendar CRUD to agents.
 #[cfg(feature = "ai_tools")]
 pub mod toolset;
+
+#[cfg(feature = "inbound")]
+/// Confirmed replacement HTTP operations.
+pub mod replacement_router;

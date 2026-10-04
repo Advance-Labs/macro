@@ -25,6 +25,7 @@ export type DraftFormAttachment =
     }
   | {
       type: 'remote';
+      uploadPending?: boolean;
       url: string;
       fileName: string;
       contentType: string;
@@ -33,6 +34,14 @@ export type DraftFormAttachment =
     }
   | {
       type: 'forwarded';
+      attachmentId: string;
+      fileName: string;
+      mimeType: string;
+      fileSize: number;
+    }
+  | {
+      type: 'native';
+      referenceUrl?: string | null;
       attachmentId: string;
       fileName: string;
       mimeType: string;
@@ -160,9 +169,33 @@ export function createEmailFormState(
   // Values and edit revisions may outlive a mounted composer; effects do not.
   const [editRevision, setEditRevision] = createSignal(0);
 
+  const representedIds = new Set([
+    ...(draft?.attachments_draft.map((a) => a.id) ?? []),
+    ...(draft?.attachments_forwarded.map((a) => a.attachment_id) ?? []),
+  ]);
+  const representedCids = new Set(
+    [...representedIds].map((id) => `${id}@attachments.macro.com`)
+  );
+  for (const file of draft?.attachments_draft ?? [])
+    if (file.content_id) representedCids.add(file.content_id);
   const [attachments, setAttachments] = createSignal<DraftFormAttachment[]>([
+    ...(draft?.attachments
+      .filter(
+        (a) =>
+          !representedIds.has(a.db_id) &&
+          !representedCids.has(a.content_id?.replace(/^<|>$/g, '') ?? '')
+      )
+      .map((a) => ({
+        type: 'native' as const,
+        referenceUrl: a.reference_url,
+        attachmentId: a.db_id,
+        fileName: a.filename ?? 'attachment',
+        mimeType: a.mime_type ?? 'application/octet-stream',
+        fileSize: a.size_bytes ?? 0,
+      })) ?? []),
     ...(draft?.attachments_draft.map((a) => ({
       type: 'remote' as const,
+      uploadPending: a.upload_pending,
       attachmentId: a.id,
       contentType: a.content_type,
       fileName: a.file_name,
@@ -219,7 +252,7 @@ export function createEmailFormState(
         setState('withQuotedText', true);
         // Populate forwarded attachments from original message (skip inline images)
         const fwdAttachments: DraftFormAttachment[] = (msg.attachments ?? [])
-          .filter((a) => !a.content_id)
+          .filter((a) => !a.content_id && !a.reference_url)
           .map((a) => ({
             type: 'forwarded' as const,
             attachmentId: a.db_id,
@@ -281,6 +314,15 @@ export function createEmailFormState(
     clear: () => reset({ ...EMPTY_FORM_STATE }),
     attachments: {
       list: attachments,
+      replace: (files: DraftFormAttachment[]) => setAttachments(files),
+      markUploadComplete: (attachmentId: string) =>
+        setAttachments((files) =>
+          files.map((file) =>
+            file.type === 'remote' && file.attachmentId === attachmentId
+              ? { ...file, uploadPending: false }
+              : file
+          )
+        ),
       add: (attachment: DraftFormAttachment) => {
         setAttachments((p) => [...p, attachment]);
       },
@@ -308,7 +350,9 @@ export function createEmailFormState(
       removeById: (attachmentId: string) => {
         setAttachments((p) =>
           p.filter(
-            (a) => a.type !== 'remote' || a.attachmentId !== attachmentId
+            (a) =>
+              (a.type !== 'remote' && a.type !== 'native') ||
+              a.attachmentId !== attachmentId
           )
         );
       },

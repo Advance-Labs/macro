@@ -19,6 +19,7 @@ function setup(
     const services = {
       uploadAttachments: vi.fn(uploadAttachments),
       addForwardedAttachments: vi.fn(async () => {}),
+      completeAttachment: async () => {},
       removeAttachment: vi.fn(async () => {}),
       removeForwardedAttachment: vi.fn(async () => {}),
     };

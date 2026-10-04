@@ -19,9 +19,9 @@ import {
   useEmailLinksStatus,
 } from '@core/email-link';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
-import GmailIcon from '@icon/mcp-gmail.svg';
 import ArrowsClockwiseIcon from '@phosphor-icons/core/regular/arrows-clockwise.svg?component-solid';
 import CalendarSlashIcon from '@phosphor-icons/core/regular/calendar-slash.svg?component-solid';
+import EnvelopeIcon from '@phosphor-icons/core/regular/envelope.svg?component-solid';
 import PlusIcon from '@phosphor-icons/core/regular/plus.svg?component-solid';
 import SignatureIcon from '@phosphor-icons/core/regular/signature.svg?component-solid';
 import TrashIcon from '@phosphor-icons/core/regular/trash.svg?component-solid';
@@ -41,6 +41,7 @@ import {
 import { Button, Dialog, Panel, Tooltip } from '@ui';
 import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
 import { match } from 'ts-pattern';
+import { InboxSettingsOperations } from './InboxSettingsOperations';
 import { ConnectAction, StatusDot } from './integration-ui';
 import { IntegrationRow, SettingsCard, SettingsRow } from './primitives';
 import {
@@ -74,7 +75,9 @@ export function EmailCard() {
   // as "complete").
   const latestBackfillByLinkId = createMemo(() => {
     const latest = new Map<string, BackfillJob>();
-    for (const job of backfillJobsQuery.data?.jobs ?? []) {
+    for (const job of backfillJobsQuery.isSuccess
+      ? backfillJobsQuery.data.jobs
+      : []) {
       if (job.link_id && !latest.has(job.link_id)) {
         latest.set(job.link_id, job);
       }
@@ -106,7 +109,7 @@ export function EmailCard() {
   // The primary inbox is the user's own is_primary link; it sorts to the top
   // and is labelled. Everything else (other own inboxes + delegated/shared) follows.
   const inboxes = createMemo(() => {
-    const links = emailLinksQuery.data?.links ?? [];
+    const links = emailLinksQuery.isSuccess ? emailLinksQuery.data.links : [];
     const uid = userId();
     const primary = links.find(
       (link) => link.is_primary && link.macro_id === uid
@@ -119,7 +122,7 @@ export function EmailCard() {
     if (isEmailActionPending()) return;
     setIsEmailActionPending(true);
     try {
-      await startAddInbox();
+      openAddInboxDialog();
     } finally {
       setIsEmailActionPending(false);
     }
@@ -155,8 +158,8 @@ export function EmailCard() {
     <>
       <SettingsCard>
         <IntegrationRow
-          icon={<GmailIcon />}
-          title="Gmail"
+          icon={<EnvelopeIcon />}
+          title="Email"
           description="Read, organize, and act on your email."
           status={
             <Show when={emailActive()}>
@@ -183,9 +186,18 @@ export function EmailCard() {
                 hasCompletedBackfill={hasCompletedBackfill(primary().id)}
                 resyncing={resyncingIds().has(primary().id)}
                 onResync={() => handleResyncInbox(primary().id)}
-                onReconnect={() => void startAddInbox()}
+                onReconnect={() =>
+                  void startAddInbox({
+                    reconnectLinkId: primary().id,
+                    provider: primary().provider,
+                  })
+                }
                 onEnableCalendar={() =>
-                  void startAddInbox({ scopes: 'calendar' })
+                  void startAddInbox({
+                    scopes: 'calendar',
+                    reconnectLinkId: primary().id,
+                    provider: primary().provider,
+                  })
                 }
                 onRemove={() =>
                   setRemoveTarget({
@@ -218,9 +230,18 @@ export function EmailCard() {
                 hasCompletedBackfill={hasCompletedBackfill(link.id)}
                 resyncing={resyncingIds().has(link.id)}
                 onResync={() => handleResyncInbox(link.id)}
-                onReconnect={() => void startAddInbox()}
+                onReconnect={() =>
+                  void startAddInbox({
+                    reconnectLinkId: link.id,
+                    provider: link.provider,
+                  })
+                }
                 onEnableCalendar={() =>
-                  void startAddInbox({ scopes: 'calendar' })
+                  void startAddInbox({
+                    scopes: 'calendar',
+                    reconnectLinkId: link.id,
+                    provider: link.provider,
+                  })
                 }
                 onRemove={() =>
                   setRemoveTarget({
@@ -241,7 +262,7 @@ export function EmailCard() {
           <Show when={multiInboxFlag().enabled}>
             <SettingsRow
               label="Add another inbox"
-              description="Connect more Gmail accounts."
+              description="Connect Gmail, Outlook.com, or Microsoft 365."
             >
               <Tooltip label="Add inbox">
                 <Button
@@ -454,6 +475,11 @@ function InboxRow(props: {
               <Chip label="Shared" />
             </Show>
           </div>
+          <span class="text-xs text-ink-muted">
+            {props.link.provider === 'OUTLOOK'
+              ? 'Outlook / Microsoft 365'
+              : 'Gmail'}
+          </span>
           <Show when={ENABLE_INBOX_SYNC_STATUS}>
             <Switch
               fallback={
@@ -602,6 +628,7 @@ function InboxRow(props: {
           </Tooltip>
         </div>
       </div>
+      <InboxSettingsOperations linkId={props.link.id} />
       <Show
         when={emailSignaturesFlag().enabled && props.isOwn && showSignature()}
       >

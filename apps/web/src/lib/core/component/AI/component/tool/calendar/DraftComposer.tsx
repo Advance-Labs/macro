@@ -21,6 +21,7 @@ import { useVisibleCalendarsQuery } from '@queries/calendar/calendars';
 import type { CreateCalendarEvent } from '@service-cognition/generated/tools/types';
 import { Layer } from '@ui';
 import {
+  createEffect,
   createMemo,
   createSignal,
   ErrorBoundary,
@@ -102,6 +103,8 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
   const calendarOptions = createMemo(() =>
     writableCalendars().map((calendar) => ({
       id: calendar.id,
+      provider: calendar.provider,
+      capabilities: calendar.capabilities,
       label: calendarDisplayLabel(calendar, calendarsSpanInboxes()),
       color: calendar.color ?? DEFAULT_CALENDAR_SOURCE.color,
       defaultReminders: calendar.defaultReminders,
@@ -122,6 +125,18 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
       const args = currentArgs();
       if (args) props.sink.onEdit?.(args);
     },
+  });
+  let calendarInitialized = false;
+  createEffect(() => {
+    const calendars = calendarOptions();
+    if (calendarInitialized || calendars.length === 0) return;
+    calendarInitialized = true;
+    // Resolve the provider-default conference after the calendar catalog loads.
+    const selected =
+      calendars.find(
+        (calendar) => calendar.id === props.initialData.calendarId
+      ) ?? calendars[0];
+    if (selected) controller.setField('calendarId', selected.id);
   });
 
   function currentArgs(values = controller.submitValues()) {

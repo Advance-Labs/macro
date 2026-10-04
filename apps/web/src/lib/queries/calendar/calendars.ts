@@ -20,6 +20,10 @@ export function useVisibleCalendarsQuery(
     queryFn: async () =>
       (await throwOnErr(() => emailClient.listCalendars())).calendars,
     staleTime: CALENDAR_LIST_STALE_TIME,
+    refetchInterval: (query) =>
+      query.state.data?.some((calendar) => calendar.provider === 'outlook')
+        ? 30_000
+        : false,
     enabled: options?.().enabled !== false,
   }));
 }

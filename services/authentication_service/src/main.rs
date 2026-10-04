@@ -92,7 +92,7 @@ use tokio_util::task::TaskTracker;
 mod api;
 mod config;
 mod generate_password;
-mod microsoft_token_cipher;
+use authentication_service::microsoft_token_cipher;
 mod rate_limit_config;
 
 #[tokio::main]
@@ -228,6 +228,20 @@ async fn main() -> anyhow::Result<()> {
         None => auth_client,
     };
     tracing::trace!("initialized auth client");
+    let microsoft_auth = microsoft_token_cipher.map(|cipher| {
+        use authentication_service::{
+            domain::microsoft::{MicrosoftAuth, MicrosoftAuthService},
+            outbound::microsoft::{MicrosoftOAuthProvider, PgMicrosoftGrants},
+        };
+        Arc::new(
+            MicrosoftAuthService::new(
+                PgMicrosoftGrants::new(db.clone()),
+                MicrosoftOAuthProvider::new(Arc::new(auth_client.clone())),
+                cipher,
+            )
+            .with_connections_enabled(config.outlook_connections_enabled),
+        ) as Arc<dyn MicrosoftAuth>
+    });
 
     let document_storage_service_client = DocumentStorageServiceClient::new(
         config.service_internal_auth_key.to_string().clone(),
@@ -548,12 +562,32 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("{error:?}"))?,
     );
 
+    // Cleanup continues while new connections are disabled or OAuth is unconfigured.
+    let grant_repository =
+        authentication_service::outbound::microsoft::PgMicrosoftGrants::new(db.clone());
+    let grant_cleanup = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(MICROSOFT_GRANT_CLEANUP_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if let Err(error) =
+                authentication_service::domain::microsoft::collect_expired_grants(&grant_repository)
+                    .await
+            {
+                tracing::error!(?error, "Microsoft grant expiry cleanup failed");
+            }
+        }
+    });
+
     let server_result = api::setup_and_serve(
         ApiContext {
+            inbox_connections: Arc::new(email::domain::inbox_entitlement::InboxConnectionService(
+                email::outbound::EmailPgRepo::new(db.clone()),
+            )),
             db,
             github_link_service: Arc::new(github_link_service_impl),
             auth_client: Arc::new(auth_client),
-            microsoft_token_cipher,
+            microsoft_auth,
             cursor_api_key_cipher,
             codex_connection,
             macro_cache_client: Arc::new(macro_cache_client),
@@ -613,6 +647,8 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
 
+    grant_cleanup.abort();
+    let _ = grant_cleanup.await;
     tracing::info!("waiting for event broker publishes to drain");
     event_broker_tracker.close();
     match tokio::time::timeout(EVENT_BROKER_DRAIN_TIMEOUT, event_broker_tracker.wait()).await {
@@ -630,6 +666,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 const EVENT_BROKER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+const MICROSOFT_GRANT_CLEANUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 // SAFETY: this is not a secret value
 const IOS_DEVELOPMENT_TEAM_ID: &str = "TY74Q77JBD";

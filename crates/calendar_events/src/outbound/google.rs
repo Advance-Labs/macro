@@ -14,14 +14,14 @@ use crate::domain::{
         CalendarEvent, CalendarEventDraft, CalendarEventOverride, CalendarEventPatch,
         CalendarEventSource, CalendarEventUpsert, CalendarOccurrence, ConferenceChange,
         ConferenceProvider, EventReminderOverride, EventReminders, EventStart, EventStatus,
-        EventTime, EventTransparency, EventType, EventVisibility, GoogleCalendarTarget,
-        GoogleEventSource, GoogleEventSyncBatch, GoogleSyncPlan, GoogleWatchChannel,
-        GoogleWatchConfig, OccurrenceRange, OutOfOfficeProperties, ProviderCalendar,
+        EventTime, EventTransparency, EventType, EventVisibility, GoogleEventSyncBatch,
+        GoogleSyncPlan, GoogleWatchChannel, GoogleWatchConfig, OccurrenceRange,
+        OutOfOfficeProperties, ProviderCalendar, ProviderCalendarTarget, ProviderEventSource,
     },
     ports::{
-        CalendarRsvpScope, GoogleCalendarMutationProvider, GoogleCalendarProvider,
-        GoogleEventSyncContext, GoogleInstanceUpdateOutcome, GoogleProviderError,
-        GoogleProviderErrorKind, GoogleRsvpOutcome, GoogleSeriesMutationOutcome,
+        CalendarMutationProvider, CalendarProviderError, CalendarProviderErrorKind,
+        CalendarRsvpScope, GoogleCalendarProvider, GoogleEventSyncContext,
+        ProviderInstanceUpdateOutcome, ProviderRsvpOutcome, ProviderSeriesMutationOutcome,
     },
 };
 
@@ -35,7 +35,7 @@ pub trait GoogleRequestGate: Send + Sync + 'static {
     fn acquire(
         &self,
         email_link_id: Uuid,
-    ) -> impl Future<Output = Result<(), GoogleProviderError>> + Send;
+    ) -> impl Future<Output = Result<(), CalendarProviderError>> + Send;
 }
 
 /// Gate that admits every request, for tests and unmetered environments.
@@ -43,7 +43,7 @@ pub trait GoogleRequestGate: Send + Sync + 'static {
 pub struct UnmeteredGate;
 
 impl GoogleRequestGate for UnmeteredGate {
-    async fn acquire(&self, _email_link_id: Uuid) -> Result<(), GoogleProviderError> {
+    async fn acquire(&self, _email_link_id: Uuid) -> Result<(), CalendarProviderError> {
         Ok(())
     }
 }
@@ -81,7 +81,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         &self,
         access_token: &str,
         email_link_id: Uuid,
-    ) -> Result<Vec<GoogleCalendar>, GoogleProviderError> {
+    ) -> Result<Vec<GoogleCalendar>, CalendarProviderError> {
         let mut page_token: Option<String> = None;
         let mut result = Vec::new();
         loop {
@@ -112,7 +112,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         provider_calendar_id: &str,
         range: &OccurrenceRange,
         single_events: bool,
-    ) -> Result<Vec<GoogleEvent>, GoogleProviderError> {
+    ) -> Result<Vec<GoogleEvent>, CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         let mut page_token: Option<String> = None;
         let mut result = Vec::new();
@@ -154,7 +154,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         provider_calendar_id: &str,
         sync_token: Option<&str>,
         window: &OccurrenceRange,
-    ) -> Result<(Vec<GoogleEvent>, String), GoogleProviderError> {
+    ) -> Result<(Vec<GoogleEvent>, String), CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         let mut page_token: Option<String> = None;
         let mut result = Vec::new();
@@ -193,8 +193,8 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
                     .next_sync_token
                     .map(|next_sync_token| (result, next_sync_token))
                     .ok_or_else(|| {
-                        GoogleProviderError::new(
-                            GoogleProviderErrorKind::Transient,
+                        CalendarProviderError::new(
+                            CalendarProviderErrorKind::Transient,
                             "Google Calendar change feed ended without a sync token",
                         )
                     });
@@ -208,7 +208,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         email_link_id: Uuid,
         provider_calendar_id: &str,
         provider_event_id: &str,
-    ) -> Result<Option<GoogleEvent>, GoogleProviderError> {
+    ) -> Result<Option<GoogleEvent>, CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         let event = urlencoding::encode(provider_event_id);
         self.gate.acquire(email_link_id).await?;
@@ -247,7 +247,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         email_link_id: Uuid,
         provider_calendar_id: &str,
         ical_uid: &str,
-    ) -> Result<Vec<GoogleEvent>, GoogleProviderError> {
+    ) -> Result<Vec<GoogleEvent>, CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         let mut page_token: Option<String> = None;
         let mut result = Vec::new();
@@ -284,7 +284,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         provider_calendar_id: &str,
         provider_event_id: &str,
         range: &OccurrenceRange,
-    ) -> Result<Vec<GoogleEvent>, GoogleProviderError> {
+    ) -> Result<Vec<GoogleEvent>, CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         let event = urlencoding::encode(provider_event_id);
         let mut page_token: Option<String> = None;
@@ -315,10 +315,10 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
                 let error = provider_response_error(GoogleRequestKind::Read, status, &body);
                 // A missing series master is not a Google quirk to retry.
                 if status == StatusCode::NOT_FOUND
-                    && error.kind() == GoogleProviderErrorKind::Transient
+                    && error.kind() == CalendarProviderErrorKind::Transient
                 {
-                    return Err(GoogleProviderError::new(
-                        GoogleProviderErrorKind::Permanent,
+                    return Err(CalendarProviderError::new(
+                        CalendarProviderErrorKind::Permanent,
                         error.message(),
                     ));
                 }
@@ -358,7 +358,7 @@ enum GoogleRequestKind {
 async fn send_google<T: DeserializeOwned>(
     kind: GoogleRequestKind,
     request: RequestBuilder,
-) -> Result<T, GoogleProviderError> {
+) -> Result<T, CalendarProviderError> {
     let response = request.send().await.map_err(provider_transport_error)?;
     let status = response.status();
     if !status.is_success() {
@@ -368,15 +368,15 @@ async fn send_google<T: DeserializeOwned>(
     response.json().await.map_err(provider_transport_error)
 }
 
-fn provider_transport_error(error: reqwest::Error) -> GoogleProviderError {
-    GoogleProviderError::new(GoogleProviderErrorKind::Transient, format!("{error:?}"))
+fn provider_transport_error(error: reqwest::Error) -> CalendarProviderError {
+    CalendarProviderError::new(CalendarProviderErrorKind::Transient, format!("{error:?}"))
 }
 
 fn provider_response_error(
     request_kind: GoogleRequestKind,
     status: StatusCode,
     body: &str,
-) -> GoogleProviderError {
+) -> CalendarProviderError {
     let payload = serde_json::from_str::<GoogleErrorResponse>(body).ok();
     let reasons: Vec<_> = payload
         .as_ref()
@@ -390,11 +390,11 @@ fn provider_response_error(
         })
         .unwrap_or_default();
     let kind = if reasons.contains(&"pushNotSupportedForRequestedResource") {
-        GoogleProviderErrorKind::PushUnsupported
+        CalendarProviderErrorKind::PushUnsupported
     } else if status == StatusCode::GONE || reasons.contains(&"fullSyncRequired") {
-        GoogleProviderErrorKind::SyncTokenExpired
+        CalendarProviderErrorKind::SyncTokenExpired
     } else if reasons.contains(&"insufficientPermissions") {
-        GoogleProviderErrorKind::ReauthRequired
+        CalendarProviderErrorKind::ReauthRequired
     } else if status == StatusCode::UNAUTHORIZED
         || status == StatusCode::REQUEST_TIMEOUT
         || status == StatusCode::TOO_MANY_REQUESTS
@@ -411,17 +411,17 @@ fn provider_response_error(
         || reasons.contains(&"rateLimitExceeded")
         || reasons.contains(&"userRateLimitExceeded")
     {
-        GoogleProviderErrorKind::Transient
+        CalendarProviderErrorKind::Transient
     } else {
         match request_kind {
-            GoogleRequestKind::Read => GoogleProviderErrorKind::Transient,
+            GoogleRequestKind::Read => CalendarProviderErrorKind::Transient,
             GoogleRequestKind::AccountRead | GoogleRequestKind::Mutation => {
-                GoogleProviderErrorKind::Permanent
+                CalendarProviderErrorKind::Permanent
             }
         }
     };
     let message = provider_error_message(payload.as_ref(), status, &reasons);
-    GoogleProviderError::new(kind, message)
+    CalendarProviderError::new(kind, message)
 }
 
 /// Compose the provider error message, keeping Google's `reason` strings
@@ -450,7 +450,7 @@ impl<G: GoogleRequestGate> GoogleCalendarProvider for GoogleCalendarClient<G> {
         &self,
         access_token: &str,
         email_link_id: Uuid,
-    ) -> Result<Vec<ProviderCalendar>, GoogleProviderError> {
+    ) -> Result<Vec<ProviderCalendar>, CalendarProviderError> {
         Ok(self
             .calendars(access_token, email_link_id)
             .await?
@@ -482,7 +482,7 @@ impl<G: GoogleRequestGate> GoogleCalendarProvider for GoogleCalendarClient<G> {
         &self,
         access_token: &str,
         context: GoogleEventSyncContext,
-    ) -> Result<GoogleEventSyncBatch, GoogleProviderError> {
+    ) -> Result<GoogleEventSyncBatch, CalendarProviderError> {
         let target = &context.target;
         let (changes, next_sync_token, token_was_reset) = match self
             .event_changes(
@@ -495,7 +495,7 @@ impl<G: GoogleRequestGate> GoogleCalendarProvider for GoogleCalendarClient<G> {
             .await
         {
             Ok((changes, next_sync_token)) => (changes, next_sync_token, false),
-            Err(error) if error.kind() == GoogleProviderErrorKind::SyncTokenExpired => {
+            Err(error) if error.kind() == CalendarProviderErrorKind::SyncTokenExpired => {
                 let (changes, next_sync_token) = self
                     .event_changes(
                         access_token,
@@ -578,7 +578,7 @@ impl<G: GoogleRequestGate> GoogleCalendarProvider for GoogleCalendarClient<G> {
         provider_calendar_id: &str,
         channel_id: Uuid,
         config: &GoogleWatchConfig,
-    ) -> Result<GoogleWatchChannel, GoogleProviderError> {
+    ) -> Result<GoogleWatchChannel, CalendarProviderError> {
         let calendar = urlencoding::encode(provider_calendar_id);
         self.gate.acquire(email_link_id).await?;
         let response: GoogleChannelResponse = send_google(
@@ -598,14 +598,14 @@ impl<G: GoogleRequestGate> GoogleCalendarProvider for GoogleCalendarClient<G> {
         )
         .await?;
         let expiration_millis: i64 = response.expiration.parse().map_err(|_| {
-            GoogleProviderError::new(
-                GoogleProviderErrorKind::Transient,
+            CalendarProviderError::new(
+                CalendarProviderErrorKind::Transient,
                 "Google Calendar watch returned an unparseable expiration",
             )
         })?;
         let expires_at = DateTime::from_timestamp_millis(expiration_millis).ok_or_else(|| {
-            GoogleProviderError::new(
-                GoogleProviderErrorKind::Transient,
+            CalendarProviderError::new(
+                CalendarProviderErrorKind::Transient,
                 "Google Calendar watch returned an out-of-range expiration",
             )
         })?;
@@ -636,9 +636,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn apply_change_feed(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         changes: Vec<GoogleEvent>,
-    ) -> Result<AppliedChangeFeed, GoogleProviderError> {
+    ) -> Result<AppliedChangeFeed, CalendarProviderError> {
         let classified = classify_changes(changes);
         let mut applied = AppliedChangeFeed {
             cancelled: classified.tombstoned_provider_event_ids,
@@ -689,10 +689,10 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn refresh_series(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_id: &str,
         feed_master: Option<GoogleEvent>,
-    ) -> Result<SeriesOutcome, GoogleProviderError> {
+    ) -> Result<SeriesOutcome, CalendarProviderError> {
         let master = match feed_master {
             Some(master) => Some(master),
             None => {
@@ -755,11 +755,11 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn extend_tail(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         from: DateTime<Utc>,
         from_date: NaiveDate,
         applied: &mut AppliedChangeFeed,
-    ) -> Result<(), GoogleProviderError> {
+    ) -> Result<(), CalendarProviderError> {
         let tail = OccurrenceRange {
             starts_at: from,
             ends_at: target.range.ends_at,
@@ -854,9 +854,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn resolve_pending_conference(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         event: GoogleEvent,
-    ) -> Result<GoogleEvent, GoogleProviderError> {
+    ) -> Result<GoogleEvent, CalendarProviderError> {
         if !conference_is_pending(event.conference_data.as_ref()) {
             return Ok(event);
         }
@@ -882,9 +882,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn mutation_readback(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         event: GoogleEvent,
-    ) -> Result<Option<CalendarEventUpsert>, GoogleProviderError> {
+    ) -> Result<Option<CalendarEventUpsert>, CalendarProviderError> {
         self.readback_mutation(access_token, target, event)
             .await
             .map_err(non_retryable_after_write)
@@ -893,9 +893,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn readback_mutation(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         event: GoogleEvent,
-    ) -> Result<Option<CalendarEventUpsert>, GoogleProviderError> {
+    ) -> Result<Option<CalendarEventUpsert>, CalendarProviderError> {
         let event = self
             .resolve_pending_conference(access_token, target, event)
             .await?;
@@ -914,8 +914,8 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
         match outcome {
             SeriesOutcome::Refreshed(upsert) => Ok(Some(*upsert)),
             SeriesOutcome::Gone => Ok(None),
-            SeriesOutcome::Malformed => Err(GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+            SeriesOutcome::Malformed => Err(CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 "Google Calendar returned a malformed series after the mutation",
             )),
         }
@@ -924,9 +924,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn delete_event_raw(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         provider_event_id: &str,
-    ) -> Result<(), GoogleProviderError> {
+    ) -> Result<(), CalendarProviderError> {
         let calendar = urlencoding::encode(&target.provider_calendar_id);
         let event = urlencoding::encode(provider_event_id);
         self.gate.acquire(target.email_link_id).await?;
@@ -961,9 +961,9 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn series_outcome(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
-    ) -> Result<GoogleSeriesMutationOutcome, GoogleProviderError> {
+    ) -> Result<ProviderSeriesMutationOutcome, CalendarProviderError> {
         self.refreshed_series_outcome(access_token, target, master_provider_event_id)
             .await
             .map_err(non_retryable_after_write)
@@ -972,17 +972,17 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn refreshed_series_outcome(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
-    ) -> Result<GoogleSeriesMutationOutcome, GoogleProviderError> {
+    ) -> Result<ProviderSeriesMutationOutcome, CalendarProviderError> {
         match self
             .refresh_series(access_token, target, master_provider_event_id, None)
             .await?
         {
-            SeriesOutcome::Refreshed(upsert) => Ok(GoogleSeriesMutationOutcome::Applied(upsert)),
-            SeriesOutcome::Gone => Ok(GoogleSeriesMutationOutcome::Gone),
-            SeriesOutcome::Malformed => Err(GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+            SeriesOutcome::Refreshed(upsert) => Ok(ProviderSeriesMutationOutcome::Applied(upsert)),
+            SeriesOutcome::Gone => Ok(ProviderSeriesMutationOutcome::Gone),
+            SeriesOutcome::Malformed => Err(CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 "Google Calendar returned a malformed series after the mutation",
             )),
         }
@@ -991,10 +991,10 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn patch_event_raw(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         provider_event_id: &str,
         body: serde_json::Value,
-    ) -> Result<Option<GoogleEvent>, GoogleProviderError> {
+    ) -> Result<Option<GoogleEvent>, CalendarProviderError> {
         let calendar = urlencoding::encode(&target.provider_calendar_id);
         let event = urlencoding::encode(provider_event_id);
         self.gate.acquire(target.email_link_id).await?;
@@ -1031,7 +1031,7 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     }
 }
 
-impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClient<G> {
+impl<G: GoogleRequestGate> CalendarMutationProvider for GoogleCalendarClient<G> {
     #[tracing::instrument(
         skip(self, access_token, target, draft),
         fields(provider_calendar_id = %target.provider_calendar_id),
@@ -1040,9 +1040,9 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn create_event(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         draft: &CalendarEventDraft,
-    ) -> Result<CalendarEventUpsert, GoogleProviderError> {
+    ) -> Result<CalendarEventUpsert, CalendarProviderError> {
         let calendar = urlencoding::encode(&target.provider_calendar_id);
         let mut body = draft_body(draft);
         // Scope caller keys to the organizer. Hex UUIDs are valid Google base32hex IDs.
@@ -1064,8 +1064,8 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
                     .mutation_readback(access_token, target, existing)
                     .await?
                     .ok_or_else(|| {
-                        GoogleProviderError::new(
-                            GoogleProviderErrorKind::Permanent,
+                        CalendarProviderError::new(
+                            CalendarProviderErrorKind::Permanent,
                             "The reserved calendar event was removed",
                         )
                     });
@@ -1092,8 +1092,8 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
             )
             .await?
             .ok_or_else(|| {
-                GoogleProviderError::new(
-                    GoogleProviderErrorKind::Transient,
+                CalendarProviderError::new(
+                    CalendarProviderErrorKind::Transient,
                     "Calendar creation is still converging",
                 )
             })?
@@ -1110,8 +1110,8 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
         self.mutation_readback(access_token, target, created)
             .await?
             .ok_or_else(|| {
-                GoogleProviderError::new(
-                    GoogleProviderErrorKind::Permanent,
+                CalendarProviderError::new(
+                    CalendarProviderErrorKind::Permanent,
                     "Google Calendar dropped the event immediately after creation",
                 )
             })
@@ -1125,10 +1125,10 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn update_event(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         provider_event_id: &str,
         patch: &CalendarEventPatch,
-    ) -> Result<Option<CalendarEventUpsert>, GoogleProviderError> {
+    ) -> Result<Option<CalendarEventUpsert>, CalendarProviderError> {
         let Some(updated) = self
             .patch_event_raw(access_token, target, provider_event_id, patch_body(patch))
             .await?
@@ -1146,11 +1146,11 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn update_event_instance(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
         original_start: &str,
         patch: &CalendarEventPatch,
-    ) -> Result<GoogleInstanceUpdateOutcome, GoogleProviderError> {
+    ) -> Result<ProviderInstanceUpdateOutcome, CalendarProviderError> {
         let refresh_without_writing = |gone_reason: &'static str| async move {
             tracing::info!(gone_reason, "occurrence-scoped update found no occurrence");
             match self
@@ -1158,11 +1158,11 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
                 .await?
             {
                 SeriesOutcome::Refreshed(upsert) => {
-                    Ok(GoogleInstanceUpdateOutcome::OccurrenceGone(upsert))
+                    Ok(ProviderInstanceUpdateOutcome::OccurrenceGone(upsert))
                 }
-                SeriesOutcome::Gone => Ok(GoogleInstanceUpdateOutcome::SeriesGone),
-                SeriesOutcome::Malformed => Err(GoogleProviderError::new(
-                    GoogleProviderErrorKind::Permanent,
+                SeriesOutcome::Gone => Ok(ProviderInstanceUpdateOutcome::SeriesGone),
+                SeriesOutcome::Malformed => Err(CalendarProviderError::new(
+                    CalendarProviderErrorKind::Permanent,
                     "Google Calendar returned a malformed series after the mutation",
                 )),
             }
@@ -1189,11 +1189,11 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
             .series_outcome(access_token, target, master_provider_event_id)
             .await?
         {
-            GoogleSeriesMutationOutcome::Applied(upsert) => {
-                Ok(GoogleInstanceUpdateOutcome::Applied(upsert))
+            ProviderSeriesMutationOutcome::Applied(upsert) => {
+                Ok(ProviderInstanceUpdateOutcome::Applied(upsert))
             }
-            GoogleSeriesMutationOutcome::SeriesDeleted | GoogleSeriesMutationOutcome::Gone => {
-                Ok(GoogleInstanceUpdateOutcome::SeriesGone)
+            ProviderSeriesMutationOutcome::SeriesDeleted | ProviderSeriesMutationOutcome::Gone => {
+                Ok(ProviderInstanceUpdateOutcome::SeriesGone)
             }
         }
     }
@@ -1206,9 +1206,9 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn delete_event(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         provider_event_id: &str,
-    ) -> Result<(), GoogleProviderError> {
+    ) -> Result<(), CalendarProviderError> {
         self.delete_event_raw(access_token, target, provider_event_id)
             .await
     }
@@ -1221,13 +1221,13 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn delete_event_instance(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
         original_start: &str,
-    ) -> Result<GoogleSeriesMutationOutcome, GoogleProviderError> {
+    ) -> Result<ProviderSeriesMutationOutcome, CalendarProviderError> {
         let Some(start) = parse_occurrence_start(original_start) else {
-            return Err(GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+            return Err(CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 "the occurrence identifier is not a recognizable start",
             ));
         };
@@ -1274,13 +1274,13 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn truncate_recurring_event(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
         original_start: &str,
-    ) -> Result<GoogleSeriesMutationOutcome, GoogleProviderError> {
+    ) -> Result<ProviderSeriesMutationOutcome, CalendarProviderError> {
         let Some(cutoff) = parse_occurrence_start(original_start) else {
-            return Err(GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+            return Err(CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 "the occurrence identifier is not a recognizable start",
             ));
         };
@@ -1293,7 +1293,7 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
             )
             .await?
         else {
-            return Ok(GoogleSeriesMutationOutcome::Gone);
+            return Ok(ProviderSeriesMutationOutcome::Gone);
         };
         // Removing everything from the first occurrence onward is a series
         // deletion, matching Google Calendar's own behavior.
@@ -1301,7 +1301,7 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
         if master_start.is_some_and(|start| !occurrence_is_after(&cutoff, &start)) {
             self.delete_event_raw(access_token, target, &master.id)
                 .await?;
-            return Ok(GoogleSeriesMutationOutcome::SeriesDeleted);
+            return Ok(ProviderSeriesMutationOutcome::SeriesDeleted);
         }
         let truncated = truncate_recurrence_lines(&master.recurrence, &cutoff);
         let Some(updated) = self
@@ -1313,14 +1313,14 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
             )
             .await?
         else {
-            return Ok(GoogleSeriesMutationOutcome::Gone);
+            return Ok(ProviderSeriesMutationOutcome::Gone);
         };
         match self
             .mutation_readback(access_token, target, updated)
             .await?
         {
-            Some(upsert) => Ok(GoogleSeriesMutationOutcome::Applied(Box::new(upsert))),
-            None => Ok(GoogleSeriesMutationOutcome::Gone),
+            Some(upsert) => Ok(ProviderSeriesMutationOutcome::Applied(Box::new(upsert))),
+            None => Ok(ProviderSeriesMutationOutcome::Gone),
         }
     }
 
@@ -1332,12 +1332,12 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
     async fn rsvp_event(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
         actor: &ActorInboxes,
         response: AttendeeResponseStatus,
         scope: &CalendarRsvpScope,
-    ) -> Result<GoogleRsvpOutcome, GoogleProviderError> {
+    ) -> Result<ProviderRsvpOutcome, CalendarProviderError> {
         let patch_target = match scope {
             CalendarRsvpScope::All => Some(master_provider_event_id.to_string()),
             CalendarRsvpScope::ThisEvent { recurrence_id } => {
@@ -1358,8 +1358,8 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
                 .await?
             {
                 RsvpPatch::Applied => true,
-                RsvpPatch::NotAttendee => return Ok(GoogleRsvpOutcome::NotAttendee),
-                RsvpPatch::Gone => return Ok(GoogleRsvpOutcome::Gone),
+                RsvpPatch::NotAttendee => return Ok(ProviderRsvpOutcome::NotAttendee),
+                RsvpPatch::Gone => return Ok(ProviderRsvpOutcome::Gone),
             }
         } else {
             false
@@ -1377,9 +1377,11 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
                 .await?
         };
         match outcome {
-            GoogleSeriesMutationOutcome::Applied(upsert) => Ok(GoogleRsvpOutcome::Applied(upsert)),
-            GoogleSeriesMutationOutcome::SeriesDeleted | GoogleSeriesMutationOutcome::Gone => {
-                Ok(GoogleRsvpOutcome::Gone)
+            ProviderSeriesMutationOutcome::Applied(upsert) => {
+                Ok(ProviderRsvpOutcome::Applied(upsert))
+            }
+            ProviderSeriesMutationOutcome::SeriesDeleted | ProviderSeriesMutationOutcome::Gone => {
+                Ok(ProviderRsvpOutcome::Gone)
             }
         }
     }
@@ -1391,7 +1393,7 @@ impl<G: GoogleRequestGate> GoogleCalendarMutationProvider for GoogleCalendarClie
         email_link_id: Uuid,
         channel_id: &str,
         resource_id: &str,
-    ) -> Result<(), GoogleProviderError> {
+    ) -> Result<(), CalendarProviderError> {
         self.gate.acquire(email_link_id).await?;
         let response = self
             .client
@@ -1431,13 +1433,13 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn instance_id_at(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         master_provider_event_id: &str,
         recurrence_id: &str,
-    ) -> Result<Option<String>, GoogleProviderError> {
+    ) -> Result<Option<String>, CalendarProviderError> {
         let Some(start) = parse_occurrence_start(recurrence_id) else {
-            return Err(GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+            return Err(CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 "the occurrence identifier is not a recognizable start",
             ));
         };
@@ -1475,11 +1477,11 @@ impl<G: GoogleRequestGate> GoogleCalendarClient<G> {
     async fn patch_actor_response(
         &self,
         access_token: &str,
-        target: &GoogleCalendarTarget,
+        target: &ProviderCalendarTarget,
         provider_event_id: &str,
         actor: &ActorInboxes,
         response: AttendeeResponseStatus,
-    ) -> Result<RsvpPatch, GoogleProviderError> {
+    ) -> Result<RsvpPatch, CalendarProviderError> {
         let Some(current) = self
             .event(
                 access_token,
@@ -1590,26 +1592,26 @@ fn truncate_recurrence_lines(lines: &[String], cutoff: &EventStart) -> Vec<Strin
 /// The next sync converges the projection, so the demotion loses nothing.
 /// A reauthorization signal is kept — retrying would not help it either, and
 /// the caller maps it to a reauth prompt rather than a retry.
-fn non_retryable_after_write(error: GoogleProviderError) -> GoogleProviderError {
+fn non_retryable_after_write(error: CalendarProviderError) -> CalendarProviderError {
     match error.kind() {
-        GoogleProviderErrorKind::Transient | GoogleProviderErrorKind::SyncTokenExpired => {
-            GoogleProviderError::new(
-                GoogleProviderErrorKind::Permanent,
+        CalendarProviderErrorKind::Transient | CalendarProviderErrorKind::SyncTokenExpired => {
+            CalendarProviderError::new(
+                CalendarProviderErrorKind::Permanent,
                 format!(
                     "Google Calendar applied the change but has not returned it yet, refresh to see it: {}",
                     error.message()
                 ),
             )
         }
-        GoogleProviderErrorKind::Permanent
-        | GoogleProviderErrorKind::ReauthRequired
-        | GoogleProviderErrorKind::PushUnsupported => error,
+        CalendarProviderErrorKind::Permanent
+        | CalendarProviderErrorKind::ReauthRequired
+        | CalendarProviderErrorKind::PushUnsupported => error,
     }
 }
 
-fn mutation_normalization_error(error: Report) -> GoogleProviderError {
-    GoogleProviderError::new(
-        GoogleProviderErrorKind::Permanent,
+fn mutation_normalization_error(error: Report) -> CalendarProviderError {
+    CalendarProviderError::new(
+        CalendarProviderErrorKind::Permanent,
         format!("Google Calendar returned a malformed event after the mutation: {error:?}"),
     )
 }
@@ -1788,7 +1790,9 @@ fn google_reminders_body(reminders: &EventReminders) -> serde_json::Value {
 /// null is how the API expresses detachment.
 fn google_conference_body(change: ConferenceChange) -> serde_json::Value {
     match change {
-        ConferenceChange::GoogleMeet => serde_json::json!({
+        ConferenceChange::ProviderDefault
+        | ConferenceChange::MicrosoftTeams
+        | ConferenceChange::GoogleMeet => serde_json::json!({
             "createRequest": {
                 "requestId": Uuid::new_v4().to_string(),
                 "conferenceSolutionKey": { "type": "hangoutsMeet" },
@@ -1918,7 +1922,7 @@ struct MappedGoogleSnapshot {
 }
 
 fn map_snapshot(
-    target: &GoogleCalendarTarget,
+    target: &ProviderCalendarTarget,
     canonical_events: Vec<GoogleEvent>,
     instances: Vec<GoogleEvent>,
 ) -> MappedGoogleSnapshot {
@@ -1986,7 +1990,7 @@ fn map_snapshot(
 }
 
 fn map_upsert(
-    target: &GoogleCalendarTarget,
+    target: &ProviderCalendarTarget,
     master: GoogleEvent,
     exceptions: Vec<GoogleEvent>,
     instances: Vec<GoogleEvent>,
@@ -1995,7 +1999,9 @@ fn map_upsert(
     let time = google_time(&master)?;
     let created_at = parse_datetime(master.created.as_deref()).unwrap_or_else(Utc::now);
     let updated_at = parse_datetime(master.updated.as_deref()).unwrap_or(created_at);
-    let source = CalendarEventSource::Google(GoogleEventSource {
+    let source = CalendarEventSource::Google(ProviderEventSource {
+        automatic_decline: None,
+        binding: None,
         email_link_id: target.email_link_id,
         account_id: target.account_id,
         calendar_id: target.calendar_id,
@@ -2080,6 +2086,8 @@ fn map_upsert(
                     })?;
                 let time = google_time(&exception)?;
                 Ok(CalendarEventOverride {
+                    reminders: None,
+                    automatic_decline: None,
                     sequence: exception.sequence,
                     source_updated_at: parse_datetime(exception.updated.as_deref()),
                     recurrence_id: original.occurrence_key(),

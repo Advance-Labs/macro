@@ -16,6 +16,8 @@ export function useCalendarSources() {
 
     return calendars.map((calendar) => ({
       id: calendar.id,
+      provider: calendar.provider,
+      capabilities: calendar.capabilities,
       name: calendar.name,
       color: calendar.color ?? DEFAULT_CALENDAR_SOURCE.color,
       emailAddress: calendar.emailAddress,
