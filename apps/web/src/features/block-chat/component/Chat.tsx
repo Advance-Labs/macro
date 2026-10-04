@@ -1,7 +1,6 @@
 import type { SendBuilder } from '@block-chat/blockClient';
 import { TopBar } from '@block-chat/component/TopBar';
 import type { ChatData } from '@block-chat/definition';
-import { pendingLocationParamsSignal } from '@block-chat/signal/pendingLocationParams';
 import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
 import { useCanAutofocusSplitContent } from '@components/app/split-layout/layoutUtils';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
@@ -161,6 +160,9 @@ function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
   const { navigatedFromJK } = useNavigatedFromJK();
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
   const [scrollRef, setScrollRef] = createSignal<HTMLElement>();
+  const [pendingLocationParams, setPendingLocationParams] = createSignal<
+    Record<string, string> | undefined
+  >();
   const [showStreamDebug, setShowStreamDebug] = createSignal(false);
   const [markdownText, setMarkdownText] = createSignal(
     props.loadedInputText ?? ''
@@ -270,8 +272,6 @@ function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
     saveChatState({ attachments: attached, input: inputText, model: model_ });
   });
 
-  const setPendingLocation = pendingLocationParamsSignal.set;
-
   createMethodRegistration(blockHandle, {
     sendMessage: async (sendRequest: SendBuilder) => {
       onSend({
@@ -282,7 +282,7 @@ function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
       });
     },
     goToLocationFromParams: (params: Record<string, string>) => {
-      setPendingLocation(params);
+      setPendingLocationParams(params);
     },
   });
 
@@ -370,7 +370,7 @@ function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
           <div class="mx-auto w-full max-w-3xl touch:pt-[calc(var(--mobile-content-inset-top,0)+0.5rem)] touch:pb-(--mobile-content-inset-bottom)">
             <ChatMessages
               editDisabled={disabled()}
-              pendingLocationParams={pendingLocationParamsSignal.get}
+              pendingLocationParams={pendingLocationParams}
             />
           </div>
         </div>

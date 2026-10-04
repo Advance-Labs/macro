@@ -21,7 +21,7 @@ import {
   waitFor,
   within,
 } from '@solidjs/testing-library';
-import { type JSX, onMount } from 'solid-js';
+import { type Accessor, type JSX, onMount } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ChatInput } from './ChatInput';
 
@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   editor: undefined as unknown as EditorConfigBuilder,
   send: vi.fn(),
+  navigate: [] as ((params: Record<string, string>) => void)[],
 }));
 
 // This suite exercises legacy chat model persistence, including the flag-off Soup input.
@@ -48,9 +49,6 @@ vi.mock('@components/app/split-layout/layoutUtils', () => ({
 }));
 vi.mock('@block-chat/component/TopBar', () => ({
   TopBar: () => <CurrentModel />,
-}));
-vi.mock('@block-chat/signal/pendingLocationParams', () => ({
-  pendingLocationParamsSignal: { get: vi.fn(), set: vi.fn() },
 }));
 vi.mock('@components/app/mobile/float-regions/FloatRegion', () => ({
   FloatRegionOrInline: (props: { children: JSX.Element }) => props.children,
@@ -69,7 +67,13 @@ vi.mock('@core/component/AI/component/input/buildRequest', () => ({
   useSendChatMessage: () => mocks.send,
 }));
 vi.mock('@core/component/AI/component/message/ChatMessages', () => ({
-  ChatMessages: () => null,
+  ChatMessages: (props: {
+    pendingLocationParams?: Accessor<Record<string, string> | undefined>;
+  }) => (
+    <output data-testid="pending-location">
+      {props.pendingLocationParams?.()?.message_id ?? ''}
+    </output>
+  ),
 }));
 vi.mock('@core/component/AI/hook/useEntityDropAttachment', () => ({
   useEntityDropAttachment: () => ({
@@ -84,7 +88,14 @@ vi.mock('@core/component/CustomScrollbar', () => ({
   CustomScrollbar: () => null,
 }));
 vi.mock('@core/hotkey/utils', () => ({ registerScopeSignalHotkey: vi.fn() }));
-vi.mock('@core/orchestrator', () => ({ createMethodRegistration: vi.fn() }));
+vi.mock('@core/orchestrator', () => ({
+  createMethodRegistration: (
+    _handle: unknown,
+    methods: {
+      goToLocationFromParams: (params: Record<string, string>) => void;
+    }
+  ) => mocks.navigate.push(methods.goToLocationFromParams),
+}));
 vi.mock('@core/signal/blockElement', () => ({
   blockElementSignal: { get: vi.fn() },
 }));
@@ -274,6 +285,7 @@ vi.mock('@core/component/LexicalMarkdown/builder/MarkdownShell', () => ({
 
 let motionStyles: HTMLStyleElement;
 beforeEach(() => {
+  mocks.navigate.length = 0;
   motionStyles = document.createElement('style');
   motionStyles.textContent =
     '* { transition-duration: 0s; animation-name: none; }';
@@ -352,3 +364,61 @@ it.each([true, false])(
     expect(screen.getByTestId('model').textContent).toBe(Model.gpt56);
   }
 );
+
+function renderNavigableChat(id: string) {
+  const editor = {
+    buildHandle: () => ({ lexical: {} }),
+    withFilePaste: () => editor,
+    onEnter: () => editor,
+    onEscape: () => editor,
+    onChange: () => editor,
+    controls: { clear: vi.fn() },
+  } as unknown as EditorConfigBuilder;
+  mocks.editor = editor;
+  return (
+    <HotkeyScope scope={`chat-${id}`}>
+      <Chat
+        data={
+          {
+            chat: { id, model: Model.sonnet55, messages: [] },
+          } as unknown as ChatData
+        }
+      />
+    </HotkeyScope>
+  );
+}
+
+it('keeps pending message targets isolated between mounted chats', () => {
+  const view = render(() => (
+    <>
+      {renderNavigableChat('chat-a')}
+      {renderNavigableChat('chat-b')}
+    </>
+  ));
+  const targets = view.getAllByTestId('pending-location');
+  expect(mocks.navigate).toHaveLength(2);
+  mocks.navigate[0]({ message_id: 'message-a' });
+  expect(targets.map((target) => target.textContent)).toEqual([
+    'message-a',
+    '',
+  ]);
+  mocks.navigate[1]({ message_id: 'message-b' });
+  expect(targets.map((target) => target.textContent)).toEqual([
+    'message-a',
+    'message-b',
+  ]);
+  mocks.navigate[0]({ message_id: 'message-a-next' });
+  expect(targets.map((target) => target.textContent)).toEqual([
+    'message-a-next',
+    'message-b',
+  ]);
+});
+
+it('does not retain a pending message target after a chat remounts', () => {
+  const first = render(() => renderNavigableChat('chat-a'));
+  mocks.navigate[0]({ message_id: 'message-a' });
+  expect(first.getByTestId('pending-location').textContent).toBe('message-a');
+  first.unmount();
+  const reopened = render(() => renderNavigableChat('chat-a'));
+  expect(reopened.getByTestId('pending-location').textContent).toBe('');
+});
