@@ -66,6 +66,9 @@ where
                 .authorize_prompt(session_id, session.bot_id, actor.as_ref())
                 .await?;
         }
+        if action.occupies_turn() {
+            self.admit_session_id(session_id).await?;
+        }
 
         match self
             .sessions
@@ -148,6 +151,9 @@ where
                         .await?;
                     self.restore_queue(session_id).await?;
                 }
+                if action.occupies_turn() {
+                    self.admit_session(&session).await?;
+                }
                 self.sessions
                     .send_action(session_id, actor, action, id)
                     .await?;
@@ -199,7 +205,9 @@ where
             .compose(
                 &raw_prompt,
                 instructions,
-                announce.map(|origin| &origin.parent),
+                announce
+                    .filter(|origin| !origin.reuse_origin_message)
+                    .map(|origin| &origin.parent),
                 context.as_ref(),
             )
             .await?;
@@ -221,6 +229,11 @@ where
             ))
         })?;
         self.prompt_context.authorize_origin(actor, origin).await?;
+        // Assignment context is supplied privately. It was not a user message
+        // in the discussion, so do not add history or thread-reply instructions.
+        if origin.reuse_origin_message {
+            return Ok(Default::default());
+        }
         Ok(self
             .prompt_context
             .conversation_context(actor, origin)
@@ -269,6 +282,7 @@ where
         Ok(Some(SessionAnnouncement {
             reply_message_id: None,
             reply_placement: origin.reply_placement,
+            reuse_origin_message: origin.reuse_origin_message,
             session_id,
             bot_id: session.bot_id,
             is_coding,
@@ -335,13 +349,43 @@ where
                 _ => {}
             }
         }
-        let (Some(message_id), Some(origin), Some(triggered_by)) = (
-            turn.announcement_message_id,
-            turn.announce.as_ref(),
-            turn.actor.as_ref(),
-        ) else {
-            return;
+        let resolved = self
+            .resolve_announced_reply(
+                session_id,
+                turn.announcement_message_id,
+                turn.announce.as_ref(),
+                turn.actor.as_ref(),
+                outcome.clone(),
+            )
+            .await;
+        if resolved
+            && terminal
+            && let Some(store) = dm_store
+        {
+            if let Err(error) = store.finalize_reply(turn.action_id, &outcome).await {
+                tracing::error!(?error, %session_id, "failed to mark the DM reply finalized");
+            }
+        }
+    }
+
+    /// Resolve an announcement even when its queued command never opened a turn.
+    pub(super) async fn resolve_announced_reply(
+        &self,
+        session_id: AgentSessionId,
+        message_id: Option<macro_uuid::Uuid>,
+        origin: Option<&AnnounceOrigin>,
+        actor: Option<&MacroUserIdStr<'static>>,
+        outcome: ReplyOutcome,
+    ) -> bool {
+        let (Some(message_id), Some(origin), Some(triggered_by)) = (message_id, origin, actor)
+        else {
+            return true;
         };
+        // An assignment announces a session link, not a discussion reply.
+        // Later user messages have their own origins and can still be answered.
+        if origin.reuse_origin_message {
+            return true;
+        }
         let session = match self.sessions.get_session(session_id).await {
             Ok(session) => session,
             Err(error) => {
@@ -351,7 +395,7 @@ where
                     %message_id,
                     "leaving a turn's reply unresolved: session row unavailable"
                 );
-                return;
+                return false;
             }
         };
         // A timeline reply remains resolvable if its persona was deleted
@@ -369,7 +413,7 @@ where
                         %message_id,
                         "leaving a turn's reply unresolved: the session's persona is unavailable"
                     );
-                    return;
+                    return false;
                 }
             }
         };
@@ -392,10 +436,9 @@ where
                 %message_id,
                 "failed to resolve a turn's reply in its thread"
             );
-        } else if terminal && let Some(store) = dm_store {
-            if let Err(error) = store.finalize_reply(turn.action_id, &outcome).await {
-                tracing::error!(?error, %session_id, "failed to mark the DM reply finalized");
-            }
+            false
+        } else {
+            true
         }
     }
 }

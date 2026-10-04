@@ -133,7 +133,7 @@ impl DmTurnStore for PgDmTurnStore {
         channel: Uuid,
         command: OpenSession,
     ) -> Result<DmTurn> {
-        let source = command.origin.message_id;
+        let source = command.origin.announcement().message_id;
         let payload = serde_json::to_value(command).map_err(anyhow::Error::from)?;
         let value = sqlx::query_scalar!(
             r#"INSERT INTO agent_dm_turn_journal AS journal (source_message_id, session_id, channel_id, action_id, command)

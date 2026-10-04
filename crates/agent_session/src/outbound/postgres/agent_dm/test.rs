@@ -11,7 +11,7 @@ async fn channel(pool: &PgPool) -> Uuid {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn simultaneous_first_posts_reserve_the_same_session_before_it_exists(pool: PgPool) {
     let channel = channel(&pool).await;
-    let repo = PgAgentSessionRepo::new(pool);
+    let repo = super::super::test::test_repo(&pool);
     assert_eq!(repo.current(channel).await.unwrap(), None);
     let (a, b) = tokio::join!(
         repo.current_or_create(channel),
@@ -31,7 +31,7 @@ async fn simultaneous_first_posts_reserve_the_same_session_before_it_exists(pool
 async fn start_fresh_preserves_previous_segments_and_isolates_other_channels(pool: PgPool) {
     let first_channel = channel(&pool).await;
     let second_channel = channel(&pool).await;
-    let repo = PgAgentSessionRepo::new(pool);
+    let repo = super::super::test::test_repo(&pool);
     let first = repo.current_or_create(first_channel).await.unwrap();
     let second = repo.current_or_create(second_channel).await.unwrap();
     let fresh = repo.start_fresh(first_channel).await.unwrap();

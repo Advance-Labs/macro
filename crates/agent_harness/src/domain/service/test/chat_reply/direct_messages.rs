@@ -4,8 +4,89 @@ use macro_db_migrator::MACRO_DB_MIGRATIONS;
 
 fn dm_command() -> OpenSession {
     let mut command = chat_open_command();
-    command.origin.reply_placement = ReplyPlacement::Timeline;
+    mention_origin_mut(&mut command).reply_placement = ReplyPlacement::Timeline;
     command
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn quota_denial_finishes_queued_dm_journal_entries_without_stopping_the_running_turn(
+    pool: sqlx::PgPool,
+) {
+    use crate::domain::dm_turns::{DmTurnState, DmTurnStore};
+    use agent_session::domain::agent_dm::AgentDmConversationRepo;
+    use channels::domain::agent_dm::AgentDmRepo;
+
+    let journal = Arc::new(crate::outbound::dm_turns::PgDmTurnStore::new(pool.clone()));
+    let ((service, _, containers, announcer, _), _) = harness_with_ports_and_journal(
+        PromptContextMock::default(),
+        PromptComposerMock::default(),
+        KindDefaultPolicies,
+        HarnessDefaultCodingAgents,
+        PromptMentionsMock::new(),
+        Some(journal.clone()),
+    );
+    let mut command = dm_command();
+    let channel = channels::outbound::pg_channels_repo::PgChannelsRepo::new(pool.clone())
+        .ensure(mention_origin(&command).sender.clone(), command.bot_id)
+        .await
+        .unwrap()
+        .dm
+        .channel_id;
+    let session = crate::testing::postgres_sessions(pool)
+        .current_or_create(channel)
+        .await
+        .unwrap();
+    mention_origin_mut(&mut command).parent = MessageParent::Channel(channel);
+    let running_source = mention_origin(&command).message_id;
+    let _container = open_dm(&service, &containers, session, command.clone()).await;
+    let mut queued = Vec::new();
+    for _ in 0..2 {
+        let source = macro_uuid::generate_uuid_v7();
+        mention_origin_mut(&mut command).message_id = source;
+        queued.push(source);
+        assert_eq!(
+            service
+                .execute(session, HarnessCommand::DirectMessage(command.clone()))
+                .await
+                .unwrap(),
+            CommandOutcome::Queued,
+        );
+    }
+    service
+        .inner
+        .reject_waiting_on_denial(
+            session,
+            &HarnessError::Admission(ai_billing::AiAdmissionError::Denied(
+                ai_billing::DenyReason::AllowanceExhausted,
+            )),
+        )
+        .await
+        .unwrap();
+
+    for source in queued {
+        let record = journal.get(source).await.unwrap().unwrap();
+        assert_eq!(record.state, DmTurnState::Failed);
+        assert!(record.reply_finalized);
+    }
+    assert_eq!(
+        journal.get(running_source).await.unwrap().unwrap().state,
+        DmTurnState::Running
+    );
+    assert!(service.inner.busy.turn(session).is_some());
+    assert!(service.inner.queues.snapshot(session).is_empty());
+    assert!(
+        service
+            .inner
+            .sessions
+            .list_queued_actions(session)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        announcer.resolved().is_empty(),
+        "the active reply is still running"
+    );
 }
 
 async fn open_dm(
@@ -38,9 +119,9 @@ async fn direct_messages_share_one_session_queue_in_order_and_answer_in_the_time
     let container = open_dm(&service, &containers, id, first.clone()).await;
     let agent = container.agent();
     let mut next = first.clone();
-    next.origin.message_id = macro_uuid::generate_uuid_v7();
-    next.origin.thread_id = next.origin.message_id;
-    next.origin.content = "Follow up".to_owned();
+    mention_origin_mut(&mut next).message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut next).thread_id = mention_origin(&next).message_id;
+    mention_origin_mut(&mut next).content = "Follow up".to_owned();
     let outcome = service
         .execute(id, HarnessCommand::DirectMessage(next))
         .await
@@ -87,8 +168,8 @@ async fn a_different_person_cannot_prompt_the_reserved_dm_session() {
     let id = AgentSessionId::new();
     let mut command = dm_command();
     let _container = open_dm(&service, &containers, id, command.clone()).await;
-    command.origin.sender = staff_sender();
-    command.origin.message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut command).sender = staff_sender();
+    mention_origin_mut(&mut command).message_id = macro_uuid::generate_uuid_v7();
     assert!(matches!(
         service
             .execute(id, HarnessCommand::DirectMessage(command))
@@ -120,7 +201,7 @@ async fn an_external_persona_dm_binds_the_connected_runtime_without_spawning_a_c
         ReplyPlacement::Timeline
     );
 
-    command.origin.message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut command).message_id = macro_uuid::generate_uuid_v7();
     assert_eq!(
         service
             .execute(id, HarnessCommand::DirectMessage(command))
@@ -147,17 +228,17 @@ async fn a_completed_dm_message_never_runs_again_when_the_broker_replays_it(pool
     );
     let mut command = dm_command();
     let channel = channels::outbound::pg_channels_repo::PgChannelsRepo::new(pool.clone())
-        .ensure(command.origin.sender.clone(), command.bot_id)
+        .ensure(mention_origin(&command).sender.clone(), command.bot_id)
         .await
         .unwrap()
         .dm
         .channel_id;
-    let session = agent_session::outbound::postgres::PgAgentSessionRepo::new(pool)
+    let session = crate::testing::postgres_sessions(pool)
         .current_or_create(channel)
         .await
         .unwrap();
-    command.origin.parent = MessageParent::Channel(channel);
-    let source = command.origin.message_id;
+    mention_origin_mut(&mut command).parent = MessageParent::Channel(channel);
+    let source = mention_origin(&command).message_id;
     let container = open_dm(&service, &containers, session, command.clone()).await;
     says(&container.agent(), "Recorded answer");
     container.agent().completes_prompt().await;
@@ -197,20 +278,20 @@ async fn recovered_messages_dispatch_in_durable_order_even_when_delivered_in_rev
     );
     let mut first = dm_command();
     let channel = channels::outbound::pg_channels_repo::PgChannelsRepo::new(pool.clone())
-        .ensure(first.origin.sender.clone(), first.bot_id)
+        .ensure(mention_origin(&first).sender.clone(), first.bot_id)
         .await
         .unwrap()
         .dm
         .channel_id;
-    let session = agent_session::outbound::postgres::PgAgentSessionRepo::new(pool)
+    let session = crate::testing::postgres_sessions(pool)
         .current_or_create(channel)
         .await
         .unwrap();
-    first.origin.parent = MessageParent::Channel(channel);
-    first.origin.content = "First admitted message".into();
+    mention_origin_mut(&mut first).parent = MessageParent::Channel(channel);
+    mention_origin_mut(&mut first).content = "First admitted message".into();
     let mut second = first.clone();
-    second.origin.message_id = macro_uuid::generate_uuid_v7();
-    second.origin.content = "Second admitted message".into();
+    mention_origin_mut(&mut second).message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut second).content = "Second admitted message".into();
     journal
         .admit(session, channel, first.clone())
         .await
@@ -242,13 +323,13 @@ async fn recovered_messages_dispatch_in_durable_order_even_when_delivered_in_rev
     container.agent().wait_for_requests(3).await;
     assert_eq!(
         announcer.announced()[0].origin_message_id,
-        first.origin.message_id
+        mention_origin(&first).message_id
     );
     container.agent().completes_prompt().await;
     signals.lifecycle_published(4).await;
     assert_eq!(
         announcer.announced()[1].origin_message_id,
-        second.origin.message_id
+        mention_origin(&second).message_id
     );
     assert_eq!(containers.spawned(), 1);
 }

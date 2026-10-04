@@ -16,6 +16,7 @@
 #[cfg(test)]
 mod test;
 
+mod admission;
 mod deliver;
 mod lifecycle;
 mod lifecycle_events;
@@ -124,6 +125,7 @@ struct AgentHarnessInner<
     Notifier,
 > {
     sessions: Sessions,
+    admission: Arc<dyn ai_billing::AiAdmissionService>,
     containers: Containers,
     announcer: Announcer,
     runtimes: Runtimes,
@@ -321,6 +323,7 @@ where
         Self {
             inner: Arc::new(AgentHarnessInner {
                 sessions,
+                admission: Arc::new(ai_billing::DisabledAiAdmissionService),
                 containers,
                 announcer,
                 runtimes,
@@ -360,9 +363,13 @@ where
         session: AgentSessionId,
         command: OpenSession,
     ) -> Result<(AgentSessionId, OpenSession)> {
+        let origin = command.origin.announcement();
+        if origin.reply_placement != crate::domain::model::ReplyPlacement::Timeline {
+            return Err(AgentSessionError::Forbidden.into());
+        }
         if let Some(policy) = &self.inner.direct_messages
             && !policy
-                .validate_binding(session, command.bot_id, Some(&command.origin.sender))
+                .validate_binding(session, command.bot_id, Some(command.origin.actor()))
                 .await?
         {
             return Err(AgentSessionError::Forbidden.into());
@@ -370,11 +377,10 @@ where
         let Some(store) = &self.inner.dm_turns else {
             return Ok((session, command));
         };
-        let messages::domain::models::MessageParent::Channel(channel) = command.origin.parent
-        else {
+        let messages::domain::models::MessageParent::Channel(channel) = origin.parent else {
             return Err(AgentSessionError::Forbidden.into());
         };
-        if let Some(record) = store.get(command.origin.message_id).await? {
+        if let Some(record) = store.get(origin.message_id).await? {
             if record.channel_id != channel {
                 return Err(AgentSessionError::Forbidden.into());
             }
@@ -463,6 +469,14 @@ where
         Ok(())
     }
 
+    /// Configure shared admission before cloning the harness or starting workers.
+    pub fn with_admission(mut self, admission: Arc<dyn ai_billing::AiAdmissionService>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("configure admission before sharing the harness")
+            .admission = admission;
+        self
+    }
+
     /// Enable explicit repository choices, authorized against the owner's reachable repositories.
     pub fn with_repositories(
         mut self,
@@ -538,6 +552,7 @@ where
             .announce(SessionAnnouncement {
                 reply_message_id: None,
                 reply_placement: prompt.origin.reply_placement,
+                reuse_origin_message: false,
                 session_id,
                 bot_id: session.bot_id,
                 is_coding: persona.is_coding,
@@ -622,6 +637,7 @@ where
 fn into_session_error(error: HarnessError) -> AgentSessionError {
     match error {
         HarnessError::Session(error) => error,
+        HarnessError::Admission(error) => AgentSessionError::Admission(error),
         HarnessError::Disconnected(session) => AgentSessionError::Disconnected(session),
         other => AgentSessionError::Unknown(anyhow::anyhow!(other)),
     }

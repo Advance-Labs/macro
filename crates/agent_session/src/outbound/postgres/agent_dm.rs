@@ -6,7 +6,7 @@ use crate::domain::agent_dm::{AgentDmConversationRepo, AgentDmSegment};
 #[cfg(test)]
 mod test;
 
-impl PgAgentSessionRepo {
+impl<B: BotFacts + 'static> PgAgentSessionRepo<B> {
     async fn reserve_dm_session(&self, channel_id: Uuid, fresh: bool) -> Result<AgentSessionId> {
         let mut tx = self.pool.begin().await.map_err(anyhow::Error::from)?;
         let lock_key = format!("agent-dm-session:{channel_id}");
@@ -46,7 +46,7 @@ impl PgAgentSessionRepo {
     }
 }
 
-impl AgentDmConversationRepo for PgAgentSessionRepo {
+impl<B: BotFacts + 'static> AgentDmConversationRepo for PgAgentSessionRepo<B> {
     async fn segments(&self, channel_id: Uuid) -> Result<Vec<AgentDmSegment>> {
         let rows = sqlx::query!(
             "SELECT session_id, created_at, is_current FROM agent_dm_conversations WHERE channel_id = $1 ORDER BY created_at, session_id",

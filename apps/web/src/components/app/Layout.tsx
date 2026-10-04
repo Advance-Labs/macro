@@ -12,8 +12,10 @@ import {
   setCreateMenuOpen,
 } from '@app/features/command/Launcher';
 import { SearchState } from '@app/features/command/mobile/mobileSearchState';
-import { CreateCompanyModal } from '@app/features/companies/CreateCompanyModal';
-import { CreateContactModal } from '@app/features/companies/CreateContactModal';
+import {
+  CreateCompanyModal,
+  CreateContactModal,
+} from '@app/features/crm/crm-create';
 import { DevStatusBar } from '@app/features/devtools/DevStatusBar';
 import { GlobalBulkEditEntityModal } from '@app/features/entity/bulk-edit/BulkEditEntityModal';
 import {
@@ -28,7 +30,7 @@ import { ReminderComposerModal } from '@app/features/reminders/ReminderComposerM
 import { MobileSettingsProvider } from '@app/features/settings/context/mobile-settings';
 import { MobileSettings } from '@app/features/settings/MobileSettings';
 import { useOnboardingV4Flag } from '@app/features/setup/flow/useOnboardingV4Flag';
-import { IosShareSheet } from '@app/features/sharing/ios-share-sheet/IosShareSheet';
+import { NativeShareSheet } from '@app/features/sharing/native-share-sheet/NativeShareSheet';
 import { ShowFeatureFlag } from '@app/lib/analytics/posthog';
 import { mountGlobalFocusListener } from '@app/signal/focus';
 import { AutomationComposer } from '@block-automation/component';
@@ -43,7 +45,11 @@ import {
 import { useIsAuthenticated } from '@core/auth';
 import { UserCardDrawer } from '@core/component/UserCardDrawer';
 import { useAiUsageLimitState } from '@core/constant/AiUsageLimitState';
-import { DEV_MODE_ENV, enableReminders } from '@core/constant/featureFlags';
+import {
+  DEV_MODE_ENV,
+  enableDatabases,
+  enableReminders,
+} from '@core/constant/featureFlags';
 import { usePaywallState } from '@core/constant/PaywallState';
 import { isSoloSettings } from '@core/constant/SettingsState';
 import { attachGlobalDOMScope } from '@core/hotkey/hotkeys';
@@ -63,6 +69,7 @@ import { ScreencastHotkeys } from '@ui/components/ScreencastHotkeys';
 import {
   createEffect,
   createMemo,
+  lazy,
   onCleanup,
   onMount,
   Show,
@@ -79,6 +86,13 @@ import { MobileDockRow } from './mobile/MobileDockRow';
 import { MobileViewsRow } from './mobile/MobileViewsRow';
 import { SwipeDownDismissKeyboard } from './mobile/SwipeDownDismissKeyboard';
 import { useAppSquishHandlers } from './useAppSquishHandlers';
+
+const StarterDatabase = lazy(async () => {
+  const module = await import(
+    '@app/features/block-database/views/starter-database'
+  );
+  return { default: module.StarterDatabase };
+});
 
 const AUTH_URLS = [
   `${ROUTER_BASE_CONCAT}login`,
@@ -110,6 +124,13 @@ export function Layout(props: RouteSectionProps) {
   return (
     <SidebarVisibilityContext.Provider value={sidebarVisible}>
       <MobileSettingsProvider>
+        <Show when={isAuthenticated() === true}>
+          <ShowFeatureFlag flag={enableDatabases}>
+            <Suspense>
+              <StarterDatabase />
+            </Suspense>
+          </ShowFeatureFlag>
+        </Show>
         <LayoutInner {...props} />
       </MobileSettingsProvider>
     </SidebarVisibilityContext.Provider>
@@ -221,7 +242,7 @@ function LayoutInner(props: RouteSectionProps) {
             <PropertyEditorModal />
           </Suspense>
           <GlobalBulkEditEntityModal />
-          <IosShareSheet />
+          <NativeShareSheet />
           <MacroMcpSetupModal />
           <CreateChannelModal />
           <CreateCompanyModal />

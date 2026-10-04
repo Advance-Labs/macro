@@ -15,9 +15,13 @@ note: |-
 files:
   - apps/web/src/features/agent-dms/components/**
   - apps/web/src/features/agent-interactions/components/**
+  - apps/web/src/features/scheduling/components/**
+  - apps/web/src/features/crm/components/**
+  - apps/web/src/features/slack-import/components/**
   - apps/web/src/features/channels-view/components/ChannelDetailView*
   - apps/web/src/features/channel/components/channel-invite*
   - apps/web/src/features/projects/components/**
+  - apps/web/src/features/channel/Call/chat/components/**
   - apps/web/src/features/block-agent/ui/**
   - apps/web/src/features/meetings/components/**
   - apps/web/src/features/block-spreadsheet/components/**
@@ -29,6 +33,7 @@ files:
   - apps/web/src/features/email-thread/components/**
   - apps/web/src/features/email-compose/components/**
   - apps/web/src/features/agent-changes/components/**
+  - apps/web/src/features/block-write/components/**
 rule:
   any:
     - kind: string

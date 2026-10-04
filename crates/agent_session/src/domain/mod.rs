@@ -8,8 +8,11 @@ pub mod error;
 pub mod events;
 pub mod lifecycle;
 pub mod model;
+#[cfg(feature = "admission")]
+pub mod name_generation;
 pub mod ports;
 pub mod pull_request;
+pub mod pull_request_links;
 mod sandbox_size;
 pub mod search;
 pub mod service;
@@ -29,3 +32,6 @@ pub mod turn_state;
 
 /// Repository-matched working branches reported by a session's runtime.
 pub mod working_branch;
+
+/// Recovery of sessions abandoned by crashed replicas.
+pub mod recovery;

@@ -13,10 +13,15 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
+use bots::outbound::pg_bots_repo::PgBotsRepo;
 use chrono::Utc;
 use entity_access::domain::models::{
     AccessLevel, Entity, EntityAccessReceipt, EntityPermission, EntityType,
 };
+use entity_access::domain::service::EntityAccessServiceImpl;
+use entity_access::outbound::PgAccessRepository;
+use entity_registry::OwnerGrantPolicy;
+use entity_registry_db_utils::OwnedEntityRegistrar;
 use macro_authorization::{
     InternalIdentityClaims, MacroAuthorizationError, MacroAuthorizationService,
     MacroAuthorizationState,
@@ -38,6 +43,7 @@ use scheduled_action::{
         },
         event_trigger::{
             EventEntityType, EventId, EventPayload, EventReference, EventRejection, IncomingEvent,
+            MessageFact,
         },
         execution::ExecutionHandle,
         models::{
@@ -185,14 +191,15 @@ impl ScheduledActionLiveUpdate for NoLiveUpdates {
     async fn publish_update(&self, _: ScheduledActionUpdate) {}
 }
 
-type Executor = InProcessExecutor<PgScheduledActionRepo, NoLiveUpdates, FakeRunner>;
+type ActionRepo = PgScheduledActionRepo<PgBotsRepo>;
+type Executor = InProcessExecutor<ActionRepo, NoLiveUpdates, FakeRunner>;
 type Admission = EventAdmissionService<PgEventRunRepo, FakeAccess>;
 type Dispatch = EventDispatchService<PgEventRunRepo, FakeAccess, Executor>;
 
 struct Harness {
     pool: PgPool,
     app: Router,
-    actions: Arc<PgScheduledActionRepo>,
+    actions: Arc<ActionRepo>,
     runs: Arc<PgEventRunRepo>,
     runner: Arc<FakeRunner>,
     executor: Arc<Executor>,
@@ -215,7 +222,10 @@ impl Harness {
         .execute(&pool)
         .await
         .unwrap();
-        let actions = Arc::new(PgScheduledActionRepo::new(pool.clone()));
+        let actions = Arc::new(PgScheduledActionRepo::new(
+            pool.clone(),
+            OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(pool.clone()))),
+        ));
         let runs = Arc::new(PgEventRunRepo::new(pool.clone()));
         let runner = Arc::new(runner);
         let tracker = TaskTracker::new();
@@ -227,10 +237,15 @@ impl Harness {
             CancellationToken::new(),
         ));
         let (tx, notifications) = mpsc::channel(100);
-        let service = ScheduledActionServiceImpl::new(actions.clone(), executor.clone(), tx)
-            .with_event_management_enabled(true);
+        let access = Arc::new(EntityAccessServiceImpl::new(PgAccessRepository::new(
+            pool.clone(),
+        )));
+        let service =
+            ScheduledActionServiceImpl::new(actions.clone(), executor.clone(), tx, access.clone())
+                .with_event_management_enabled(true);
         let app = scheduled_action_router(ScheduledActionRouterState {
             service: Arc::new(service),
+            access_service: access,
             authorization_state: MacroAuthorizationState::new(Arc::new(FakeAuth)),
         });
         Self {
@@ -384,6 +399,17 @@ fn key(action_id: Uuid, event: &IncomingEvent) -> EventRunKey {
         event_id: EventId::try_from(event.event_id).unwrap(),
     }
 }
+/// Channel posts arrive on `macro.messages` as `message.posted` with a channel parent.
+fn posted_message(mut envelope: Value) -> MessageFact {
+    let metadata = &mut envelope["metadata"];
+    metadata["parent"] = json!({"type": "channel", "id": metadata["channel_id"]});
+    metadata["root_id"] = metadata["message_id"].clone();
+    envelope["event_type"] = json!("message.posted");
+    match serde_json::from_value(envelope).unwrap() {
+        messages::outbound::broker::MessageTopicEvent::Posted(data) => MessageFact::Posted(data),
+        other => panic!("expected a posted message fact, got {other:?}"),
+    }
+}
 fn incoming(name: &str, actor: &str) -> IncomingEvent {
     let envelope = json!({"event_type":name, "metadata":{
         "document_id":generate_uuid_v7(), "owner":USER, "actor":actor,
@@ -397,6 +423,8 @@ fn incoming(name: &str, actor: &str) -> IncomingEvent {
         schema_version: 1,
         payload: if name.starts_with("document.") {
             EventPayload::Document(serde_json::from_value(envelope).unwrap())
+        } else if name == "channel.message_posted" {
+            EventPayload::Message(posted_message(envelope))
         } else {
             EventPayload::Channel(serde_json::from_value(envelope).unwrap())
         },
@@ -449,13 +477,7 @@ async fn legacy_cron_and_canonical_events_share_crud_and_manual_execution(pool: 
             request(&h.app, "DELETE", &url, Value::Null).await.0,
             StatusCode::NO_CONTENT
         );
-        assert!(
-            h.actions
-                .get_action(&id, MacroUserIdStr::parse_from_str(USER).unwrap())
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(h.actions.get_action(&id).await.unwrap().is_none());
     }
     assert_eq!(h.count().await, 0);
     let calls = h.runner.calls.lock().unwrap();

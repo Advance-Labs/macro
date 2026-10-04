@@ -7,7 +7,6 @@ use crate::domain::model::{
 };
 use agent_fold::domain::model::TurnId;
 use agent_session::domain::agent_dm::AgentDmConversationRepo;
-use agent_session::outbound::postgres::PgAgentSessionRepo;
 use bots::domain::ports::{AgentDmEligibility, BotError, MockBotRepo};
 use channels::{domain::agent_dm::AgentDmRepo, outbound::pg_channels_repo::PgChannelsRepo};
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
@@ -34,7 +33,7 @@ fn conversations(pool: PgPool, store: PgDmTurnStore, eligible: bool) -> impl Age
         PgChannelsRepo::new(pool.clone()),
         Eligibility(eligible),
         MockBotRepo::new(),
-        PgAgentSessionRepo::new(pool),
+        crate::testing::postgres_sessions(pool),
     )
     .with_turns(Arc::new(store))
 }
@@ -47,7 +46,7 @@ async fn setup(pool: PgPool) -> (PgDmTurnStore, AgentSessionId, Uuid, OpenSessio
         .unwrap()
         .dm
         .channel_id;
-    let session = PgAgentSessionRepo::new(pool.clone())
+    let session = crate::testing::postgres_sessions(pool.clone())
         .current_or_create(channel)
         .await
         .unwrap();
@@ -61,7 +60,7 @@ async fn setup(pool: PgPool) -> (PgDmTurnStore, AgentSessionId, Uuid, OpenSessio
             instructions: "Keep decisions".to_owned(),
             mcp_servers: agent_session::domain::model::AgentMcpServers::OwnerConnections,
         },
-        origin: MentionOrigin {
+        origin: crate::domain::model::SessionOrigin::Mention(MentionOrigin {
             reply_placement: ReplyPlacement::Timeline,
             parent: messages::domain::models::MessageParent::Channel(channel),
             thread_id: source,
@@ -69,7 +68,7 @@ async fn setup(pool: PgPool) -> (PgDmTurnStore, AgentSessionId, Uuid, OpenSessio
             sender: user,
             content: "Remember this".to_owned(),
             attachments: vec![],
-        },
+        }),
     };
     (PgDmTurnStore::new(pool), session, channel, command)
 }
@@ -78,10 +77,11 @@ fn flight(record: &DmTurn) -> InFlightTurn {
     InFlightTurn {
         action_id: record.action_id,
         turn: TurnId(0),
-        actor: Some(record.command.origin.sender.clone()),
+        actor: Some(mention_origin(&record.command).sender.clone()),
         announce: Some(AnnounceOrigin {
+            reuse_origin_message: false,
             reply_placement: ReplyPlacement::Timeline,
-            parent: record.command.origin.parent.clone(),
+            parent: mention_origin(&record.command).parent.clone(),
             thread_id: record.source_message_id,
             message_id: record.source_message_id,
         }),
@@ -109,15 +109,15 @@ async fn replay_after_reset_retains_the_original_segment_payload_and_terminal_de
         )
         .await
         .unwrap();
-    let new_session = PgAgentSessionRepo::new(pool)
+    let new_session = crate::testing::postgres_sessions(pool)
         .start_fresh(channel)
         .await
         .unwrap();
     let mut edited = command;
-    edited.origin.content = "An edited message must not rerun".to_owned();
+    mention_origin_mut(&mut edited).content = "An edited message must not rerun".to_owned();
     let duplicate = store.admit(new_session, channel, edited).await.unwrap();
     assert_eq!(duplicate.session_id, session);
-    assert_eq!(duplicate.command.origin.content, "Remember this");
+    assert_eq!(mention_origin(&duplicate.command).content, "Remember this");
     assert_eq!(duplicate.state, DmTurnState::Succeeded);
     assert!(!store.claim(duplicate.action_id, &turn).await.unwrap());
     assert_eq!(store.pending_replies(10).await.unwrap().len(), 1);
@@ -166,17 +166,17 @@ async fn interrupted_work_holds_its_segment_queue_until_an_explicit_decision(poo
         )
         .await
         .unwrap();
-    command.origin.message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut command).message_id = macro_uuid::generate_uuid_v7();
     store
         .admit(session, channel, command.clone())
         .await
         .unwrap();
     assert!(store.pending(10).await.unwrap().is_empty());
-    let fresh = PgAgentSessionRepo::new(pool)
+    let fresh = crate::testing::postgres_sessions(pool)
         .start_fresh(channel)
         .await
         .unwrap();
-    command.origin.message_id = macro_uuid::generate_uuid_v7();
+    mention_origin_mut(&mut command).message_id = macro_uuid::generate_uuid_v7();
     store.admit(fresh, channel, command).await.unwrap();
     let pending = store.pending(10).await.unwrap();
     assert_eq!(pending.len(), 1);
@@ -213,7 +213,10 @@ async fn an_explicit_retry_waits_for_reply_reconciliation_and_mints_only_one_new
     let next = store.get(first.source_message_id).await.unwrap().unwrap();
     assert_ne!(next.action_id, first.action_id);
     assert_eq!(next.state, DmTurnState::Queued);
-    assert_eq!(next.command.origin.content, first.command.origin.content);
+    assert_eq!(
+        mention_origin(&next.command).content,
+        mention_origin(&first.command).content
+    );
     assert!(next.in_flight.is_none());
     assert!(store.by_action(first.action_id).await.unwrap().is_none());
 }
@@ -284,12 +287,12 @@ async fn starting_fresh_requires_owner_and_current_persona_access(pool: PgPool) 
     let service = conversations(pool.clone(), store, false);
     assert!(matches!(
         service
-            .start_fresh(command.origin.sender, channel, session)
+            .start_fresh(mention_origin(&command).sender.clone(), channel, session)
             .await,
         Err(AgentDmError::NotRetryable)
     ));
     assert_eq!(
-        PgAgentSessionRepo::new(pool)
+        crate::testing::postgres_sessions(pool)
             .current(channel)
             .await
             .unwrap(),
@@ -300,7 +303,7 @@ async fn starting_fresh_requires_owner_and_current_persona_access(pool: PgPool) 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn a_running_turn_blocks_reset_and_completed_context_is_retained(pool: PgPool) {
     let (store, session, channel, command) = setup(pool.clone()).await;
-    let owner = command.origin.sender.clone();
+    let owner = mention_origin(&command).sender.clone();
     let record = store.admit(session, channel, command).await.unwrap();
     let service = conversations(pool.clone(), store.clone(), true);
     assert!(
@@ -329,7 +332,7 @@ async fn a_running_turn_blocks_reset_and_completed_context_is_retained(pool: PgP
         service.start_fresh(owner, channel, session).await,
         Err(AgentDmError::ContextBusy)
     ));
-    let segments = PgAgentSessionRepo::new(pool)
+    let segments = crate::testing::postgres_sessions(pool)
         .segments(channel)
         .await
         .unwrap();
@@ -351,7 +354,7 @@ async fn a_running_turn_blocks_reset_and_completed_context_is_retained(pool: PgP
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn reset_cancels_undispatched_work_and_serializes_with_claims(pool: PgPool) {
     let (store, session, channel, command) = setup(pool.clone()).await;
-    let owner = command.origin.sender.clone();
+    let owner = mention_origin(&command).sender.clone();
     let record = store.admit(session, channel, command).await.unwrap();
     let other = PgDmTurnStore::new(pool.clone());
     let lease = store.claim_context(session).await.unwrap().unwrap();
@@ -410,7 +413,7 @@ async fn settings_remain_pinned_after_reconnect_and_new_segments_adopt_edits(poo
             .unwrap(),
         original
     );
-    let fresh = PgAgentSessionRepo::new(pool)
+    let fresh = crate::testing::postgres_sessions(pool)
         .start_fresh(channel)
         .await
         .unwrap();
@@ -422,4 +425,18 @@ async fn settings_remain_pinned_after_reconnect_and_new_segments_adopt_edits(poo
         edited
     );
     assert_eq!(reconnected.settings(session).await.unwrap(), Some(original));
+}
+
+fn mention_origin(command: &OpenSession) -> &MentionOrigin {
+    let crate::domain::model::SessionOrigin::Mention(origin) = &command.origin else {
+        panic!("expected a mention");
+    };
+    origin
+}
+
+fn mention_origin_mut(command: &mut OpenSession) -> &mut MentionOrigin {
+    let crate::domain::model::SessionOrigin::Mention(origin) = &mut command.origin else {
+        panic!("expected a mention");
+    };
+    origin
 }

@@ -10,7 +10,7 @@ use agent_runtime_protocol::domain::action::AgentAction;
 
 use super::model::{
     AgentKind, AgentRuntimeConfig, AnnounceOrigin, AnnouncePrompt, DeliverAction, HarnessCommand,
-    MentionOrigin, OpenSession, StaticFileLinks,
+    MentionOrigin, OpenSession, SessionOrigin, StaticFileLinks, TaskAssignmentOrigin,
 };
 
 /// What one trigger event asks this deployment to do.
@@ -72,7 +72,7 @@ pub fn route_agent_trigger(
                 HarnessCommand::DirectMessage(OpenSession {
                     bot_id: event.bot_id,
                     runtime,
-                    origin: MentionOrigin {
+                    origin: SessionOrigin::Mention(MentionOrigin {
                         reply_placement: super::model::ReplyPlacement::Timeline,
                         parent: event.message.parent,
                         thread_id: event.message.thread_id.unwrap_or(event.message.message_id),
@@ -80,7 +80,25 @@ pub fn route_agent_trigger(
                         sender,
                         content: event.message.content,
                         attachments: links.prompt_attachments(&event.message.attachments),
-                    },
+                    }),
+                }),
+            ))
+        }
+        AgentTriggerTopicEvent::New(NewAgentSessionEvent::AssignedToTask(assigned)) => {
+            let Some(runtime) = runtime.filter(|runtime| runtime.kind.is_managed()) else {
+                return Err(Skipped::ForeignBot);
+            };
+            Ok(RoutedTrigger::Command(
+                AgentSessionId::new(),
+                HarnessCommand::Open(OpenSession {
+                    bot_id: assigned.bot_id,
+                    runtime,
+                    origin: SessionOrigin::TaskAssignment(TaskAssignmentOrigin {
+                        parent: assigned.parent,
+                        discussion_id: assigned.discussion_id,
+                        actor: assigned.actor,
+                        prompt: assigned.prompt,
+                    }),
                 }),
             ))
         }
@@ -101,7 +119,7 @@ pub fn route_agent_trigger(
                 HarnessCommand::Open(OpenSession {
                     bot_id,
                     runtime,
-                    origin: MentionOrigin {
+                    origin: SessionOrigin::Mention(MentionOrigin {
                         reply_placement: Default::default(),
                         parent: message.parent,
                         // A top-level mention roots its own thread; a mention
@@ -111,7 +129,7 @@ pub fn route_agent_trigger(
                         sender,
                         content: message.content,
                         attachments: links.prompt_attachments(&message.attachments),
-                    },
+                    }),
                 }),
             ))
         }
@@ -127,6 +145,7 @@ pub fn route_agent_trigger(
             };
             let origin = AnnounceOrigin {
                 reply_placement: Default::default(),
+                reuse_origin_message: false,
                 parent: message.parent,
                 thread_id: message.thread_id.unwrap_or(message.message_id),
                 message_id: message.message_id,

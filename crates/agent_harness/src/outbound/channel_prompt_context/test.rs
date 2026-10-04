@@ -76,6 +76,7 @@ fn actor() -> MacroUserIdStr<'static> {
 fn origin() -> AnnounceOrigin {
     AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: MessageParent::parse("document", "doc").unwrap(),
         thread_id: Uuid::from_u128(1),
         message_id: Uuid::from_u128(2),
@@ -376,6 +377,7 @@ async fn a_channel_thread_reply_is_about_its_thread_not_the_latest_message() {
     );
     let origin = AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: parent.clone(),
         thread_id: calendar.id,
         message_id: prompt.id,
@@ -478,6 +480,7 @@ async fn a_top_level_channel_prompt_replies_to_nothing_and_ends_the_channel() {
     );
     let origin = AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: parent.clone(),
         thread_id: prompt.id,
         message_id: prompt.id,
@@ -544,6 +547,7 @@ async fn a_quote_reply_carries_the_quoted_message_even_outside_the_window() {
     );
     let origin = AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: parent.clone(),
         thread_id: prompt.id,
         message_id: prompt.id,
@@ -604,6 +608,7 @@ async fn a_quote_from_another_conversation_travels_as_its_preview() {
     );
     let origin = AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: parent.clone(),
         thread_id: prompt.id,
         message_id: prompt.id,
@@ -681,6 +686,7 @@ async fn a_long_thread_keeps_its_root_and_the_messages_nearest_the_prompt() {
     let prompt = replies.last().unwrap().clone();
     let origin = AnnounceOrigin {
         reply_placement: Default::default(),
+        reuse_origin_message: false,
         parent: parent.clone(),
         thread_id: root.id,
         message_id: prompt.id,

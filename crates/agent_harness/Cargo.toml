@@ -5,6 +5,7 @@ publish = false
 version = "0.1.0"
 
 [dependencies]
+ai_billing = { path = "../ai_billing" }
 claude_cloud_agents = { path = "../claude_cloud_agents" }
 async-trait = { workspace = true }
 codex_cloud_agents = { path = "../codex_cloud_agents", features = ["postgres"] }
@@ -80,6 +81,8 @@ utoipa = { workspace = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+entity_registry = { path = "../entity_registry/entity_registry" }
+entity_registry_db_utils = { path = "../entity_registry/entity_registry_db_utils" }
 macro_db_migrator = { path = "../macro_db_migrator" }
 bots = { path = "../bots", default-features = false, features = ["test-utils"] }
 channels = { path = "../channels", default-features = false, features = ["outbound"] }

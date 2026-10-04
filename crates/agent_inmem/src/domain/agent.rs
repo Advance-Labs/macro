@@ -34,6 +34,7 @@ use agent_client_protocol::{
 };
 use agent_runtime_protocol::domain::action::MODEL_CONFIG_ID;
 use agent_session::domain::model::AgentSessionId;
+use ai_billing::domain::AiAdmissionService;
 use ai_tools::user_tool_review::{
     ReviewError, ReviewFieldKind, ReviewForm, ReviewOutcome, ReviewRequest, UserToolReviewer,
 };
@@ -42,6 +43,7 @@ use model_owner::Owner;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument as _;
 
+use crate::domain::admission::admit_turn;
 use crate::domain::engine::{AgentIdentity, TurnEngine, TurnPurpose, TurnRequest};
 use crate::domain::mcp::{DynMcpToolConnector, dialable_servers};
 use crate::domain::model_options::REASONING_EFFORT_CONFIG_ID;
@@ -113,6 +115,8 @@ pub struct AgentState {
     pub owner: Owner,
     /// Runs the actual turns.
     pub engine: Arc<dyn TurnEngine>,
+    /// Admission for new provider-backed turns, including direct ACP requests.
+    pub admission: Arc<dyn AiAdmissionService>,
     /// Conversation state, shared with the manager so it survives reattach.
     pub store: Arc<SessionStore>,
     /// Every outstanding turn's cancellation token - the running turn and any
@@ -712,9 +716,20 @@ async fn run_turn(
     prompt: UserPrompt,
     cancel: CancellationToken,
 ) -> Result<StopReason, AcpError> {
-    let _turn = state.turn_lock.lock().await;
-    if cancel.is_cancelled() {
-        return Ok(StopReason::Cancelled);
+    // Mark every exit (including denial or a dropped connection) complete so
+    // cancelled/failed requests do not remain outstanding.
+    let _completed = cancel.clone().drop_guard();
+    let _turn = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Ok(StopReason::Cancelled),
+        turn = state.turn_lock.lock() => turn,
+    };
+    // Check at execution time, not enqueue time. Cancellation stays responsive
+    // even if billing is slow, and neither denial nor cancellation adds history.
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Ok(StopReason::Cancelled),
+        result = admit_turn(state.admission.as_ref(), &state.owner) => result.map_err(|error| AcpError::new(-32603, error.to_string()).data(serde_json::json!({"code": error.code(), "retryable": error.is_retryable()})))?,
     }
     if prompt.text.len() > 128_000 {
         return Err(AcpError::invalid_params().data(

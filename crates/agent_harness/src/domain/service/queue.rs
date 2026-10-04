@@ -308,17 +308,20 @@ where
         let mut _delivery_lease = None;
         let command = match command {
             HarnessCommand::DirectMessage(mut open) => {
-                let mut action_id = AgentActionId::from_uuid(open.origin.message_id);
+                let mut origin = open.origin.announcement();
+                if origin.reply_placement != crate::domain::model::ReplyPlacement::Timeline {
+                    return Err(AgentSessionError::Forbidden.into());
+                }
+                let mut action_id = AgentActionId::from_uuid(origin.message_id);
                 if let Some(policy) = &self.direct_messages
                     && !policy
-                        .authorize_prompt(session_id, open.bot_id, Some(&open.origin.sender))
+                        .authorize_prompt(session_id, open.bot_id, Some(open.origin.actor()))
                         .await?
                 {
                     return Err(AgentSessionError::Forbidden.into());
                 }
                 if let Some(store) = &self.dm_turns {
-                    let messages::domain::models::MessageParent::Channel(channel) =
-                        open.origin.parent
+                    let messages::domain::models::MessageParent::Channel(channel) = origin.parent
                     else {
                         return Err(AgentSessionError::Forbidden.into());
                     };
@@ -329,6 +332,7 @@ where
                         return Ok(CommandOutcome::Completed);
                     }
                     open = record.command;
+                    origin = open.origin.announcement();
                     action_id = record.action_id;
                     _delivery_lease = store.claim_delivery(session_id).await?;
                     if _delivery_lease.is_none() {
@@ -340,23 +344,15 @@ where
                 match self.sessions.get_session(session_id).await {
                     Ok(session) => {
                         if session.bot_id != open.bot_id
-                            || !session.owner_id.is_user(&open.origin.sender)
+                            || !session.owner_id.is_user(open.origin.actor())
                         {
                             return Err(AgentSessionError::Forbidden.into());
                         }
                         HarnessCommand::Deliver(DeliverAction {
                             id: action_id,
-                            action: AgentAction::prompt_with_attachments(
-                                open.origin.content,
-                                open.origin.attachments,
-                            ),
-                            actor: Some(open.origin.sender),
-                            announce: Some(AnnounceOrigin {
-                                reply_placement: open.origin.reply_placement,
-                                parent: open.origin.parent,
-                                thread_id: open.origin.thread_id,
-                                message_id: open.origin.message_id,
-                            }),
+                            actor: Some(open.origin.actor().clone()),
+                            action: open.origin.into_action(),
+                            announce: Some(origin),
                         })
                     }
                     Err(AgentSessionError::NotFound(_)) => HarnessCommand::Open(open),
@@ -374,7 +370,7 @@ where
         match &command {
             HarnessCommand::Open(open)
                 if AgentKind::of(open.bot_id) == AgentKind::SandboxedCoder
-                    && !is_macro_staff(&open.origin.sender) =>
+                    && !is_macro_staff(open.origin.actor()) =>
             {
                 return Err(AgentSessionError::Forbidden.into());
             }
@@ -701,9 +697,13 @@ where
         session_id: AgentSessionId,
         command: DeliverAction,
     ) -> Result<CommandOutcome> {
+        self.authorize_action(&command).await?;
         let action_id = command.id;
         if self.queues.contains(session_id, action_id) {
-            if !self.busy.is_pending(session_id) {
+            if command.announce.as_ref().is_some_and(|origin| {
+                origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+            }) && !self.busy.is_pending(session_id)
+            {
                 self.busy.admit(session_id);
                 if let Err(error) = self.dispatch_next(session_id).await {
                     self.busy.clear(session_id);
@@ -718,6 +718,23 @@ where
             .is_some_and(|turn| turn.action_id == action_id)
         {
             return Ok(CommandOutcome::Completed);
+        }
+        let session = self.sessions.get_session(session_id).await?;
+        if let Err(error) = self.admit_session(&session).await {
+            // Forwarding acknowledges bus acceptance before this worker runs.
+            // Publish even an ingress refusal so the submitting replica hears it.
+            if let HarnessError::Admission(failure) = &error {
+                self.publish_command_rejected(
+                    session_id,
+                    command.id,
+                    command.actor.clone(),
+                    None,
+                    *failure,
+                )
+                .await;
+            }
+            self.reject_waiting_on_denial(session_id, &error).await?;
+            return Err(error);
         }
         let prompt = match &command.action {
             AgentAction::Prompt(prompt) => Some(prompt.prompt.clone()),
@@ -841,6 +858,7 @@ where
         actor: Option<&MacroUserIdStr<'static>>,
         announce: Option<AnnounceOrigin>,
     ) -> Result<()> {
+        self.revalidate_queue(session_id).await?;
         if let Err(error) = self
             .deliver(
                 session_id,
@@ -860,6 +878,9 @@ where
             );
         }
 
+        // Stop may have waited for a runtime reconnect; check again before
+        // posting a pending reply for the waiting follow-up.
+        self.revalidate_queue(session_id).await?;
         // Front of the queue, so the next prompt turn is this one's.
         let prompted_message_id = self.sessions.next_prompt_message_id(session_id).await?;
         let announcement = self
@@ -894,7 +915,7 @@ where
 
     /// Persist after a working-copy mutation. A failed write reloads the last
     /// good row so this process does not keep a queue the store never saw.
-    async fn persist_or_rollback(&self, session_id: AgentSessionId) -> Result<()> {
+    pub(super) async fn persist_or_rollback(&self, session_id: AgentSessionId) -> Result<()> {
         if let Err(error) = self.write_queue(session_id).await {
             if let Err(reload) = self.reload_queue(session_id).await {
                 tracing::error!(
@@ -910,15 +931,15 @@ where
 
     /// Put a claimed entry back and persist. A persist failure here loses the
     /// in-flight item on the next restart — the same as losing the turn mark.
-    async fn requeue_claimed(&self, session_id: AgentSessionId, entry: QueuedEntry) {
+    async fn requeue_claimed(&self, session_id: AgentSessionId, entry: QueuedEntry) -> Result<()> {
         self.queues.requeue_front(session_id, entry);
-        if let Err(error) = self.write_queue(session_id).await {
+        self.write_queue(session_id).await.inspect_err(|error| {
             tracing::error!(
                 error = ?error,
                 %session_id,
                 "failed to persist a requeued agent session action"
             );
-        }
+        })
     }
 
     /// Replace the working copy from the session store.
@@ -998,6 +1019,11 @@ where
             self.publish_queue(session_id).await;
             return Ok(Dispatch::QueueEmpty);
         }
+        if self.queues.list(session_id).is_empty() {
+            self.busy.clear(session_id);
+            return Ok(Dispatch::QueueEmpty);
+        }
+        self.revalidate_queue(session_id).await?;
         loop {
             let Some(mut entry) = self.queues.claim_next(session_id) else {
                 self.busy.clear(session_id);
@@ -1017,7 +1043,7 @@ where
             let prompted_message_id = match self.sessions.next_prompt_message_id(session_id).await {
                 Ok(message_id) => message_id,
                 Err(error) => {
-                    self.requeue_claimed(session_id, entry).await;
+                    self.requeue_claimed(session_id, entry).await?;
                     return Err(error.into());
                 }
             };
@@ -1036,7 +1062,13 @@ where
                 )
                 .await
             {
-                self.requeue_claimed(session_id, entry).await;
+                self.requeue_claimed(session_id, entry).await?;
+                return Err(error);
+            }
+
+            if let Err(error) = self.admit_session_id(session_id).await {
+                self.requeue_claimed(session_id, entry).await?;
+                self.reject_waiting_on_denial(session_id, &error).await?;
                 return Err(error);
             }
 
@@ -1066,14 +1098,14 @@ where
                                 record.state == crate::domain::dm_turns::DmTurnState::Queued
                             })
                         {
-                            self.requeue_claimed(session_id, entry).await;
+                            self.requeue_claimed(session_id, entry).await?;
                             self.busy.clear(session_id);
                             return Ok(Dispatch::QueueEmpty);
                         }
                         continue;
                     }
                     Err(error) => {
-                        self.requeue_claimed(session_id, entry).await;
+                        self.requeue_claimed(session_id, entry).await?;
                         return Err(error.into());
                     }
                 }
@@ -1092,7 +1124,7 @@ where
                 {
                     Ok(announcement) => announcement,
                     Err(error) => {
-                        self.requeue_claimed(session_id, entry).await;
+                        self.requeue_claimed(session_id, entry).await?;
                         return Err(error);
                     }
                 };
@@ -1101,7 +1133,7 @@ where
                     match self.announcer.announce(announcement).await {
                         Ok(announced) => entry.announced = Some(announced.message_id),
                         Err(error) => {
-                            self.requeue_claimed(session_id, entry).await;
+                            self.requeue_claimed(session_id, entry).await?;
                             return Err(error);
                         }
                     }
@@ -1153,7 +1185,8 @@ where
                         self.resolve_reply(session_id, Some(&flight), ReplyOutcome::Failed)
                             .await;
                     }
-                    self.requeue_claimed(session_id, entry).await;
+                    self.requeue_claimed(session_id, entry).await?;
+                    self.reject_waiting_on_denial(session_id, &error).await?;
                     Err(error)
                 }
             };
@@ -1237,7 +1270,7 @@ pub(super) async fn run_session_worker<
         } = queued;
         let dm_action = match (&command, &inner.dm_turns) {
             (HarnessCommand::DirectMessage(open), Some(store)) => {
-                match store.get(open.origin.message_id).await {
+                match store.get(open.origin.announcement().message_id).await {
                     Ok(record) => record.map(|record| record.action_id),
                     Err(error) => {
                         let _ = completed.send(Err(error.into()));
