@@ -16,6 +16,8 @@ check *ARGS:
     set -uo pipefail
     cd {{ justfile_directory() }}
 
+    bash tooling/scripts/check-no-tsx-tests.sh || exit 1
+
     base="${CHECK_BASE:-$(git merge-base HEAD origin/main 2>/dev/null || true)}"
     if [ -z "$base" ]; then
       echo "note: no merge-base with origin/main (shallow clone?); checking uncommitted changes only."
@@ -30,7 +32,7 @@ check *ARGS:
     rs=$(grep -E '^(crates|services|tooling)/.*\.rs$' <<<"$changed" || true)
     # Match packages/sdk/biome.jsonc: preserve generator output verbatim.
     js=$(grep -E '^(apps/(web|marketing)|packages|services/(analytics-proxy|ai-editing-worker|lexical-service|websocket-service))/.*\.(ts|tsx)$' <<<"$changed" | grep -v '^packages/sdk/generated/' || true)
-    sg=$(grep -E '^(apps|crates|packages|services|tooling)/.*\.(rs|ts|tsx)$' <<<"$changed" || true)
+    sg=$(grep -E '^(apps|crates|packages|services|tooling)/.*\.(rs|ts|tsx)$|(^|/)[^/]*\.test\.tsx$' <<<"$changed" || true)
 
     fail=0
     if [ -n "$rs" ]; then

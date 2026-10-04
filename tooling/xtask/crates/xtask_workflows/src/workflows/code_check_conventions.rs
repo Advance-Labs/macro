@@ -91,7 +91,9 @@ fn paths_filter() -> Step<Use> {
                   - 'crates/**'
                   - 'services/**'
                   - 'tooling/xtask/**'
+                  - 'tooling/scripts/check-no-tsx-tests.sh'
                   - 'apps/web/**'
+                  - '**/*.test.tsx'
                   - 'packages/**'
                   - 'rules/**'
                   - 'sgconfig.yml'
@@ -102,7 +104,10 @@ fn paths_filter() -> Step<Use> {
 }
 
 fn run_ast_grep() -> Step<Run> {
-    Step::new("Run ast-grep").run("bunx --yes @ast-grep/cli@0.44.1 scan")
+    Step::new("Run ast-grep").run(indoc::indoc! {r#"
+        bash tooling/scripts/check-no-tsx-tests.sh
+        bunx --yes @ast-grep/cli@0.44.1 scan
+    "#})
 }
 
 fn check_job_results() -> Step<Run> {

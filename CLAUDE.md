@@ -41,6 +41,8 @@ This file is the shared entry point: `AGENTS.md` symlinks to `CLAUDE.md`. Edit
 
 ## Essential guardrails
 
+- Never add `*.test.tsx` files. Use `.test.ts` for non-JSX unit tests and browser
+  checks for UI interactions; ast-grep enforces this repository-wide.
 - Run Rust tests from the repository root with `cargo test -p <package>` and
   **leave `SQLX_OFFLINE` unset**. Offline mode is for checks/builds/lints, not tests.
 - Generate migrations with `sqlx migrate add`; never invent timestamped filenames.

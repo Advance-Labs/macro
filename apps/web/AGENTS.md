@@ -86,7 +86,7 @@ Then trigger the interaction and read `window.__inst.log`. `'1,2,3' → '' → '
 - Use the upstream structure and behavior as a starting point, then reshape exports to match the local slot-based, compound-component API.
 - Replace upstream palette, surface, border, and status classes with the existing semantic tokens; inputs normally use `bg-input`, `border-edge-muted`, `text-ink`, and `text-ink-placeholder`.
 - Preserve Kobalte semantics, state attributes, and polymorphic prop types. Keep accessibility relationships inside the primitive instead of recreating them at call sites.
-- Add a co-located `*.docs.tsx` gallery page and focused `*.test.tsx` coverage for every ported component.
+- Add a co-located `*.docs.tsx` gallery page and verify every ported component in the browser. Never add `*.test.tsx` files; keep non-JSX unit tests in `.test.ts` files.
 - Keep `Input` a thin native control. Use `InputGroup` for icons, clear actions, inline Buttons, and shared ButtonGroup framing instead of adding composition props to `Input`.
 - In `InputGroup`, keep the input as the single control and place surrounding content in `Addon` slots. Use `align` for visual placement so accessible DOM order stays independent of layout.
 

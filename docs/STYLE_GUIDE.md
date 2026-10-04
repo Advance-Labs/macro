@@ -316,3 +316,7 @@ TypeScript · `[ui]` UI / UX conventions
   code needs an owner or other host capability, expose it through the owning
   surface context instead of borrowing `BlockContext`. (also:
   apps/web/AGENTS.md)
+- **FE-35** `[ts]` Never add `*.test.tsx` files anywhere in the repository. Keep
+  non-JSX unit tests in `.test.ts` files and verify UI interactions through browser
+  checks. (enforced: ast-grep `tsx-no-test-files`, error; a companion filename
+  check in local checks and CI also rejects empty files)

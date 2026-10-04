@@ -70,8 +70,9 @@ apps/web/src/features/<feature>/
   <host-action>.ts Optional app integration, such as open-entity-in-split.ts
 ```
 
-Tests normally live beside the module they exercise as `*.test.ts` or
-`*.test.tsx`. `tests/` holds helpers shared across those tests. Activity also keeps
+Non-JSX unit tests live beside the module they exercise as `*.test.ts`.
+Do not add `*.test.tsx` files; verify UI interactions in the browser.
+`tests/` holds helpers shared across unit tests. Activity also keeps
 transport fixtures in `queries/fixtures.ts`.
 
 In this diagram, **an arrow means “imports or depends on.”**
@@ -510,11 +511,7 @@ that omitted provider setup fails clearly. Use existing import smoke tests where
 available, or inspect and exercise the import boundary when migrating it.
 
 See [my-activity.test.ts](../apps/web/src/features/activity/primitives/my-activity.test.ts)
-and [my-activity-view.test.tsx](../apps/web/src/features/activity/views/my-activity-view.test.tsx).
-The current view test still stubs shared layout/Markdown UI and quarantines
-websocket import-time effects with `vi.mock`. Those are integration limitations;
-feature data and capability behavior are supplied through the provider. Do not
-turn those stubs into a pattern for replacing the feature logic under test.
+for source-based primitive coverage. Verify view behavior in the browser.
 
 For a frontend implementation change, run the relevant tests and checks from
 `apps/web` with dependencies installed:

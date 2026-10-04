@@ -1,0 +1,13 @@
+id: tsx-no-test-files
+language: tsx
+severity: error
+message: Do not add .test.tsx files to this repository.
+note: |-
+  Rule FE-35 in docs/STYLE_GUIDE.md. Keep non-JSX unit tests in .test.ts
+  files and verify UI interactions through browser checks.
+  tooling/scripts/check-no-tsx-tests.sh also catches empty files, which
+  ast-grep skips.
+files:
+  - '**/*.test.tsx'
+rule:
+  kind: program
