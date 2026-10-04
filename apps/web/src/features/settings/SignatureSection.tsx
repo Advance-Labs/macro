@@ -1,10 +1,14 @@
 import { toast } from '@core/component/Toast/Toast';
 import { isMobile } from '@core/mobile/isMobile';
 import { ThrownResultError } from '@core/util/result';
+import DownloadIcon from '@phosphor-icons/core/regular/download-simple.svg?component-solid';
 import SignatureIcon from '@phosphor-icons/core/regular/signature.svg?component-solid';
 import XIcon from '@phosphor-icons/core/regular/x.svg?component-solid';
 import { useEmailSignature } from '@queries/email/link';
-import { useUpdateEmailSettingsMutation } from '@queries/email/settings';
+import {
+  useImportGmailSignatureMutation,
+  useUpdateEmailSettingsMutation,
+} from '@queries/email/settings';
 import { SIGNATURE_IMAGES_UNRESOLVED_CODE } from '@service-email/client';
 import type { Link as EmailLink } from '@service-email/generated/schemas';
 import { Button, ToggleSwitch } from '@ui';
@@ -103,6 +107,7 @@ export function SignatureSection(props: {
   const hasContent = () => persisted().length > 0 || (draft()?.length ?? 0) > 0;
 
   const updateSettings = useUpdateEmailSettingsMutation();
+  const importGmailSignature = useImportGmailSignatureMutation();
   // Imperative handle to the editor, so Save/Remove sync its content directly
   // (the reactive `value` path alone didn't reliably clear the box on Remove).
   let editorApi: { setContent: (html: string) => void } | undefined;
@@ -159,6 +164,28 @@ export function SignatureSection(props: {
         settings: { signature_on_replies_forwards: checked },
       },
       { onError: () => toast.failure('Failed to update setting.') }
+    );
+  };
+
+  const handleImportFromGmail = () => {
+    setSaveError(null);
+    importGmailSignature.mutate(
+      { linkId: props.link.id },
+      {
+        onSuccess: (result) => {
+          if (result.success) {
+            setDraft(null);
+            editorApi?.setContent(result.settings.signature ?? '');
+            toast.success('Signature imported from Gmail');
+          } else if (result.reason === 'no_signature') {
+            toast.failure('No signature found in Gmail');
+          } else {
+            toast.failure('Failed to import signature. Please try again.');
+          }
+        },
+        onError: () =>
+          toast.failure('Failed to import signature. Please try again.'),
+      }
     );
   };
 
@@ -219,6 +246,20 @@ export function SignatureSection(props: {
           }
         />
         <div class="flex items-center justify-end gap-2">
+          <Show when={!isMobile()}>
+            <Button
+              variant="outline"
+              size="sm"
+              depth={3}
+              disabled={
+                importGmailSignature.isPending || updateSettings.isPending
+              }
+              onClick={handleImportFromGmail}
+            >
+              <DownloadIcon class="size-4" />
+              Import from Gmail
+            </Button>
+          </Show>
           <Button
             variant="outline"
             size="sm"

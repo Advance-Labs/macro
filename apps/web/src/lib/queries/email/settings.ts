@@ -82,3 +82,74 @@ export function useUpdateEmailSettingsMutation(
     ),
   }));
 }
+
+type ImportGmailSignatureVars = { linkId: string };
+
+export type ImportGmailSignatureResult =
+  | { success: true; settings: Settings }
+  | { success: false; reason: 'no_signature' | 'error' };
+
+type ImportGmailSignatureCallbacks = MutationCallbacks<
+  ImportGmailSignatureResult,
+  Error,
+  ImportGmailSignatureVars
+>;
+
+/**
+ * Imports the email signature from Gmail for the specified inbox. The backend
+ * fetches the signature from the Gmail Settings API and saves it to the user's
+ * settings. The cached settings are updated on success.
+ */
+export function useImportGmailSignatureMutation(
+  callbacks?: ImportGmailSignatureCallbacks
+) {
+  const toHeaderLinkId = useNonPrimaryEmailLinkIdHeader();
+  return useMutation(() => ({
+    mutationFn: async ({
+      linkId,
+    }: ImportGmailSignatureVars): Promise<ImportGmailSignatureResult> => {
+      const result = await emailClient.importGmailSignature(
+        toHeaderLinkId(linkId)
+      );
+      return result.match(
+        (response) => ({ success: true, settings: response.settings }),
+        (errors) => {
+          const noSignature = errors.some((e) => e.code === 'NO_SIGNATURE_FOUND');
+          return { success: false, reason: noSignature ? 'no_signature' : 'error' };
+        }
+      );
+    },
+
+    ...withCallbacks<ImportGmailSignatureResult, Error, ImportGmailSignatureVars>(
+      {
+        onSuccess: async (result, { linkId }) => {
+          if (!result.success) return;
+          queryClient.setQueryData<ListLinksResponse>(
+            emailKeys.links.queryKey,
+            (old) =>
+              old
+                ? {
+                    ...old,
+                    links: old.links.map((link) => {
+                      if (link.id !== linkId) return link;
+                      return {
+                        ...link,
+                        settings: { ...link.settings, ...result.settings },
+                      };
+                    }),
+                  }
+                : old
+          );
+          try {
+            await refreshMailAccounts();
+          } catch (error) {
+            Telemetry.error(
+              error instanceof Error ? error : new Error(String(error))
+            );
+          }
+        },
+      },
+      callbacks
+    ),
+  }));
+}

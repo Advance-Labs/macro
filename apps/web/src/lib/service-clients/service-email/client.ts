@@ -675,4 +675,23 @@ export const emailClient = {
       }
     );
   },
+
+  async importGmailSignature(linkId?: string) {
+    return fetchWithToken<PatchSettingsResponse, 'NO_SIGNATURE_FOUND'>(
+      `${emailHost}/email/settings/import-signature`,
+      {
+        method: 'POST',
+        headers: emailLinkHeaders(linkId),
+        errorResponseHandler: async (response) => {
+          if (response.status === 404) {
+            return { code: 'NO_SIGNATURE_FOUND' as const, message: '' };
+          }
+          return {
+            code: 'HTTP_ERROR' as const,
+            message: `HTTP error! status: ${response.status}`,
+          };
+        },
+      }
+    );
+  },
 };
