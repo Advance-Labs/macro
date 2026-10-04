@@ -1,5 +1,5 @@
 /**
- * The pieces the session pane itself shows: the header toggle, the
+ * The pieces the session pane itself shows: the header opener, the
  * "changes ready" hand-off card, and the queued-notes chip by the composer.
  * Each renders nothing until a host has mounted the controller, and nothing
  * at all while the host reports it can never have changes (a chat-only

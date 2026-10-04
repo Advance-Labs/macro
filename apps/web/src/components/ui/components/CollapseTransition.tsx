@@ -69,6 +69,7 @@ export function CollapseTransition(props: CollapseTransitionProps) {
   const sizeOf = (element: HTMLElement) =>
     element.getBoundingClientRect()[axis()];
   let measuredSize: number | undefined;
+  let disposed = false;
   let running:
     | { target: HTMLElement; content: HTMLElement; finish: () => void }
     | undefined;
@@ -82,10 +83,13 @@ export function CollapseTransition(props: CollapseTransitionProps) {
     props.onPresenceChange?.(props.open);
     if (element) measuredSize = sizeOf(element);
   });
-  onCleanup(() => running?.finish());
+  onCleanup(() => {
+    disposed = true;
+    running?.finish();
+  });
 
   function animate(element: Element, opening: boolean, done: () => void) {
-    if (!(element instanceof HTMLElement) || opening !== props.open)
+    if (disposed || !(element instanceof HTMLElement) || opening !== props.open)
       return done();
 
     props.onPresenceChange?.(true);

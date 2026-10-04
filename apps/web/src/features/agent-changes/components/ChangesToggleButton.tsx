@@ -3,7 +3,7 @@ import SquareSplitHorizontalIcon from '@phosphor/square-split-horizontal.svg';
 import { Button, cn } from '@ui';
 import { Show } from 'solid-js';
 
-/** Opens the changes pane and summarizes its added/deleted lines. */
+/** Toggles the changes pane and summarizes its added/deleted lines. */
 export function ChangesToggleButton(props: {
   open: boolean;
   additions: number;
@@ -14,7 +14,7 @@ export function ChangesToggleButton(props: {
 }) {
   return (
     <Button
-      variant="outline"
+      variant={props.open ? 'outline' : 'ghost'}
       size="sm"
       aria-pressed={props.open}
       tooltip={props.open ? 'Hide the changes pane' : 'Show the changes pane'}

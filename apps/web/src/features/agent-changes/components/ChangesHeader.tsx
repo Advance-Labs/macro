@@ -1,3 +1,4 @@
+import { DiffCounts } from '@app/components/diff-view';
 import ArrowLeftIcon from '@phosphor/arrow-left.svg';
 import ArrowsInSimpleIcon from '@phosphor/arrows-in-simple.svg';
 import ArrowsOutSimpleIcon from '@phosphor/arrows-out-simple.svg';
@@ -8,21 +9,19 @@ import { Button } from '@ui';
 import { Show } from 'solid-js';
 import { pullRequestNumber } from '../core/pull-request';
 
-/**
- * The pane's title row: what is being reviewed on the left, and only the
- * pane's own controls (full width, close) on the right. Controls for the
- * diffs themselves live in the toolbar below.
- */
+/** Linked PR metadata, expanded-pane title and totals, and pane actions. */
 export function ChangesHeader(props: {
   mobile?: boolean;
   /** The pane fills the width; the session is off screen. */
   spotlit: boolean;
   /** `head → base`, when known. */
   range: string | undefined;
-  /** The linked pull request, opened from its number. */
+  /** The linked pull request, opened from the branch range and number. */
   pullRequestUrl: string | undefined;
+  pullRequestTitle?: string;
+  changeCounts?: { additions: number; deletions: number };
   onViewPullRequest: () => void;
-  onSpotlight: () => void;
+  onSpotlight?: () => void;
   onClose: () => void;
 }) {
   const number = () => {
@@ -41,47 +40,105 @@ export function ChangesHeader(props: {
           <ArrowLeftIcon />
         </Button>
       </Show>
-      <h2 class="shrink-0 px-1 text-sm font-semibold text-ink">Changes</h2>
-      <Show when={props.pullRequestUrl}>
-        <Button
-          variant="ghost"
-          size="sm"
-          class="shrink-0"
-          label={
-            number() ? `View pull request #${number()}` : 'View pull request'
-          }
-          onClick={() => props.onViewPullRequest()}
-        >
-          <GitPullRequestIcon />
-          <span>{number() ? `#${number()}` : 'Pull request'}</span>
-        </Button>
-      </Show>
-      <Show when={props.range}>
-        {(range) => (
+      <Show when={props.spotlit && props.pullRequestTitle}>
+        {(title) => (
           <span
-            class="flex min-w-0 items-center gap-1 text-xs text-ink-subtle max-md:hidden"
-            title={range()}
+            class="min-w-0 max-w-[50%] truncate text-xs font-medium text-ink"
+            title={title()}
           >
-            <GitBranchIcon class="size-3.5 shrink-0" />
-            <span class="truncate">{range()}</span>
+            {title()}
+          </span>
+        )}
+      </Show>
+      <Show
+        when={props.pullRequestUrl}
+        fallback={
+          <Show when={props.range}>
+            {(range) => (
+              <span
+                class="flex min-w-0 items-center gap-1 text-xs text-ink-subtle"
+                title={range()}
+              >
+                <GitBranchIcon class="size-3.5 shrink-0" />
+                <span class="truncate">{range()}</span>
+              </span>
+            )}
+          </Show>
+        }
+      >
+        {(url) => (
+          <a
+            href={url()}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex min-w-0 items-center gap-1 rounded-full px-2 py-1 text-xs text-ink-subtle hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+            aria-label={
+              number() ? `View pull request #${number()}` : 'View pull request'
+            }
+            title={props.range}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              props.onViewPullRequest();
+            }}
+          >
+            <Show
+              when={props.range}
+              fallback={<GitPullRequestIcon class="size-3.5 shrink-0" />}
+            >
+              {(range) => (
+                <>
+                  <GitBranchIcon class="size-3.5 shrink-0" />
+                  <span class="truncate">{range()}</span>
+                  <span aria-hidden="true" class="shrink-0">
+                    ·
+                  </span>
+                </>
+              )}
+            </Show>
+            <span class="shrink-0">
+              {number() ? `#${number()}` : 'Pull request'}
+            </span>
+          </a>
+        )}
+      </Show>
+      <Show when={props.spotlit && props.changeCounts}>
+        {(counts) => (
+          <span
+            class="shrink-0 px-1 text-xs"
+            aria-label="Pull request diff counts"
+          >
+            <DiffCounts
+              additions={counts().additions}
+              deletions={counts().deletions}
+            />
           </span>
         )}
       </Show>
       <span class="flex-1" />
       <Show when={!props.mobile}>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-pressed={props.spotlit}
-          label={
-            props.spotlit
-              ? 'Back to the split'
-              : 'Expand changes to the full width'
-          }
-          onClick={() => props.onSpotlight()}
-        >
-          {props.spotlit ? <ArrowsInSimpleIcon /> : <ArrowsOutSimpleIcon />}
-        </Button>
+        <Show when={props.onSpotlight}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-pressed={props.spotlit}
+            label={
+              props.spotlit
+                ? 'Back to the split'
+                : 'Expand changes to the full width'
+            }
+            onClick={() => props.onSpotlight?.()}
+          >
+            {props.spotlit ? <ArrowsInSimpleIcon /> : <ArrowsOutSimpleIcon />}
+          </Button>
+        </Show>
         <Button
           variant="ghost"
           size="icon-sm"
