@@ -18,22 +18,14 @@ import type {
   Accessor,
   Component,
   FlowProps,
-  InitializedResource,
-  InitializedResourceOptions,
   lazy,
   Owner,
-  Resource,
-  ResourceActions,
-  ResourceFetcher,
-  ResourceOptions,
-  ResourceSource,
   Setter,
   SignalOptions,
 } from 'solid-js';
 import {
   createComponent,
   createContext,
-  createResource,
   createSignal,
   getOwner,
   onCleanup,
@@ -377,8 +369,6 @@ export type BlockDefinition<
 
   syncServiceEnabled?: boolean;
 
-  editPermissionEnabled?: boolean;
-
   /** Alias block names that should route to this block type with optional custom default filenames */
   aliases?: Array<{ name: BlockAlias; defaultFileName?: string }>;
 };
@@ -425,28 +415,7 @@ export function defineBlock<
 }
 
 /**
- * Represents a function that can be used as a block effect.
- */
-type BlockEffect = (...args: any[]) => any;
-
-/**
- * After the the render phase, automatically reruns the function whenever the block's signal and
- * store dependencies update.
- *
- * Should only be defined at the top level of a module.
- *
- * @deprecated
- * @param {BlockEffect} fn - The function to be used as a block effect.
- */
-export const [globalBlockEffects] = createSignal<BlockEffect[]>([]);
-
-/** @deprecated */
-export function createBlockEffect(fn: BlockEffect): void {
-  globalBlockEffects().push(fn);
-}
-
-/**
- * A component that provides the scope and context for block signals, resources, and effects.
+ * A component that provides legacy block identity, nesting, and signal ownership.
  */
 export const Block = <Name extends BlockName>(
   props: FlowProps<{
@@ -635,7 +604,7 @@ async function refreshSize() {
   setSize(currentSize);
 }
 
-createBlockEffect(() => {
+createEffect(() => {
   refreshSize();
 });
 `,
@@ -807,101 +776,6 @@ export function createBlockSignal<T>(
   >;
 }
 
-type BlockInitializedResource<T, R = unknown> = [
-  get: InitializedResource<T>,
-  set: ResourceActions<T, R>,
-] & {
-  (): T;
-  get: InitializedResource<T>;
-  set: ResourceActions<T, R>;
-};
-
-type BlockResource<T, R = unknown> = [
-  get: Resource<T>,
-  set: ResourceActions<T, R>,
-] & {
-  (): T;
-  get: Resource<T>;
-  set: ResourceActions<T, R>;
-};
-
-/**
- * Creates a block-scoped resource that wraps a promise in a reactive pattern.
- *
- * Should only be defined at the top level of a module.
- *
- * @deprecated
- * @template T - The type of the resource value.
- * @template S - The type of the source value (optional).
- * @template R - The type of the refetching value (optional).
- *
- * @param {ResourceFetcher<S, T, R>} fetcher - Function that returns a value or a Promise.
- * @param {ResourceOptions<T, S>} [options] - Optional configuration for the resource.
- *
- * @returns {BlockResource<T, R>} A block resource object.
- *
- * @example
- * // Without source
- * const userResource = createBlockResource(fetchUser);
- *
- * function UserProfile() {
- *   const user = userResource();
- *   return (
- *     <Show when={!user.loading} fallback={<div>Loading...</div>}>
- *       <div>Name: {user().name}</div>
- *     </Show>
- *   );
- * }
- *
- * // With source and mutate
- * const userIdSignal = createBlockSignal(1);
- * const userResource = createBlockResource(userIdSignal, fetchUserById);
- *
- * function UserManager() {
- *   const userId = userIdSignal();
- *   const [user, { mutate, refetch }] = userResource;
- *
- *   return (
- *     <>
- *       <div>Current User: {user()?.name}</div>
- *       <button onClick={() => userIdSignal.set(userId() + 1)}>Next User</button>
- *       <button onClick={() => mutate({ ...user(), name: 'Updated Name' })}>Update Name</button>
- *       <button onClick={() => refetch()}>Refresh</button>
- *     </>
- *   );
- * }
- */
-export function createBlockResource<T, R = unknown>(
-  fetcher: ResourceFetcher<true, T, R>,
-  options: InitializedResourceOptions<NoInfer<T>, true>
-): BlockInitializedResource<T, R>;
-export function createBlockResource<T, R = unknown>(
-  fetcher: ResourceFetcher<true, T, R>,
-  options?: ResourceOptions<NoInfer<T>, true>
-): BlockResource<T, R>;
-export function createBlockResource<T, S, R = unknown>(
-  source: ResourceSource<S>,
-  fetcher: ResourceFetcher<S, T, R>,
-  options: InitializedResourceOptions<NoInfer<T>, S>
-): BlockInitializedResource<T, R>;
-export function createBlockResource<T, S, R = unknown>(
-  source: ResourceSource<S>,
-  fetcher: ResourceFetcher<S, T, R>,
-  options?: ResourceOptions<NoInfer<T>, S>
-): BlockResource<T, R>;
-export function createBlockResource<T, S, R>(
-  pSource: ResourceSource<S> | ResourceFetcher<S, T, R>,
-  pFetcher?: ResourceFetcher<S, T, R> | ResourceOptions<T, S>,
-  pOptions?: ResourceOptions<T, S> | undefined
-): BlockResource<T, R> {
-  return createBlockEntity(
-    createResource,
-    pSource,
-    pFetcher as any,
-    pOptions as any
-  ) as any;
-}
-
 type BlockState<Name extends BlockName = BlockName> = {
   entities: Map<symbol, [any, any]>;
   id: string;
@@ -925,7 +799,7 @@ export const blockDataSignalAs = <T extends Record<string, any>>(
   get: Accessor<T | undefined>;
 } => {
   const accessor = () => {
-    // this is to prevent a non-related block's effects from running on a mismatching source
+    // Reject loaded data from a different block type.
     const data = blockDataSignal() as T | undefined;
 
     // make an exception for start block with chat data

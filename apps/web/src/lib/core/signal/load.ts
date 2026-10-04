@@ -23,6 +23,4 @@ export const blockLoroManagerSignal = createBlockSignal<LoroManager>();
 export const blockSyncSourceSignal = createBlockSignal<LiveSyncSource>();
 export const blockSourceSignal = createBlockSignal<Source>();
 
-export const blockEditPermissionEnabledSignal = createBlockSignal<boolean>();
-
 export const blockHandleSignal = createBlockSignal<OwnedBlockHandle<any>>();

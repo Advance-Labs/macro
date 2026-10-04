@@ -14,7 +14,6 @@ import {
   useIsNestedBlock,
 } from '../block';
 import {
-  blockEditPermissionEnabledSignal,
   blockErrorSignal,
   blockFileSignal,
   blockHandleSignal,
@@ -61,13 +60,11 @@ export function BlockLoader<
   const setLoroManagerSignal = blockLoroManagerSignal.set;
   const [syncSource, setSyncSourceSignal] = blockSyncSourceSignal;
   const setSourceSignal = blockSourceSignal.set;
-  const setEditPermissionEnabled = blockEditPermissionEnabledSignal.set;
   const setHandle = blockHandleSignal.set;
   const isNested = useIsNestedBlock();
   const analytics = useAnalytics();
 
   setLiveTrackingEnabled(props.definition.liveTrackingEnabled ?? false);
-  setEditPermissionEnabled(props.definition.editPermissionEnabled ?? false);
 
   const retryToken = blockLoadRetrySignal.get;
 

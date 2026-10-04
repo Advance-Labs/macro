@@ -24,7 +24,6 @@ import type { BlockMethodsFor } from './blockMethodRegistry';
 import { LoadingBlock } from './component/LoadingBlock';
 import { blocks as BLOCK_REGISTRY } from './constant/allBlocks';
 import { ENABLE_VIDEO_BLOCK } from './constant/featureFlags';
-import { BlockEffectRunner } from './internal/BlockEffectRunner';
 import { BlockLoader } from './internal/BlockLoader';
 import type { Source } from './source';
 
@@ -224,7 +223,6 @@ function createBlockElement({
         <Suspense fallback={<LoadingBlock />}>
           <Dynamic component={definition.component} {...opts?.params} />
         </Suspense>
-        <BlockEffectRunner />
       </BlockComponent>
     );
   };

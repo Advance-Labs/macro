@@ -1,8 +1,6 @@
 /**
- * Load block data and its lazy component in parallel, but do not publish the
- * data until the component module has evaluated. Some legacy block modules
- * register top-level effects during evaluation, and those registrations must
- * exist before BlockEffectRunner reacts to the loaded data.
+ * Load block data and its lazy component in parallel. Keep publication ordered
+ * after component evaluation while the remaining legacy hosts use this loader.
  */
 export async function loadBlockDataAfterComponentPreload<T>(
   load: () => Promise<T>,

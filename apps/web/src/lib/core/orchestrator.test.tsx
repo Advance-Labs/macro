@@ -26,9 +26,6 @@ vi.mock('./constant/allBlocks', () => ({
   },
 }));
 vi.mock('./internal/BlockLoader', () => ({ BlockLoader: () => null }));
-vi.mock('./internal/BlockEffectRunner', () => ({
-  BlockEffectRunner: () => null,
-}));
 vi.mock('./component/LoadingBlock', () => ({ LoadingBlock: () => null }));
 
 it('keeps one live mount and preserves its handle when a duplicate unmounts', async () => {
