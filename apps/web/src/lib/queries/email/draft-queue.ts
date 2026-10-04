@@ -7,6 +7,7 @@ import {
   readRecordsByKeys,
   selectRecords,
 } from '@graphql-cache/exchange/record-selection';
+import type { CacheHost } from '@graphql-cache/host/types';
 import { Telemetry } from '@macro-inc/observability';
 import {
   EmailDraftThreadFieldsFragmentDoc,
@@ -17,6 +18,7 @@ import {
   getGraphqlSoupClient,
   graphqlCacheEnabled,
 } from '@service-storage/graphql-soup';
+import { createSignal } from 'solid-js';
 import { queryClient } from '../client';
 import {
   invalidateAllSoup,
@@ -105,9 +107,50 @@ export function draftQueueActive(
   threadTransport?: ThreadQueryTransport
 ): boolean {
   if (!graphqlCacheEnabled()) return false;
-  return threadTransport
+  const queued = threadTransport
     ? threadTransport === 'graphql'
     : isFeatureEnabled(enableGraphqlSoup);
+  return queued && draftSelectionsSupported();
+}
+
+const [unsupportedDraftHost, setUnsupportedDraftHost] =
+  createSignal<CacheHost>();
+let probedDraftHost: CacheHost | undefined;
+
+/**
+ * An over-the-air bundle can run on a native cache compiled from an older
+ * schema, whose engine rejects the draft fragments every queued write reads.
+ * Probe once per host; a rejection routes drafts to REST for the session.
+ */
+function draftSelectionsSupported(): boolean {
+  getGraphqlSoupClient();
+  const host = getGraphqlCacheHost();
+  if (!host) return true;
+  if (probedDraftHost !== host) {
+    probedDraftHost = host;
+    void probeDraftSelections(host);
+  }
+  return unsupportedDraftHost() !== host;
+}
+
+async function probeDraftSelections(host: CacheHost) {
+  try {
+    await Promise.all([
+      readRecordsByKeys(
+        host,
+        selectRecords(EmailThreadMessageFieldsFragmentDoc),
+        []
+      ),
+      readRecordsByKeys(
+        host,
+        selectRecords(EmailDraftThreadFieldsFragmentDoc),
+        []
+      ),
+    ]);
+  } catch (error) {
+    reportError(error);
+    setUnsupportedDraftHost(host);
+  }
 }
 
 /** A server rejection of a draft write; autosave never retries these. */
