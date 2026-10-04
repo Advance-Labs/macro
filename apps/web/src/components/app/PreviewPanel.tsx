@@ -1,4 +1,5 @@
 import { FileEntityDetail } from '@app/components/entity-detail/FileEntityDetail';
+import { HotkeyScope } from '@core/hotkey/HotkeyScope';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import type { BlockOrchestrator } from '@core/orchestrator';
 import { createContextProvider } from '@solid-primitives/context';
@@ -82,94 +83,96 @@ export function PreviewFrame(props: PreviewFrameProps) {
   );
 
   return (
-    <div
-      ref={(element) => {
-        attachHotkeys(element);
-        props.ref?.(element);
-      }}
-      class="flex size-full min-h-0 flex-col"
-      onFocusIn={(event) => {
-        if (interactedWith()) return;
-        if (event.target.hasAttribute('data-allow-focus-in-preview')) {
-          setInteractedWith(true);
-          return;
-        }
-        const relatedTarget = event.relatedTarget;
-        if (
-          relatedTarget instanceof HTMLElement &&
-          !event.currentTarget.contains(relatedTarget)
-        ) {
-          relatedTarget.focus();
-        } else if (props.onFocusOut) {
-          props.onFocusOut();
-        } else {
-          (event.target as HTMLElement).blur?.();
-        }
-      }}
-      onPointerDown={() => setInteractedWith(true)}
-      tabIndex={-1}
-    >
-      <ViewShell.TopBar
-        ref={headerCollapseController.setRow}
-        class="relative w-full py-0 touch:flex"
-      >
-        <Show when={props.headerLeading}>
-          <div class="flex shrink-0 items-center">{props.headerLeading}</div>
-        </Show>
-        <PriorityCollapseOverflowSensor
-          controller={headerCollapseController}
-          truncateAsLastResort
-          class="relative h-full min-w-0 shrink overflow-hidden"
-          contentClass={
-            props.headerLeading
-              ? 'flex h-full items-center gap-1 pl-0.5'
-              : 'flex h-full items-center gap-1'
-          }
-          contentRef={(element) => {
-            scopedLayoutRefs.headerLeft = element;
-          }}
-        />
-        <div
-          class="flex h-full grow shrink items-center justify-end gap-1"
-          ref={(ref) => {
-            scopedLayoutRefs.headerRight = ref;
-          }}
-        />
-      </ViewShell.TopBar>
+    <HotkeyScope scope={previewHotkeyScope}>
       <div
-        ref={toolbarCollapseController.setRow}
-        class="relative flex min-h-0 w-full shrink-0 items-center justify-between px-2"
+        ref={(element) => {
+          attachHotkeys(element);
+          props.ref?.(element);
+        }}
+        class="flex size-full min-h-0 flex-col"
+        onFocusIn={(event) => {
+          if (interactedWith()) return;
+          if (event.target.hasAttribute('data-allow-focus-in-preview')) {
+            setInteractedWith(true);
+            return;
+          }
+          const relatedTarget = event.relatedTarget;
+          if (
+            relatedTarget instanceof HTMLElement &&
+            !event.currentTarget.contains(relatedTarget)
+          ) {
+            relatedTarget.focus();
+          } else if (props.onFocusOut) {
+            props.onFocusOut();
+          } else {
+            (event.target as HTMLElement).blur?.();
+          }
+        }}
+        onPointerDown={() => setInteractedWith(true)}
+        tabIndex={-1}
       >
-        <PriorityCollapseOverflowSensor
-          controller={toolbarCollapseController}
-          class="min-w-0 flex-1 overflow-hidden"
-          contentClass="flex items-center gap-1"
-          contentRef={(element) => {
-            scopedLayoutRefs.toolbarLeft = element;
-          }}
-        />
-        <div
-          class="flex h-full items-center gap-1"
-          ref={(ref) => {
-            scopedLayoutRefs.toolbarRight = ref;
-          }}
-        />
-      </div>
-      <div class="min-h-0 flex-1">
-        <SplitPanelContext.Provider
-          value={{
-            ...props.splitPanelContext,
-            splitHotkeyScope: previewHotkeyScope,
-            isInlinePreview: true,
-            layoutRefs: scopedLayoutRefs,
-            headerCollapser: headerCollapseController.collapser,
-            toolbarCollapser: toolbarCollapseController.collapser,
-          }}
+        <ViewShell.TopBar
+          ref={headerCollapseController.setRow}
+          class="relative w-full py-0 touch:flex"
         >
-          <Suspense>{props.children}</Suspense>
-        </SplitPanelContext.Provider>
+          <Show when={props.headerLeading}>
+            <div class="flex shrink-0 items-center">{props.headerLeading}</div>
+          </Show>
+          <PriorityCollapseOverflowSensor
+            controller={headerCollapseController}
+            truncateAsLastResort
+            class="relative h-full min-w-0 shrink overflow-hidden"
+            contentClass={
+              props.headerLeading
+                ? 'flex h-full items-center gap-1 pl-0.5'
+                : 'flex h-full items-center gap-1'
+            }
+            contentRef={(element) => {
+              scopedLayoutRefs.headerLeft = element;
+            }}
+          />
+          <div
+            class="flex h-full grow shrink items-center justify-end gap-1"
+            ref={(ref) => {
+              scopedLayoutRefs.headerRight = ref;
+            }}
+          />
+        </ViewShell.TopBar>
+        <div
+          ref={toolbarCollapseController.setRow}
+          class="relative flex min-h-0 w-full shrink-0 items-center justify-between px-2"
+        >
+          <PriorityCollapseOverflowSensor
+            controller={toolbarCollapseController}
+            class="min-w-0 flex-1 overflow-hidden"
+            contentClass="flex items-center gap-1"
+            contentRef={(element) => {
+              scopedLayoutRefs.toolbarLeft = element;
+            }}
+          />
+          <div
+            class="flex h-full items-center gap-1"
+            ref={(ref) => {
+              scopedLayoutRefs.toolbarRight = ref;
+            }}
+          />
+        </div>
+        <div class="min-h-0 flex-1">
+          <SplitPanelContext.Provider
+            value={{
+              ...props.splitPanelContext,
+              splitHotkeyScope: previewHotkeyScope,
+              isInlinePreview: true,
+              layoutRefs: scopedLayoutRefs,
+              headerCollapser: headerCollapseController.collapser,
+              toolbarCollapser: toolbarCollapseController.collapser,
+            }}
+          >
+            <Suspense>{props.children}</Suspense>
+          </SplitPanelContext.Provider>
+        </div>
       </div>
-    </div>
+    </HotkeyScope>
   );
 }
 

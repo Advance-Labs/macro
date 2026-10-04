@@ -1,4 +1,5 @@
 import { ScopedPortal } from '@core/component/ScopedPortal';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import CloseIcon from '@phosphor/x.svg';
@@ -11,16 +12,16 @@ const BUFFER_SIZE = 48; // tw 3rem;
 
 function DrawerInner(props: ParentProps<{ id: string }>) {
   const drawerControl = useDrawerControl(props.id);
-  const splitPanel = useSplitPanel();
+  const hotkeyScope = useMaybeHotkeyScope();
 
   let ref!: HTMLDivElement;
 
-  if (splitPanel?.splitHotkeyScope) {
+  if (hotkeyScope) {
     registerHotkey({
       hotkeyToken: TOKENS.drawer.close,
       hotkey: 'escape',
       condition: drawerControl.isOpen,
-      scopeId: splitPanel.splitHotkeyScope,
+      scopeId: hotkeyScope,
       description: 'Close References Drawer',
       keyDownHandler: (e) => {
         e?.preventDefault();

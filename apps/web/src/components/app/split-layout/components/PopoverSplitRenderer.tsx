@@ -1,6 +1,7 @@
 import { SoupContextProvider } from '@app/features/next-soup/soup-context';
 import { ContentLoading } from '@components/app/ContentLoading';
 import { MobileDrawer } from '@components/app/mobile/MobileDrawer';
+import { HotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { Dialog, Panel } from '@ui';
@@ -158,15 +159,17 @@ function PopoverSplitModal(props: {
   };
   const Content = () => (
     <SplitPanelContext.Provider value={stubPanelContext}>
-      <SoupContextProvider>
-        <Show when={props.popover.mount}>
-          <Panel.Body>
-            <Suspense fallback={<ContentLoading />}>
-              <Dynamic component={props.popover.mount.element} />
-            </Suspense>
-          </Panel.Body>
-        </Show>
-      </SoupContextProvider>
+      <HotkeyScope scope={scopeId}>
+        <SoupContextProvider>
+          <Show when={props.popover.mount}>
+            <Panel.Body>
+              <Suspense fallback={<ContentLoading />}>
+                <Dynamic component={props.popover.mount.element} />
+              </Suspense>
+            </Panel.Body>
+          </Show>
+        </SoupContextProvider>
+      </HotkeyScope>
     </SplitPanelContext.Provider>
   );
 

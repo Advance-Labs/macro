@@ -7,6 +7,7 @@ import {
 import { SplitPanelContext } from '@components/app/split-layout/context';
 import { SplitPanel } from '@components/app/split-panel';
 import { Resize } from '@core/component/Resize';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import ListIcon from '@phosphor/list.svg';
@@ -325,11 +326,12 @@ function Root(props: ViewShellRootProps) {
   };
 
   const panel = useContext(SplitPanelContext);
-  if (panel) {
+  const hotkeyScope = useMaybeHotkeyScope();
+  if (panel && hotkeyScope) {
     registerHotkey({
       hotkey: 'cmd+.',
       hotkeyToken: TOKENS.workspace.toggleNavigation,
-      scopeId: panel.splitHotkeyScope,
+      scopeId: hotkeyScope,
       description: 'Toggle workspace navigation',
       condition: () => panel.isPanelActive() && value.aside.canCollapse(),
       runWithInputFocused: true,

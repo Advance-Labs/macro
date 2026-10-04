@@ -1,6 +1,7 @@
 import { usePreference } from '@app/preferences/use-preference';
 import { useMaybeBlockAliasedName } from '@core/block';
 import { Resize, ResizeZoneContext } from '@core/component/Resize/Resize';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isMobile } from '@core/mobile/isMobile';
@@ -135,10 +136,11 @@ function Root(
   };
 
   const hasSections = createMemo(() => sections().length > 0);
-  if (splitPanel?.splitHotkeyScope) {
+  const hotkeyScope = useMaybeHotkeyScope();
+  if (hotkeyScope) {
     registerHotkey({
       hotkey: ']',
-      scopeId: splitPanel.splitHotkeyScope,
+      scopeId: hotkeyScope,
       hotkeyToken: TOKENS.block.toggleSidePanel,
       description: 'Toggle Side Panel',
       keyDownHandler: () => {

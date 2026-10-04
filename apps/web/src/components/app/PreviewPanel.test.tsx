@@ -1,3 +1,4 @@
+import { HotkeyScope, useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { cleanup, fireEvent, render } from '@solidjs/testing-library';
 import { createSignal, type JSX, onCleanup, onMount } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@core/hotkey/hotkeys', () => ({
-  useHotkeyDOMScope: () => [() => {}, {}],
+  useHotkeyDOMScope: () => [() => {}, 'preview-scope'],
 }));
 vi.mock('./split-layout/components/PriorityCollapseOverflowSensor', () => ({
   createPriorityCollapseController: () => ({
@@ -42,6 +43,7 @@ vi.mock('@app/features/block-image/ImageBlock', () => ({
       <div>
         <span data-testid="image">{props.documentId}</span>
         <span data-testid="selection">{preview?.previewEntity()?.id}</span>
+        <span data-testid="hotkey-scope">{useHotkeyScope()}</span>
         <input aria-label="Image preview focus" />
       </div>
     );
@@ -100,6 +102,7 @@ function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
         <div>
           <span data-testid="block">{id}</span>
           <span data-testid="selection">{preview?.previewEntity()?.id}</span>
+          <span data-testid="hotkey-scope">{useHotkeyScope()}</span>
           <input aria-label="Message draft" />
         </div>
       );
@@ -116,14 +119,16 @@ function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
   } as unknown as PreviewPanelProps['orchestrator'];
   const onFocusOut = vi.fn();
   const view = render(() => (
-    <PreviewPanel
-      target={target()}
-      selectedEntity={selectedEntity()}
-      navigationRequest={navigationRequest()}
-      orchestrator={orchestrator}
-      splitPanelContext={{} as PreviewPanelProps['splitPanelContext']}
-      onFocusOut={onFocusOut}
-    />
+    <HotkeyScope scope="outer-split-scope">
+      <PreviewPanel
+        target={target()}
+        selectedEntity={selectedEntity()}
+        navigationRequest={navigationRequest()}
+        orchestrator={orchestrator}
+        splitPanelContext={{} as PreviewPanelProps['splitPanelContext']}
+        onFocusOut={onFocusOut}
+      />
+    </HotkeyScope>
   ));
   return {
     ...view,
@@ -151,6 +156,7 @@ describe('preview block navigation', () => {
   it('does not relocate or remount when the same target arrives as a fresh object', async () => {
     const view = setup(channel('channel-1', { channel_message_id: 'm-1' }));
     await flush();
+    expect(view.getByTestId('hotkey-scope').textContent).toBe('preview-scope');
     const draft = view.getByLabelText('Message draft');
     fireEvent.input(draft, { target: { value: 'Unsent draft' } });
     expect(view.getBlockHandle).toHaveBeenCalledTimes(1);

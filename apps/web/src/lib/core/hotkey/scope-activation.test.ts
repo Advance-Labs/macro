@@ -1,8 +1,13 @@
-import { createRoot } from 'solid-js';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { createComponent, createRoot } from 'solid-js';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { HOTKEY_SCOPE_NEUTRAL_DATA_ATTRIBUTE } from '../dom-selectors';
+import { HotkeyScope, useHotkeyScopeOrCreate } from './HotkeyScope';
 import { attachGlobalDOMScope, useHotkeyDOMScope } from './hotkeys';
-import { activeScope, setActiveScope } from './state';
+import { activeScope, hotkeyScopeTree, setActiveScope } from './state';
+
+vi.mock('@app/signal/splitLayout', () => ({
+  globalSplitManager: () => undefined,
+}));
 
 let container: HTMLDivElement;
 let scopeEl: HTMLDivElement;
@@ -110,5 +115,77 @@ describe('scope activation on focusin', () => {
 
     focusIn(neutralButton);
     expect(activeScope()).toBe(scopeId);
+  });
+});
+
+describe('host hotkey scope ownership', () => {
+  test('reads the split scope without creating or attaching another scope', () => {
+    const sizeBefore = hotkeyScopeTree.size;
+    let scope: ReturnType<typeof useHotkeyScopeOrCreate> | undefined;
+    const disposeHost = createRoot((dispose) => {
+      createComponent(HotkeyScope, {
+        scope: scopeId,
+        get children() {
+          scope = useHotkeyScopeOrCreate('host');
+          return null;
+        },
+      });
+      return dispose;
+    });
+    try {
+      expect(scope).toEqual([undefined, scopeId]);
+      expect(hotkeyScopeTree.size).toBe(sizeBefore);
+    } finally {
+      disposeHost();
+    }
+    expect(hotkeyScopeTree.has(scopeId)).toBe(true);
+  });
+
+  test('attaches a standalone host scope and removes it with its owner', () => {
+    const localEl = document.createElement('div');
+    container.appendChild(localEl);
+    let localScope = '';
+    const disposeHost = createRoot((dispose) => {
+      const [attach, id] = useHotkeyScopeOrCreate('standalone');
+      localScope = id;
+      attach?.(localEl);
+      return dispose;
+    });
+    try {
+      expect(localEl.getAttribute('data-hotkey-scope')).toBe(localScope);
+      focusIn(localEl);
+      expect(activeScope()).toBe(localScope);
+    } finally {
+      disposeHost();
+    }
+    expect(hotkeyScopeTree.has(localScope)).toBe(false);
+  });
+
+  test('keeps standalone host scopes separate', () => {
+    const hosts = [
+      document.createElement('div'),
+      document.createElement('div'),
+    ];
+    container.append(...hosts);
+    const scopes: string[] = [];
+    const disposers = hosts.map((element) =>
+      createRoot((dispose) => {
+        const [attach, id] = useHotkeyScopeOrCreate('standalone');
+        scopes.push(id);
+        attach?.(element);
+        return dispose;
+      })
+    );
+    try {
+      expect(scopes[0]).not.toBe(scopes[1]);
+      focusIn(hosts[0]);
+      expect(activeScope()).toBe(scopes[0]);
+      focusIn(hosts[1]);
+      expect(activeScope()).toBe(scopes[1]);
+      disposers[0]();
+      expect(hotkeyScopeTree.has(scopes[1])).toBe(true);
+    } finally {
+      disposers.forEach((dispose) => dispose());
+    }
   });
 });
