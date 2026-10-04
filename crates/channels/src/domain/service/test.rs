@@ -2640,7 +2640,9 @@ async fn get_or_create_dm_rejects_self_pair() {
     let error = service
         .get_or_create_dm(
             Sender::new_from_user(user.clone()),
-            GetOrCreateDmRequest { recipient_id: user },
+            GetOrCreateDmRequest {
+                recipient_id: Sender::new_from_user(user),
+            },
         )
         .await
         .unwrap_err();
@@ -2672,7 +2674,7 @@ async fn get_or_create_dm_returns_get_for_existing_pair() {
         .get_or_create_dm(
             Sender::new_from_user(actor),
             GetOrCreateDmRequest {
-                recipient_id: recipient,
+                recipient_id: Sender::new_from_user(recipient),
             },
         )
         .await

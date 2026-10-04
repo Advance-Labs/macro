@@ -195,7 +195,12 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
                     .map_err(context_error)?,
             )
         };
-        let recent = if is_channel {
+        // DM session history owns continuity. Reading ambient channel history
+        // would duplicate previous turns and resurrect an explicitly reset
+        // segment. An authored quote is still resolved below.
+        let recent = if is_channel
+            && origin.reply_placement == crate::domain::model::ReplyPlacement::Thread
+        {
             self.messages
                 .preceding(access.clone(), origin.message_id, CHANNEL_MESSAGES)
                 .await
@@ -232,7 +237,7 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
         };
 
         let mut channel = channel_threads(&recent, origin.thread_id);
-        if top_level {
+        if top_level && origin.reply_placement == crate::domain::model::ReplyPlacement::Thread {
             channel.push(ContextThread {
                 root_id: prompt.id,
                 messages: context_message(&prompt).into_iter().collect(),

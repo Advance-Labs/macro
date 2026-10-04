@@ -456,12 +456,17 @@ async fn run() -> anyhow::Result<()> {
 
     // Create the channel list service used by soup.
     // Create the legacy channel list router state for routes mounted under /comms.
+    let agent_dm_profiles = Arc::new(outbound::agent_dm_authorizer::AgentDmProfileReader::new(
+        PgChannelsRepo::new(db.clone()),
+        PgBotsRepo::new(db.clone()),
+    ));
     let channel_list_state = ChannelListRouterState::new(
         ChannelListServiceImpl::new(
             PgChannelsRepo::new(db.clone()),
             PgChannelsRepo::new(db.clone()),
             frecency_storage.clone(),
-        ),
+        )
+        .with_agent_dm_profiles(agent_dm_profiles.clone()),
         authorization_state.clone(),
     );
 
@@ -1027,10 +1032,15 @@ async fn run() -> anyhow::Result<()> {
 
     let channels_service = Arc::new(
         ChannelServiceImpl::with_dependencies(
-            channels_repo,
+            channels_repo.clone(),
             SpawnedChannelEventDispatcher::new(channel_side_effects.clone()),
             PgChannelReferenceSharePermissions::new(db.clone(), entity_access_service.clone()),
         )
+        .with_agent_direct_messages(Arc::new(channels::domain::agent_dm::AgentDmService::new(
+            channels_repo,
+            outbound::agent_dm_authorizer::BotServiceDmAuthorizer(bots_service.clone()),
+            SpawnedChannelEventDispatcher::new(channel_side_effects.clone()),
+        )))
         .with_picture_files(
             channels::outbound::static_file_pictures::StaticFileChannelPictures::new(
                 static_file_service_client::StaticFileServiceClient::new(
@@ -1282,7 +1292,8 @@ async fn run() -> anyhow::Result<()> {
                 PgChannelsRepo::new(db.clone()),
                 PgChannelsRepo::new(db.clone()),
                 frecency_storage.clone(),
-            ),
+            )
+            .with_agent_dm_profiles(agent_dm_profiles),
             call::domain::service::CallRecordQueryServiceImpl::new(PgCallRepo::new(db.clone())),
             crm_service.clone(),
             ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
@@ -1308,7 +1319,13 @@ async fn run() -> anyhow::Result<()> {
                 PgChannelsRepo::new(readonly_db.clone()),
                 PgChannelsRepo::new(readonly_db.clone()),
                 frecency_storage.clone(),
-            ),
+            )
+            .with_agent_dm_profiles(Arc::new(
+                outbound::agent_dm_authorizer::AgentDmProfileReader::new(
+                    PgChannelsRepo::new(readonly_db.clone()),
+                    PgBotsRepo::new(readonly_db.clone()),
+                ),
+            )),
             call::domain::service::CallRecordQueryServiceImpl::new(PgCallRepo::new(
                 readonly_db.clone(),
             )),

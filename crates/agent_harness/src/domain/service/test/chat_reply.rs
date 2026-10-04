@@ -4,6 +4,7 @@
 //! is what the domain asked of it and when.
 
 use super::*;
+mod direct_messages;
 use crate::domain::model::{ReplyOutcome, ResolvedReply};
 use crate::domain::notifications::PlannedNotification;
 

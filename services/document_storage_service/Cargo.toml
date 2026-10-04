@@ -27,6 +27,7 @@ local_auth = ["macro_authorization/local_auth"]
 location_check = []
 
 [dependencies]
+async-trait = { workspace = true }
 agent_changes = { path = "../../crates/agent_changes", default-features = false, features = ["outbound"] }
 dictation = { path = "../../crates/dictation", features = ["inbound", "outbound"] }
 initiative_documents = { path = "../../crates/initiative_documents" }

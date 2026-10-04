@@ -28,7 +28,7 @@ use ai_tools::user_tool_review::user_tool_finisher;
 use ai_tools::{AiHost, ToolServiceContext, ToolSetWithPrompt, tools_for};
 use ai_toolset::{AsyncToolCollection, ToolSet as AiToolSet};
 use axum::extract::FromRef;
-use futures::StreamExt as _;
+use futures::{FutureExt as _, StreamExt as _};
 use macro_user_id::user_id::MacroUserIdStr;
 use memory::domain::MemoryService as _;
 use memory::domain::service::MemoryServiceImpl;
@@ -107,13 +107,34 @@ impl TurnEngine for RigTurnEngine {
         let metering = agent::MeteringContext::current();
         tokio::spawn(
             agent::MeteringContext::carry(metering, async move {
-                if let Err(error) = drive_turn(db, tool_context, request, &parts).await {
-                    let _ = parts.send(Err(error)).await;
-                }
+                // The product toolset makes this future large. Keep its state
+                // on the heap when adding the panic boundary, including in
+                // unoptimized local builds with Tokio's default worker stack.
+                let turn = Box::pin(drive_turn(db, tool_context, request, &parts));
+                forward_turn_result(turn, &parts).await;
             })
             .in_current_span(),
         );
         receiver
+    }
+}
+
+// Closing the stream alone means success to the ACP consumer. A panic in
+// provider initialization must therefore become an explicit failed turn.
+async fn forward_turn_result(
+    turn: impl Future<Output = Result<(), AgentError>>,
+    parts: &mpsc::Sender<Result<StreamPart, AgentError>>,
+) {
+    let result = std::panic::AssertUnwindSafe(turn)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|_| {
+            Err(AgentError::Other(anyhow::anyhow!(
+                "The agent runtime ended unexpectedly. Please retry this message."
+            )))
+        });
+    if let Err(error) = result {
+        let _ = parts.send(Err(error)).await;
     }
 }
 
@@ -124,6 +145,7 @@ async fn drive_turn(
     parts: &mpsc::Sender<Result<StreamPart, AgentError>>,
 ) -> Result<(), AgentError> {
     let TurnRequest {
+        purpose,
         owner,
         model,
         reasoning_effort,
@@ -154,21 +176,26 @@ async fn drive_turn(
     // Chat's tools with the session's prompt: the user tools (`SendEmail`,
     // `CreateCalendarEvent`) defer to the user, and this runtime finishes
     // them in the turn through `reviewer`.
-    let tools = tools_for(AiHost::AgentSession);
-    let user_memory = fetch_user_memory(&db, &base_context, &owner).await;
-    let system_prompt = system_prompt(
-        &tools.prompt,
-        identity.as_ref(),
-        instructions.as_deref(),
-        user_memory.as_deref(),
-    );
-
-    // `tools_for` returns a fresh Arc. Take its collection back so the
-    // in-memory runtime can widen it onto the session-specific context and
-    // add the one tool that needs the active ACP connection.
-    let base_tools = Arc::into_inner(tools.toolset)
-        .expect("tools_for should return a fresh, uniquely owned collection");
-    let toolset = Arc::new(tools_for_turn(base_tools, user_input.is_some()));
+    let summarizing = purpose == crate::domain::engine::TurnPurpose::Summary;
+    let (system_prompt, toolset) = if summarizing {
+        (
+            crate::domain::agent::compaction::SUMMARY_INSTRUCTIONS.to_owned(),
+            AsyncToolCollection::<InMemToolContext>::new(),
+        )
+    } else {
+        let tools = tools_for(AiHost::AgentSession);
+        let user_memory = fetch_user_memory(&db, &base_context, &owner).await;
+        let prompt = system_prompt(
+            &tools.prompt,
+            identity.as_ref(),
+            instructions.as_deref(),
+            user_memory.as_deref(),
+        );
+        let base_tools = Arc::into_inner(tools.toolset)
+            .expect("tools_for should return a fresh, uniquely owned collection");
+        (prompt, tools_for_turn(base_tools, user_input.is_some()))
+    };
+    let toolset = Arc::new(toolset);
     let usage_ctx = ai_usage::UsageContext::new(ai_usage::AiFeature::AgentSession, owner.clone());
     // Carry the feature on the context so tool-spawned subagents attribute to it.
     let mut tool_context = base_context.clone();
@@ -195,7 +222,7 @@ async fn drive_turn(
         .with_model(&model)
         .with_reasoning_effort(reasoning_effort)
         .with_genai_telemetry(false);
-    if let Some(reviewer) = reviewer {
+    if let Some(reviewer) = reviewer.filter(|_| !summarizing) {
         agent_loop = agent_loop.with_user_tool_finisher(user_tool_finisher(
             Arc::clone(&toolset),
             tool_context.clone(),
@@ -206,7 +233,7 @@ async fn drive_turn(
     }
     // Keep remote MCP tools alongside the native and AskUser tools. The
     // finisher above reviews only Macro's native user tools.
-    let toolset: Arc<dyn AiToolSet<_> + Send + Sync> = match mcp_tools {
+    let toolset: Arc<dyn AiToolSet<_> + Send + Sync> = match mcp_tools.filter(|_| !summarizing) {
         Some(mcp) => Arc::new(mcp_select::CombinedToolSet::new(toolset, mcp)),
         None => toolset,
     };
@@ -217,14 +244,14 @@ async fn drive_turn(
 
     // Bridge the caller's token onto the loop's own; aborted with the turn so
     // an uncancelled token does not strand the forwarder.
-    let forward = tokio::spawn({
+    let forward = tokio_util::task::AbortOnDropHandle::new(tokio::spawn({
         let loop_cancel = loop_cancel.clone();
         let cancel = cancel.clone();
         async move {
             cancel.cancelled().await;
             loop_cancel.cancel();
         }
-    });
+    }));
 
     let rig_messages = agent::to_rig_messages(&messages);
     let result = async {

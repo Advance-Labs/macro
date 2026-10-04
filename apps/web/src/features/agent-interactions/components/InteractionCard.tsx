@@ -1,0 +1,101 @@
+import type {
+  MessagePart,
+  PendingInteraction,
+} from '@service-agent-fold/generated/types';
+import { Show } from 'solid-js';
+import { match } from 'ts-pattern';
+import type { InteractionController } from '../context/interaction';
+import {
+  LiveQuestionCard,
+  parseDraftedTool,
+  type RespondToElicitation,
+  UserToolComposer,
+} from './LiveElicitation';
+import { PermissionCard } from './PermissionCard';
+
+/** Full live approvals and questions shared by conversation surfaces. */
+export function InteractionCard(props: {
+  request: PendingInteraction;
+  controller: InteractionController;
+  tool?: Extract<MessagePart, { kind: 'tool_use' }>;
+}) {
+  const locked = () =>
+    !props.controller.canAnswer() || props.controller.answering(props.request);
+  return match(props.request)
+    .with({ kind: 'permission' }, (request) => (
+      <PermissionCard
+        options={request.options}
+        canAnswer={props.controller.canAnswer()}
+        disabled={locked()}
+        action={
+          props.tool?.name.kind === 'native'
+            ? props.tool.name.name
+            : props.tool?.name.tool
+        }
+        detail={
+          props.tool?.detail.kind === 'terminal'
+            ? (props.tool.detail.command ?? undefined)
+            : JSON.stringify(props.tool?.detail, null, 2)
+        }
+        onSelect={(optionId) =>
+          void props.controller.respond({
+            ...request,
+            answer: { kind: 'selected', optionId },
+          })
+        }
+      />
+    ))
+    .with({ kind: 'elicitation' }, (request) => {
+      // Keep the answer's typed shape intact; the controller checks liveness.
+      const onRespond: RespondToElicitation = (answer) =>
+        props.controller.respond({ ...request, answer });
+      const content = () => {
+        if (request.request.kind !== 'user_tool')
+          return (
+            <LiveQuestionCard
+              request={request.request}
+              locked={locked()}
+              onRespond={onRespond}
+            />
+          );
+        const fallback = (
+          <LiveQuestionCard
+            request={{ kind: 'form', schema: request.request.schema }}
+            locked={locked()}
+            onRespond={onRespond}
+          />
+        );
+        const toolCall = request.toolCall ?? String(request.requestId);
+        const draft = parseDraftedTool(request.request, toolCall);
+        return (
+          <Show when={draft} fallback={fallback}>
+            {(tool) => (
+              <UserToolComposer
+                tool={tool()}
+                toolCall={toolCall}
+                cancel
+                fallback={fallback}
+                review={{ canAnswer: () => !locked(), respond: onRespond }}
+              />
+            )}
+          </Show>
+        );
+      };
+      return (
+        <section
+          aria-label="Agent question"
+          class="space-y-3 rounded-xl border border-edge-muted bg-panel p-4"
+        >
+          <p class="text-sm font-medium">{request.message}</p>
+          <Show when={!props.controller.canAnswer()}>
+            <p class="text-xs text-ink-muted">
+              This agent is no longer available. You can still read the
+              conversation.
+            </p>
+          </Show>
+          {content()}
+        </section>
+      );
+    })
+    .exhaustive();
+}

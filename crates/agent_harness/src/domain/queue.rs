@@ -71,7 +71,7 @@ pub struct QueuedEntry {
 /// end is then observed without a record. `turn` is the fold's next turn id
 /// at dispatch, which for a compaction (no user message) is the turn the
 /// fold would assign to the next prompt.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InFlightTurn {
     /// The action that opened the turn.
     pub action_id: AgentActionId,
@@ -198,6 +198,27 @@ impl SessionQueues {
     /// Append an entry to its session's queue.
     pub fn enqueue(&self, session: AgentSessionId, entry: QueuedEntry) -> Result<(), QueueError> {
         self.insert(session, entry, VecDeque::push_back)
+    }
+
+    /// Recover a DM's durable admission order even when broker deliveries arrive out of order.
+    pub fn enqueue_chronological(
+        &self,
+        session: AgentSessionId,
+        entry: QueuedEntry,
+    ) -> Result<(), QueueError> {
+        self.insert(session, entry, |queue, entry| {
+            let key = |entry: &QueuedEntry| {
+                (
+                    entry.created_at,
+                    entry.announce.as_ref().map(|origin| origin.message_id),
+                )
+            };
+            let index = queue
+                .iter()
+                .position(|queued| key(queued) > key(&entry))
+                .unwrap_or(queue.len());
+            queue.insert(index, entry);
+        })
     }
 
     /// Put an entry ahead of everything already waiting, for a channel

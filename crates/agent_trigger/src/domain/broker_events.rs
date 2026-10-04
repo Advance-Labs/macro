@@ -76,11 +76,25 @@ pub struct AgentSessionRequestedEvent {
     pub owner: String,
 }
 
+/// A message sent to a private persona DM. The session identity is reserved
+/// durably before publication, so concurrent first messages agree on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentDirectMessageEvent {
+    /// Persona this DM addresses.
+    pub bot_id: BotId,
+    /// Current conversation segment, whether its runtime is running yet or not.
+    pub session_id: AgentSessionId,
+    /// Committed user message.
+    pub message: MessagePostedMetadata,
+}
+
 /// Events that open a new session.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
 pub enum NewAgentSessionEvent {
+    /// Open or continue the reserved session for a private persona DM.
+    DirectMessage(AgentDirectMessageEvent),
     /// Opened by a bot mention in a top-level channel message.
     TopLevelMentioned(AgentBotMentionedEvent),
     /// Opened by a bot mention on a message parent other than a channel.
@@ -113,7 +127,7 @@ impl NewAgentSessionEvent {
                 bot_id: mentioned.bot_id,
                 message: mentioned.message.clone(),
             }),
-            Self::Requested(_) => None,
+            Self::Requested(_) | Self::DirectMessage(_) => None,
         }
     }
 
@@ -122,7 +136,7 @@ impl NewAgentSessionEvent {
     pub fn requested(&self) -> Option<&AgentSessionRequestedEvent> {
         match self {
             Self::Requested(requested) => Some(requested),
-            Self::TopLevelMentioned(_) | Self::Mentioned(_) => None,
+            Self::TopLevelMentioned(_) | Self::Mentioned(_) | Self::DirectMessage(_) => None,
         }
     }
 }
@@ -231,6 +245,7 @@ impl AgentTriggerTopicEvent {
     #[must_use]
     pub fn bot_id(&self) -> Option<BotId> {
         match self {
+            Self::New(NewAgentSessionEvent::DirectMessage(event)) => Some(event.bot_id),
             Self::New(event) => event
                 .mention()
                 .map(|mention| mention.bot_id)
@@ -257,6 +272,15 @@ impl TopicEvent for AgentTriggerTopicEvent {
     reason = "both variants carry a whole message; boxing would only move the size"
 )]
 pub enum TriggerDecision {
+    /// Deliver a message to the reserved current session of a persona DM.
+    DirectMessage {
+        /// Persona addressed by the DM.
+        bot_id: BotId,
+        /// Durable current conversation identity.
+        session_id: AgentSessionId,
+        /// The committed user message.
+        message: MessagePostedMetadata,
+    },
     /// Open a session for a mentioned bot.
     Open {
         /// The bot that was mentioned.
@@ -282,7 +306,9 @@ impl TriggerDecision {
     #[must_use]
     pub fn bot_id(&self) -> BotId {
         match self {
-            Self::Open { bot_id, .. } | Self::Existing { bot_id, .. } => *bot_id,
+            Self::Open { bot_id, .. }
+            | Self::Existing { bot_id, .. }
+            | Self::DirectMessage { bot_id, .. } => *bot_id,
         }
     }
 
@@ -290,7 +316,9 @@ impl TriggerDecision {
     #[must_use]
     pub fn message(&self) -> &MessagePostedMetadata {
         match self {
-            Self::Open { message, .. } | Self::Existing { message, .. } => message,
+            Self::Open { message, .. }
+            | Self::Existing { message, .. }
+            | Self::DirectMessage { message, .. } => message,
         }
     }
 }
@@ -340,6 +368,17 @@ impl AgentSessionMacroEvent {
             | MessageParent::CrmContact(_) => None,
         };
         Ok(match decision {
+            TriggerDecision::DirectMessage {
+                bot_id,
+                session_id,
+                message,
+            } => Self::new_session(NewAgentSessionEvent::DirectMessage(
+                AgentDirectMessageEvent {
+                    bot_id,
+                    session_id,
+                    message,
+                },
+            )),
             TriggerDecision::Open { bot_id, message } => match channel {
                 Some((channel_id, channel_type)) => Self::new_session(
                     NewAgentSessionEvent::TopLevelMentioned(AgentBotMentionedEvent {
@@ -384,6 +423,7 @@ impl AgentSessionMacroEvent {
     #[must_use]
     pub fn new_session(event: NewAgentSessionEvent) -> Self {
         let bot_id = match &event {
+            NewAgentSessionEvent::DirectMessage(message) => message.bot_id,
             NewAgentSessionEvent::TopLevelMentioned(mentioned) => mentioned.bot_id,
             NewAgentSessionEvent::Mentioned(mentioned) => mentioned.bot_id,
             NewAgentSessionEvent::Requested(requested) => requested.bot_id,

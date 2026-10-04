@@ -238,7 +238,7 @@ impl<Access: EntityAccessService> SessionAnnouncer for MessageAnnouncer<Access> 
             .post(
                 access,
                 PostMessage {
-                    id: None,
+                    id: announcement.reply_message_id,
                     attribution: MessageAttribution::ActingUser,
                     // Neither shape is news yet. The chip is a pointer: the
                     // thread hears about the session when it finishes or
@@ -247,7 +247,9 @@ impl<Access: EntityAccessService> SessionAnnouncer for MessageAnnouncer<Access> 
                     // answer, as the answer.
                     notification_policy: PostMessageNotificationPolicy::Silent,
                     content,
-                    thread_id: Some(announcement.origin_thread_id),
+                    thread_id: announcement
+                        .reply_placement
+                        .thread_id(announcement.origin_thread_id),
                     anchor: None,
                     mentions: Vec::new(),
                     attachments: Vec::new(),
@@ -328,7 +330,10 @@ impl<Access: EntityAccessService> SessionAnnouncer for MessageAnnouncer<Access> 
                     anchor: None,
                     content,
                     mentions: Vec::new(),
-                    thread_id: Some(declined.origin.thread_id),
+                    thread_id: declined
+                        .origin
+                        .reply_placement
+                        .thread_id(declined.origin.thread_id),
                     attachments: Vec::new(),
                     nonce: None,
                     // Unlike a session chip, this is the whole answer: the

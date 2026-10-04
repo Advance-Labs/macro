@@ -9,6 +9,7 @@ use sqlx::types::Json;
 #[cfg(test)]
 mod test;
 
+mod agent_dm;
 mod pull_request;
 mod queue;
 mod sharing;
@@ -467,7 +468,7 @@ impl AgentSessionRepo for PgAgentSessionRepo {
         .fetch_optional(&self.pool)
         .await
         .context("failed to get agent session")?
-        .context("agent session not found")?;
+        .ok_or(AgentSessionError::NotFound(id))?;
 
         Ok(row.try_into()?)
     }

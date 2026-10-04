@@ -1,5 +1,6 @@
 /** App-facing composition for the agent session and its controllers. */
 
+import { createInteractionController } from '@app/features/agent-interactions/primitives/create-interaction-controller';
 import { toast } from '@core/component/Toast/Toast';
 import { isCodexBotId } from '@core/constant/codexAgent';
 import { isCursorBotId } from '@core/constant/cursorAgent';
@@ -25,7 +26,6 @@ import {
 } from './context/create-queue-controller';
 import { resolveSessionId } from './context/resolve-session-id';
 import { createSendNext } from './context/send-next';
-import { createInteractionController } from './primitives/create-interaction-controller';
 import type { QuoteInsert } from './ui';
 
 export function AgentSessionProvider(

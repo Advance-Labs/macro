@@ -1,6 +1,8 @@
 //! Orchestration for evaluating one posted message.
 
+use super::direct_messages::{DirectMessageDecision, DirectMessageRouting};
 use std::collections::HashSet;
+use std::sync::Arc;
 
 #[cfg(test)]
 mod test;
@@ -170,6 +172,7 @@ pub struct AgentTriggerService<Repo, Bots, Teams, Channels, Replies, Judge, Hist
     replies: Replies,
     judge: Judge,
     history: History,
+    direct_messages: Option<Arc<dyn DirectMessageRouting>>,
 }
 
 impl<Repo, Bots, Teams, Channels, Replies, Judge, History>
@@ -202,7 +205,14 @@ where
             replies,
             judge,
             history,
+            direct_messages: None,
         }
+    }
+
+    /// Route private persona DMs before interpreting mentions or thread replies.
+    pub fn with_direct_messages(mut self, router: Arc<dyn DirectMessageRouting>) -> Self {
+        self.direct_messages = Some(router);
+        self
     }
 
     /// Whether `posted` may address `bot_id` under the bot's current scope.
@@ -305,6 +315,13 @@ where
         else {
             return Ok(Vec::new());
         };
+        if let Some(router) = &self.direct_messages {
+            match router.evaluate(posted).await? {
+                DirectMessageDecision::NotDirectMessage => {}
+                DirectMessageDecision::Unavailable => return Ok(Vec::new()),
+                DirectMessageDecision::Deliver(decision) => return Ok(vec![decision]),
+            }
+        }
         let mut mentioned = bot_mention_ids(&posted.mentions);
         mentioned.sort_by_key(ToString::to_string);
         tracing::Span::current().record(

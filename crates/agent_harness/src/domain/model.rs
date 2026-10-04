@@ -17,6 +17,9 @@ use messages::domain::events::MessageEventAttachment;
 /// Where a mention happened.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MentionOrigin {
+    /// Where the answer belongs relative to its source message.
+    #[serde(default, skip_serializing_if = "ReplyPlacement::is_thread")]
+    pub reply_placement: ReplyPlacement,
     /// Channel or document the mentioning message was posted in.
     pub parent: messages::domain::models::MessageParent,
     /// Thread the announcement replies into: the mention's thread root.
@@ -279,6 +282,7 @@ pub struct ReplyPersona {
 }
 
 /// Stored facts used by the domain to choose a session permission policy.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PermissionPolicyConfig {
     /// A fixed system bot with no editable persona configuration.
     Fixed(AgentKind),
@@ -347,8 +351,37 @@ pub(crate) use agent_egress::domain::model::is_macro_staff;
 
 /// Where a prompt came from, when it came from somewhere the session should
 /// answer back into.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplyPlacement {
+    /// Answer inside the source discussion, the behavior of existing mentions.
+    #[default]
+    Thread,
+    /// Answer directly in a private persona DM's main timeline.
+    Timeline,
+}
+
+impl ReplyPlacement {
+    /// Whether this is the default placement used by existing serialized origins.
+    pub fn is_thread(&self) -> bool {
+        *self == Self::Thread
+    }
+
+    /// Convert a source root to the message API's optional reply target.
+    pub fn thread_id(self, root: Uuid) -> Option<Uuid> {
+        match self {
+            Self::Thread => Some(root),
+            Self::Timeline => None,
+        }
+    }
+}
+
+/// Source message and placement of one agent response.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AnnounceOrigin {
+    /// Ordinary mentions reply in a thread; persona DMs answer in the timeline.
+    #[serde(default, skip_serializing_if = "ReplyPlacement::is_thread")]
+    pub reply_placement: ReplyPlacement,
     /// Channel or document the prompt was posted in.
     pub parent: messages::domain::models::MessageParent,
     /// Thread the announcement replies into.
@@ -507,6 +540,8 @@ pub struct DeliverAction {
 /// it.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum HarnessCommand {
+    /// Open or continue a durably reserved private DM session.
+    DirectMessage(OpenSession),
     /// Open a new session.
     Open(OpenSession),
     /// Act on a session that already exists.
@@ -615,6 +650,10 @@ pub struct AnnouncePrompt {
 /// Facts required to announce one prompt into its originating context.
 #[derive(Debug, Clone)]
 pub struct SessionAnnouncement {
+    /// Preallocated reply id for a durably journaled DM turn.
+    pub reply_message_id: Option<Uuid>,
+    /// Whether the answer is a thread reply or a top-level DM message.
+    pub reply_placement: ReplyPlacement,
     /// Agent session represented by the announcement.
     pub session_id: AgentSessionId,
     /// The bot the session runs for; the announcement posts as it.
@@ -688,7 +727,7 @@ pub struct AnnouncedMessage {
 /// view, and a thread showing a spinner has no way of knowing that; so the
 /// reply says so ([`Self::NeedsInput`]) and returns to pending once the
 /// question is cleared ([`Self::Resumed`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ReplyOutcome {
     /// The agent answered; its last message, whole.
     Answered(String),

@@ -263,9 +263,7 @@ impl AgentSessionRepo for InMemoryAgentSessionRepo {
             .expect("in-memory session store is not poisoned")
             .get(&id)
             .cloned()
-            .ok_or_else(|| {
-                AgentSessionError::Unknown(anyhow::anyhow!("no agent session {}", id.as_uuid()))
-            })
+            .ok_or(AgentSessionError::NotFound(id))
     }
 
     async fn find_all_for_thread(&self, thread_id: Uuid) -> Result<Vec<AgentSession>> {

@@ -73,6 +73,7 @@ where
                 .authorize_origin(
                     &owner_user,
                     &AnnounceOrigin {
+                        reply_placement: Default::default(),
                         parent: thread.parent.clone(),
                         thread_id: thread.thread_id,
                         message_id: thread.message_id,
@@ -128,6 +129,8 @@ where
             let announce = async {
                 let persona = self.inner.reply_persona(&session).await?;
                 let announcement = SessionAnnouncement {
+                    reply_message_id: None,
+                    reply_placement: Default::default(),
                     session_id: session.id,
                     bot_id: request.bot_id,
                     is_coding: persona.is_coding,
@@ -339,7 +342,10 @@ where
                 return Err(into_session_error(error));
             }
         };
-        let permission_policy = self.inner.permission_policy_for(session.bot_id).await;
+        let permission_policy = self
+            .inner
+            .permission_policy_for_session(session.id, session.bot_id)
+            .await?;
         self.inner
             .sessions
             .attach_session(
@@ -451,12 +457,39 @@ where
             .authorize_origin(
                 &origin.sender,
                 &AnnounceOrigin {
+                    reply_placement: origin.reply_placement,
                     parent: origin.parent.clone(),
                     thread_id: origin.thread_id,
                     message_id: origin.message_id,
                 },
             )
             .await?;
+
+        let runtime = if origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+            && let Some(store) = &self.dm_turns
+        {
+            if let Some(settings) = store.settings(session_id).await? {
+                settings.runtime
+            } else {
+                let permissions = self
+                    .permission_policies
+                    .permission_policy(bot_id)
+                    .await
+                    .map_err(AgentSessionError::from)?;
+                store
+                    .pin_settings(
+                        session_id,
+                        crate::domain::dm_turns::DmSessionSettings {
+                            runtime,
+                            permissions,
+                        },
+                    )
+                    .await?
+                    .runtime
+            }
+        } else {
+            runtime
+        };
 
         // Asked before anything exists for the session: a row whose spawn is
         // bound to fail would be marked disconnected and leave the thread
@@ -473,10 +506,37 @@ where
                 ?blocker,
                 "declining a mention its sender is not set up for"
             );
+            if origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+                && let Some(store) = &self.dm_turns
+                && let Some(record) = store.get(origin.message_id).await?
+            {
+                let flight = InFlightTurn {
+                    action_id: record.action_id,
+                    turn: agent_fold::domain::model::TurnId(0),
+                    actor: Some(origin.sender.clone()),
+                    announce: None,
+                    announcement_message_id: None,
+                    dispatched_at: chrono::Utc::now(),
+                };
+                if !store.claim(record.action_id, &flight).await? {
+                    return Ok(());
+                }
+                store
+                    .finish(
+                        record.action_id,
+                        crate::domain::dm_turns::DmTurnState::Failed,
+                        ReplyOutcome::Failed,
+                    )
+                    .await?;
+                store
+                    .finalize_reply(record.action_id, &ReplyOutcome::Failed)
+                    .await?;
+            }
             self.announcer
                 .decline(DeclinedMention {
                     bot_id,
                     origin: AnnounceOrigin {
+                        reply_placement: origin.reply_placement,
                         parent: origin.parent,
                         thread_id: origin.thread_id,
                         message_id: origin.message_id,
@@ -514,7 +574,7 @@ where
                 id: session_id,
                 owner_id: Owner::User(origin.sender.clone()),
                 bot_id,
-                thread_id: Some(origin.thread_id),
+                thread_id: origin.reply_placement.thread_id(origin.thread_id),
                 originating_message_id: Some(origin.message_id),
                 model: runtime.model.clone(),
                 harness: runtime
@@ -539,58 +599,81 @@ where
             .await?;
         self.publish_opened(&session).await;
 
-        let mcp_servers = if runtime.kind == AgentKind::CodexCloud {
-            Vec::new()
-        } else {
-            egress.sandbox.acp_servers()
-        };
-        let container = match self
-            .containers
-            .spawn(SpawnContainer {
-                session_id,
-                kind: runtime.kind,
-                size: sandbox_size,
-                egress: egress.sandbox,
-            })
-            .await
-        {
-            Ok(container) => container,
-            Err(error) => {
-                let _ = self
-                    .sessions
-                    .mark_disconnected(session_id)
-                    .await
-                    .inspect_err(|status_error| {
-                        tracing::error!(
-                            error = ?status_error,
-                            %session_id,
-                            "failed to mark an unprovisioned session disconnected"
-                        );
-                    });
-                return Err(error);
-            }
-        };
-        let permission_policy = self.permission_policy_for(bot_id).await;
-        self.sessions
-            .attach_session(
-                session_id,
-                container
-                    .mcp_servers(mcp_servers)
-                    .permission_policy(permission_policy),
-            )
-            .await?;
+        // External runtimes bind on first delivery. Their operator owns the
+        // process; opening a DM must never provision a managed sandbox for it.
+        if runtime.kind.is_managed() {
+            let mcp_servers = if runtime.kind == AgentKind::CodexCloud {
+                Vec::new()
+            } else {
+                egress.sandbox.acp_servers()
+            };
+            let container = match self
+                .containers
+                .spawn(SpawnContainer {
+                    session_id,
+                    kind: runtime.kind,
+                    size: sandbox_size,
+                    egress: egress.sandbox,
+                })
+                .await
+            {
+                Ok(container) => container,
+                Err(error) => {
+                    let _ = self
+                        .sessions
+                        .mark_disconnected(session_id)
+                        .await
+                        .inspect_err(|status_error| {
+                            tracing::error!(
+                                error = ?status_error,
+                                %session_id,
+                                "failed to mark an unprovisioned session disconnected"
+                            );
+                        });
+                    return Err(error);
+                }
+            };
+            let permission_policy = self
+                .permission_policy_for_session(session_id, bot_id)
+                .await?;
+            self.sessions
+                .attach_session(
+                    session_id,
+                    container
+                        .mcp_servers(mcp_servers)
+                        .permission_policy(permission_policy),
+                )
+                .await?;
+        }
         // The first prompt goes through the same door as every later one:
         // queued raw, then dispatched - which is where it is composed with
         // channel context and announced as the chip the replies render into.
         // One door is what holds the one-turn-in-flight invariant from the
         // session's very first action.
+        let dm_action = if origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+        {
+            match &self.dm_turns {
+                Some(store) => store
+                    .get(origin.message_id)
+                    .await?
+                    .map(|turn| turn.action_id),
+                None => None,
+            }
+        } else {
+            None
+        };
         self.enqueue_then_dispatch(
             session_id,
             DeliverAction {
-                id: AgentActionId::mint(),
+                id: if origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline {
+                    dm_action.unwrap_or_else(|| AgentActionId::from_uuid(origin.message_id))
+                } else {
+                    AgentActionId::mint()
+                },
                 action: AgentAction::prompt_with_attachments(origin.content, origin.attachments),
                 actor: Some(origin.sender),
                 announce: Some(AnnounceOrigin {
+                    reply_placement: origin.reply_placement,
                     parent: origin.parent,
                     thread_id: origin.thread_id,
                     message_id: origin.message_id,

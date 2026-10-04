@@ -42,7 +42,7 @@ use model_owner::Owner;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument as _;
 
-use crate::domain::engine::{AgentIdentity, TurnEngine, TurnRequest};
+use crate::domain::engine::{AgentIdentity, TurnEngine, TurnPurpose, TurnRequest};
 use crate::domain::mcp::{DynMcpToolConnector, dialable_servers};
 use crate::domain::model_options::REASONING_EFFORT_CONFIG_ID;
 use crate::domain::session::{HistoryEntry, SessionStore, UserPrompt, messages_for_turn};
@@ -55,6 +55,8 @@ use mcp_toolset::RemoteMcpToolSet;
 
 #[cfg(test)]
 mod test;
+
+pub(crate) mod compaction;
 
 /// A turn that produces nothing for this long is treated as hung and
 /// cancelled, so it cannot wedge the session's turn lock forever.
@@ -172,12 +174,6 @@ impl AgentState {
                 state.history.clear();
             }
             state.acp_session_id = Some(acp_id);
-        }
-    }
-
-    fn clear_history(&self) {
-        if let Some(mut state) = self.store.get_mut(&self.session_id) {
-            state.history.clear();
         }
     }
 
@@ -584,18 +580,6 @@ pub async fn serve(state: Arc<AgentState>, acp: AcpChannel) -> Result<(), AcpErr
                     );
                     genai_telemetry::propagation::set_parent(&span, request.meta.as_ref());
                     let prompt = UserPrompt::from_request(&request);
-                    if prompt.is_compact_command() {
-                        state.clear_history();
-                        let _ = connection.send_notification(SessionNotification::new(
-                            request.session_id,
-                            SessionUpdate::AgentMessageChunk(ContentChunk::new(
-                                "Compacted: the earlier conversation is no longer in the \
-                                 model's context."
-                                    .into(),
-                            )),
-                        ));
-                        return responder.respond(PromptResponse::new(StopReason::EndTurn));
-                    }
                     if state.enable_dev_commands
                         && let Some(question) = prompt.text.trim().strip_prefix(ASK_COMMAND)
                     {
@@ -625,13 +609,16 @@ pub async fn serve(state: Arc<AgentState>, acp: AcpChannel) -> Result<(), AcpErr
                     connection.spawn({
                         let connection = connection.clone();
                         async move {
-                            let stop =
+                            let result =
                                 run_turn(&state, &connection, request.session_id, prompt, cancel)
                                     .await;
                             // A closed connection is the only way this fails,
                             // and failing the spawned task would tear the
                             // whole (already closing) server down.
-                            let _ = responder.respond(PromptResponse::new(stop));
+                            let _ = match result {
+                                Ok(stop) => responder.respond(PromptResponse::new(stop)),
+                                Err(error) => responder.respond_with_error(error),
+                            };
                             Ok(())
                         }
                         .instrument(span)
@@ -724,8 +711,28 @@ async fn run_turn(
     acp_session_id: SessionId,
     prompt: UserPrompt,
     cancel: CancellationToken,
-) -> StopReason {
+) -> Result<StopReason, AcpError> {
     let _turn = state.turn_lock.lock().await;
+    if cancel.is_cancelled() {
+        return Ok(StopReason::Cancelled);
+    }
+    if prompt.text.len() > 128_000 {
+        return Err(AcpError::invalid_params().data(
+            "This message is too long. Split it into smaller messages or attach it as a file.",
+        ));
+    }
+    let explicit_compact = prompt.is_compact_command();
+    compaction::compact_if_needed(
+        state,
+        connection,
+        &acp_session_id,
+        explicit_compact,
+        &cancel,
+    )
+    .await?;
+    if explicit_compact {
+        return Ok(StopReason::EndTurn);
+    }
     let TurnInput {
         messages,
         model,
@@ -736,6 +743,7 @@ async fn run_turn(
     let awaiting = Arc::new(AwaitingUser::default());
     let requester = user_input_requester(state, connection, acp_session_id.clone(), &awaiting);
     let mut parts = state.engine.run_turn(TurnRequest {
+        purpose: TurnPurpose::Conversation,
         owner: state.owner.clone(),
         model,
         reasoning_effort,
@@ -800,7 +808,7 @@ async fn run_turn(
             )),
         ));
     }
-    if let Some(failure) = failure {
+    if let Some(failure) = &failure {
         let _ = connection.send_notification(SessionNotification::new(
             acp_session_id.clone(),
             SessionUpdate::AgentMessageChunk(ContentChunk::new(
@@ -811,9 +819,11 @@ async fn run_turn(
     state.push_turn(prompt, turn_parts);
 
     if was_cancelled || cancel.is_cancelled() {
-        StopReason::Cancelled
+        Ok(StopReason::Cancelled)
+    } else if let Some(failure) = failure {
+        Err(AcpError::internal_error().data(failure))
     } else {
-        StopReason::EndTurn
+        Ok(StopReason::EndTurn)
     }
 }
 
@@ -875,9 +885,8 @@ async fn run_ask(
 }
 
 /// The slash commands this agent advertises over ACP: bare names, no
-/// leading slash. `/compact` is still handled if a client sends it, but it
-/// is not listed — dropping history is not a product command for this
-/// harness. `/ask` only while the host enables development commands, since
+/// leading slash. Context is summarized automatically; the compact control
+/// also permits an explicit summary. `/ask` only while the host enables development commands, since
 /// the prompt handler ignores it otherwise.
 fn available_commands(state: &AgentState) -> Vec<AvailableCommand> {
     let name = |command: &str| command.trim_start_matches('/').to_owned();

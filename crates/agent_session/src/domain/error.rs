@@ -7,6 +7,9 @@ pub type Result<T, E = AgentSessionError> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum AgentSessionError {
+    /// No session has been created under this identity yet.
+    #[error("agent session {0} was not found")]
+    NotFound(AgentSessionId),
     /// Invalid link or channel sharing input.
     #[error("{0}")]
     InvalidSharing(&'static str),

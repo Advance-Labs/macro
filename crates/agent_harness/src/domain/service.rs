@@ -133,6 +133,8 @@ struct AgentHarnessInner<
     forwarder: Box<dyn ErasedForwarder>,
     permission_policies: Box<dyn ErasedPermissionPolicySource>,
     coding_agents: Box<dyn ErasedCodingAgentSource>,
+    direct_messages: Option<Arc<dyn crate::domain::direct_messages::AgentDmExecutionPolicy>>,
+    dm_turns: Option<Arc<dyn crate::domain::dm_turns::DmTurnStore>>,
     defaults: HarnessDefaults,
     /// Turn-occupying actions waiting for their session's running turn to
     /// end. In-memory working copy; the session store is the durable source.
@@ -299,6 +301,7 @@ where
     /// them into a struct would only move the same list one level down.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        direct_messages: Option<Arc<dyn crate::domain::direct_messages::AgentDmExecutionPolicy>>,
         sessions: Sessions,
         containers: Containers,
         announcer: Announcer,
@@ -327,6 +330,8 @@ where
                 forwarder: Box::new(forwarder),
                 permission_policies: Box::new(permission_policies),
                 coding_agents: Box::new(coding_agents),
+                direct_messages,
+                dm_turns: None,
                 defaults: defaults.into(),
                 queues: SessionQueues::new(),
                 hydrated: DashSet::new(),
@@ -338,6 +343,124 @@ where
             workers: Arc::new(DashMap::new()),
             repositories: None,
         }
+    }
+
+    /// Enable durable DM admission and recovery before sharing this service.
+    pub fn with_dm_turns(mut self, store: Arc<dyn crate::domain::dm_turns::DmTurnStore>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("configure journal before cloning the harness")
+            .dm_turns = Some(store);
+        self
+    }
+
+    /// Save a DM command before acknowledging its broker event. Returns its
+    /// original segment and payload when the source message was already seen.
+    pub async fn admit_direct_message(
+        &self,
+        session: AgentSessionId,
+        command: OpenSession,
+    ) -> Result<(AgentSessionId, OpenSession)> {
+        if let Some(policy) = &self.inner.direct_messages
+            && !policy
+                .validate_binding(session, command.bot_id, Some(&command.origin.sender))
+                .await?
+        {
+            return Err(AgentSessionError::Forbidden.into());
+        }
+        let Some(store) = &self.inner.dm_turns else {
+            return Ok((session, command));
+        };
+        let messages::domain::models::MessageParent::Channel(channel) = command.origin.parent
+        else {
+            return Err(AgentSessionError::Forbidden.into());
+        };
+        if let Some(record) = store.get(command.origin.message_id).await? {
+            if record.channel_id != channel {
+                return Err(AgentSessionError::Forbidden.into());
+            }
+            return Ok((record.session_id, record.command));
+        }
+        // An event can have reserved its segment before the user pressed Start
+        // fresh. Serialize first admission with reset and select the current
+        // segment again; replays above always retain their original identity.
+        for _ in 0..3 {
+            let current = match &self.inner.direct_messages {
+                Some(policy) => policy.current_context(session).await?,
+                None => session,
+            };
+            let Some(_lease) = store.claim_context(current).await? else {
+                return Err(AgentSessionError::RuntimeUnavailable(
+                    "conversation context is changing; retry admission",
+                )
+                .into());
+            };
+            if let Some(policy) = &self.inner.direct_messages
+                && policy.current_context(session).await? != current
+            {
+                continue;
+            }
+            let record = store.admit(current, channel, command).await?;
+            return Ok((record.session_id, record.command));
+        }
+        Err(
+            AgentSessionError::RuntimeUnavailable("conversation context changed; retry admission")
+                .into(),
+        )
+    }
+
+    /// Reconcile journaled work after process loss. Only undispatched prompts
+    /// may run automatically; ambiguous attempts are marked interrupted.
+    pub async fn recover_direct_messages(&self) -> Result<()> {
+        let Some(store) = &self.inner.dm_turns else {
+            return Ok(());
+        };
+        for record in store.running(100).await? {
+            let management = self.inner.sessions.management(record.session_id).await?;
+            if matches!(management, SessionManagement::Unmanaged)
+                || (matches!(management, SessionManagement::Ours)
+                    && !self.inner.busy.is_pending(record.session_id))
+            {
+                store
+                    .finish(
+                        record.action_id,
+                        crate::domain::dm_turns::DmTurnState::Interrupted,
+                        ReplyOutcome::Failed,
+                    )
+                    .await?;
+                tracing::warn!(session_id = %record.session_id, action_id = %record.action_id, "DM turn interrupted; explicit retry required");
+            }
+        }
+        for record in store.pending_replies(100).await? {
+            let Some(outcome) = record.outcome else {
+                continue;
+            };
+            if let Some(turn) = &record.in_flight {
+                self.inner
+                    .resolve_reply(record.session_id, Some(turn), outcome)
+                    .await;
+            } else {
+                store.finalize_reply(record.action_id, &outcome).await?;
+            }
+        }
+        let pending = store.pending(50).await?;
+        let work: Vec<_> = pending
+            .into_iter()
+            .map(|record| {
+                self.execute(
+                    record.session_id,
+                    HarnessCommand::DirectMessage(record.command),
+                )
+            })
+            .collect();
+        for result in futures::future::join_all(work).await {
+            if let Err(error) = result {
+                tracing::warn!(
+                    ?error,
+                    "durable DM recovery could not dispatch a queued prompt"
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Enable explicit repository choices, authorized against the owner's reachable repositories.
@@ -413,6 +536,8 @@ where
         self.inner
             .announcer
             .announce(SessionAnnouncement {
+                reply_message_id: None,
+                reply_placement: prompt.origin.reply_placement,
                 session_id,
                 bot_id: session.bot_id,
                 is_coding: persona.is_coding,

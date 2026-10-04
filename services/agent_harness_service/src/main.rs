@@ -873,8 +873,24 @@ async fn run() -> anyhow::Result<()> {
     // to speak through: it is the same service instance the harness routes
     // commands with, and a clone shares its replica identity.
     let draining_sessions = sessions.clone();
+    let dm_turns = Arc::new(agent_harness::outbound::dm_turns::PgDmTurnStore::new(
+        pool.clone(),
+    ));
+    let direct_messages_service = Arc::new(
+        agent_harness::domain::direct_messages::AgentDmConversationsService::new(
+            PgChannelsRepo::new(pool.clone()),
+            bots::domain::service::BotServiceImpl::new(
+                PgBotsRepo::new(pool.clone()),
+                macro_event_broker::NoopMacroEventBroker,
+            ),
+            PgBotsRepo::new(pool.clone()),
+            session_repo.clone(),
+        )
+        .with_turns(dm_turns.clone()),
+    );
     let harness = Arc::new(
         AgentHarnessService::new(
+            Some(direct_messages_service.clone()),
             sessions,
             containers,
             announcer,
@@ -897,6 +913,7 @@ async fn run() -> anyhow::Result<()> {
             // notification ingress channel messages use.
             IngressAgentSessionNotifier::new(Arc::clone(&notifications)),
         )
+        .with_dm_turns(dm_turns)
         .with_repositories(open_repositories),
     );
     let model_probe_timeout = std::time::Duration::from_secs(10);
@@ -1096,6 +1113,12 @@ async fn run() -> anyhow::Result<()> {
             MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
         ),
     );
+    let direct_messages = agent_harness::inbound::direct_messages::agent_dm_router(
+        agent_harness::inbound::direct_messages::AgentDmRouterState::new(
+            direct_messages_service,
+            MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
+        ),
+    );
     let http = tokio::spawn(async move {
         if let Err(error) = api::setup_and_serve(
             api::ApiStates::new(
@@ -1110,6 +1133,7 @@ async fn run() -> anyhow::Result<()> {
             .with_claude_auth(claude_auth)
             .with_sharing(sharing)
             .with_routine_sessions(routine_sessions)
+            .with_direct_messages(direct_messages)
             .with_capabilities(capabilities),
             http_runtime_commands_readiness,
             http_port,
@@ -1138,6 +1162,18 @@ async fn run() -> anyhow::Result<()> {
             }
             if let Err(error) = heartbeat_repo.heartbeat(replica, None).await {
                 tracing::warn!(error = ?error, %replica, "failed to heartbeat harness replica");
+            }
+        }
+    });
+
+    let recovery_harness = harness.clone();
+    let dm_recovery = tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(10));
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            ticker.tick().await;
+            if let Err(error) = recovery_harness.recover_direct_messages().await {
+                tracing::error!(?error, "failed to reconcile durable agent DM turns");
             }
         }
     });
@@ -1257,12 +1293,17 @@ async fn run() -> anyhow::Result<()> {
 
                     let pending = match routed {
                         RoutedTrigger::Command(session_id, command) => {
+                            let (session_id, command) = if let HarnessCommand::DirectMessage(open) = command {
+                                let (session_id, open) = harness.admit_direct_message(session_id, open).await?;
+                                (session_id, HarnessCommand::DirectMessage(open))
+                            } else { (session_id, command) };
                             tracing::Span::current()
                                 .record("agent.session.id", tracing::field::display(session_id));
                             let event_type = match &command {
                                 HarnessCommand::Open(_) => "agent_trigger.new",
                                 HarnessCommand::Deliver(_) => "agent_trigger.existing",
                                 HarnessCommand::Delete => "agent_trigger.delete",
+                                HarnessCommand::DirectMessage(_) => "agent_trigger.direct_message",
                                 HarnessCommand::SetSandboxSize(_) => {
                                     "agent_trigger.set_sandbox_size"
                                 }
@@ -1316,8 +1357,8 @@ async fn run() -> anyhow::Result<()> {
                         }
                     };
 
-                    // Intentionally at-most-once: admission precedes commit, but
-                    // long-running harness work is independent of Kafka afterward.
+                    // DMs are journaled before commit and recovered independently
+                    // of Kafka. Existing mention traffic keeps its admission policy.
                     commit_message(&consumer, kafka_message)?;
                     Ok(Some(pending))
                 }
@@ -1356,6 +1397,7 @@ async fn run() -> anyhow::Result<()> {
     trigger.abort();
     egress_http.abort();
     heartbeat.abort();
+    dm_recovery.abort();
     runtime_commands.abort();
     let stop_failures = container_shutdown.shutdown_all().await;
     if stop_failures > 0 {

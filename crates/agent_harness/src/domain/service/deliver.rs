@@ -58,6 +58,15 @@ where
             announce: _,
         } = command;
 
+        if !matches!(action, AgentAction::Stop)
+            && let Some(policy) = &self.direct_messages
+        {
+            let session = self.sessions.get_session(session_id).await?;
+            policy
+                .authorize_prompt(session_id, session.bot_id, actor.as_ref())
+                .await?;
+        }
+
         match self
             .sessions
             .send_action(session_id, actor.clone(), action.clone(), id)
@@ -74,7 +83,9 @@ where
             }
             Err(AgentSessionError::Disconnected(_)) => {
                 let session = self.sessions.get_session(session_id).await?;
-                let permission_policy = self.permission_policy_for(session.bot_id).await;
+                let permission_policy = self
+                    .permission_policy_for_session(session_id, session.bot_id)
+                    .await?;
                 if AgentKind::for_session(session.bot_id, &session.harness).is_managed() {
                     let container = self.containers.resume(session_id).await?;
                     let mcp_servers = self
@@ -249,12 +260,18 @@ where
         // The announcement posts as the session's own bot, which only the
         // row remembers.
         let session = self.sessions.get_session(session_id).await?;
-        let persona = self.reply_persona(&session).await?;
+        let is_coding = if origin.reply_placement == crate::domain::model::ReplyPlacement::Thread {
+            self.reply_persona(&session).await?.is_coding
+        } else {
+            false
+        };
 
         Ok(Some(SessionAnnouncement {
+            reply_message_id: None,
+            reply_placement: origin.reply_placement,
             session_id,
             bot_id: session.bot_id,
-            is_coding: persona.is_coding,
+            is_coding,
             origin_parent: origin.parent,
             origin_thread_id: origin.thread_id,
             origin_message_id: origin.message_id,
@@ -277,11 +294,47 @@ where
         &self,
         session_id: AgentSessionId,
         turn: Option<&InFlightTurn>,
-        outcome: ReplyOutcome,
+        mut outcome: ReplyOutcome,
     ) {
         let Some(turn) = turn else {
             return;
         };
+        let terminal = !matches!(
+            outcome,
+            ReplyOutcome::NeedsInput { .. } | ReplyOutcome::Resumed
+        );
+        let dm_store = self.dm_turns.as_ref().filter(|_| {
+            turn.announce.as_ref().is_some_and(|origin| {
+                origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+            })
+        });
+        let _reply_lease = if terminal && let Some(store) = dm_store {
+            match store.claim_reply(turn.action_id).await {
+                Ok(Some(lease)) => Some(lease),
+                Ok(None) => return,
+                Err(error) => {
+                    tracing::error!(?error, %session_id, "could not claim DM reply reconciliation");
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        if terminal && let Some(store) = dm_store {
+            match store.by_action(turn.action_id).await {
+                Ok(Some(record)) if record.reply_finalized => return,
+                Ok(Some(record)) => {
+                    if let Some(saved) = record.outcome {
+                        outcome = saved;
+                    }
+                }
+                Err(error) => {
+                    tracing::error!(?error, %session_id, "could not read the durable DM reply state");
+                    return;
+                }
+                _ => {}
+            }
+        }
         let (Some(message_id), Some(origin), Some(triggered_by)) = (
             turn.announcement_message_id,
             turn.announce.as_ref(),
@@ -301,16 +354,23 @@ where
                 return;
             }
         };
-        let persona = match self.reply_persona(&session).await {
-            Ok(persona) => persona,
-            Err(error) => {
-                tracing::error!(
-                    error = ?error,
-                    %session_id,
-                    %message_id,
-                    "leaving a turn's reply unresolved: the session's persona is unavailable"
-                );
-                return;
+        // A timeline reply remains resolvable if its persona was deleted
+        // during the turn. The session preserves its author identity.
+        let is_coding = if origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
+        {
+            false
+        } else {
+            match self.reply_persona(&session).await {
+                Ok(persona) => persona.is_coding,
+                Err(error) => {
+                    tracing::error!(
+                        error = ?error,
+                        %session_id,
+                        %message_id,
+                        "leaving a turn's reply unresolved: the session's persona is unavailable"
+                    );
+                    return;
+                }
             }
         };
         if let Err(error) = self
@@ -318,11 +378,11 @@ where
             .resolve(ResolvedReply {
                 session_id,
                 bot_id: session.bot_id,
-                is_coding: persona.is_coding,
+                is_coding,
                 message_id,
                 origin_parent: origin.parent.clone(),
                 triggered_by: triggered_by.clone(),
-                outcome,
+                outcome: outcome.clone(),
             })
             .await
         {
@@ -332,6 +392,10 @@ where
                 %message_id,
                 "failed to resolve a turn's reply in its thread"
             );
+        } else if terminal && let Some(store) = dm_store {
+            if let Err(error) = store.finalize_reply(turn.action_id, &outcome).await {
+                tracing::error!(?error, %session_id, "failed to mark the DM reply finalized");
+            }
         }
     }
 }

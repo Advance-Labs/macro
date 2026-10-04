@@ -6,6 +6,8 @@ use bot_id::BotId;
 
 fn announcement() -> SessionAnnouncement {
     SessionAnnouncement {
+        reply_message_id: None,
+        reply_placement: Default::default(),
         bot_id: BotId::TEST_A,
         is_coding: true,
         session_id: agent_session::domain::model::AgentSessionId::TEST_A,

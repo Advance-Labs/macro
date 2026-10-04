@@ -116,7 +116,17 @@ async fn run(
                 entity_access::outbound::PgAccessRepository::new(pool.clone()),
             ),
         ),
-    );
+    )
+    .with_direct_messages(std::sync::Arc::new(
+        agent_trigger::domain::direct_messages::DirectMessageRouter::new(
+            PgChannelsRepo::new(pool.clone()),
+            bots::domain::service::BotServiceImpl::new(
+                PgBotsRepo::new(pool.clone()),
+                macro_event_broker::NoopMacroEventBroker,
+            ),
+            PgAgentSessionRepo::new(pool.clone()),
+        ),
+    ));
     let channel_types = ChannelRepoTypeLookup::new(PgChannelsRepo::new(pool));
     let publisher = MacroEventBrokerService::new(
         KafkaEventPublisher::new(&kafka_brokers)?,

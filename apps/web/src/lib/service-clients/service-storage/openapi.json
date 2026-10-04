@@ -15679,6 +15679,25 @@
         "description": "Whether an agent is available everywhere or only in selected channels.",
         "enum": ["all", "selected"]
       },
+      "AgentDmProfile": {
+        "type": "object",
+        "description": "Historical persona identity displayed beside a private conversation.",
+        "required": ["bot_id", "name"],
+        "properties": {
+          "avatar_url": {
+            "type": ["string", "null"],
+            "description": "Persona avatar, when supplied."
+          },
+          "bot_id": {
+            "type": "string",
+            "description": "Persona id without the bot principal prefix."
+          },
+          "name": {
+            "type": "string",
+            "description": "Persona display name."
+          }
+        }
+      },
       "AgentMcpServer": {
         "type": "object",
         "description": "One Pipedream app an agent lists under [`AgentMcpServers::Selected`].\n\nOnly the catalog identity is stored. Whether a given person has connected\nthe app is theirs, resolved at call time by the egress proxy, never here.",
@@ -16728,6 +16747,17 @@
           "is_participant"
         ],
         "properties": {
+          "agent_dm": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentDmProfile",
+                "description": "Persona identity when this is the viewer's private agent DM."
+              }
+            ]
+          },
           "auto_join_team": {
             "type": "boolean",
             "description": "Whether team members automatically join the channel."
@@ -24960,7 +24990,7 @@
         "properties": {
           "recipient_id": {
             "type": "string",
-            "description": "Recipient user id."
+            "description": "Recipient user id (`macro|...`) or agent persona id (`bot|...`)."
           }
         }
       },

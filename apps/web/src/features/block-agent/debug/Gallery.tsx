@@ -4,6 +4,10 @@
  * `/component/agent-ui`.
  */
 
+import {
+  initialValues,
+  validate,
+} from '@app/features/agent-interactions/state/elicitation-form';
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { MagicChipView } from '@core/component/LexicalMarkdown/component/decorator/MagicChip/MagicChipView';
 import type { MagicChipPresentation } from '@core/component/LexicalMarkdown/component/decorator/MagicChip/presentation';
@@ -26,7 +30,6 @@ import { createSignal, type JSX, onCleanup } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { Message } from '../component/AgentMessage';
 import { ReplyToSelection } from '../component/ReplyToSelection';
-import { initialValues, validate } from '../state/elicitation-form';
 import {
   ActionLine,
   AgentInput,

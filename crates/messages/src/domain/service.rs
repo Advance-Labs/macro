@@ -309,6 +309,16 @@ impl<R: MessageRepository, E: MessageEventPublisher> MessageService<R, E> {
             input.attachments.as_deref().unwrap_or_default(),
         )
         .await?;
+        // Reconciliation may repeat a bot's final reply after a process died
+        // between patching it and recording success. Identical content must
+        // not produce another edit event or completion notification.
+        if actor.as_bot().is_some()
+            && input.content == current.content
+            && input.mentions == current.mentions
+            && input.attachments.is_none()
+        {
+            return Ok(current);
+        }
         let notification_policy = input.notification_policy;
         let nonce = input.nonce.clone();
         let mentions = self.resolve_mentions(&parent, &input.mentions).await?;

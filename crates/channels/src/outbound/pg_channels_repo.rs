@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests;
 
+mod agent_dm;
+
 #[cfg(feature = "attachment")]
 use crate::domain::ports::ChannelAttachmentRepo;
 #[cfg(feature = "list")]
