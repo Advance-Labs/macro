@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE foreign_entity\n            SET metadata = $2,\n                updated_at = CASE WHEN foreign_entity.metadata = $2 THEN updated_at ELSE NOW() END\n            WHERE id = $1\n              AND foreign_entity_id = $3\n              AND foreign_entity_source = $4\n              AND stored_for_id = $5\n              AND stored_for_auth_entity = $6\n              AND foreign_entity.metadata = $7\n              AND created_at = $8\n              AND updated_at = $9\n            RETURNING\n                id as \"id!: Uuid\",\n                foreign_entity_id as \"foreign_entity_id!: String\",\n                foreign_entity_source as \"foreign_entity_source!: String\",\n                metadata as \"metadata!: serde_json::Value\",\n                stored_for_id as \"stored_for_id!: String\",\n                stored_for_auth_entity as \"stored_for_auth_entity!: String\",\n                created_at as \"created_at!: DateTime<Utc>\",\n                updated_at as \"updated_at!: DateTime<Utc>\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "foreign_entity_id!: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "foreign_entity_source!: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "metadata!: serde_json::Value",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "stored_for_id!: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "stored_for_auth_entity!: String",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at!: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0050d5f90d183a17fb8225e38d8ef604a928054e2b43e557fc29c925c4ed8c10"
+}

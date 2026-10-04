@@ -615,6 +615,23 @@ async fn run() -> anyhow::Result<()> {
         authorization_state: authorization_state.clone(),
     };
 
+    let github_pull_request_resync_state =
+        github::inbound::pull_request_resync_router::PullRequestResyncRouterState {
+            service: Arc::new(github::domain::service::PullRequestResyncService::new(
+                InstallationTokenConfig {
+                    client_id: config.github_sync_app_client_id.to_string(),
+                    private_key_pem: config.github_sync_app_pem_secret_key.as_ref().to_string(),
+                },
+                PgGithubSyncRepo::new(db.clone()),
+                GithubSyncClientImpl::default(),
+                GithubPullRequestServiceImpl::new(
+                    ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
+                    PgGithubPullRequestRepo::new(db.clone()),
+                ),
+            )),
+            authorization_state: authorization_state.clone(),
+        };
+
     let github_pull_request_state = GithubPullRequestRouterState::new(
         Arc::new(GithubPullRequestServiceImpl::new(
             ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
@@ -1878,6 +1895,7 @@ async fn run() -> anyhow::Result<()> {
         graphql_entity_mutation_service,
         github_sync_service: Arc::new(github_sync_service_impl),
         github_pull_request_index_state,
+        github_pull_request_resync_state,
         github_pull_request_state,
         github_pull_request_changes_state,
         foreign_entity_state,

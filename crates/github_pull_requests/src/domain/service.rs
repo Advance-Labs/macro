@@ -5,6 +5,7 @@ mod test;
 
 mod changes;
 mod index;
+mod resync;
 
 pub use changes::{GithubPullRequestChangesServiceImpl, GithubPullRequestChangesetStore};
 

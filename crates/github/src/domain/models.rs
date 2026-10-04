@@ -7,8 +7,14 @@ mod test;
 mod app_jwt;
 mod installation_state;
 mod link;
+mod pull_request;
 mod repository;
+pub use pull_request::{
+    GithubPullRequestFetchError, GithubPullRequestResourceIds, GithubPullRequestSnapshot,
+};
+mod resync;
 mod sync;
+pub use resync::{PullRequestResyncPage, PullRequestResyncRequest};
 
 #[cfg(feature = "sync")]
 pub use app_jwt::AppJwt;
@@ -35,6 +41,9 @@ pub use sync::{
 /// Errors that can occur during github operations.
 #[derive(Debug, thiserror::Error)]
 pub enum GithubError {
+    /// The repair cursor or request is invalid.
+    #[error("invalid pull request resync request")]
+    InvalidPullRequestResyncRequest,
     /// An internal error occurred.
     #[error("{0}")]
     Internal(#[from] anyhow::Error),

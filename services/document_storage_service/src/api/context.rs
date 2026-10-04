@@ -706,6 +706,17 @@ pub(crate) type GithubPullRequestIndexServiceType =
 pub(crate) type DssGithubPullRequestIndexState =
     PullRequestIndexRouterState<GithubPullRequestIndexServiceType, AuthorizationService>;
 
+/// Internal identity-verified legacy repair state.
+pub(crate) type DssGithubPullRequestResyncState =
+    github::inbound::pull_request_resync_router::PullRequestResyncRouterState<
+        github::domain::service::PullRequestResyncService<
+            PgGithubSyncRepo,
+            GithubSyncClientImpl,
+            GithubPullRequestServiceType,
+        >,
+        AuthorizationService,
+    >;
+
 /// Type alias for the cal.com webhook service.
 pub(crate) type CalWebhookServiceType = CalWebhookServiceImpl<AnalyticsClientSink>;
 
@@ -751,6 +762,7 @@ pub(crate) struct ApiContext {
     pub s3_client: Arc<S3>,
     pub github_sync_service: Arc<GithubSyncServiceType>,
     pub github_pull_request_index_state: DssGithubPullRequestIndexState,
+    pub github_pull_request_resync_state: DssGithubPullRequestResyncState,
     pub github_pull_request_state: DssGithubPullRequestState,
     pub github_pull_request_changes_state: DssGithubPullRequestChangesState,
     pub dynamodb_client: Arc<DynamodbClient>,

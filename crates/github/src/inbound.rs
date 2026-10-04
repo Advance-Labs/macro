@@ -4,12 +4,17 @@
 pub mod github_sync_router;
 #[cfg(all(feature = "axum", feature = "sync"))]
 pub mod pull_request_index_router;
+#[cfg(all(feature = "axum", feature = "sync"))]
+pub mod pull_request_resync_router;
 
 #[cfg(feature = "axum")]
 impl axum::response::IntoResponse for crate::domain::models::GithubError {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;
         let (status_code, message): (StatusCode, &str) = match self {
+            crate::domain::models::GithubError::InvalidPullRequestResyncRequest => (
+                StatusCode::BAD_REQUEST, "invalid pull request resync request",
+            ),
             crate::domain::models::GithubError::Internal(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal server error occurred",

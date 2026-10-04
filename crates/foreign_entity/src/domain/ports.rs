@@ -77,6 +77,23 @@ pub trait ForeignEntityRepository: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Option<ForeignEntity>, Self::Err>> + Send;
 }
 
+/// Repository for conditional metadata-only replacement.
+///
+/// A missing or changed record returns `Ok(None)`.
+pub trait ForeignEntityMetadataRepository: Send + Sync + 'static {
+    /// Error type returned by repository operations.
+    type Err: Into<anyhow::Error> + Send + std::fmt::Debug;
+
+    /// Replace metadata only when every field still matches `expected`.
+    ///
+    /// Preserve `updated_at` when the replacement metadata already matches.
+    fn replace_metadata_if_unchanged(
+        &self,
+        expected: &ForeignEntity,
+        metadata: serde_json::Value,
+    ) -> impl Future<Output = Result<Option<ForeignEntity>, Self::Err>> + Send;
+}
+
 /// Service interface for foreign entity CRUD operations.
 ///
 /// The service owns validation, ID generation, and mapping repository misses to
@@ -134,4 +151,16 @@ pub trait ForeignEntityService: Send + Sync + 'static {
         id: Uuid,
         patch: PatchForeignEntity,
     ) -> impl Future<Output = Result<ForeignEntity, ForeignEntityError>> + Send;
+}
+
+/// Service interface for conditional metadata-only replacement.
+pub trait ForeignEntityMetadataService: Send + Sync + 'static {
+    /// Replace metadata only when the persisted entity still matches `expected`.
+    ///
+    /// A missing or changed record returns `Ok(None)`.
+    fn replace_metadata_if_unchanged(
+        &self,
+        expected: &ForeignEntity,
+        metadata: serde_json::Value,
+    ) -> impl Future<Output = Result<Option<ForeignEntity>, ForeignEntityError>> + Send;
 }

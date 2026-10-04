@@ -323,6 +323,11 @@ fn api_router(state: ApiContext) -> Router {
                     "/github",
                     github::inbound::pull_request_index_router::pull_request_index_router(
                         state.github_pull_request_index_state.clone(),
+                    )
+                    .merge(
+                        github::inbound::pull_request_resync_router::pull_request_resync_router(
+                            state.github_pull_request_resync_state.clone(),
+                        ),
                     ),
                 )
                 .nest(

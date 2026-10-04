@@ -1,5 +1,7 @@
 //! PostgreSQL implementation of the [`ForeignEntityRepository`] port.
 
+mod metadata;
+
 #[cfg(test)]
 mod tests;
 

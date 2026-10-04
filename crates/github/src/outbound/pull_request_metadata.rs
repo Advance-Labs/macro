@@ -17,6 +17,9 @@ use crate::domain::models::{
 const GITHUB_API_BASE_URL: &str = "https://api.github.com";
 const METADATA_PAGE_SIZE: u16 = 100;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+mod snapshot;
+#[cfg(feature = "sync")]
+pub(super) use snapshot::fetch_snapshot;
 const USER_AGENT: &str = "Macro-Auth-Service";
 
 /// Fetch GitHub pull request details with comments and check runs when available.
@@ -50,35 +53,12 @@ pub(crate) async fn fetch_pull_request_metadata(
     // metadata merges participants as a union, so partial sets are safe.
     let participant_github_user_ids =
         (!participant_ids.is_empty()).then(|| participant_ids.iter().map(u64::to_string).collect());
-    let author_login = pull_request
-        .user
-        .as_ref()
-        .and_then(|user| user.login.clone());
-    let author_id = pull_request.user.as_ref().and_then(|user| user.id);
-    let requested_reviewer_github_user_ids = user_ids(&pull_request.requested_reviewers);
-
-    Ok(GithubPullRequestDetails {
-        repository_id: pull_request.base.repository_id(),
-        title: pull_request.title,
-        state: pull_request.state,
-        merged_at: pull_request.merged_at,
-        additions: pull_request.additions,
-        deletions: pull_request.deletions,
-        author_login,
-        author_id,
-        description: pull_request.body,
-        comments,
-        checks,
-        participant_github_user_ids,
-        draft: pull_request.draft,
-        requested_reviewer_github_user_ids: Some(requested_reviewer_github_user_ids),
-        github_updated_at: pull_request.updated_at,
-        assignees: Some(pull_request_users(&pull_request.assignees)),
-        labels: Some(pull_request_labels(&pull_request.labels)),
-        reviews,
-        base: pull_request.base.git_ref(),
-        head: Some(pull_request.head.git_ref()),
-    })
+    let mut details = pull_request.into_details();
+    details.comments = comments;
+    details.checks = checks;
+    details.participant_github_user_ids = participant_github_user_ids;
+    details.reviews = reviews;
+    Ok(details)
 }
 
 /// Fetch open pull requests for every repository accessible to an installation token.
@@ -249,6 +229,33 @@ impl GithubPullRequestResponse {
             &self.assignees,
         )
     }
+
+    fn into_details(self) -> GithubPullRequestDetails {
+        let participants = self.participant_ids();
+        GithubPullRequestDetails {
+            repository_id: self.base.repository_id(),
+            title: self.title,
+            state: self.state,
+            merged_at: self.merged_at,
+            additions: self.additions,
+            deletions: self.deletions,
+            author_login: self.user.as_ref().and_then(|user| user.login.clone()),
+            author_id: self.user.as_ref().and_then(|user| user.id),
+            description: self.body,
+            comments: None,
+            checks: None,
+            participant_github_user_ids: (!participants.is_empty())
+                .then(|| participants.into_iter().map(|id| id.to_string()).collect()),
+            draft: self.draft,
+            requested_reviewer_github_user_ids: Some(user_ids(&self.requested_reviewers)),
+            github_updated_at: self.updated_at,
+            assignees: Some(pull_request_users(&self.assignees)),
+            labels: Some(pull_request_labels(&self.labels)),
+            reviews: None,
+            base: self.base.git_ref(),
+            head: Some(self.head.git_ref()),
+        }
+    }
 }
 
 /// Collect the stable numeric ids of a pull request's author, requested reviewers, and assignees.
@@ -397,6 +404,71 @@ struct GithubCheckRunResponse {
     completed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
+/// The core decoder is shared; callers select the required read guarantees.
+#[derive(Clone, Copy)]
+enum CoreReadPolicy {
+    Enrichment,
+    Snapshot,
+}
+
+async fn fetch_pull_request_core(
+    client: &reqwest::Client,
+    api_base: &str,
+    access_token: &str,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    policy: CoreReadPolicy,
+) -> Result<GithubPullRequestResponse, anyhow::Error> {
+    let url = format!("{api_base}/repos/{owner}/{repo}/pulls/{number}");
+    let raw: serde_json::Value = match policy {
+        CoreReadPolicy::Snapshot => snapshot::get_json(client, access_token, url).await?,
+        CoreReadPolicy::Enrichment => {
+            let response = github_get(client, access_token, url).send().await?;
+            let status = response.status();
+            if !status.is_success() {
+                let error_body = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "unknown error".to_string());
+                if status.as_u16() == 401 {
+                    tracing::warn!(error_body=%error_body, "GitHub token expired or invalid");
+                    anyhow::bail!("unauthorized access");
+                }
+                anyhow::bail!("failed to get pull request details {}", error_body);
+            }
+            response.json().await?
+        }
+    };
+    if matches!(policy, CoreReadPolicy::Snapshot) {
+        validate_core_identity(&raw, owner, repo, number)?;
+    }
+    serde_json::from_value(raw).map_err(Into::into)
+}
+
+fn validate_core_identity(
+    raw: &serde_json::Value,
+    owner: &str,
+    repo: &str,
+    number: u64,
+) -> Result<(), crate::domain::models::GithubPullRequestFetchError> {
+    use crate::domain::models::GithubPullRequestFetchError::Incomplete;
+    let expected_repository = format!("{owner}/{repo}");
+    if raw.get("number").and_then(|value| value.as_u64()) != Some(number)
+        || raw
+            .pointer("/base/repo/full_name")
+            .and_then(|value| value.as_str())
+            .is_none_or(|name| !name.eq_ignore_ascii_case(&expected_repository))
+        || raw
+            .pointer("/base/repo/id")
+            .and_then(|value| value.as_u64())
+            .is_none_or(|id| id == 0 || i64::try_from(id).is_err())
+    {
+        return Err(Incomplete);
+    }
+    Ok(())
+}
+
 async fn fetch_pull_request(
     client: &reqwest::Client,
     access_token: &str,
@@ -404,25 +476,16 @@ async fn fetch_pull_request(
     repo: &str,
     number: u64,
 ) -> Result<GithubPullRequestResponse, anyhow::Error> {
-    let url = format!("{GITHUB_API_BASE_URL}/repos/{owner}/{repo}/pulls/{number}");
-    let response = github_get(client, access_token, url).send().await?;
-    let status = response.status();
-
-    if !status.is_success() {
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "unknown error".to_string());
-
-        if status.as_u16() == 401 {
-            tracing::warn!(error_body=%error_body, "GitHub token expired or invalid");
-            anyhow::bail!("unauthorized access")
-        }
-
-        anyhow::bail!("failed to get pull request details {}", error_body)
-    }
-
-    response.json().await.map_err(Into::into)
+    fetch_pull_request_core(
+        client,
+        GITHUB_API_BASE_URL,
+        access_token,
+        owner,
+        repo,
+        number,
+        CoreReadPolicy::Enrichment,
+    )
+    .await
 }
 
 /// The comments collected for a pull request plus every discussion author's stable numeric id.

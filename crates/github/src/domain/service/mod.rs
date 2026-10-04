@@ -5,6 +5,10 @@ mod installation_tokens;
 #[cfg(feature = "sync")]
 mod pull_request_index;
 #[cfg(feature = "sync")]
+mod pull_request_resync;
+#[cfg(feature = "sync")]
+pub use pull_request_resync::PullRequestResyncService;
+#[cfg(feature = "sync")]
 mod reachable_repositories;
 #[cfg(feature = "sync")]
 mod sync;

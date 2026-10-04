@@ -63,97 +63,100 @@ impl GithubPullRequestIndexRepository for PgGithubPullRequestRepo {
         &self,
         row: &GithubPullRequestRow,
     ) -> Result<PullRequestIndexOutcome, Self::Err> {
-        let repository_id = row.repository_id.filter(|id| *id > 0).ok_or_else(|| {
-            sqlx::Error::Protocol(
-                "index initialization requires verified repository identity".into(),
-            )
-        })?;
-        if row.number <= 0 {
-            return Err(sqlx::Error::Protocol(
-                "index initialization requires a positive PR number".into(),
-            ));
-        }
         let mut tx = self.pool.begin().await?;
-        // Same case-insensitive lock as live upserts, before reading even an absent key.
-        sqlx::query!(
-            "SELECT pg_advisory_xact_lock(hashtextextended(lower($1), 0))",
-            row.github_key
-        )
-        .execute(&mut *tx)
-        .await?;
-        let identity_lock = format!(
-            "github_pull_request.identity:{repository_id}/{}",
-            row.number
-        );
-        sqlx::query!(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-            identity_lock
-        )
-        .execute(&mut *tx)
-        .await?;
-        if let Some(outcome) = existing_index_outcome(&mut tx, row, repository_id).await? {
-            tx.commit().await?;
-            return Ok(outcome);
-        }
-        let json = |value: serde_json::Result<serde_json::Value>| {
-            value.map_err(|error| sqlx::Error::Encode(error.into()))
-        };
-        let assignees = json(serde_json::to_value(&row.assignees))?;
-        let labels = json(serde_json::to_value(&row.labels))?;
-        let reviews = json(serde_json::to_value(&row.reviews))?;
-        let inserted = sqlx::query!(
-            r#"
-            INSERT INTO github_pull_request (
-                github_key, repository_id, number, owner, repo, title, status, draft,
-                author_github_user_id, author_login, requested_reviewer_github_user_ids,
-                participant_github_user_ids, github_updated_at, assignees, labels, reviews,
-                review_decision, base_ref, base_sha, head_ref, head_sha
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                $14::jsonb, $15::jsonb, $16::jsonb, $17, $18, $19, $20, $21
-            )
-            ON CONFLICT DO NOTHING
-            "#,
-            row.github_key,
-            repository_id,
-            row.number,
-            row.owner,
-            row.repo,
-            row.title.as_deref(),
-            row.status.map(|status| status.as_str()),
-            row.draft,
-            row.author_github_user_id.as_deref(),
-            row.author_login.as_deref(),
-            &row.requested_reviewer_github_user_ids,
-            &row.participant_github_user_ids,
-            row.github_updated_at,
-            assignees,
-            labels,
-            reviews,
-            row.review_decision.map(|decision| decision.as_str()),
-            row.base.as_ref().and_then(|base| base.name.as_deref()),
-            row.base.as_ref().and_then(|base| base.sha.as_deref()),
-            row.head.as_ref().and_then(|head| head.name.as_deref()),
-            row.head.as_ref().and_then(|head| head.sha.as_deref()),
-        )
-        .execute(&mut *tx)
-        .await?
-        .rows_affected()
-            == 1;
-        let outcome = if inserted {
-            PullRequestIndexOutcome::Inserted
-        } else {
-            // A non-index writer can insert another key for this identity between reads.
-            existing_index_outcome(&mut tx, row, repository_id)
-                .await?
-                .unwrap_or(PullRequestIndexOutcome::IdentityConflict)
-        };
+        let outcome = initialize_row(&mut tx, row).await?;
         tx.commit().await?;
         Ok(outcome)
     }
 }
 
-async fn existing_index_outcome(
+/// Shared insert-only initialization within the caller's transaction.
+pub(super) async fn initialize_row(
+    tx: &mut Transaction<'_, Postgres>,
+    row: &GithubPullRequestRow,
+) -> Result<PullRequestIndexOutcome, sqlx::Error> {
+    let repository_id = row.repository_id.filter(|id| *id > 0).ok_or_else(|| {
+        sqlx::Error::Protocol("index initialization requires verified repository identity".into())
+    })?;
+    if row.number <= 0 {
+        return Err(sqlx::Error::Protocol(
+            "index initialization requires a positive PR number".into(),
+        ));
+    }
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended(lower($1), 0))",
+        row.github_key
+    )
+    .execute(&mut **tx)
+    .await?;
+    let identity_lock = format!(
+        "github_pull_request.identity:{repository_id}/{}",
+        row.number
+    );
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        identity_lock
+    )
+    .execute(&mut **tx)
+    .await?;
+    if let Some(outcome) = existing_index_outcome(tx, row, repository_id).await? {
+        return Ok(outcome);
+    }
+    let json = |value: serde_json::Result<serde_json::Value>| {
+        value.map_err(|error| sqlx::Error::Encode(error.into()))
+    };
+    let assignees = json(serde_json::to_value(&row.assignees))?;
+    let labels = json(serde_json::to_value(&row.labels))?;
+    let reviews = json(serde_json::to_value(&row.reviews))?;
+    let inserted = sqlx::query!(
+        r#"
+        INSERT INTO github_pull_request (
+            github_key, repository_id, number, owner, repo, title, status, draft,
+            author_github_user_id, author_login, requested_reviewer_github_user_ids,
+            participant_github_user_ids, github_updated_at, assignees, labels, reviews,
+            review_decision, base_ref, base_sha, head_ref, head_sha
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+            $14::jsonb, $15::jsonb, $16::jsonb, $17, $18, $19, $20, $21
+        )
+        ON CONFLICT DO NOTHING
+        "#,
+        row.github_key,
+        repository_id,
+        row.number,
+        row.owner,
+        row.repo,
+        row.title.as_deref(),
+        row.status.map(|status| status.as_str()),
+        row.draft,
+        row.author_github_user_id.as_deref(),
+        row.author_login.as_deref(),
+        &row.requested_reviewer_github_user_ids,
+        &row.participant_github_user_ids,
+        row.github_updated_at,
+        assignees,
+        labels,
+        reviews,
+        row.review_decision.map(|decision| decision.as_str()),
+        row.base.as_ref().and_then(|base| base.name.as_deref()),
+        row.base.as_ref().and_then(|base| base.sha.as_deref()),
+        row.head.as_ref().and_then(|head| head.name.as_deref()),
+        row.head.as_ref().and_then(|head| head.sha.as_deref()),
+    )
+    .execute(&mut **tx)
+    .await?
+    .rows_affected()
+        == 1;
+    if inserted {
+        Ok(PullRequestIndexOutcome::Inserted)
+    } else {
+        Ok(existing_index_outcome(tx, row, repository_id)
+            .await?
+            .unwrap_or(PullRequestIndexOutcome::IdentityConflict))
+    }
+}
+
+pub(super) async fn existing_index_outcome(
     tx: &mut Transaction<'_, Postgres>,
     row: &GithubPullRequestRow,
     repository_id: i64,

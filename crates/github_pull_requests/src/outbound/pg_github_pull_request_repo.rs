@@ -4,6 +4,7 @@ mod changesets;
 mod facets;
 mod index;
 mod listing;
+mod resync;
 #[cfg(test)]
 mod test;
 

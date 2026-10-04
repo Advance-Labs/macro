@@ -8,6 +8,14 @@ mod diff;
 mod index;
 mod key;
 mod pull_request;
+mod resync;
+
+pub use resync::{
+    ApprovedPullRequestMapping, PullRequestIdentityEvidence, PullRequestProofKind,
+    PullRequestResyncCandidate, PullRequestResyncOutcome, PullRequestResyncResult,
+    PullRequestResyncSnapshot, PullRequestSourceProof, PullRequestSourceRejection,
+    RESYNC_SOURCE_LIMIT,
+};
 
 use chrono::{DateTime, Utc};
 use foreign_entity::domain::models::{ForeignEntity, ForeignEntityError, SourceId};

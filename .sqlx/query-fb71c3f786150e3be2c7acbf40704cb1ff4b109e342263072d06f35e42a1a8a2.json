@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "ALTER TABLE foreign_entity ALTER COLUMN foreign_entity_id TYPE text COLLATE \"en-x-icu\"",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "fb71c3f786150e3be2c7acbf40704cb1ff4b109e342263072d06f35e42a1a8a2"
+}

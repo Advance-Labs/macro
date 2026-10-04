@@ -13,7 +13,10 @@ use super::models::{
     CreateForeignEntity, ForeignEntity, ForeignEntityError, ForeignEntityLookupCaller,
     PatchForeignEntity, SourceId, validate_foreign_entity_lookup,
 };
-use super::ports::{ForeignEntityListQuery, ForeignEntityRepository, ForeignEntityService};
+use super::ports::{
+    ForeignEntityListQuery, ForeignEntityMetadataRepository, ForeignEntityMetadataService,
+    ForeignEntityRepository, ForeignEntityService,
+};
 
 /// Concrete foreign entity service implementation.
 pub struct ForeignEntityServiceImpl<R> {
@@ -218,5 +221,22 @@ where
         Err(error) => Err(ForeignEntityError::Internal(anyhow::anyhow!(
             "foreign entity access check failed: {error}"
         ))),
+    }
+}
+
+impl<R> ForeignEntityMetadataService for ForeignEntityServiceImpl<R>
+where
+    R: ForeignEntityMetadataRepository,
+{
+    #[tracing::instrument(err, skip(self, expected, metadata))]
+    async fn replace_metadata_if_unchanged(
+        &self,
+        expected: &ForeignEntity,
+        metadata: serde_json::Value,
+    ) -> Result<Option<ForeignEntity>, ForeignEntityError> {
+        self.repo
+            .replace_metadata_if_unchanged(expected, metadata)
+            .await
+            .map_err(|error| ForeignEntityError::Internal(error.into()))
     }
 }

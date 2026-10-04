@@ -34,6 +34,7 @@ mod test;
 pub struct GithubSyncClientImpl {
     /// The reqwest client
     client: reqwest::Client,
+    pull_request_client: reqwest::Client,
     #[cfg(test)]
     api_base_url: Option<String>,
 }
@@ -42,6 +43,7 @@ impl Default for GithubSyncClientImpl {
     fn default() -> Self {
         Self {
             client: build_client(),
+            pull_request_client: build_pull_request_client(),
             #[cfg(test)]
             api_base_url: None,
         }
@@ -53,6 +55,14 @@ fn build_client() -> reqwest::Client {
         .timeout(REQUEST_TIMEOUT)
         .build()
         .expect("GitHub sync reqwest client should build")
+}
+
+fn build_pull_request_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("GitHub pull request client should build")
 }
 
 impl GithubSyncClientImpl {
@@ -78,6 +88,7 @@ impl GithubSyncClientImpl {
     fn with_api_base_url(api_base_url: String) -> Self {
         Self {
             client: build_client(),
+            pull_request_client: build_pull_request_client(),
             api_base_url: Some(api_base_url),
         }
     }
@@ -132,6 +143,36 @@ impl GithubSyncClientImpl {
             .json()
             .await
             .map_err(|e| GithubError::Internal(e.into()))
+    }
+}
+
+impl crate::domain::ports::GithubPullRequestClient for GithubSyncClientImpl {
+    #[tracing::instrument(skip(self, access_token), err)]
+    async fn fetch_pull_request(
+        &self,
+        access_token: &str,
+        owner: &str,
+        repo: &str,
+        number: u64,
+        include_comment_ids: bool,
+    ) -> Result<
+        crate::domain::models::GithubPullRequestSnapshot,
+        crate::domain::models::GithubPullRequestFetchError,
+    > {
+        tokio::time::timeout(
+            Duration::from_secs(20),
+            super::pull_request_metadata::fetch_snapshot(
+                &self.pull_request_client,
+                self.api_base_url(),
+                access_token,
+                owner,
+                repo,
+                number,
+                include_comment_ids,
+            ),
+        )
+        .await
+        .map_err(|_| crate::domain::models::GithubPullRequestFetchError::Retryable)?
     }
 }
 

@@ -5,7 +5,15 @@
 #[cfg(feature = "link")]
 mod link;
 #[cfg(feature = "sync")]
+mod pull_request;
+#[cfg(feature = "sync")]
+pub use pull_request::GithubPullRequestClient;
+#[cfg(feature = "sync")]
+mod resync;
+#[cfg(feature = "sync")]
 mod sync;
+#[cfg(feature = "sync")]
+pub use resync::GithubPullRequestResync;
 
 #[cfg(feature = "link")]
 pub use link::{Auth, GithubLinkService, GithubOauth, GithubRepo};

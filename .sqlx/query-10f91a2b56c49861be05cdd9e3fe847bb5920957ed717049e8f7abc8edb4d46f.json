@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE foreign_entity SET metadata = '{}'::jsonb WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10f91a2b56c49861be05cdd9e3fe847bb5920957ed717049e8f7abc8edb4d46f"
+}

@@ -19,6 +19,74 @@ use super::models::{
     UpsertGithubPullRequest, UpsertedGithubPullRequest,
 };
 
+/// Identity-scoped repair of legacy source records and missing typed rows.
+pub trait GithubPullRequestResyncStore: Send + Sync + 'static {
+    /// Page distinct normalized stored keys; `after` is exclusive.
+    fn resync_keys(
+        &self,
+        after: Option<&str>,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<String>, super::models::GithubPullRequestError>> + Send;
+
+    /// Read bounded complete source snapshots before fetching GitHub.
+    fn resync_candidate(
+        &self,
+        key: &str,
+    ) -> impl Future<
+        Output = Result<
+            super::models::PullRequestResyncCandidate,
+            super::models::GithubPullRequestError,
+        >,
+    > + Send;
+
+    /// Verify every sibling, conditionally replace metadata, and initialize only absent rows.
+    fn resync_verified_snapshot(
+        &self,
+        candidate: super::models::PullRequestResyncCandidate,
+        snapshot: super::models::PullRequestResyncSnapshot,
+        dry_run: bool,
+    ) -> impl Future<
+        Output = Result<
+            super::models::PullRequestResyncResult,
+            super::models::GithubPullRequestError,
+        >,
+    > + Send;
+}
+
+/// Read-side source snapshots and insert-only conditional typed persistence.
+pub trait GithubPullRequestResyncRepository: Send + Sync + 'static {
+    /// Repository error type.
+    type Err: Into<anyhow::Error> + Send + std::fmt::Debug;
+
+    /// Page normalized PR keys with a stable exclusive cursor.
+    fn resync_keys(
+        &self,
+        after: Option<&str>,
+        limit: u32,
+    ) -> impl Future<Output = Result<Vec<String>, Self::Err>> + Send;
+
+    /// Read at most RESYNC_SOURCE_LIMIT + 1 sources and detect existing typed keys.
+    fn resync_candidate(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<super::models::PullRequestResyncCandidate, Self::Err>> + Send;
+
+    /// Inspect typed key and stable identity before any source updates.
+    fn inspect_resync_row(
+        &self,
+        row: &GithubPullRequestRow,
+    ) -> impl Future<Output = Result<Option<PullRequestIndexOutcome>, Self::Err>> + Send;
+
+    /// Fence source writers, validate all snapshots and siblings, and initialize insert-only.
+    /// Dry-run validates the same preconditions without updating either table.
+    fn initialize_resynced_row(
+        &self,
+        row: &GithubPullRequestRow,
+        sources: &[ForeignEntity],
+        dry_run: bool,
+    ) -> impl Future<Output = Result<super::models::PullRequestResyncOutcome, Self::Err>> + Send;
+}
+
 /// Stores GitHub pull requests as foreign entity records, one record per user or team the pull
 /// request is synced for.
 pub trait GithubPullRequestService: Send + Sync + 'static {

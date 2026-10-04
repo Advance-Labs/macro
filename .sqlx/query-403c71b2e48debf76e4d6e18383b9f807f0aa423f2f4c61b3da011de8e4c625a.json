@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT lower(foreign_entity_id) AS \"key!\" FROM foreign_entity\n           ORDER BY lower(foreign_entity_id)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "403c71b2e48debf76e4d6e18383b9f807f0aa423f2f4c61b3da011de8e4c625a"
+}
