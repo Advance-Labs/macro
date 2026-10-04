@@ -54,6 +54,7 @@ fn timed() -> EventTime {
 
 fn draft() -> CalendarEventDraft {
     CalendarEventDraft {
+        idempotency_key: None,
         title: "Design review".to_string(),
         description: None,
         location: None,

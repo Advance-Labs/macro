@@ -495,7 +495,7 @@ describe('createWorkerCacheHost', () => {
         query: 'mutation Rename { rename { id } }',
         data: { rename: { id: 'doc-1' } },
       }),
-      host.rollbackOptimisticWrite('2', claim, 'denied'),
+      host.rollbackOptimisticWrite('2', claim, 'denied', 'DRAFT_ALREADY_SENT'),
       host.invalidate(['User:1']),
       host.deleteRecords(['Document:1']),
       host.teardown(7),
@@ -503,6 +503,9 @@ describe('createWorkerCacheHost', () => {
     ]);
 
     const requests = requireAdapter().requests;
+    expect(
+      requests.find((request) => request.kind === 'rollback-optimistic-write')
+    ).toMatchObject({ errorCode: 'DRAFT_ALREADY_SENT', error: 'denied' });
     expect(requests.map(({ id, kind }) => [id, kind])).toEqual([
       [1, 'init'],
       [2, 'read'],
@@ -1132,6 +1135,57 @@ describe('createWorkerCacheHost', () => {
       unsubscribe();
       adapter.replace(3, openOutcome);
       expect(generations).toHaveBeenCalledOnce();
+      host.dispose();
+    }
+  );
+
+  it.each(
+    [[], ['note'], ['channel', 'dm']].map((searchChangedBuckets) => ({
+      searchChangedBuckets,
+    }))
+  )(
+    'forwards hydration search metadata $searchChangedBuckets',
+    async ({ searchChangedBuckets }) => {
+      const host = createWorkerCacheHost({ scope: 'scope-1' });
+      const listener = vi.fn();
+      host.onCacheChanged(listener, { includeHydration: true });
+      await host.currentRevision();
+      requireAdapter().push({
+        kind: 'cache-hydrated',
+        revision: INITIAL_CACHE_REVISION,
+        searchChangedBuckets,
+      });
+      expect(listener).toHaveBeenCalledWith(INITIAL_CACHE_REVISION, {
+        searchChangedBuckets,
+      });
+      host.dispose();
+    }
+  );
+
+  it.each(
+    [[], ['note']].map((searchChangedBuckets) => ({ searchChangedBuckets }))
+  )(
+    'forwards query-write metadata and ignores it on reset: $searchChangedBuckets',
+    async ({ searchChangedBuckets }) => {
+      const host = createWorkerCacheHost({ scope: 'scope-1' });
+      const listener = vi.fn();
+      host.onCacheChanged(listener);
+      await host.currentRevision();
+      requireAdapter().push({
+        kind: 'cache-changed',
+        revision: INITIAL_CACHE_REVISION,
+        searchChangedBuckets,
+      });
+      expect(listener).toHaveBeenLastCalledWith(INITIAL_CACHE_REVISION, {
+        searchChangedBuckets,
+      });
+      requireAdapter().push({
+        kind: 'cache-changed',
+        revision: INITIAL_CACHE_REVISION,
+        searchChangedBuckets,
+        reset: true,
+      });
+      expect(listener).toHaveBeenLastCalledWith(INITIAL_CACHE_REVISION);
       host.dispose();
     }
   );

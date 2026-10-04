@@ -19,7 +19,6 @@ it('preserves initiative identity, properties, and metadata separately from fold
       id: 'initiative',
       entityType: 'INITIATIVE',
       displayName: 'Launch',
-      descriptionDocumentId: 'description',
       metadata: {
         ownerId: 'owner',
         createdAt: '2026-09-01',
@@ -42,9 +41,38 @@ it('preserves initiative identity, properties, and metadata separately from fold
       id: 'initiative',
       name: 'Launch',
       ownerId: 'owner',
-      descriptionDocumentId: 'description',
       properties: [],
       updatedAt: '2026-09-26',
+    },
+  });
+});
+
+it('preserves the scheduled occurrence identity on reminder notifications', async () => {
+  const { mapGraphqlNotification } = await import('./graphql-soup');
+  const mapped = mapGraphqlNotification({
+    id: 'notification-1',
+    entityId: 'reminder-1',
+    entityType: 'REMINDER',
+    eventType: 'reminder',
+    state: 'UNSEEN',
+    sent: true,
+    senderId: null,
+    viewedAt: null,
+    createdAt: '2026-09-21T10:00:00Z',
+    updatedAt: '2026-09-21T10:00:00Z',
+    metadata: {
+      __typename: 'GraphqlReminderMetadata',
+      reminderReminderId: 'reminder-1',
+      reminderDescription: 'Follow up',
+      reminderScheduledFor: '2026-09-21T10:00:00Z',
+    },
+  });
+  expect(mapped.notification_metadata).toEqual({
+    tag: 'reminder',
+    content: {
+      reminderId: 'reminder-1',
+      description: 'Follow up',
+      scheduledFor: '2026-09-21T10:00:00Z',
     },
   });
 });
@@ -266,7 +294,14 @@ vi.mock('@graphql-cache/exchange/normalized-cache-exchange', () => ({
   normalizedCacheExchange: mocks.normalizedCacheExchange,
 }));
 vi.mock('@macro-inc/observability', () => ({
-  Telemetry: { error: mocks.telemetryError },
+  Telemetry: {
+    error: mocks.telemetryError,
+    span: (_name: string, work: (span: unknown) => Promise<unknown>) =>
+      work({
+        event: vi.fn(),
+        setAttr: vi.fn(),
+      }),
+  },
 }));
 vi.mock('@service-auth/fetch', () => ({ getMacroApiToken: vi.fn() }));
 vi.mock('graphql-ws', () => ({

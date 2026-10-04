@@ -1,3 +1,4 @@
+import type { IdentityBindingWire } from '../protocol';
 /**
  * Typed surface of the generated wasm package (`cache-wasm`), loaded
  * dynamically so the repo type-checks without the generated artifacts.
@@ -21,6 +22,7 @@ import type {
   EnqueueOptimisticMutationResult,
   EntityFilterCacheArgs,
   EntityFilterCacheResult,
+  HydrationSearchChanges,
   OptimisticLinkPatchWire,
   QueryRevalidationWire,
   ReadRecordsByKeysResult,
@@ -64,9 +66,10 @@ export interface CacheOpenResult {
   outcome: CacheOpenOutcome;
 }
 
-export type CacheEngineHydrationResult = WriteResult & {
-  data: unknown | null;
-};
+export type CacheEngineHydrationResult = WriteResult &
+  HydrationSearchChanges & {
+    data: unknown | null;
+  };
 
 export interface CacheEngine {
   currentRevision(): Promise<CacheRevision>;
@@ -122,6 +125,7 @@ export interface CacheEngine {
     data: unknown,
     linkPatches: OptimisticLinkPatchWire[] | undefined,
     revalidations: QueryRevalidationWire[] | undefined,
+    identityBindings: IdentityBindingWire[] | undefined,
     createdAtMs: number,
     leaseOwner: string,
     nowMs: number,

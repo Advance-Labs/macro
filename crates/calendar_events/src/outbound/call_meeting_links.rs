@@ -85,6 +85,9 @@ impl<S: CallService> MeetingLinkProvider for CallServiceMeetingLinks<S> {
             .create_meeting(
                 requester(requester_id)?,
                 CreateMeetingRequest {
+                    // No room is pre-reserved: a scheduled meeting allocates
+                    // its room on first join, like one made from the calendar.
+                    preparation_id: None,
                     title: meeting_title(&request.title),
                     scheduled_start: request.scheduled_start,
                     scheduled_end: request.scheduled_end,

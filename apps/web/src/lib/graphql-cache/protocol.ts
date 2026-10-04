@@ -1,3 +1,12 @@
+/** Explicit local entities resolved atomically from a committed mutation response. */
+export type IdentityBindingWire = {
+  deleteRecord?: boolean;
+  localKey: string;
+  responsePath: string[];
+  referenceFields?: string[];
+  revalidationVariables?: string[];
+};
+
 import type { EntityResolverWire } from './exchange/entity-resolvers';
 
 /**
@@ -143,6 +152,7 @@ export type ReadRecordsByKeysArgs = {
 };
 
 export type SelectedRecordByKeyWire = {
+  identity?: { mutationUuid: string | null; pending: boolean };
   recordKey: string;
   record: unknown;
 };
@@ -344,11 +354,21 @@ export type CachedQueryInstanceWire = CachedQueryVariantWire & {
   value?: unknown;
 };
 
-export type HydrationResult =
-  | { kind: 'data'; data: unknown; revision: CacheRevision }
-  | { kind: 'void'; revision: CacheRevision };
+/** Missing metadata means unknown (older runtimes); [] proves no search change. */
+export type HydrationSearchChanges = {
+  searchChangedBuckets?: string[];
+};
 
-export type WriteResult = {
+export type HydrationResult = HydrationSearchChanges &
+  (
+    | { kind: 'data'; data: unknown; revision: CacheRevision }
+    | { kind: 'void'; revision: CacheRevision }
+  );
+
+export type WriteResult = HydrationSearchChanges & {
+  /** Bindings omitted while committing an otherwise normalizable response. */
+  identityErrors?: string[];
+  mutationUuid?: string;
   /** Effective-view revision installed by this logical mutation. */
   revision: CacheRevision;
   /** Whether this write advanced `revision`. */
@@ -363,7 +383,7 @@ export type WriteResult = {
    * then contains every registered operation except the origin.
    */
   reset: boolean;
-  /** Present on successful optimistic settlement; empty otherwise. */
+  /** Recovery queries for terminal settlement; skip superseded outcomes. */
   revalidations?: QueryRevalidationWire[];
 };
 
@@ -388,6 +408,8 @@ export type ClaimedMutation = {
   transactionId: string;
   uuid: string;
   superseded: boolean;
+  /** Must recover a server identity before a newer edit/discard can run. */
+  requiresConfirmation: boolean;
   leaseGeneration: string;
   query: string;
   operationName?: string;
@@ -425,6 +447,11 @@ export type DeferOptimisticWriteResult =
 
 /** Result of committing a current or superseded attempt. */
 export type CommitOptimisticWriteResult =
+  | (WriteResult & {
+      kind: 'failed';
+      error: string;
+      replacementTransactionId?: string;
+    })
   | (WriteResult & { kind: 'committed' })
   | (WriteResult & {
       kind: 'committed-superseded';
@@ -440,7 +467,7 @@ export type RollbackOptimisticWriteResult =
     });
 
 /** Final settlement of a previously queued optimistic mutation. */
-export type MutationSettlement =
+export type MutationSettlement = { mutationUuid?: string } & (
   | { transactionId: string; status: 'committed' }
   | {
       transactionId: string;
@@ -451,7 +478,9 @@ export type MutationSettlement =
       transactionId: string;
       status: 'permanently-failed';
       error: string;
-    };
+      errorCode?: string;
+    }
+);
 
 export type CacheRequest = { id: number } & (
   | { kind: 'init'; scope: string; hotCapacity?: number }
@@ -506,6 +535,7 @@ export type CacheRequest = { id: number } & (
       data: unknown;
       linkPatches?: OptimisticLinkPatchWire[];
       revalidations?: QueryRevalidationWire[];
+      identityBindings?: IdentityBindingWire[];
       createdAtMs: number;
       owner: string;
       nowMs: number;
@@ -543,6 +573,7 @@ export type CacheRequest = { id: number } & (
       leaseOwner: string;
       leaseGeneration: string;
       error: string;
+      errorCode?: string;
     }
   | {
       kind: 'read-records-by-keys';
@@ -625,8 +656,15 @@ export type CachePush =
       /** Changed entity keys, for diagnostics/advanced consumers. */
       keys: string[];
     }
-  | { kind: 'cache-changed'; revision: CacheRevision; reset?: boolean }
-  | { kind: 'cache-hydrated'; revision: CacheRevision }
+  | ({
+      kind: 'cache-changed';
+      revision: CacheRevision;
+      reset?: boolean;
+    } & HydrationSearchChanges)
+  | ({
+      kind: 'cache-hydrated';
+      revision: CacheRevision;
+    } & HydrationSearchChanges)
   | { kind: 'mutation-settled'; settlement: MutationSettlement };
 
 export type WorkerMessage = CacheResponse | CachePush;
@@ -711,31 +749,47 @@ export function isCachePush(value: unknown): value is CachePush {
       );
     case 'cache-changed':
       return (
-        hasOnlyWireKeys(value, ['kind', 'revision', 'reset']) &&
+        hasOnlyWireKeys(value, [
+          'kind',
+          'revision',
+          'reset',
+          'searchChangedBuckets',
+        ]) &&
         isCacheRevision(value.revision) &&
-        (value.reset === undefined || typeof value.reset === 'boolean')
+        (value.reset === undefined || typeof value.reset === 'boolean') &&
+        (value.searchChangedBuckets === undefined ||
+          isWireStringArray(value.searchChangedBuckets))
       );
     case 'cache-hydrated':
       return (
-        hasOnlyWireKeys(value, ['kind', 'revision']) &&
-        isCacheRevision(value.revision)
+        hasOnlyWireKeys(value, ['kind', 'revision', 'searchChangedBuckets']) &&
+        isCacheRevision(value.revision) &&
+        (value.searchChangedBuckets === undefined ||
+          isWireStringArray(value.searchChangedBuckets))
       );
     case 'mutation-settled': {
       const settlement = value.settlement;
       if (
         !hasOnlyWireKeys(value, ['kind', 'settlement']) ||
         !isWireRecord(settlement) ||
-        typeof settlement.transactionId !== 'string'
+        typeof settlement.transactionId !== 'string' ||
+        (settlement.mutationUuid !== undefined &&
+          typeof settlement.mutationUuid !== 'string')
       ) {
         return false;
       }
       if (settlement.status === 'committed') {
-        return hasOnlyWireKeys(settlement, ['transactionId', 'status']);
+        return hasOnlyWireKeys(settlement, [
+          'transactionId',
+          'status',
+          'mutationUuid',
+        ]);
       }
       if (settlement.status === 'superseded') {
         return (
           hasOnlyWireKeys(settlement, [
             'transactionId',
+            'mutationUuid',
             'status',
             'replacementTransactionId',
           ]) && typeof settlement.replacementTransactionId === 'string'
@@ -743,8 +797,16 @@ export function isCachePush(value: unknown): value is CachePush {
       }
       return (
         settlement.status === 'permanently-failed' &&
-        hasOnlyWireKeys(settlement, ['transactionId', 'status', 'error']) &&
-        typeof settlement.error === 'string'
+        hasOnlyWireKeys(settlement, [
+          'transactionId',
+          'mutationUuid',
+          'status',
+          'error',
+          'errorCode',
+        ]) &&
+        typeof settlement.error === 'string' &&
+        (settlement.errorCode === undefined ||
+          typeof settlement.errorCode === 'string')
       );
     }
     default:
