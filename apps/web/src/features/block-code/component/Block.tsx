@@ -2,7 +2,7 @@ import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { FileSidePanelSections, SidePanel } from '@components/app/side-panel';
 import { useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import {
   blockMetadataSignal,
   blockTextSignal,
@@ -31,9 +31,10 @@ const UploadedWorkbook = lazy(
 export default function BlockCode() {
   const isNestedBlock = useIsNestedBlock();
   const documentId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('code');
   useBlockEntityCommands({
     id: () => documentId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const blockMetadata = blockMetadataSignal.get;
   const blockText = blockTextSignal.get;
@@ -57,42 +58,48 @@ export default function BlockCode() {
   );
 
   return (
-    <DocumentBlockContainer usesCenterBar>
-      <Show when={!isNestedBlock} fallback={<CodeMarkdown />}>
-        <div class="size-full select-none overscroll-none overflow-hidden flex flex-col items-end relative">
-          <SidePanel.Layout defaultOpen={false} floating>
-            <FileSidePanelSections />
-            <div class="flex size-full min-w-0 flex-col items-end overflow-hidden">
-              <TopBar
-                isHtmlFile={isHtmlFile()}
-                mode={mode()}
-                onModeChange={setMode}
-              />
-              <Show
-                when={spreadsheet()}
-                fallback={
-                  <CodeContent
-                    text={blockText() ?? ''}
-                    fileType={blockMetadata()?.fileType}
-                    readOnly={readOnly()}
-                    mode={mode()}
-                    onTextChange={setBlockText}
-                    onSave={(text) => saveCodeDocument(documentId, text)}
-                  />
-                }
-              >
-                <Suspense
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer
+        usesCenterBar
+        attachHotkeyScope={attachHotkeyScope}
+      >
+        <Show when={!isNestedBlock} fallback={<CodeMarkdown />}>
+          <div class="size-full select-none overscroll-none overflow-hidden flex flex-col items-end relative">
+            <SidePanel.Layout defaultOpen={false} floating>
+              <FileSidePanelSections />
+              <div class="flex size-full min-w-0 flex-col items-end overflow-hidden">
+                <TopBar
+                  permissionOptions={{ edit: false }}
+                  isHtmlFile={isHtmlFile()}
+                  mode={mode()}
+                  onModeChange={setMode}
+                />
+                <Show
+                  when={spreadsheet()}
                   fallback={
-                    <div class="p-6 text-ink-muted">Opening spreadsheet…</div>
+                    <CodeContent
+                      text={blockText() ?? ''}
+                      fileType={blockMetadata()?.fileType}
+                      readOnly={readOnly()}
+                      mode={mode()}
+                      onTextChange={setBlockText}
+                      onSave={(text) => saveCodeDocument(documentId, text)}
+                    />
                   }
                 >
-                  <UploadedWorkbook />
-                </Suspense>
-              </Show>
-            </div>
-          </SidePanel.Layout>
-        </div>
-      </Show>
-    </DocumentBlockContainer>
+                  <Suspense
+                    fallback={
+                      <div class="p-6 text-ink-muted">Opening spreadsheet…</div>
+                    }
+                  >
+                    <UploadedWorkbook />
+                  </Suspense>
+                </Show>
+              </div>
+            </SidePanel.Layout>
+          </div>
+        </Show>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }

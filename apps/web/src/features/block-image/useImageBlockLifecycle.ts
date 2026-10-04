@@ -1,5 +1,5 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
-import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { setCopiedItem } from '@core/state/clipboard';
 import { useQueryClient } from '@queries/client';
@@ -10,7 +10,7 @@ import { type Accessor, createEffect, on } from 'solid-js';
 export function useImageBlockLifecycle(documentId: Accessor<string>) {
   const analytics = useAnalytics();
   const client = useQueryClient();
-  const panel = useSplitPanel();
+  const hotkeyScope = useMaybeHotkeyScope();
 
   createEffect(
     on(documentId, (documentId) => {
@@ -27,9 +27,9 @@ export function useImageBlockLifecycle(documentId: Accessor<string>) {
     })
   );
 
-  if (panel) {
+  if (hotkeyScope) {
     registerHotkey({
-      scopeId: panel.splitHotkeyScope,
+      scopeId: hotkeyScope,
       hotkey: 'cmd+c',
       description: 'Copy image reference',
       hide: true,

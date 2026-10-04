@@ -1,4 +1,4 @@
-import type { BlockAlias, BlockName } from '@core/block';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import { queryReadyGate } from '@queries/gate';
 import {
   useDocumentAccessLevelQuery,

@@ -284,7 +284,6 @@ function useMarkdownSnapshotIngest(
 
 export type MarkdownDocumentContentProps = MarkdownSnapshotIngestOptions & {
   isInstructions?: boolean;
-  hotkeyScope?: string;
   autoFocus?: boolean;
 };
 
@@ -314,17 +313,11 @@ export function MarkdownDocumentContent(props: MarkdownDocumentContentProps) {
           <Suspense>
             <Show
               when={!isInstructions()}
-              fallback={
-                <InstructionsNotebook
-                  loroManager={loroManager}
-                  hotkeyScope={props.hotkeyScope}
-                />
-              }
+              fallback={<InstructionsNotebook loroManager={loroManager} />}
             >
               <Notebook
                 loroManager={loroManager}
                 documentId={documentId}
-                hotkeyScope={props.hotkeyScope}
                 autoFocus={props.autoFocus ?? false}
               />
             </Show>

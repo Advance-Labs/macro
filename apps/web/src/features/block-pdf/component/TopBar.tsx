@@ -25,6 +25,7 @@ import { useIsAuthenticated } from '@core/auth';
 import { useBlockId, useBlockName } from '@core/block';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
 import { openLoginModal } from '@core/component/TopBar/LoginButton';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -43,7 +44,7 @@ import { usePdfDocument } from '../context/pdf-document-context';
 import { LocationType, useCreateShareUrl } from '../signal/location';
 import { PdfSplitToolbar } from './PdfSplitToolbar';
 
-export function TopBar() {
+export function TopBar(props: ShareHostProps) {
   const pdf = usePdfDocument();
   const documentProxy = pdf.documentProxy;
   const isAuth = useIsAuthenticated();
@@ -57,6 +58,8 @@ export function TopBar() {
   const openShare = useShareModal(() => ({
     id: documentId,
     blockAlias: 'pdf',
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'document',
     name: fileName() ?? '',
     userPermissions: permissions(),
@@ -160,7 +163,13 @@ export function TopBar() {
       icon: IconShared,
       action: openShare,
       buttonComponent: () => (
-        <ShareTrigger onClick={openShare} copyLink={copyLink} />
+        <ShareTrigger
+          id={documentId}
+          blockType={'pdf'}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+          copyLink={copyLink}
+        />
       ),
       focusTarget: getShareDrawerRecipientInput,
     },

@@ -17,6 +17,7 @@ import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { createMethodRegistration } from '@core/orchestrator';
@@ -72,6 +73,7 @@ import { TopBar } from './TopBar';
 
 const Block: Component = () => {
   const databaseId = useBlockId();
+  const hotkeyScope = useHotkeyScope();
   const panel = useSplitPanelOrThrow();
   const { replaceOrInsertSplit } = useSplitLayout();
   const orchestrator = useGlobalBlockOrchestrator();
@@ -215,7 +217,7 @@ const Block: Component = () => {
   registerHotkey({
     hotkey: 'cmd+f',
     hotkeyToken: TOKENS.database.search,
-    scopeId: panel.splitHotkeyScope,
+    scopeId: hotkeyScope,
     description: 'Search database',
     runWithInputFocused: true,
     keyDownHandler: () => {
@@ -242,7 +244,7 @@ const Block: Component = () => {
   registerHotkey({
     hotkey: 'cmd+z',
     hotkeyToken: TOKENS.database.undo,
-    scopeId: panel.splitHotkeyScope,
+    scopeId: hotkeyScope,
     description: 'Undo your last edit',
     condition: databaseUndo.canUndo,
     keyDownHandler: () => {
@@ -253,7 +255,7 @@ const Block: Component = () => {
   registerHotkey({
     hotkey: 'shift+cmd+z',
     hotkeyToken: TOKENS.database.redo,
-    scopeId: panel.splitHotkeyScope,
+    scopeId: hotkeyScope,
     description: 'Redo your last undo',
     condition: databaseUndo.canRedo,
     keyDownHandler: () => {
@@ -328,6 +330,7 @@ const Block: Component = () => {
           database={detail()?.database}
         />
         <TopBar
+          permissionOptions={{ edit: true }}
           databaseId={databaseId}
           detail={detail()}
           canEdit={canEdit()}

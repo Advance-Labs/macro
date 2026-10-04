@@ -10,6 +10,7 @@ import {
   ENABLE_CANVAS_IMAGES,
   ENABLE_CANVAS_TEXT,
 } from '@core/constant/featureFlags';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
@@ -105,7 +106,8 @@ export function ToolBar() {
   const { activeTool } = toolManager;
   const [connectorTypeMenuTrigger, setConnectorTypeMenuTrigger] =
     canvas.state.signals.connectorTypeMenuTrigger;
-  const scopeId = canvas.hotkeyScope;
+  const hotkeyScope = useHotkeyScope();
+  const scopeId = () => hotkeyScope;
 
   const [connectionStyle, setConnectionStyle] =
     createSignal<EdgeConnectionStyle>('straight');

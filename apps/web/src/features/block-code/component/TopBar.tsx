@@ -9,6 +9,7 @@ import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHe
 import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
 import { SplitToolbarRight } from '@components/app/split-layout/components/SplitToolbar';
 import { useBlockAliasedName, useBlockId } from '@core/block';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -31,11 +32,13 @@ import type { CodeBlockMode } from './CodeContent';
 import { CodeFileTypeChip } from './CodeFileTypeChip';
 import { CodeModeControl } from './CodeModeControl';
 
-export const TopBar: Component<{
-  isHtmlFile: boolean;
-  mode: CodeBlockMode;
-  onModeChange: (mode: CodeBlockMode) => void;
-}> = (props) => {
+export const TopBar: Component<
+  ShareHostProps & {
+    isHtmlFile: boolean;
+    mode: CodeBlockMode;
+    onModeChange: (mode: CodeBlockMode) => void;
+  }
+> = (props) => {
   const analytics = useAnalytics();
 
   const blockId = useBlockId();
@@ -48,6 +51,8 @@ export const TopBar: Component<{
   const openShare = useShareModal(() => ({
     id: blockId,
     blockAlias,
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'document',
     name: name() ?? '',
     userPermissions: permissions(),
@@ -81,7 +86,14 @@ export const TopBar: Component<{
       label: 'Share',
       icon: IconShared,
       action: openShare,
-      buttonComponent: () => <ShareTrigger onClick={openShare} />,
+      buttonComponent: () => (
+        <ShareTrigger
+          id={blockId}
+          blockType={blockAlias}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+        />
+      ),
       focusTarget: getShareDrawerRecipientInput,
     },
   ];

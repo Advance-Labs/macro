@@ -9,14 +9,12 @@ import {
   useCanAutofocusSplitContent,
   useSplitPanel,
 } from '@components/app/split-layout/layoutUtils';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { TOKENS } from '@core/hotkey/tokens';
 import { registerScopeSignalHotkey } from '@core/hotkey/utils';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { createMethodRegistration } from '@core/orchestrator';
-import {
-  blockElementSignal,
-  blockHotkeyScopeSignal,
-} from '@core/signal/blockElement';
+import { blockElementSignal } from '@core/signal/blockElement';
 import { blockHandleSignal } from '@core/signal/load';
 import { useSearchParams } from '@solidjs/router';
 import {
@@ -55,7 +53,8 @@ export function EmailBlockAdapter(props: {
   const listNavigation = useEmailListNavigation(props.threadId);
   const canAutofocus = useCanAutofocusSplitContent();
   const blockElement = blockElementSignal.get;
-  const hotkeyScope = blockHotkeyScopeSignal.get;
+  const scope = useHotkeyScope();
+  const hotkeyScope = () => scope;
   const focusContainer = () => blockElement()?.focus({ preventScroll: true });
   let targetTimer: ReturnType<typeof setTimeout> | undefined;
   createEffect(
@@ -131,6 +130,7 @@ export function EmailBlockAdapter(props: {
       topBar={({ createTask }) => (
         <TopBar
           id={props.threadId()}
+          permissionOptions={{ edit: false }}
           title={props.title}
           onCreateTask={createTask}
         />

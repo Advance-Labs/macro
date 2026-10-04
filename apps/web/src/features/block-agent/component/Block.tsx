@@ -13,7 +13,7 @@ import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useBlockId } from '@core/block';
 import { LoadErrorPanel } from '@core/component/EntityLoadGate';
 import { StaticMarkdownContext } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
-import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { nativeNetworkStatus } from '@core/mobile/native-network-status';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
@@ -54,14 +54,7 @@ function AgentBlockContent(props: {
   active: boolean;
   notificationSource: NotificationSource;
 }) {
-  const splitPanel = useContext(SplitPanelContext);
-  let attachHotkeys: ((element: Element) => void) | undefined;
-  let hotkeyScope = splitPanel?.splitHotkeyScope;
-  if (!splitPanel) {
-    const [attach, scopeId] = useHotkeyDOMScope('agent');
-    attachHotkeys = attach;
-    hotkeyScope = scopeId;
-  }
+  const [attachHotkeys, hotkeyScope] = useHotkeyScopeOrCreate('agent');
   const [params] = useSearchParams();
   const routeTarget = createAgentRouteTarget();
   const [searchTarget, setSearchTarget] = createSignal(
@@ -113,98 +106,102 @@ function AgentBlockContent(props: {
     (nativeNetworkStatus() === 'offline' && !session() && !pending());
 
   return (
-    <Show
-      when={!loadUnavailable()}
-      fallback={
-        <Show
-          when={startupError()}
-          fallback={
-            <Show
-              when={accessDenied()}
-              fallback={
-                <LoadErrorPanel
-                  title="Unable to load this agent session"
-                  onRetry={loadRetryable() ? retryLoad : undefined}
+    <HotkeyScope scope={hotkeyScope}>
+      <Show
+        when={!loadUnavailable()}
+        fallback={
+          <Show
+            when={startupError()}
+            fallback={
+              <Show
+                when={accessDenied()}
+                fallback={
+                  <LoadErrorPanel
+                    title="Unable to load this agent session"
+                    onRetry={loadRetryable() ? retryLoad : undefined}
+                  />
+                }
+              >
+                <EmptyStatePanel
+                  centered
+                  title="You don't have access to this agent session"
+                  description="Ask a participant to share it with you."
                 />
-              }
-            >
+              </Show>
+            }
+          >
+            {(error) => (
               <EmptyStatePanel
                 centered
-                title="You don't have access to this agent session"
-                description="Ask a participant to share it with you."
+                title="Unable to start this agent"
+                description={error()}
               />
-            </Show>
-          }
-        >
-          {(error) => (
-            <EmptyStatePanel
-              centered
-              title="Unable to start this agent"
-              description={error()}
-            />
-          )}
-        </Show>
-      }
-    >
-      {/* One shared static-markdown editor for every text part, rather than
+            )}
+          </Show>
+        }
+      >
+        {/* One shared static-markdown editor for every text part, rather than
           one per part — the same scoping the channel does around its message
           tree. */}
-      <StaticMarkdownContext>
-        <AgentSessionReadMarker
-          sessionId={session() ? sessionId() : undefined}
-          active={props.active}
-          notificationSource={props.notificationSource}
-        />
-        <div ref={attachHotkeys} class="size-full overflow-hidden flex">
-          {/* Collapsed by default, like the other conversation-shaped blocks —
+        <StaticMarkdownContext>
+          <AgentSessionReadMarker
+            sessionId={session() ? sessionId() : undefined}
+            active={props.active}
+            notificationSource={props.notificationSource}
+          />
+          <div
+            ref={(element) => attachHotkeys?.(element)}
+            class="size-full overflow-hidden flex"
+          >
+            {/* Collapsed by default, like the other conversation-shaped blocks —
             the transcript wants the width; `]` or the header button opens it. */}
-          <SidePanel.Layout defaultOpen={false} floating>
-            <AgentSidePanelSections />
-            <AgentSplitHeader
-              session={session()}
-              hotkeyScope={hotkeyScope}
-              title={metadata()?.title ?? undefined}
-            />
-            <AgentPreviewBanner />
-            {/* The Changes pane opens beside the transcript; closed, the
+            <SidePanel.Layout defaultOpen={false} floating>
+              <AgentSidePanelSections />
+              <AgentSplitHeader
+                session={session()}
+                title={metadata()?.title ?? undefined}
+              />
+              <AgentPreviewBanner />
+              {/* The Changes pane opens beside the transcript; closed, the
                 transcript keeps the whole width. */}
-            <AgentChangesSplit>
-              <Transcript searchTarget={searchTarget()} />
-              {/* Full-frame mobile: composer + queue float in the bottom
+              <AgentChangesSplit>
+                <Transcript searchTarget={searchTarget()} />
+                {/* Full-frame mobile: composer + queue float in the bottom
                   accessory region above the dock; desktop stays inline. */}
-              <AgentComposerRegion>
-                {/* Home/chat: re-enable pointer events on the accessory
+                <AgentComposerRegion>
+                  {/* Home/chat: re-enable pointer events on the accessory
                     contribution — the float host is pointer-transparent. */}
-                {/* pb matches ChannelInputContainer so the composer sits at
+                  {/* pb matches ChannelInputContainer so the composer sits at
                     the same height as the channel input. */}
-                <div class="flex w-full justify-center shrink-0 px-4 pb-2.5 pointer-events-auto touch:px-(--mobile-chrome-gutter) touch:pb-0">
-                  <div class="macro-message-width mx-auto flex flex-col gap-2">
-                    <Show
-                      when={!session()?.isArchived}
-                      fallback={
-                        <Show when={sessionId()}>
-                          {(id) => <ArchivedSessionFooter sessionId={id()} />}
-                        </Show>
-                      }
-                    >
-                      <ChangesHandoff />
-                      <ReviewNotesDock />
-                      <AgentComposer
-                        autofocus={
-                          canAutofocusSplitContent &&
-                          !navigatedFromJK() &&
-                          !searchTarget()
+                  <div class="flex w-full justify-center shrink-0 px-4 pb-2.5 pointer-events-auto touch:px-(--mobile-chrome-gutter) touch:pb-0">
+                    <div class="macro-message-width mx-auto flex flex-col gap-2">
+                      <Show
+                        when={!session()?.isArchived}
+                        fallback={
+                          <Show when={sessionId()}>
+                            {(id) => <ArchivedSessionFooter sessionId={id()} />}
+                          </Show>
                         }
-                      />
-                    </Show>
+                      >
+                        <ChangesHandoff />
+                        <ReviewNotesDock />
+                        <AgentComposer
+                          autofocus={
+                            canAutofocusSplitContent &&
+                            !navigatedFromJK() &&
+                            !searchTarget()
+                          }
+                        />
+                      </Show>
+                    </div>
                   </div>
-                </div>
-              </AgentComposerRegion>
-            </AgentChangesSplit>
-          </SidePanel.Layout>
-        </div>
-      </StaticMarkdownContext>
-    </Show>
+                </AgentComposerRegion>
+              </AgentChangesSplit>
+            </SidePanel.Layout>
+          </div>
+        </StaticMarkdownContext>
+      </Show>
+    </HotkeyScope>
   );
 }
 

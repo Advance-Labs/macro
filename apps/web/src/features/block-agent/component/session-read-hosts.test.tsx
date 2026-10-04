@@ -3,6 +3,7 @@ import {
   SplitPanelContext,
   type SplitPanelContextType,
 } from '@components/app/split-layout/context';
+import { HotkeyScope, useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import type { NotificationSource } from '@notifications/notification-source';
 import { cleanup, render } from '@solidjs/testing-library';
 import { createSignal, type JSX } from 'solid-js';
@@ -136,8 +137,8 @@ vi.mock('@components/app/split-layout/components/SplitLabel', () => ({
 vi.mock('./AgentComposer', () => ({ AgentComposer: () => null }));
 vi.mock('./AgentPullRequestChip', () => ({ AgentPullRequestChip: () => null }));
 vi.mock('./AgentSplitHeader', () => ({
-  AgentSplitHeader: (props: { hotkeyScope: string | undefined }) => (
-    <button data-testid="agent-header" data-command-scope={props.hotkeyScope}>
+  AgentSplitHeader: () => (
+    <button data-testid="agent-header" data-command-scope={useHotkeyScope()}>
       Agent header
     </button>
   ),
@@ -206,7 +207,9 @@ describe('agent command scope ownership', () => {
     } as SplitPanelContextType;
     const view = render(() => (
       <SplitPanelContext.Provider value={panel}>
-        <BlockAgent />
+        <HotkeyScope scope={panel.splitHotkeyScope}>
+          <BlockAgent />
+        </HotkeyScope>
       </SplitPanelContext.Provider>
     ));
     expect(view.getByTestId('agent-header').dataset.commandScope).toBe(
@@ -230,19 +233,22 @@ describe.each(['Home', 'Agents'] as const)('%s session host', (host) => {
   function mountHost() {
     const panel = {
       isPanelActive: () => mocks.active(),
+      splitHotkeyScope: 'split-scope',
     } as SplitPanelContextType;
     render(() => (
       <SplitPanelContext.Provider value={panel}>
-        {host === 'Home' ? (
-          <BlockAgent />
-        ) : (
-          <AgentSessionPane
-            id="placeholder-session"
-            notificationSource={mocks.source!}
-            onSessionId={vi.fn()}
-            onDeleted={vi.fn()}
-          />
-        )}
+        <HotkeyScope scope={panel.splitHotkeyScope}>
+          {host === 'Home' ? (
+            <BlockAgent />
+          ) : (
+            <AgentSessionPane
+              id="placeholder-session"
+              notificationSource={mocks.source!}
+              onSessionId={vi.fn()}
+              onDeleted={vi.fn()}
+            />
+          )}
+        </HotkeyScope>
       </SplitPanelContext.Provider>
     ));
   }

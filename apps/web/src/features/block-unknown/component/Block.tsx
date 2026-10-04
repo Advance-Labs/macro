@@ -3,6 +3,7 @@ import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toast } from '@core/component/Toast/Toast';
 import { useShareModal } from '@core/component/TopBar/shareModal';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { blockMetadataSignal } from '@core/signal/load';
 import { useGetPermissions } from '@core/signal/permissions';
 import {
@@ -23,12 +24,15 @@ const UploadedWorkbook = lazy(
 );
 
 export default function BlockUnknown() {
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('unknown');
   return (
-    <DocumentBlockContainer>
-      <div class="size-full select-none overscroll-none overflow-hidden flex flex-col relative">
-        <BlockUnknownContent />
-      </div>
-    </DocumentBlockContainer>
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <div class="size-full select-none overscroll-none overflow-hidden flex flex-col relative">
+          <BlockUnknownContent />
+        </div>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }
 
@@ -43,6 +47,7 @@ function BlockUnknownContent() {
   const openShare = useShareModal(() => ({
     id: blockId,
     blockAlias: 'unknown',
+    permissionOptions: { edit: false },
     itemType: 'document',
     name: fileName() ?? '',
     userPermissions: permissions(),
@@ -65,7 +70,7 @@ function BlockUnknownContent() {
       <FileSidePanelSections />
       <div class="flex size-full min-w-0 flex-col overflow-hidden">
         <div class="relative">
-          <TopBar onShare={openShare} />
+          <TopBar onShare={openShare} permissionOptions={{ edit: false }} />
         </div>
         <div class="w-full grow relative overflow-hidden">
           <Show

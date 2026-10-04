@@ -10,6 +10,7 @@ import {
 } from '@components/app/split-layout/components/SplitToolbar';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
 import { toast } from '@core/component/Toast/Toast';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
 import { useGetPermissions } from '@core/signal/permissions';
@@ -29,19 +30,21 @@ import { renameDatabase } from '../queries/rename-database';
 import { DatabasePageActions } from '../views/database-page-actions';
 import { TableTabs } from './TableTabs';
 
-export function TopBar(props: {
-  databaseId: string;
-  detail: DatabaseDetail | undefined;
-  canEdit: boolean;
-  activeTable: TableDetail | undefined;
-  /** Opens the title for typing, as for a freshly created database. */
-  autoFocusTitle: boolean;
-  onTitleConfirm: () => void;
-  onSelectTable: (tableId: string) => void;
-  onDelete: () => ResultAsync<void, DatabaseEntityFailure>;
-  openingChat: boolean;
-  onOpenChat: () => void;
-}) {
+export function TopBar(
+  props: ShareHostProps & {
+    databaseId: string;
+    detail: DatabaseDetail | undefined;
+    canEdit: boolean;
+    activeTable: TableDetail | undefined;
+    /** Opens the title for typing, as for a freshly created database. */
+    autoFocusTitle: boolean;
+    onTitleConfirm: () => void;
+    onSelectTable: (tableId: string) => void;
+    onDelete: () => ResultAsync<void, DatabaseEntityFailure>;
+    openingChat: boolean;
+    onOpenChat: () => void;
+  }
+) {
   const databaseId = props.databaseId;
   const permissions = useGetPermissions();
   let editTitle: (() => void) | undefined;
@@ -52,6 +55,8 @@ export function TopBar(props: {
     return {
       id: databaseId,
       blockAlias: 'database',
+      sharePermissions: props.sharePermissions,
+      permissionOptions: props.permissionOptions,
       itemType: 'database',
       name: detail.database.name,
       owner: detail.database.owner_id,
@@ -85,7 +90,12 @@ export function TopBar(props: {
       <SplitHeaderRight>
         <BlockLiveIndicators />
         <div class="order-[1000] flex items-center gap-1">
-          <ShareTrigger onClick={openShare} />
+          <ShareTrigger
+            onClick={openShare}
+            id={props.databaseId}
+            blockType="database"
+            sharePermissions={props.sharePermissions}
+          />
         </div>
       </SplitHeaderRight>
       <ResponsivePermissionsBadge />

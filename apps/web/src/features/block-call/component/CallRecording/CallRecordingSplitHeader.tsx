@@ -16,6 +16,7 @@ import {
 import { StaticSplitLabel } from '@components/app/split-layout/components/SplitLabel';
 import { useBlockId } from '@core/block';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -49,7 +50,9 @@ export function CallRecordingSplitHeaderLoading() {
   );
 }
 
-export function CallRecordingSplitHeader(props: { record: CallRecord }) {
+export function CallRecordingSplitHeader(
+  props: ShareHostProps & { record: CallRecord }
+) {
   const record = () => props.record;
   const blockId = useBlockId();
   const callName = () => record().customName ?? record().channelName ?? 'Call';
@@ -57,6 +60,7 @@ export function CallRecordingSplitHeader(props: { record: CallRecord }) {
   const openShare = useShareModal(() => ({
     id: blockId,
     blockAlias: 'call',
+    permissionOptions: props.permissionOptions,
     itemType: 'call',
     name: callName(),
     userPermissions: permissions(),
@@ -71,7 +75,9 @@ export function CallRecordingSplitHeader(props: { record: CallRecord }) {
     label: 'Share',
     icon: IconShared,
     action: openShare,
-    buttonComponent: () => <ShareTrigger onClick={openShare} />,
+    buttonComponent: () => (
+      <ShareTrigger onClick={openShare} id={blockId} blockType="call" />
+    ),
     focusTarget: getShareDrawerRecipientInput,
   };
 

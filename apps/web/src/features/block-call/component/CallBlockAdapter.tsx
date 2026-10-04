@@ -8,6 +8,7 @@ import {
 import { SidePanel } from '@components/app/side-panel';
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { createMethodRegistration } from '@core/orchestrator';
 import { blockHandleSignal } from '@core/signal/load';
 import { useCallRecordQuery } from '@queries/call/call';
@@ -20,6 +21,7 @@ import { CallSidePanelSections } from './sidepanel/CallSidePanelSections';
 
 export function CallBlockAdapter(props: CallBlockProps) {
   const callId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('call');
   const callRecord = useCallRecordQuery(() => callId);
   const blockHandle = blockHandleSignal.get;
   const [searchParams] = useSearchParams();
@@ -124,28 +126,33 @@ export function CallBlockAdapter(props: CallBlockProps) {
   // block). load() primes the record query, so callRecord.data is present
   // whenever the container renders this content.
   return (
-    <DocumentBlockContainer>
-      <div class="h-full flex flex-col @container">
-        <Show when={callRecord.isPending ? undefined : callRecord.data}>
-          {(data) => (
-            <SidePanel.Layout floating>
-              <CallSidePanelSections record={data()} callId={callId} />
-              <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden @container">
-                <CallRecordingSplitHeader record={data()} />
-                <CallRecordingBody
-                  record={data()}
-                  callId={callId}
-                  transcriptTarget={transcriptTarget()}
-                  messageTarget={messageTarget()?.id}
-                  messageTargetRequestKey={messageTarget()?.requestKey}
-                  onClearMessageTarget={clearMessageTarget}
-                  showOverlayHeaderGap
-                />
-              </div>
-            </SidePanel.Layout>
-          )}
-        </Show>
-      </div>
-    </DocumentBlockContainer>
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <div class="h-full flex flex-col @container">
+          <Show when={callRecord.isPending ? undefined : callRecord.data}>
+            {(data) => (
+              <SidePanel.Layout floating>
+                <CallSidePanelSections record={data()} callId={callId} />
+                <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden @container">
+                  <CallRecordingSplitHeader
+                    record={data()}
+                    permissionOptions={{ edit: false }}
+                  />
+                  <CallRecordingBody
+                    record={data()}
+                    callId={callId}
+                    transcriptTarget={transcriptTarget()}
+                    messageTarget={messageTarget()?.id}
+                    messageTargetRequestKey={messageTarget()?.requestKey}
+                    onClearMessageTarget={clearMessageTarget}
+                    showOverlayHeaderGap
+                  />
+                </div>
+              </SidePanel.Layout>
+            )}
+          </Show>
+        </div>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }

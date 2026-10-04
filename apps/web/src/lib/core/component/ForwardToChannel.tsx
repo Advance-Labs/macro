@@ -1,19 +1,16 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
+import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
 import { createConfiguredChannelMarkdownEditor } from '@channel/Input';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
 import { useIsAuthenticated } from '@core/auth';
-import {
-  type BlockAlias,
-  type BlockName,
-  useMaybeBlockAliasedName,
-  useMaybeBlockId,
-  useMaybeBlockName,
-} from '@core/block';
 import { CustomScrollbar } from '@core/component/CustomScrollbar';
 import { MarkdownShell } from '@core/component/LexicalMarkdown/builder/MarkdownShell';
 import { RecipientSelector } from '@core/component/RecipientSelector';
-import { ShareOptions } from '@core/component/TopBar/ShareButton';
+import {
+  ShareOptions,
+  type SharePermissionOptions,
+} from '@core/component/TopBar/ShareButton';
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { isMobile } from '@core/mobile/isMobile';
 import { useCombinedRecipients } from '@core/signal/useCombinedRecipient';
@@ -47,7 +44,7 @@ type Recipient = WithCustomUserInput<'user' | 'contact' | 'channel'>;
 interface MobileForwardToChannelLayoutProps
   extends Pick<
     ForwardToChannelProps,
-    'submitPermissionInfo' | 'hideAccessLevelSelector' | 'editPermissionEnabled'
+    'submitPermissionInfo' | 'hideAccessLevelSelector' | 'permissionOptions'
   > {
   isAuthenticated: Accessor<boolean | undefined>;
   selectedOptions: Accessor<Recipient[]>;
@@ -136,7 +133,7 @@ function MobileForwardToChannelLayout(
         <div class="px-3 py-2 flex items-center">
           <span class="text-sm text-ink-muted pr-2">Access:</span>
           <ShareOptions
-            editPermissionEnabled={props.editPermissionEnabled}
+            permissionOptions={props.permissionOptions}
             setPermissions={(accessLevel) =>
               props.setSubmitAccessLevel(accessLevel)
             }
@@ -168,7 +165,7 @@ function MobileForwardToChannelLayout(
 }
 
 interface ForwardToChannelProps {
-  editPermissionEnabled?: boolean;
+  permissionOptions?: SharePermissionOptions;
   submitPermissionInfo?: {
     setChannelPermissions: (
       channelId: string,
@@ -207,6 +204,11 @@ interface ForwardToChannelProps {
 }
 
 export function ForwardToChannel(props: ForwardToChannelProps) {
+  if (!props.entity && (!props.blockId || !props.blockName)) {
+    throw new Error(
+      '<ForwardToChannel> requires an explicit entity or block identity'
+    );
+  }
   const isAuthenticated = useIsAuthenticated();
   const analytics = useAnalytics();
 
@@ -254,12 +256,9 @@ export function ForwardToChannel(props: ForwardToChannelProps) {
   });
 
   const { sendToUsers, sendToChannel } = useSendMessageToPeople();
-  const contextBlockBaseName = useMaybeBlockName();
-  const blockBaseName = props.entity
-    ? undefined
-    : props.blockName
-      ? resolveBlockAlias(props.blockName)
-      : contextBlockBaseName;
+  const blockBaseName = props.blockName
+    ? resolveBlockAlias(props.blockName)
+    : undefined;
   const [submitAccessLevel, setSubmitAccessLevel] =
     createSignal<AccessLevel | null>(
       props.initialAccessLevel ?? (blockBaseName === 'md' ? 'edit' : 'view')
@@ -317,12 +316,8 @@ export function ForwardToChannel(props: ForwardToChannelProps) {
     return true;
   });
 
-  const contextBlockName = useMaybeBlockAliasedName();
-  const contextBlockId = useMaybeBlockId();
-  // Explicit identity can differ from the enclosing block (e.g. a newly
-  // persisted agent session still mounted in its launcher placeholder).
-  const blockName = () => props.blockName ?? contextBlockName;
-  const blockId = () => props.blockId ?? contextBlockId;
+  const blockName = () => props.blockName;
+  const blockId = () => props.blockId;
   const itemType = () => {
     if (props.entity) return;
     const name = blockName();
@@ -513,7 +508,7 @@ export function ForwardToChannel(props: ForwardToChannelProps) {
         when={!isMobile()}
         fallback={
           <MobileForwardToChannelLayout
-            editPermissionEnabled={props.editPermissionEnabled}
+            permissionOptions={props.permissionOptions}
             isAuthenticated={isAuthenticated}
             selectedOptions={selectedOptions}
             setSelectedOptions={(v) => setSelectedOptions(v)}
@@ -560,7 +555,7 @@ export function ForwardToChannel(props: ForwardToChannelProps) {
                   <span class="text-sm text-ink-extra-muted">can</span>
                 </Show>
                 <ShareOptions
-                  editPermissionEnabled={props.editPermissionEnabled}
+                  permissionOptions={props.permissionOptions}
                   setPermissions={(accessLevel) =>
                     setSubmitAccessLevel(accessLevel)
                   }

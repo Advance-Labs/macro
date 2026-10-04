@@ -51,7 +51,6 @@ export type CanvasDocumentProps = {
   documentId: string;
   file?: Blob;
   canEdit: boolean;
-  hotkeyScope: string;
   isNested?: boolean;
   portalScope?: PortalScope;
   portalMount?: HTMLElement;
@@ -70,7 +69,6 @@ export function CanvasDocument(props: CanvasDocumentProps) {
           documentId={documentId}
           canEdit={props.canEdit}
           isNested={props.isNested}
-          hotkeyScope={props.hotkeyScope}
           portalScope={props.portalScope}
           portalMount={props.portalMount}
           onLocationChange={props.onLocationChange}

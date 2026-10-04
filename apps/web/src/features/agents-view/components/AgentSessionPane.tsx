@@ -217,12 +217,7 @@ function SessionContent(props: {
           </Show>
           <Show when={sessionId()}>
             {(id) => (
-              <ShareTrigger
-                onClick={openShare}
-                id={id()}
-                blockType="agent"
-                hotkeyScope={panel.splitHotkeyScope}
-              />
+              <ShareTrigger onClick={openShare} id={id()} blockType="agent" />
             )}
           </Show>
           <ChangesToggle />

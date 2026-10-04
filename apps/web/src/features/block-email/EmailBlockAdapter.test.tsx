@@ -1,4 +1,5 @@
 import type { EmailThreadHost } from '@app/features/email-thread/context/email-thread-context';
+import { HotkeyScope } from '@core/hotkey/HotkeyScope';
 import { cleanup, render } from '@solidjs/testing-library';
 import type { ComponentProps } from 'solid-js';
 import { createStore } from 'solid-js/store';
@@ -32,7 +33,6 @@ vi.mock('@core/signal/load', () => ({
 }));
 vi.mock('@core/signal/blockElement', () => ({
   blockElementSignal: { get: () => undefined },
-  blockHotkeyScopeSignal: { get: () => undefined },
 }));
 vi.mock('@core/hotkey/utils', () => ({ registerScopeSignalHotkey: () => {} }));
 vi.mock('./use-email-list-navigation', () => ({
@@ -51,6 +51,30 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+function mountAdapter() {
+  const props: ComponentProps<typeof EmailBlockAdapter> = {
+    title: 'Email',
+    threadId: () => 'thread',
+    source: {
+      id: () => 'thread',
+      isError: () => false,
+      thread: () => undefined,
+      isLoading: () => false,
+      isFetching: () => false,
+      isFetchingOlder: () => false,
+      hasMore: () => false,
+      fetchOlder: async () => {},
+      refresh: async () => {},
+    },
+    threadTransport: () => 'rest',
+  };
+  return render(() => (
+    <HotkeyScope scope="email-scope">
+      <EmailBlockAdapter {...props} />
+    </HotkeyScope>
+  ));
+}
+
 it('preserves a pending imperative target when Home clears route search', () => {
   vi.useFakeTimers();
   const [search, setSearch] = createStore({
@@ -58,13 +82,7 @@ it('preserves a pending imperative target when Home clears route search', () => 
     seek: 'request',
   });
   state.search = search;
-  const props = {
-    title: 'Email',
-    threadId: () => 'thread',
-    source: {},
-    threadTransport: {},
-  } as ComponentProps<typeof EmailBlockAdapter>;
-  render(() => <EmailBlockAdapter {...props} />);
+  mountAdapter();
   expect(state.host?.targetMessageId?.()).toBe('route-message');
   state.navigate({ email_message_id: 'legacy-message' });
   setSearch({ messageId: '', seek: '' });
@@ -80,13 +98,7 @@ it('clears a route-owned target without replaying its previous message', () => {
     seek: 'request',
   });
   state.search = search;
-  const props = {
-    title: 'Email',
-    threadId: () => 'thread',
-    source: {},
-    threadTransport: {},
-  } as ComponentProps<typeof EmailBlockAdapter>;
-  render(() => <EmailBlockAdapter {...props} />);
+  mountAdapter();
   setSearch({ messageId: '', seek: '' });
   expect(state.host?.targetMessageId?.()).toBeUndefined();
   expect(state.host?.targetRequest?.()).toBeUndefined();
@@ -99,13 +111,7 @@ it('leaves a delivered imperative target and its request unchanged when route se
     seek: 'request',
   });
   state.search = search;
-  const props = {
-    title: 'Email',
-    threadId: () => 'thread',
-    source: {},
-    threadTransport: {},
-  } as ComponentProps<typeof EmailBlockAdapter>;
-  render(() => <EmailBlockAdapter {...props} />);
+  mountAdapter();
   state.navigate({ email_message_id: 'legacy-message' });
   vi.runAllTimers();
   const request = state.host?.targetRequest?.();

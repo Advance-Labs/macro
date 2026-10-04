@@ -12,6 +12,7 @@ import {
   getSoupInputStoredModel,
 } from '@core/component/AI/util/storage';
 import type { EditorConfigBuilder } from '@core/component/LexicalMarkdown/builder/MarkdownConfigBuilder';
+import { HotkeyScope } from '@core/hotkey/HotkeyScope';
 import {
   cleanup,
   fireEvent,
@@ -86,7 +87,6 @@ vi.mock('@core/hotkey/utils', () => ({ registerScopeSignalHotkey: vi.fn() }));
 vi.mock('@core/orchestrator', () => ({ createMethodRegistration: vi.fn() }));
 vi.mock('@core/signal/blockElement', () => ({
   blockElementSignal: { get: vi.fn() },
-  blockHotkeyScopeSignal: { get: vi.fn() },
 }));
 vi.mock('@core/signal/load', () => ({ blockHandleSignal: { get: vi.fn() } }));
 vi.mock('@core/signal/permissions', () => ({ useCanEdit: () => () => true }));
@@ -232,17 +232,20 @@ it('preserves a real soup composer selection when creating and opening its first
   composer.unmount();
   mocks.send.mockResolvedValue({ error: true });
   const chat = render(() => (
-    <Chat
-      data={
-        {
-          chat: {
-            id: 'selected-first-chat',
-            model: Model.sonnet55,
-            messages: [],
-          },
-        } as unknown as ChatData
-      }
-    />
+    <HotkeyScope scope="chat-model-test">
+      <Chat
+        sharePermissions={undefined}
+        data={
+          {
+            chat: {
+              id: 'selected-first-chat',
+              model: Model.sonnet55,
+              messages: [],
+            },
+          } as unknown as ChatData
+        }
+      />
+    </HotkeyScope>
   ));
   expect(screen.getByTestId('model').textContent).toBe(Model.gpt56);
   expect(mocks.send).toHaveBeenCalledWith(

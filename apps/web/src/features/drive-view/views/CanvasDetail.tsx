@@ -4,7 +4,6 @@ import { downloadFileOperation } from '@app/components/entity-detail/file-detail
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { CanvasDocument } from '@block-canvas/component/CanvasDocument';
 import { useCanvasDocument } from '@block-canvas/context/canvas-document-context';
-import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import {
   getPermissions,
   hasPermissions,
@@ -60,7 +59,6 @@ export function CanvasDetailDocument(props: {
   data: CanvasDocumentData;
   children?: (context: CanvasDetailContext) => JSX.Element;
 }) {
-  const panel = useSplitPanelOrThrow();
   const [searchParams] = useSearchParams();
   const canEdit = () =>
     hasPermissions(
@@ -78,7 +76,6 @@ export function CanvasDetailDocument(props: {
         documentId={props.documentId}
         file={props.data.file}
         canEdit={canEdit()}
-        hotkeyScope={panel.splitHotkeyScope}
         portalScope="split"
         locationParams={searchParams}
       >

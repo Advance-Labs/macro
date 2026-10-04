@@ -8,10 +8,7 @@ import {
 import { useNavigate } from '@app/lib/split-router';
 import type { ComposeTaskProps } from '@block-md/component/ComposeTask';
 import { useSplitLayout } from '@components/app/split-layout/layout';
-import {
-  useSplitDisplayName,
-  useSplitPanelOrThrow,
-} from '@components/app/split-layout/layoutUtils';
+import { useSplitDisplayName } from '@components/app/split-layout/layoutUtils';
 import { TabsInset } from '@core/component/TabsInset';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
@@ -88,14 +85,12 @@ function ProjectShareTrigger(props: {
   project: ProjectDetailData;
   commands: ReturnType<ProjectsContext['createCommands']>;
 }) {
-  const panel = useSplitPanelOrThrow();
   const openShare = useProjectShareModal(() => props.project, props.commands);
   return (
     <ShareTrigger
       onClick={openShare}
       id={props.project.id}
       blockType="initiative"
-      hotkeyScope={panel.splitHotkeyScope}
     />
   );
 }

@@ -16,7 +16,6 @@ import type { TaskDetailTarget } from '../types';
 import { TaskDetail } from './TaskDetail';
 
 function TaskDetailTopBar(props: { documentId: string }) {
-  const panel = useSplitPanelOrThrow();
   const openShare = useDocumentShareModal(() => ({
     documentId: props.documentId,
     blockAlias: 'task',
@@ -34,7 +33,6 @@ function TaskDetailTopBar(props: { documentId: string }) {
           onClick={openShare}
           id={props.documentId}
           blockType="task"
-          hotkeyScope={panel.splitHotkeyScope}
         />
         <SidePanel.Toggle />
       </div>

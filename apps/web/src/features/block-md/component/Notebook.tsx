@@ -11,6 +11,7 @@ import {
   LOCAL_ONLY,
 } from '@core/constant/featureFlags';
 import { useIsMacroTeam } from '@core/context/team';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isMobile } from '@core/mobile/isMobile';
@@ -98,7 +99,6 @@ function useCanUseLexicalStateDebugger() {
 export function Notebook(props: {
   loroManager: LoroManager;
   documentId: string;
-  hotkeyScope: string | undefined;
   autoFocus: boolean;
 }) {
   const { element: blockElement, permissions, state } = useMarkdownDocument();
@@ -106,7 +106,8 @@ export function Notebook(props: {
   const { comments: commentState, params } = state;
   const { md, setMd } = state.editor;
   const { displayName: documentName } = useMarkdownName();
-  const scopeId = () => props.hotkeyScope;
+  const hotkeyScope = useMaybeHotkeyScope();
+  const scopeId = () => hotkeyScope;
   const inlineAiEditing = useFeatureFlag(enableInlineAiEditing);
   const resolveAppLink = useMacroMentionLinkResolver();
 
@@ -402,13 +403,11 @@ export function Notebook(props: {
   );
 }
 
-export function InstructionsNotebook(props: {
-  loroManager: LoroManager;
-  hotkeyScope: string | undefined;
-}) {
+export function InstructionsNotebook(props: { loroManager: LoroManager }) {
   const { state } = useMarkdownDocument();
   const setMd = state.editor.setMd;
-  const scopeId = () => props.hotkeyScope;
+  const hotkeyScope = useMaybeHotkeyScope();
+  const scopeId = () => hotkeyScope;
   const canUseLexicalStateDebugger = useCanUseLexicalStateDebugger();
   const resolveAppLink = useMacroMentionLinkResolver();
 

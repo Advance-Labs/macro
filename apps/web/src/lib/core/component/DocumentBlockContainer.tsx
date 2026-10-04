@@ -10,7 +10,11 @@ import { LoadErrorPanel } from './EntityLoadGate';
 import { LoadingPanel } from './LoadingSpinner';
 
 export function DocumentBlockContainer(
-  props: FlowProps<{ usesCenterBar?: boolean; title?: string }>
+  props: FlowProps<{
+    usesCenterBar?: boolean;
+    title?: string;
+    attachHotkeyScope?: (element: HTMLElement) => void;
+  }>
 ) {
   const blockData = blockDataSignal.get;
   const blockError = blockErrorSignal.get;

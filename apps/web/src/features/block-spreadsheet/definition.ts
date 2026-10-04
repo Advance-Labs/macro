@@ -12,7 +12,6 @@ export const definition = defineBlock({
   component: lazy(() => import('./SpreadsheetBlock')),
   liveTrackingEnabled: true,
   syncServiceEnabled: true,
-  editPermissionEnabled: true,
   async load(source, intent) {
     if (!isSpreadsheetEnabledForCurrentUser()) return LoadErrors.UNAUTHORIZED;
     if (source.type !== 'sync-service') return LoadErrors.INVALID;

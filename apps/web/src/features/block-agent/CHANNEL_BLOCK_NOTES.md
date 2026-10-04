@@ -29,7 +29,7 @@ Everything "block-shaped" lives here, NOT in Channel.tsx:
 
 | Concern | Where | Mechanism |
 |---|---|---|
-| Hotkey scope ownership | :194–196 | `useHotkeyDOMScope('channel')` → `blockHotkeyScopeSignal.set(scope)` + `useBlockEntityCommands()`. Channel block doesn't render `BlockContainer`, so it owns the scope itself (comment at :190). |
+| Hotkey scope ownership | `NewChannelBlockAdapter` | Read `useSplitPanelOrThrow().splitHotkeyScope` and pass the scope to `useBlockEntityCommands()`. The split owns DOM attachment, including header and toolbar focus. No legacy scope publication or local fallback is needed. |
 | Block id | :201 | `useBlockId()` — the channel id. |
 | Tabs | :242–265, :449–477 | Local `createSignal<ChannelTabId>` + `ChannelTabProvider` (`Channel/ChannelTabContext.tsx`); `<Switch>` mounts one tab at a time. Switching away from `messages` clears the Channel handle (`setMessagesHandle(undefined)`). |
 | Header | `NewTop` :125–187 | Rendered *inside* the block via split-layout portals: `ChannelTopLeft`, `SplitHeaderRight` + `HeaderIsland`, `ChannelTopBarLiveIndicators`. |

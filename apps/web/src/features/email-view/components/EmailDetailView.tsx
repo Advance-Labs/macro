@@ -248,7 +248,6 @@ export function EmailDetailView(props: {
                 onClick={openShare}
                 id={props.thread.id}
                 blockType="email"
-                hotkeyScope={panel.splitHotkeyScope}
               />
             </Show>
             <SidePanel.Toggle />

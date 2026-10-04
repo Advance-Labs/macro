@@ -2,11 +2,10 @@ import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { SidePanel } from '@components/app/side-panel';
 import { blockDataSignalAs, useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { createMethodRegistration } from '@core/orchestrator';
-import {
-  blockElementSignal,
-  blockHotkeyScopeSignal,
-} from '@core/signal/blockElement';
+import { blockElementSignal } from '@core/signal/blockElement';
 import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import {
   useCanComment,
@@ -31,10 +30,11 @@ import { TopBar } from './TopBar';
 
 export default function BlockPdf() {
   const documentId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('pdf');
   const portalMount = blockElementSignal.get;
   useBlockEntityCommands({
     id: () => documentId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const isNested = useIsNestedBlock();
   const target = isNested
@@ -53,32 +53,34 @@ export default function BlockPdf() {
     createMethodRegistration(blockHandle, methods);
 
   return (
-    <DocumentBlockContainer>
-      <PdfDocument
-        documentId={documentId}
-        documentVersionId={metadata()?.documentVersionId}
-        documentName={documentName()}
-        documentProxy={data()?.documentProxy}
-        viewLocation={data()?.viewLocation}
-        modificationData={data()?.documentMetadata.modificationData}
-        isNested={isNested}
-        portalMount={portalMount()}
-        permissions={{
-          canComment: canComment(),
-          canEdit: canEdit(),
-          isOwner: isOwner(),
-        }}
-        locationParams={getLocationParams(searchParams)}
-        navigationTarget={target()}
-        registerMethods={registerMethods}
-      >
-        <PdfBlockContent />
-      </PdfDocument>
-    </DocumentBlockContainer>
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <PdfDocument
+          documentId={documentId}
+          documentVersionId={metadata()?.documentVersionId}
+          documentName={documentName()}
+          documentProxy={data()?.documentProxy}
+          viewLocation={data()?.viewLocation}
+          modificationData={data()?.documentMetadata.modificationData}
+          isNested={isNested}
+          portalMount={portalMount()}
+          permissions={{
+            canComment: canComment(),
+            canEdit: canEdit(),
+            isOwner: isOwner(),
+          }}
+          locationParams={getLocationParams(searchParams)}
+          navigationTarget={target()}
+          registerMethods={registerMethods}
+        >
+          <PdfBlockContent permissionOptions={{ edit: false }} />
+        </PdfDocument>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }
 
-function PdfBlockContent() {
+function PdfBlockContent(props: ShareHostProps) {
   const pdf = usePdfDocument();
 
   return (
@@ -86,7 +88,10 @@ function PdfBlockContent() {
       <SidePanel.Layout floating>
         <PdfSidePanelSections />
         <div class="flex size-full min-w-0 flex-col overflow-hidden">
-          <TopBar />
+          <TopBar
+            sharePermissions={props.sharePermissions}
+            permissionOptions={props.permissionOptions}
+          />
           <Show when={pdf.tabs.isVisible()}>
             <div class="flex px-2 justify-between min-h-11 items-center gap-2">
               <div class="overflow-x-auto overflow-y-hidden grow customScrollbar w-0">

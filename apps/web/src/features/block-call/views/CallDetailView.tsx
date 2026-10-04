@@ -1,7 +1,6 @@
 import { ViewShell } from '@app/components/view-shell';
 import { createSearchParams } from '@app/lib/split-router';
 import { SidePanel } from '@components/app/side-panel';
-import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { SplitPanel } from '@components/app/split-panel';
 import { getPermissions } from '@core/component/SharePermissions';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
@@ -57,7 +56,6 @@ export function CallDetailActions(props: {
   record: CallRecord;
   name: string;
 }) {
-  const panel = useSplitPanelOrThrow();
   const { canCallAgain, callAgain } = useCallAgain(
     () => props.callId,
     () => props.record.channelId
@@ -80,12 +78,7 @@ export function CallDetailActions(props: {
         </Button>
       </Show>
       <SidePanel.HeaderActionsOutlet />
-      <ShareTrigger
-        onClick={openShare}
-        id={props.callId}
-        blockType="call"
-        hotkeyScope={panel.splitHotkeyScope}
-      />
+      <ShareTrigger onClick={openShare} id={props.callId} blockType="call" />
       <SidePanel.Toggle />
     </div>
   );

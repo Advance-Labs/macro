@@ -15,6 +15,7 @@ import { EmailReminderStatus } from '@app/features/reminders/email-reminder-stat
 import type { BlockTool } from '@components/app/ResponsiveBlockToolbar';
 import { getPermissions } from '@core/component/SharePermissions';
 import { toast } from '@core/component/Toast/Toast';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -38,7 +39,7 @@ import ArrowCounterClockwise from '@phosphor-icons/core/regular/arrow-counter-cl
 import { useEmailLinksQuery } from '@queries/email/link';
 import { queryReadyGate } from '@queries/gate';
 
-export type EmailThreadToolsOptions = {
+export type EmailThreadToolsOptions = ShareHostProps & {
   id: string;
   title: string;
   isDraft?: boolean;
@@ -57,6 +58,8 @@ export function useEmailThreadTools(props: EmailThreadToolsOptions) {
       id: props.id,
       blockAlias: 'email',
       itemType: 'email',
+      sharePermissions: props.sharePermissions,
+      permissionOptions: props.permissionOptions,
       name: props.title,
       userPermissions: getPermissions(thread.access_level),
     };
@@ -182,7 +185,12 @@ export function useEmailThreadTools(props: EmailThreadToolsOptions) {
     action: openShare,
     condition: () => ENABLE_EMAIL_SHARING,
     buttonComponent: () => (
-      <ShareTrigger onClick={openShare} id={props.id} blockType="email" />
+      <ShareTrigger
+        onClick={openShare}
+        id={props.id}
+        blockType="email"
+        sharePermissions={props.sharePermissions}
+      />
     ),
     focusTarget: getShareDrawerRecipientInput,
   };

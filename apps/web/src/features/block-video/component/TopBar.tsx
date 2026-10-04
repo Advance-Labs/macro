@@ -6,9 +6,9 @@ import {
 import type { FileOperation } from '@components/app/split-layout/components/SplitFileMenu';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
 import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
-
 import { useBlockId } from '@core/block';
 import { toast } from '@core/component/Toast/Toast';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -28,7 +28,7 @@ import { createCallback } from '@solid-primitives/rootless';
 import { createSignal } from 'solid-js';
 import { useGetFileBlob } from '../signal/blockData';
 
-export function TopBar() {
+export function TopBar(props: ShareHostProps) {
   const blockId = useBlockId();
   const name = useBlockDocumentName();
   const downloadName = useBlockDocumentDownloadName();
@@ -38,6 +38,8 @@ export function TopBar() {
   const openShare = useShareModal(() => ({
     id: blockId,
     blockAlias: 'video',
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'document',
     name: name() ?? '',
     userPermissions: permissions(),
@@ -89,7 +91,14 @@ export function TopBar() {
       label: 'Share',
       icon: IconShared,
       action: openShare,
-      buttonComponent: () => <ShareTrigger onClick={openShare} />,
+      buttonComponent: () => (
+        <ShareTrigger
+          id={blockId}
+          blockType={'video'}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+        />
+      ),
       focusTarget: getShareDrawerRecipientInput,
     },
   ];

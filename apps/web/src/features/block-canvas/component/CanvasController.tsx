@@ -14,6 +14,7 @@ import {
 import { fileDrop } from '@core/directive/fileDrop';
 import { observedSize } from '@core/directive/observedSize';
 import { HEIC_EXTENSIONS, HEIC_MIME_TYPES } from '@core/heic/constants';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { HOTKEY_PRIORITY_HIGH } from '@core/hotkey/types';
@@ -150,7 +151,8 @@ export function handleDelete() {
 
 export function CanvasController(props: ParentProps) {
   const canvas = useCanvasDocument();
-  const scopeId = canvas.hotkeyScope;
+  const hotkeyScope = useHotkeyScope();
+  const scopeId = () => hotkeyScope;
   const canEdit = canvas.canEdit;
   const isDisabled = createMemo(() => canvas.isNested() || !canEdit());
   const renderState = useRenderState();

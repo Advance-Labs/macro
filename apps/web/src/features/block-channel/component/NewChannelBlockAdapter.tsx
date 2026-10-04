@@ -72,7 +72,6 @@ import { useUserId } from '@core/context/user';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isMobile } from '@core/mobile/isMobile';
 import { createMethodRegistration } from '@core/orchestrator';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { blockHandleSignal } from '@core/signal/load';
 import { buildEntityData } from '@entity';
 import PictureIcon from '@phosphor/image.svg';
@@ -304,9 +303,7 @@ function NewTop(props: { channelId: string }) {
 
 export function NewChannelBlockAdapter(props: BlockChannelProps) {
   // Commands use the split scope so header and toolbar focus keep them active.
-  // Retain the legacy scope publication for remaining adapter consumers.
   const splitPanel = useSplitPanelOrThrow();
-  blockHotkeyScopeSignal.set(splitPanel.splitHotkeyScope);
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
   const channelId = useBlockId();

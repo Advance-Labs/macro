@@ -15,6 +15,7 @@ import { ProviderIcon } from '@core/component/AI/component/ProviderIcon';
 import { Permissions } from '@core/component/SharePermissions';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { openExternalUrl } from '@core/util/url';
 import type { AgentSessionEntity } from '@entity';
@@ -86,7 +87,6 @@ export function agentSessionTitle(
  */
 export function AgentSplitHeader(props: {
   session: AgentSessionResponse | undefined;
-  hotkeyScope: string | undefined;
   /** The fold's session title, preferred over the harness fallback. */
   title?: string;
 }) {
@@ -95,6 +95,7 @@ export function AgentSplitHeader(props: {
   // block id is the one thing here that is not a shareable session id.
   const { sessionId, metadata, userId } = useAgentSession();
   const title = () => agentSessionTitle(props.session, props.title);
+  const hotkeyScope = useHotkeyScope();
   const permissions = () =>
     userId() && props.session?.ownerId === userId()
       ? Permissions.OWNER
@@ -121,7 +122,7 @@ export function AgentSplitHeader(props: {
   };
   useBlockEntityCommands({
     id: sessionId,
-    scopeId: () => props.hotkeyScope,
+    scopeId: () => hotkeyScope,
     resolveEntity: entity,
   });
   const openShare = useShareModal(() => {
@@ -144,7 +145,11 @@ export function AgentSplitHeader(props: {
       action: openShare,
       condition: () => Boolean(entity()),
       buttonComponent: () => (
-        <ShareTrigger onClick={openShare} id={sessionId()} />
+        <Show when={sessionId()}>
+          {(id) => (
+            <ShareTrigger onClick={openShare} id={id()} blockType="agent" />
+          )}
+        </Show>
       ),
     },
   ];

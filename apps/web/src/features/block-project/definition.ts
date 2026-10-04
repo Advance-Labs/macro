@@ -59,8 +59,6 @@ export const definition = defineBlock({
 
     return LoadErrors.MISSING;
   },
-
-  editPermissionEnabled: true,
 });
 
 export type ProjectData = ExtractLoadType<(typeof definition)['load']>;

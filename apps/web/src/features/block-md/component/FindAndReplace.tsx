@@ -3,6 +3,7 @@ import {
   DO_REPLACE_ONCE_COMMAND,
   DO_SEARCH_COMMAND,
 } from '@core/component/LexicalMarkdown/plugins';
+import { useMaybeHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import ReplaceAll from '@phosphor/arrow-bend-double-up-right.svg';
@@ -18,7 +19,7 @@ import type { JSX } from 'solid-js';
 import { createEffect, createSignal, on, onCleanup, Show } from 'solid-js';
 import { useMarkdownDocument } from '../context/markdown-document-context';
 
-export function FindAndReplace(props: { hotkeyScope?: string } = {}) {
+export function FindAndReplace() {
   const { permissions, state } = useMarkdownDocument();
   const canEdit = permissions.canEdit;
   const {
@@ -27,7 +28,8 @@ export function FindAndReplace(props: { hotkeyScope?: string } = {}) {
     setFindAndReplace: setFindAndReplaceStore,
   } = state.editor;
   const editor = () => mdData.editor;
-  const scopeId = () => props.hotkeyScope;
+  const hotkeyScope = useMaybeHotkeyScope();
+  const scopeId = () => hotkeyScope;
 
   let inputRef: HTMLInputElement | undefined;
   let inputReplaceRef: HTMLInputElement | undefined;

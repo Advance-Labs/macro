@@ -13,7 +13,6 @@ import { ViewBreadcrumbs, ViewShell } from '@app/components/view-shell';
 import { MarkdownDetailBreadcrumbItem } from '@block-md/component/MarkdownDetailBreadcrumbItem';
 import type { MarkdownDocumentKind } from '@block-md/types';
 import { SidePanel } from '@components/app/side-panel';
-import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useDocumentShareModal } from '@core/component/TopBar/shareModal';
 import { useCopyLink } from '@core/util/useCopyLink';
@@ -54,7 +53,6 @@ function markdownKind(target: DocumentDetailTarget): MarkdownDocumentKind {
 
 function DriveDetailTopBar() {
   const navigationStack = useDriveDetailNavigation();
-  const panel = useSplitPanelOrThrow();
   const copyViewLink = useCopyLink();
   const copyLink = () => copyViewLink(window.location.href);
   const activeDetail = () => {
@@ -88,7 +86,6 @@ function DriveDetailTopBar() {
               onClick={openShare}
               id={detail().target.id}
               blockType={detail().blockType}
-              hotkeyScope={panel.splitHotkeyScope}
               copyLink={copyLink}
             />
           )}

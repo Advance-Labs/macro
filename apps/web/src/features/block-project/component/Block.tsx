@@ -16,7 +16,11 @@ import { FileDropOverlay } from '@core/component/FileDropOverlay';
 import { toast } from '@core/component/Toast/Toast';
 import { fileFolderDrop } from '@core/directive/fileFolderDrop';
 import { fileSelector } from '@core/directive/fileSelector';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
+import {
+  HotkeyScope,
+  useHotkeyScope,
+  useHotkeyScopeOrCreate,
+} from '@core/hotkey/HotkeyScope';
 import {
   handleFileFolderDrop,
   type UploadInput,
@@ -37,9 +41,10 @@ const PROJECT_ENTITY_TYPES = ['document', 'task', 'chat', 'project', 'email'];
 const Block: Component = () => {
   const [isDragging, setIsDragging] = createSignal(false);
   const projectId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('project');
   useBlockEntityCommands({
     id: () => projectId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const isSpecialProject = getIsSpecialProject(projectId);
 
@@ -102,46 +107,43 @@ const Block: Component = () => {
   });
 
   return (
-    <DocumentBlockContainer>
-      <div
-        class="size-full bg-surface flex flex-col relative"
-        use:fileFolderDrop={{
-          onDragStart: () => setIsDragging(true),
-          onDragEnd: () => setIsDragging(false),
-          onDrop: (fileEntries, folderEntries) => {
-            handleFileFolderDrop(fileEntries, folderEntries, handleFileUpload);
-          },
-          disabled: isSpecialProject,
-        }}
-      >
-        <Show when={isDragging() && !isSpecialProject}>
-          <FileDropOverlay>Upload to this folder</FileDropOverlay>
-        </Show>
-        <SidePanel.Layout defaultOpen={false} floating>
-          <Show when={!isSpecialProject}>
-            <ProjectSidePanelSections />
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <div
+          class="size-full bg-surface flex flex-col relative"
+          use:fileFolderDrop={{
+            onDragStart: () => setIsDragging(true),
+            onDragEnd: () => setIsDragging(false),
+            onDrop: (fileEntries, folderEntries) => {
+              handleFileFolderDrop(
+                fileEntries,
+                folderEntries,
+                handleFileUpload
+              );
+            },
+            disabled: isSpecialProject,
+          }}
+        >
+          <Show when={isDragging() && !isSpecialProject}>
+            <FileDropOverlay>Upload to this folder</FileDropOverlay>
           </Show>
-          <div class="flex size-full min-w-0 flex-col overflow-hidden">
-            <TopBar />
-            <ProjectEntityList
-              projectId={projectId}
-              soup={projectSoup}
-              // Scope is already attached by the block container so we can use that
-              // Change this when we remove blocks
-              scopeId={blockHotkeyScopeSignal.get()}
-            />
-          </div>
-        </SidePanel.Layout>
-      </div>
-    </DocumentBlockContainer>
+          <SidePanel.Layout defaultOpen={false} floating>
+            <Show when={!isSpecialProject}>
+              <ProjectSidePanelSections />
+            </Show>
+            <div class="flex size-full min-w-0 flex-col overflow-hidden">
+              <TopBar permissionOptions={{ edit: true }} />
+              <ProjectEntityList projectId={projectId} soup={projectSoup} />
+            </div>
+          </SidePanel.Layout>
+        </div>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 };
 
-const ProjectEntityList = (props: {
-  scopeId: string;
-  projectId: string;
-  soup: SoupState;
-}) => {
+const ProjectEntityList = (props: { projectId: string; soup: SoupState }) => {
+  const hotkeyScope = useHotkeyScope();
   return (
     <SoupContextProvider soup={props.soup}>
       <SoupViewContextProvider
@@ -167,7 +169,7 @@ const ProjectEntityList = (props: {
           emailView: 'all',
         })}
       >
-        <SoupViewList customScrollbarHidden={true} scopeId={props.scopeId} />
+        <SoupViewList customScrollbarHidden={true} scopeId={hotkeyScope} />
       </SoupViewContextProvider>
     </SoupContextProvider>
   );

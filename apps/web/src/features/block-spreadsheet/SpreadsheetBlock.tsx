@@ -22,10 +22,14 @@ import {
 } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
 import { useUserId } from '@core/context/user';
+import {
+  HotkeyScope,
+  useHotkeyScope,
+  useHotkeyScopeOrCreate,
+} from '@core/hotkey/HotkeyScope';
 import { blockDataSignal } from '@core/internal/BlockLoader';
 import { isMobile } from '@core/mobile/isMobile';
 import { createMethodRegistration } from '@core/orchestrator';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import { useCanEdit, useGetPermissions } from '@core/signal/permissions';
 import { getDisplayName, tryMacroId } from '@core/user';
@@ -44,32 +48,43 @@ import { spreadsheetMentions } from './spreadsheet-mentions';
 import { SpreadsheetEditor } from './views/SpreadsheetEditor';
 
 export default function SpreadsheetBlock(props: { share?: string }) {
+  const [attachHotkeyScope, hotkeyScope] =
+    useHotkeyScopeOrCreate('spreadsheet');
   const enabled = useSpreadsheetAccess();
   const params = createParamsState();
   createMethodRegistration(blockHandleSignal.get, {
     goToLocationFromParams: params.navigate,
   });
   return (
-    <ParamsProvider state={params}>
-      <Show
-        when={enabled()}
-        fallback={
-          <div class="p-6 text-ink-muted">
-            Spreadsheets are not enabled for this account.
-          </div>
-        }
-      >
-        <SpreadsheetBlockContent share={props.share} />
-      </Show>
-    </ParamsProvider>
+    <HotkeyScope scope={hotkeyScope}>
+      <ParamsProvider state={params}>
+        <Show
+          when={enabled()}
+          fallback={
+            <div class="p-6 text-ink-muted">
+              Spreadsheets are not enabled for this account.
+            </div>
+          }
+        >
+          <SpreadsheetBlockContent
+            share={props.share}
+            attachHotkeyScope={attachHotkeyScope}
+          />
+        </Show>
+      </ParamsProvider>
+    </HotkeyScope>
   );
 }
 
-function SpreadsheetBlockContent(props: { share?: string }) {
+function SpreadsheetBlockContent(props: {
+  share?: string;
+  attachHotkeyScope?: (element: HTMLElement) => void;
+}) {
   const documentId = useBlockId();
+  const hotkeyScope = useHotkeyScope();
   useBlockEntityCommands({
     id: () => documentId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const name = useBlockDocumentName('New Spreadsheet');
   const canEdit = useCanEdit();
@@ -78,6 +93,7 @@ function SpreadsheetBlockContent(props: { share?: string }) {
   const openShare = useShareModal(() => ({
     id: documentId,
     blockAlias: 'spreadsheet',
+    permissionOptions: { edit: true },
     itemType: 'document',
     name: name() ?? '',
     userPermissions: permissions(),
@@ -94,7 +110,7 @@ function SpreadsheetBlockContent(props: { share?: string }) {
   };
 
   return (
-    <DocumentBlockContainer>
+    <DocumentBlockContainer attachHotkeyScope={props.attachHotkeyScope}>
       <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
         <SplitHeaderLeft>
           <BlockItemSplitLabel
@@ -127,7 +143,13 @@ function SpreadsheetBlockContent(props: { share?: string }) {
               label: 'Share',
               icon: IconShared,
               action: openShare,
-              buttonComponent: () => <ShareTrigger onClick={openShare} />,
+              buttonComponent: () => (
+                <ShareTrigger
+                  onClick={openShare}
+                  id={documentId}
+                  blockType="spreadsheet"
+                />
+              ),
               focusTarget: getShareDrawerRecipientInput,
             },
           ]}

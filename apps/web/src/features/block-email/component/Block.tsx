@@ -6,7 +6,7 @@ import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { toEntityLoadError } from '@core/component/EntityLoadGate';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { buildEntityData } from '@entity';
 import { useThreadQuery } from '@queries/email/thread';
 import { representativeThreadMessage } from '@queries/email/thread-subject';
@@ -16,6 +16,7 @@ import { EmailThreadLoadGate } from './EmailThreadLoadGate';
 
 export default function BlockEmail() {
   const blockId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('email');
 
   const threadId = () => blockId;
 
@@ -46,7 +47,7 @@ export default function BlockEmail() {
 
   useBlockEntityCommands({
     id: threadId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
     resolveEntity: commandEntity,
   });
 
@@ -71,32 +72,37 @@ export default function BlockEmail() {
   };
 
   return (
-    <Suspense fallback={<ContentLoading />}>
-      <DocumentBlockContainer title={title() ?? 'Email'}>
-        <div class="size-full" tabIndex={-1}>
-          <EmailThreadLoadGate
-            result={threadLoadResult}
-            notificationSource={notificationSource}
-            threadId={threadId()}
-            linkId={threadData()?.link_id}
-            debounceTime={100}
-            onRetry={() => void threadQuery.refetch()}
-          >
-            <Show when={threadId()}>
-              {(id) => (
-                <Suspense fallback={<ContentLoading />}>
-                  <EmailBlockAdapter
-                    title={title()}
-                    threadId={id}
-                    source={source}
-                    threadTransport={() => threadQuery.transport}
-                  />
-                </Suspense>
-              )}
-            </Show>
-          </EmailThreadLoadGate>
-        </div>
-      </DocumentBlockContainer>
-    </Suspense>
+    <HotkeyScope scope={hotkeyScope}>
+      <Suspense fallback={<ContentLoading />}>
+        <DocumentBlockContainer
+          title={title() ?? 'Email'}
+          attachHotkeyScope={attachHotkeyScope}
+        >
+          <div class="size-full" tabIndex={-1}>
+            <EmailThreadLoadGate
+              result={threadLoadResult}
+              notificationSource={notificationSource}
+              threadId={threadId()}
+              linkId={threadData()?.link_id}
+              debounceTime={100}
+              onRetry={() => void threadQuery.refetch()}
+            >
+              <Show when={threadId()}>
+                {(id) => (
+                  <Suspense fallback={<ContentLoading />}>
+                    <EmailBlockAdapter
+                      title={title()}
+                      threadId={id}
+                      source={source}
+                      threadTransport={() => threadQuery.transport}
+                    />
+                  </Suspense>
+                )}
+              </Show>
+            </EmailThreadLoadGate>
+          </div>
+        </DocumentBlockContainer>
+      </Suspense>
+    </HotkeyScope>
   );
 }

@@ -11,6 +11,7 @@ import { useBlockId } from '@core/block';
 import { ProviderIcon } from '@core/component/AI/component/ProviderIcon';
 import { useChatInputContext } from '@core/component/AI/context';
 import { useOpenInstructionsMd } from '@core/component/AI/util/instructions';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -25,10 +26,12 @@ import ChatDebugIcon from '@phosphor/chat-text.svg';
 import Notepad from '@phosphor/notepad.svg';
 import type { Accessor } from 'solid-js';
 
-export function TopBar(props: {
-  showStreamDebug?: Accessor<boolean>;
-  toggleStreamDebug?: () => void;
-}) {
+export function TopBar(
+  props: ShareHostProps & {
+    showStreamDebug?: Accessor<boolean>;
+    toggleStreamDebug?: () => void;
+  }
+) {
   const blockId = useBlockId();
   const input = useChatInputContext();
 
@@ -41,6 +44,8 @@ export function TopBar(props: {
   const openShare = useShareModal(() => ({
     id: blockId,
     blockAlias: 'chat',
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'chat',
     name: name() ?? '',
     userPermissions: permissions(),
@@ -76,7 +81,14 @@ export function TopBar(props: {
       label: 'Share',
       icon: IconShared,
       action: openShare,
-      buttonComponent: () => <ShareTrigger onClick={openShare} />,
+      buttonComponent: () => (
+        <ShareTrigger
+          id={blockId}
+          blockType={'chat'}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+        />
+      ),
       focusTarget: getShareDrawerRecipientInput,
     },
   ];

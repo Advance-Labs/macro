@@ -1,7 +1,16 @@
 import { ForwardToChannel } from '@core/component/ForwardToChannel';
+import { HotkeyScope } from '@core/hotkey/HotkeyScope';
+import { queryClient } from '@queries/client';
+import { sharingKeys } from '@queries/sharing/keys';
+import {
+  invalidateSharePermissions,
+  type SharePermissions,
+  type SharePermissionsTarget,
+  useSharePermissionsQuery,
+} from '@queries/sharing/share-permissions';
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
 import { err, ok } from 'neverthrow';
-import { createSignal, For, type JSX } from 'solid-js';
+import { createRoot, createSignal, For, type JSX, Show } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Permissions } from '../SharePermissions';
 import { ShareModal, ShareOptions, ShareTrigger } from './ShareButton';
@@ -10,6 +19,7 @@ const ME = 'macro|me@example.com';
 const SOMEONE_ELSE = 'macro|someone-else@example.com';
 
 const mocks = vi.hoisted(() => ({
+  registerHotkey: vi.fn(),
   sendToChannel: vi.fn(),
   sendToUsers: vi.fn(),
   mobile: false,
@@ -33,10 +43,23 @@ const mocks = vi.hoisted(() => ({
   editProject: vi.fn(),
   editDocument: vi.fn(),
   copyLink: vi.fn(),
-  blockPermissionsRead: vi.fn(),
-  blockEditPermissionEnabled: true,
+  sharePermissionsRead: vi.fn(),
   inBlock: true,
 }));
+vi.mock('@queries/client', async () => {
+  const { QueryClient } = await import('@tanstack/solid-query');
+  return {
+    queryClient: new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Infinity,
+          refetchOnWindowFocus: false,
+        },
+      },
+    }),
+  };
+});
 vi.mock('@queries/storage/databases', () => ({
   getDatabaseSharePermissions: mocks.getDatabasePermissions,
   updateDatabaseSharePermissions: mocks.updateDatabasePermissions,
@@ -58,15 +81,6 @@ vi.mock('@core/block', () => ({
   isInBlock: () => mocks.inBlock,
   useBlockAliasedName: () => 'agent',
   useBlockId: () => 'launcher-placeholder',
-  createBlockEffect: vi.fn(),
-  createBlockResource: () => [
-    {
-      get latest() {
-        return mocks.blockPermissionsRead();
-      },
-    },
-    { refetch: vi.fn() },
-  ],
   useBlockName: () => 'md',
   useMaybeBlockName: () => 'md',
   useMaybeBlockAliasedName: () => 'md',
@@ -93,7 +107,7 @@ vi.mock('@core/component/RecipientSelector', () => ({
 }));
 
 vi.mock('@core/hotkey/hotkeys', () => ({
-  registerHotkey: vi.fn(),
+  registerHotkey: mocks.registerHotkey,
   useHotkeyDOMScope: () => [vi.fn(), 'share-scope'],
 }));
 vi.mock('@core/mobile/isMobile', () => ({ isMobile: () => mocks.mobile }));
@@ -165,12 +179,6 @@ vi.mock('@core/component/Tabs', () => ({
       </For>
     </div>
   ),
-}));
-vi.mock('@core/signal/blockElement', () => ({
-  blockHotkeyScopeSignal: { get: () => '' },
-}));
-vi.mock('@core/signal/load', () => ({
-  blockEditPermissionEnabledSignal: () => mocks.blockEditPermissionEnabled,
 }));
 vi.mock('@core/signal/permissions', () => ({
   useGetPermissions: () => () => 'owner',
@@ -315,12 +323,16 @@ vi.mock('@ui', async () => {
     SegmentedControl: (props: {
       'aria-label'?: string;
       onChange?: (value: string) => void;
+      options: { value: string; disabled?: boolean }[];
     }) => (
       <div role="group" aria-label={props['aria-label']}>
-        <For each={['NONE', 'PUBLIC', 'TEAM']}>
-          {(scope) => (
-            <button onClick={() => props.onChange?.(scope)}>
-              Set link {scope}
+        <For each={props.options}>
+          {(option) => (
+            <button
+              disabled={option.disabled}
+              onClick={() => props.onChange?.(option.value)}
+            >
+              Set link {option.value}
             </button>
           )}
         </For>
@@ -332,8 +344,9 @@ vi.mock('@ui', async () => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  queryClient.clear();
+  mocks.registerHotkey.mockImplementation(() => ({ dispose: vi.fn() }));
   mocks.inBlock = true;
-  mocks.blockEditPermissionEnabled = true;
   mocks.mobile = false;
   mocks.hasTeam = false;
   mocks.callRecordShared = true;
@@ -351,6 +364,9 @@ beforeEach(() => {
     ok({ id: 'project-permissions', owner: ME })
   );
   mocks.updateInitiativePermissions.mockResolvedValue(ok({}));
+  mocks.getDocumentPermissions.mockResolvedValue(
+    ok({ id: 'document-permissions', owner: ME, channelSharePermissions: [] })
+  );
   mocks.updateChatPermissions.mockResolvedValue({ isErr: () => false });
   mocks.updateCallTeamShare.mockResolvedValue({ isErr: () => false });
   mocks.editProject.mockResolvedValue({ isErr: () => false });
@@ -364,8 +380,11 @@ beforeEach(() => {
     navigateToChannel: vi.fn(),
   });
 });
-afterEach(cleanup);
-function mountShare(isOwner: boolean) {
+afterEach(() => {
+  cleanup();
+  queryClient.clear();
+});
+function mountShare(isOwner: boolean, sharePermissions?: SharePermissions) {
   const onOpenChange = vi.fn();
   const onCopyLink = mocks.copyLink;
   render(() => (
@@ -376,6 +395,7 @@ function mountShare(isOwner: boolean) {
       itemType="agent_session"
       blockAlias="agent"
       userPermissions={Permissions.OWNER}
+      sharePermissions={sharePermissions}
       open
       onOpenChange={onOpenChange}
     />
@@ -389,22 +409,19 @@ const share = () =>
 
 describe('agent session sharing', () => {
   it.each([false, true])(
-    'offers Edit for forwarding, people, and links when the legacy block disables editing (mobile: %s)',
+    'offers Edit for forwarding, people, and links without block context (mobile: %s)',
     async (mobile) => {
       mocks.mobile = mobile;
-      mocks.blockEditPermissionEnabled = false;
-      mocks.getAgentPermissions.mockResolvedValue(
-        ok({
-          id: 'session-permissions',
-          owner: ME,
-          linkShare: 'PUBLIC',
-          linkShareAccessLevel: 'view',
-          channelSharePermissions: [
-            { channel_id: 'shared-channel', access_level: 'view' },
-          ],
-        })
-      );
-      mountShare(true);
+      mocks.inBlock = false;
+      mountShare(true, {
+        id: 'session-permissions',
+        owner: ME,
+        linkShare: 'PUBLIC',
+        linkShareAccessLevel: 'view',
+        channelSharePermissions: [
+          { channel_id: 'shared-channel', access_level: 'view' },
+        ],
+      });
       const editOptions = () =>
         screen.getAllByRole('button', { name: 'Set option edit' });
       await vi.waitFor(() =>
@@ -462,7 +479,11 @@ describe('agent session sharing', () => {
     async (mobile) => {
       mocks.mobile = mobile;
       mocks.hasTeam = true;
-      mountShare(true);
+      mountShare(true, {
+        id: 'session-permissions',
+        owner: ME,
+        channelSharePermissions: [],
+      });
       if (mobile) fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
 
       fireEvent.click(screen.getByRole('button', { name: 'Set link PUBLIC' }));
@@ -591,7 +612,9 @@ describe('agent session sharing', () => {
 
   it('copies the saved session link from the shared header trigger', () => {
     const [id, setId] = createSignal('saved-session');
-    render(() => <ShareTrigger onClick={vi.fn()} id={id()} />);
+    render(() => (
+      <ShareTrigger onClick={vi.fn()} id={id()} blockType="agent" />
+    ));
     setId('current-session');
     fireEvent.click(screen.getByRole('button', { name: 'Copy Share Link' }));
     expect(mocks.copyLink).toHaveBeenCalledWith(
@@ -603,7 +626,7 @@ describe('agent session sharing', () => {
     expect(
       screen.getByText('People with access to this agent session')
     ).toBeTruthy();
-    expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
+    expect(mocks.sharePermissionsRead).not.toHaveBeenCalled();
     expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
     expect(mocks.getChatPermissions).not.toHaveBeenCalled();
     expect(mocks.getProjectPermissions).not.toHaveBeenCalled();
@@ -666,15 +689,20 @@ describe('agent session sharing', () => {
     share();
     expect(mocks.sendToChannel).toHaveBeenCalledOnce();
   });
-  it('keeps context identity for existing forwarding callers without overrides', () => {
-    render(() => <ForwardToChannel name="Document" hideAccessLevelSelector />);
+  it('forwards the explicit identity without an enclosing block', () => {
+    render(() => (
+      <ForwardToChannel
+        name="Document"
+        blockId="document-1"
+        blockName="md"
+        hideAccessLevelSelector
+      />
+    ));
     selectChannel();
     share();
     expect(mocks.sendToChannel).toHaveBeenCalledWith(
       expect.objectContaining({
-        attachments: [
-          { entity_type: 'document', entity_id: 'launcher-placeholder' },
-        ],
+        attachments: [{ entity_type: 'document', entity_id: 'document-1' }],
       })
     );
   });
@@ -703,14 +731,12 @@ describe('agent session sharing', () => {
 
 describe('share edit availability', () => {
   it.each([
-    { legacy: false, explicit: undefined, expected: false },
-    { legacy: true, explicit: undefined, expected: true },
-    { legacy: false, explicit: true, expected: true },
-    { legacy: true, explicit: false, expected: false },
-  ])('honors capability overrides: %j', ({ legacy, explicit, expected }) => {
-    mocks.blockEditPermissionEnabled = legacy;
+    { edit: undefined, expected: true },
+    { edit: true, expected: true },
+    { edit: false, expected: false },
+  ])('honors explicit grant options: %j', ({ edit, expected }) => {
     render(() => (
-      <ShareOptions editPermissionEnabled={explicit} setPermissions={vi.fn()} />
+      <ShareOptions permissionOptions={{ edit }} setPermissions={vi.fn()} />
     ));
     expect(
       screen.queryByRole('button', { name: 'Set option edit' }) !== null
@@ -719,19 +745,17 @@ describe('share edit availability', () => {
 });
 
 function mountChatShare() {
-  mocks.blockPermissionsRead.mockReturnValue({
-    isErr: () => false,
-    value: {
-      id: 'perm-1',
-      owner: ME,
-      linkShare: null,
-      linkShareAccessLevel: null,
-      teamShareAccessLevel: 'view',
-      channelSharePermissions: [],
-    },
+  mocks.sharePermissionsRead.mockReturnValue({
+    id: 'perm-1',
+    owner: ME,
+    linkShare: null,
+    linkShareAccessLevel: null,
+    teamShareAccessLevel: 'view',
+    channelSharePermissions: [],
   });
   render(() => (
     <ShareModal
+      sharePermissions={mocks.sharePermissionsRead()}
       id="chat-1"
       name="Planning chat"
       owner={ME}
@@ -745,19 +769,17 @@ function mountChatShare() {
 }
 
 function mountCallShare() {
-  mocks.blockPermissionsRead.mockReturnValue({
-    isErr: () => false,
-    value: {
-      id: 'perm-call',
-      owner: ME,
-      linkShare: null,
-      linkShareAccessLevel: null,
-      teamShareAccessLevel: 'view',
-      channelSharePermissions: [],
-    },
+  mocks.sharePermissionsRead.mockReturnValue({
+    id: 'perm-call',
+    owner: ME,
+    linkShare: null,
+    linkShareAccessLevel: null,
+    teamShareAccessLevel: 'view',
+    channelSharePermissions: [],
   });
   render(() => (
     <ShareModal
+      sharePermissions={mocks.sharePermissionsRead()}
       id="call-1"
       name="Weekly sync"
       owner={ME}
@@ -935,19 +957,17 @@ describe('chat team sharing', () => {
 });
 
 function mountProjectShare() {
-  mocks.blockPermissionsRead.mockReturnValue({
-    isErr: () => false,
-    value: {
-      id: 'perm-project',
-      owner: ME,
-      linkShare: null,
-      linkShareAccessLevel: null,
-      teamShareAccessLevel: 'view',
-      channelSharePermissions: [],
-    },
+  mocks.sharePermissionsRead.mockReturnValue({
+    id: 'perm-project',
+    owner: ME,
+    linkShare: null,
+    linkShareAccessLevel: null,
+    teamShareAccessLevel: 'view',
+    channelSharePermissions: [],
   });
   render(() => (
     <ShareModal
+      sharePermissions={mocks.sharePermissionsRead()}
       id="project-1"
       name="Launch folder"
       owner={ME}
@@ -1049,6 +1069,7 @@ describe('native project sharing', () => {
       owner?: string;
       people?: () => JSX.Element;
       hasDirectShares?: boolean;
+      sharePermissions?: SharePermissions;
     } = {}
   ) {
     mocks.inBlock = false;
@@ -1065,6 +1086,7 @@ describe('native project sharing', () => {
         }
         people={options.people}
         hasDirectShares={options.hasDirectShares}
+        sharePermissions={options.sharePermissions}
         open
         onOpenChange={vi.fn()}
       />
@@ -1099,7 +1121,7 @@ describe('native project sharing', () => {
       }
     );
     expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
-    expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
+    expect(mocks.sharePermissionsRead).not.toHaveBeenCalled();
   });
 
   it('does not post the project when its grant fails', async () => {
@@ -1134,18 +1156,17 @@ describe('native project sharing', () => {
 
   it('changes team, link and channel grants through the project', async () => {
     mocks.hasTeam = true;
-    mocks.getInitiativePermissions.mockResolvedValue(
-      ok({
+    mountProject({
+      sharePermissions: {
         id: 'project-permissions',
         owner: ME,
         teamShareAccessLevel: 'view',
         channelSharePermissions: [
           { channel_id: 'channel-1', access_level: 'edit' },
         ],
-      })
-    );
-    mountProject();
-    // The recipient row appears once the project's grants have loaded.
+      },
+    });
+    // The consumer supplies the project's loaded grants.
     await screen.findByRole('button', { name: 'Set option none' });
     fireEvent.click(
       screen.getByRole('button', { name: 'Set Team access level edit' })
@@ -1213,13 +1234,15 @@ describe('native project sharing', () => {
   });
 });
 
-it('database sharing reads its block permissions and disables public links', () => {
-  mocks.blockPermissionsRead.mockReturnValue({
-    isErr: () => false,
-    value: { id: 'database-id', owner: 'owner', channelSharePermissions: [] },
+it('database sharing uses its supplied permissions without another fetch and disables public links', () => {
+  mocks.sharePermissionsRead.mockReturnValue({
+    id: 'database-id',
+    owner: 'owner',
+    channelSharePermissions: [],
   });
   render(() => (
     <ShareModal
+      sharePermissions={mocks.sharePermissionsRead()}
       id="database-id"
       itemType="database"
       blockAlias="database"
@@ -1230,7 +1253,882 @@ it('database sharing reads its block permissions and disables public links', () 
       onOpenChange={() => {}}
     />
   ));
-  expect(mocks.blockPermissionsRead).toHaveBeenCalled();
+  expect(mocks.sharePermissionsRead).toHaveBeenCalled();
   expect(mocks.getDatabasePermissions).not.toHaveBeenCalled();
   expect(screen.queryByText('Anyone with the link')).toBeNull();
+});
+
+describe('explicit sharing ownership', () => {
+  it.each([false, true])(
+    'waits for fallback grants before showing or changing link access (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      let resolvePermissions!: (value: SharePermissions) => void;
+      const permissions = new Promise<SharePermissions>((resolve) => {
+        resolvePermissions = resolve;
+      });
+      mocks.getDocumentPermissions.mockImplementation(async () =>
+        ok(await permissions)
+      );
+      render(() => (
+        <ShareModal
+          id="pending-document"
+          blockAlias="md"
+          itemType="document"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          sharePermissions={undefined}
+          open
+          onOpenChange={vi.fn()}
+        />
+      ));
+      if (mobile) fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
+      const publicButton = () =>
+        screen.getByRole('button', { name: 'Set link PUBLIC' });
+      expect(publicButton().hasAttribute('disabled')).toBe(true);
+      expect(screen.getByText('Loading access')).toBeTruthy();
+      expect(screen.queryByText('Just me')).toBeNull();
+      fireEvent.click(publicButton());
+      expect(mocks.editDocument).not.toHaveBeenCalled();
+
+      resolvePermissions({
+        id: 'grants',
+        owner: ME,
+        linkShare: 'PUBLIC',
+        linkShareAccessLevel: 'edit',
+      });
+      await vi.waitFor(() =>
+        expect(publicButton().hasAttribute('disabled')).toBe(false)
+      );
+      expect(screen.getByText('Public')).toBeTruthy();
+      expect(screen.queryByText('Loading access')).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Set link NONE' }));
+      await vi.waitFor(() =>
+        expect(mocks.editDocument).toHaveBeenCalledWith({
+          documentId: 'pending-document',
+          sharePermission: { linkShare: null, linkShareAccessLevel: null },
+        })
+      );
+    }
+  );
+
+  it.each([false, true])(
+    'uses cached fallback grants when the override is undefined (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      mocks.hasTeam = true;
+      queryClient.setQueryData(
+        sharingKeys.permissions('document', 'external-document').queryKey,
+        { id: 'cached-grants', owner: ME, linkShare: 'PUBLIC' }
+      );
+      render(() => (
+        <ShareModal
+          id="external-document"
+          blockAlias="md"
+          itemType="document"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          sharePermissions={undefined}
+          open
+          onOpenChange={vi.fn()}
+        />
+      ));
+      if (mobile) fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
+      const button = screen.getByRole('button', { name: 'Set link PUBLIC' });
+      expect(button.hasAttribute('disabled')).toBe(false);
+      expect(screen.queryByText('Access unavailable')).toBeNull();
+      expect(screen.queryByText('Just me')).toBeNull();
+      expect(screen.getByText('Public')).toBeTruthy();
+      expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([false, true])(
+    'does not present failed grant reads as private access (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      mocks.getDocumentPermissions.mockResolvedValue(
+        err([{ code: 'FORBIDDEN', message: 'Access denied' }])
+      );
+      render(() => (
+        <ShareModal
+          id="denied-document"
+          blockAlias="md"
+          itemType="document"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          open
+          onOpenChange={vi.fn()}
+        />
+      ));
+      if (mobile) fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
+      await vi.waitFor(() =>
+        expect(screen.getByText('Access unavailable')).toBeTruthy()
+      );
+      expect(screen.queryByText('Just me')).toBeNull();
+      const button = screen.getByRole('button', { name: 'Set link PUBLIC' });
+      expect(button.hasAttribute('disabled')).toBe(true);
+      fireEvent.click(button);
+      expect(mocks.editDocument).not.toHaveBeenCalled();
+    }
+  );
+  it('shares the UI-owned query between the trigger and modal without caller fetching', async () => {
+    const [open, setOpen] = createSignal(false);
+    render(() => (
+      <>
+        <ShareTrigger
+          id="ui-owned-document"
+          blockType="md"
+          onClick={() => setOpen(true)}
+        />
+        <Show when={open()}>
+          <ShareModal
+            id="ui-owned-document"
+            blockAlias="md"
+            itemType="document"
+            name="Document"
+            owner={ME}
+            userPermissions={Permissions.OWNER}
+            open
+            onOpenChange={setOpen}
+          />
+        </Show>
+      </>
+    ));
+    await vi.waitFor(() =>
+      expect(
+        queryClient.getQueryState(
+          sharingKeys.permissions('document', 'ui-owned-document').queryKey
+        )?.status
+      ).toBe('success')
+    );
+    setOpen(true);
+    setOpen(false);
+    setOpen(true);
+    await Promise.resolve();
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches trigger grants when the override is undefined', async () => {
+    render(() => (
+      <ShareTrigger
+        id="externally-owned-document"
+        blockType="md"
+        sharePermissions={undefined}
+        onClick={vi.fn()}
+      />
+    ));
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'externally-owned-document',
+      })
+    );
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers sharing shortcuts on the nearest host scope without scope props', () => {
+    const view = render(() => (
+      <HotkeyScope scope="split-scope">
+        <HotkeyScope scope="preview-scope">
+          <ShareTrigger id="document" blockType="md" onClick={vi.fn()} />
+        </HotkeyScope>
+      </HotkeyScope>
+    ));
+    expect(mocks.registerHotkey).toHaveBeenCalledOnce();
+    expect(mocks.registerHotkey).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeId: 'preview-scope' })
+    );
+    const registration = mocks.registerHotkey.mock.results[0].value;
+    view.unmount();
+    expect(registration.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('uses an explicit shortcut scope instead of the inherited host scope', () => {
+    render(() => (
+      <HotkeyScope scope="split-scope">
+        <ShareTrigger
+          id="document"
+          blockType="md"
+          hotkeyScope="explicit-scope"
+          onClick={vi.fn()}
+        />
+      </HotkeyScope>
+    ));
+    expect(mocks.registerHotkey).toHaveBeenCalledWith(
+      expect.objectContaining({ scopeId: 'explicit-scope' })
+    );
+  });
+  it('registers delayed and replaced hotkey scopes and disposes with the trigger', () => {
+    const [scope, setScope] = createSignal<string>();
+    const [id, setId] = createSignal('first-document');
+    const view = render(() => (
+      <ShareTrigger
+        id={id()}
+        blockType="md"
+        hotkeyScope={scope()}
+        sharePermissions={undefined}
+        onClick={vi.fn()}
+      />
+    ));
+    expect(mocks.registerHotkey).not.toHaveBeenCalled();
+    setScope('first-scope');
+    expect(mocks.registerHotkey).toHaveBeenCalledTimes(1);
+    const first = mocks.registerHotkey.mock.results[0].value;
+    setId('second-document');
+    expect(mocks.registerHotkey).toHaveBeenCalledTimes(1);
+    setScope('second-scope');
+    expect(first.dispose).toHaveBeenCalledOnce();
+    expect(mocks.registerHotkey).toHaveBeenCalledTimes(2);
+    expect(mocks.registerHotkey).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scopeId: 'second-scope' })
+    );
+    const second = mocks.registerHotkey.mock.results[1].value;
+    view.unmount();
+    expect(second.dispose).toHaveBeenCalledOnce();
+  });
+  it('shares one host fetch across its trigger and repeated modal mounts', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({ id: 'grants', owner: ME, channelSharePermissions: [] })
+    );
+    const [open, setOpen] = createSignal(false);
+    const host = render(() => {
+      const permissionsQuery = useSharePermissionsQuery(
+        () => ({
+          id: 'document-1',
+          itemType: 'document',
+        }),
+        { enabled: () => true }
+      );
+      return (
+        <>
+          <ShareTrigger
+            id="document-1"
+            blockType="md"
+            sharePermissions={
+              permissionsQuery.isSuccess ? permissionsQuery.data : undefined
+            }
+            onClick={() => setOpen(true)}
+          />
+          <Show when={open()}>
+            <ShareModal
+              id="document-1"
+              blockAlias="md"
+              itemType="document"
+              name="Document"
+              owner={ME}
+              userPermissions={Permissions.OWNER}
+              sharePermissions={
+                permissionsQuery.isSuccess ? permissionsQuery.data : undefined
+              }
+              open
+              onOpenChange={setOpen}
+            />
+          </Show>
+        </>
+      );
+    });
+    await vi.waitFor(() =>
+      expect(
+        queryClient.getQueryState(
+          sharingKeys.permissions('document', 'document-1').queryKey
+        )?.status
+      ).toBe('success')
+    );
+    setOpen(true);
+    setOpen(false);
+    setOpen(true);
+    await Promise.resolve();
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+    await invalidateSharePermissions({
+      id: 'document-1',
+      itemType: 'document',
+    });
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2)
+    );
+    host.unmount();
+    await invalidateSharePermissions({
+      id: 'document-1',
+      itemType: 'document',
+    });
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  it('prefers supplied grants over cached grants and follows override updates', async () => {
+    queryClient.setQueryData(
+      sharingKeys.permissions('document', 'host-owned-document').queryKey,
+      {
+        id: 'cached-grants',
+        owner: ME,
+        channelSharePermissions: [
+          { channel_id: 'cached-channel', access_level: 'view' },
+        ],
+      }
+    );
+    const [grants, setGrants] = createSignal<SharePermissions>({
+      id: 'initial-host-grants',
+      owner: ME,
+      channelSharePermissions: [],
+    });
+    render(() => (
+      <ShareModal
+        id="host-owned-document"
+        blockAlias="md"
+        itemType="document"
+        name="Document"
+        owner={ME}
+        userPermissions={Permissions.OWNER}
+        sharePermissions={grants()}
+        open
+        onOpenChange={vi.fn()}
+      />
+    ));
+    expect(
+      screen.queryByRole('button', { name: 'Set option none' })
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Select channel' })).toBeTruthy();
+    await invalidateSharePermissions({
+      id: 'host-owned-document',
+      itemType: 'document',
+    });
+    expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+    setGrants({
+      id: 'host-grants',
+      owner: ME,
+      channelSharePermissions: [
+        { channel_id: 'host-channel', access_level: 'view' },
+      ],
+    });
+    expect(
+      screen.getByRole('button', { name: 'Set option none' })
+    ).toBeTruthy();
+    expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+  });
+
+  it('starts fallback fetching when the host clears its grants', async () => {
+    const [grants, setGrants] = createSignal<SharePermissions | undefined>({
+      id: 'host-grants',
+      owner: ME,
+      linkShare: 'PUBLIC',
+    });
+    render(() => (
+      <ShareModal
+        id="cleared-host-document"
+        blockAlias="md"
+        itemType="document"
+        name="Document"
+        owner={ME}
+        userPermissions={Permissions.OWNER}
+        sharePermissions={grants()}
+        open
+        onOpenChange={vi.fn()}
+      />
+    ));
+    expect(screen.getByText('Public')).toBeTruthy();
+    expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+    setGrants(undefined);
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'cleared-host-document',
+      })
+    );
+    await vi.waitFor(() => expect(screen.getByText('Just me')).toBeTruthy());
+    expect(screen.queryByText('Public')).toBeNull();
+  });
+
+  it('does not fetch again while a supplied host query is pending', async () => {
+    const grants = ok({ id: 'grants', owner: ME, channelSharePermissions: [] });
+    let resolve!: (value: typeof grants) => void;
+    mocks.getDocumentPermissions.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    render(() => {
+      const permissionsQuery = useSharePermissionsQuery(
+        () => ({
+          id: 'pending-document',
+          itemType: 'document',
+        }),
+        { enabled: () => true }
+      );
+      return (
+        <ShareModal
+          id="pending-document"
+          blockAlias="md"
+          itemType="document"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          sharePermissions={
+            permissionsQuery.isSuccess ? permissionsQuery.data : undefined
+          }
+          open
+          onOpenChange={vi.fn()}
+        />
+      );
+    });
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+    resolve(grants);
+    await Promise.resolve();
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches undefined non-owner grants across identity changes', async () => {
+    const [id, setId] = createSignal('host-non-owner-document');
+    render(() => (
+      <ShareModal
+        id={id()}
+        blockAlias="md"
+        itemType="document"
+        name="Document"
+        owner={SOMEONE_ELSE}
+        userPermissions={Permissions.CAN_VIEW}
+        sharePermissions={undefined}
+        open
+        onOpenChange={vi.fn()}
+      />
+    ));
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'host-non-owner-document',
+      })
+    );
+    setId('second-host-non-owner-document');
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'second-host-non-owner-document',
+      })
+    );
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches and invalidates a direct modal query when sharePermissions is omitted', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({ id: 'grants', owner: ME, channelSharePermissions: [] })
+    );
+    render(() => (
+      <ShareModal
+        id="direct-document"
+        blockAlias="md"
+        itemType="document"
+        name="Document"
+        owner={ME}
+        userPermissions={Permissions.OWNER}
+        open
+        onOpenChange={vi.fn()}
+      />
+    ));
+    await vi.waitFor(() =>
+      expect(
+        queryClient.getQueryState(
+          sharingKeys.permissions('document', 'direct-document').queryKey
+        )?.status
+      ).toBe('success')
+    );
+    await invalidateSharePermissions({
+      id: 'direct-document',
+      itemType: 'document',
+    });
+    expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetches permissions for a direct non-owner modal', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({
+        id: 'non-owner-grants',
+        owner: SOMEONE_ELSE,
+        channelSharePermissions: [],
+      })
+    );
+    render(() => (
+      <ShareModal
+        id="non-owner-document"
+        blockAlias="md"
+        itemType="document"
+        name="Document"
+        owner={SOMEONE_ELSE}
+        userPermissions={Permissions.CAN_VIEW}
+        open
+        onOpenChange={vi.fn()}
+      />
+    ));
+    await vi.waitFor(() =>
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'non-owner-document',
+      })
+    );
+  });
+
+  it.each([
+    { id: 'call-1', itemType: 'call' },
+    { id: 'email-1', itemType: 'email' },
+    { id: 'channel-1', itemType: 'channel' },
+    { id: '', itemType: 'agent_session' },
+    { id: '', itemType: 'initiative' },
+    { id: '', itemType: 'database' },
+    { id: '', itemType: 'chat' },
+    { id: '', itemType: 'document' },
+    { id: '', itemType: 'project' },
+    { id: 'trash', itemType: 'project' },
+  ] satisfies SharePermissionsTarget[])(
+    'disables ineligible permission targets with caller fetching enabled: %j',
+    async (target) => {
+      let query!: ReturnType<typeof useSharePermissionsQuery>;
+      let dispose!: () => void;
+      createRoot((cleanup) => {
+        dispose = cleanup;
+        query = useSharePermissionsQuery(() => target, {
+          enabled: () => true,
+        });
+      });
+      try {
+        await invalidateSharePermissions(target);
+        expect(query.isPending).toBe(true);
+        expect(query.isFetching).toBe(false);
+        for (const fetch of [
+          mocks.getAgentPermissions,
+          mocks.getInitiativePermissions,
+          mocks.getDatabasePermissions,
+          mocks.getChatPermissions,
+          mocks.getDocumentPermissions,
+          mocks.getProjectPermissions,
+        ]) {
+          expect(fetch).not.toHaveBeenCalled();
+        }
+      } finally {
+        dispose();
+      }
+    }
+  );
+
+  it('reevaluates permission target eligibility when the ID or item type changes', async () => {
+    mocks.getProjectPermissions.mockResolvedValue(
+      ok({ id: 'folder-grants', owner: ME, channelSharePermissions: [] })
+    );
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({ id: 'document-grants', owner: ME, channelSharePermissions: [] })
+    );
+    const [target, setTarget] = createSignal<SharePermissionsTarget>({
+      id: 'trash',
+      itemType: 'project',
+    });
+    let query!: ReturnType<typeof useSharePermissionsQuery>;
+    let dispose!: () => void;
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      query = useSharePermissionsQuery(target, { enabled: () => true });
+    });
+    try {
+      expect(mocks.getProjectPermissions).not.toHaveBeenCalled();
+      setTarget({ id: 'folder-1', itemType: 'project' });
+      await vi.waitFor(() => expect(query.isSuccess).toBe(true));
+      expect(mocks.getProjectPermissions).toHaveBeenCalledWith({
+        id: 'folder-1',
+      });
+      setTarget({ id: '', itemType: 'project' });
+      await invalidateSharePermissions(target());
+      expect(mocks.getProjectPermissions).toHaveBeenCalledTimes(1);
+      expect(query.isPending).toBe(true);
+      setTarget({ id: 'trash', itemType: 'email' });
+      await invalidateSharePermissions(target());
+      expect(query.isPending).toBe(true);
+      setTarget({ id: 'trash', itemType: 'document' });
+      await vi.waitFor(() => expect(query.isSuccess).toBe(true));
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledWith({
+        document_id: 'trash',
+      });
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('gates fetching on the supplied owner capability and hides stale grants', async () => {
+    mocks.getDocumentPermissions.mockImplementation(
+      async ({ document_id }: { document_id: string }) =>
+        ok({
+          id: document_id,
+          owner: ME,
+          channelSharePermissions: [],
+        })
+    );
+    const [isOwner, setIsOwner] = createSignal(false);
+    const [id, setId] = createSignal('first-document');
+    let query!: ReturnType<typeof useSharePermissionsQuery>;
+    let dispose!: () => void;
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      query = useSharePermissionsQuery(
+        () => ({ id: id(), itemType: 'document' }),
+        { enabled: isOwner }
+      );
+    });
+    try {
+      expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+      setIsOwner(true);
+      await vi.waitFor(() =>
+        expect(isOwner() && query.isSuccess ? query.data?.id : undefined).toBe(
+          'first-document'
+        )
+      );
+      setId('second-document');
+      expect(
+        isOwner() && query.isSuccess ? query.data : undefined
+      ).toBeUndefined();
+      await vi.waitFor(() =>
+        expect(isOwner() && query.isSuccess ? query.data?.id : undefined).toBe(
+          'second-document'
+        )
+      );
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+      setIsOwner(false);
+      expect(
+        isOwner() && query.isSuccess ? query.data : undefined
+      ).toBeUndefined();
+      await invalidateSharePermissions({
+        id: 'second-document',
+        itemType: 'document',
+      });
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('keeps two queries isolated and refetches only active owners', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({ id: 'grants', owner: ME, channelSharePermissions: [] })
+    );
+    const disposers: (() => void)[] = [];
+    for (const id of ['first-document', 'second-document']) {
+      createRoot((dispose) => {
+        disposers.push(dispose);
+        useSharePermissionsQuery(() => ({ id, itemType: 'document' }), {
+          enabled: () => true,
+        });
+      });
+    }
+    try {
+      await vi.waitFor(() => {
+        for (const id of ['first-document', 'second-document']) {
+          expect(
+            queryClient.getQueryState(
+              sharingKeys.permissions('document', id).queryKey
+            )?.status
+          ).toBe('success');
+        }
+      });
+      disposers[0]();
+      await invalidateSharePermissions({
+        id: 'first-document',
+        itemType: 'document',
+      });
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+      await invalidateSharePermissions({
+        id: 'second-document',
+        itemType: 'document',
+      });
+      await vi.waitFor(() =>
+        expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(3)
+      );
+      expect(mocks.getDocumentPermissions).toHaveBeenLastCalledWith({
+        document_id: 'second-document',
+      });
+    } finally {
+      for (const dispose of disposers) dispose();
+    }
+  });
+  it('deduplicates separate owners of the same permissions query', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      ok({ id: 'grants', owner: ME, channelSharePermissions: [] })
+    );
+    const disposers: (() => void)[] = [];
+    const queries: ReturnType<typeof useSharePermissionsQuery>[] = [];
+    for (let index = 0; index < 2; index++) {
+      createRoot((dispose) => {
+        disposers.push(dispose);
+        queries.push(
+          useSharePermissionsQuery(
+            () => ({
+              id: 'same-document',
+              itemType: 'document',
+            }),
+            { enabled: () => true }
+          )
+        );
+      });
+    }
+    try {
+      await vi.waitFor(() => {
+        expect(
+          queries.every(
+            (query) => query.isSuccess && query.data?.id === 'grants'
+          )
+        ).toBe(true);
+      });
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(1);
+      await invalidateSharePermissions({
+        id: 'same-document',
+        itemType: 'document',
+      });
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledTimes(2);
+    } finally {
+      for (const dispose of disposers) dispose();
+    }
+  });
+
+  it('keeps failed permission requests in query error state without exposing grants', async () => {
+    mocks.getDocumentPermissions.mockResolvedValue(
+      err([{ code: 'FORBIDDEN', message: 'Access denied' }])
+    );
+    let query!: ReturnType<typeof useSharePermissionsQuery>;
+    let dispose!: () => void;
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      query = useSharePermissionsQuery(
+        () => ({
+          id: 'denied-document',
+          itemType: 'document',
+        }),
+        { enabled: () => true }
+      );
+    });
+    try {
+      await vi.waitFor(() =>
+        expect(
+          queryClient.getQueryCache().find({
+            queryKey: sharingKeys.permissions('document', 'denied-document')
+              .queryKey,
+          })?.state.status
+        ).toBe('error')
+      );
+      expect(query.isSuccess).toBe(false);
+      expect(mocks.getDocumentPermissions).toHaveBeenCalledOnce();
+    } finally {
+      dispose();
+    }
+  });
+
+  it.each([false, true])(
+    'applies combined grant options across sharing controls (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      render(() => (
+        <ShareModal
+          id="options-document"
+          itemType="document"
+          blockAlias="md"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          permissionOptions={{ edit: false, comment: false }}
+          sharePermissions={{
+            id: 'grants',
+            owner: ME,
+            linkShare: 'PUBLIC',
+            linkShareAccessLevel: 'view',
+            channelSharePermissions: [
+              { channel_id: 'shared-channel', access_level: 'view' },
+            ],
+          }}
+          open
+          onOpenChange={vi.fn()}
+        />
+      ));
+      for (const tab of mobile ? ['Share', 'People', 'Link'] : ['Share']) {
+        if (mobile) fireEvent.click(screen.getByRole('tab', { name: tab }));
+        expect(
+          screen.getAllByRole('button', { name: 'Set option view' }).length
+        ).toBeGreaterThan(0);
+        expect(
+          screen.queryByRole('button', { name: 'Set option edit' })
+        ).toBeNull();
+        expect(
+          screen.queryByRole('button', { name: 'Set option comment' })
+        ).toBeNull();
+      }
+    }
+  );
+
+  it.each([false, true])(
+    'matches disabled-comment grant labels in link-scope notifications (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      mocks.hasTeam = true;
+      render(() => (
+        <ShareModal
+          id="comment-grant-document"
+          itemType="document"
+          blockAlias="md"
+          name="Document"
+          owner={ME}
+          userPermissions={Permissions.OWNER}
+          permissionOptions={{ comment: false }}
+          sharePermissions={{
+            id: 'comment-grants',
+            owner: ME,
+            linkShare: 'TEAM',
+            linkShareAccessLevel: 'comment',
+            channelSharePermissions: [],
+          }}
+          open
+          onOpenChange={vi.fn()}
+        />
+      ));
+      if (mobile) fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
+      expect(screen.getAllByText('View').length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole('button', { name: 'Set link PUBLIC' }));
+      const { toast } = await import('@core/component/Toast/Toast');
+      await vi.waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          'Updated Public link sharing',
+          { subtext: 'Anyone with the link can view this document' }
+        )
+      );
+      expect(mocks.editDocument).toHaveBeenCalledWith({
+        documentId: 'comment-grant-document',
+        sharePermission: {
+          linkShare: 'PUBLIC',
+          linkShareAccessLevel: 'comment',
+        },
+      });
+    }
+  );
+
+  it('updates both grant options from one reactive permissionOptions prop', () => {
+    const [options, setOptions] = createSignal({ edit: false, comment: false });
+    render(() => (
+      <ShareOptions permissionOptions={options()} setPermissions={vi.fn()} />
+    ));
+    expect(
+      screen.queryByRole('button', { name: 'Set option edit' })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Set option comment' })
+    ).toBeNull();
+    setOptions({ edit: true, comment: true });
+    expect(
+      screen.getByRole('button', { name: 'Set option edit' })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Set option comment' })
+    ).toBeTruthy();
+  });
+  it('uses explicit comment capability for options and existing comment labels', () => {
+    render(() => (
+      <ShareOptions
+        permissionOptions={{ comment: false }}
+        permissions="comment"
+        setPermissions={vi.fn()}
+      />
+    ));
+    expect(
+      screen.queryByRole('button', { name: 'Set option comment' })
+    ).toBeNull();
+    expect(screen.getAllByText('View')).toHaveLength(2);
+  });
 });

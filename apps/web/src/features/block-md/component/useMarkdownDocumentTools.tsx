@@ -6,6 +6,7 @@ import {
 import type { BlockTool } from '@components/app/ResponsiveBlockToolbar';
 import type { FileOperation } from '@components/app/split-layout/components/SplitFileMenu';
 import { Permissions } from '@core/component/SharePermissions';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -33,7 +34,7 @@ import {
 import { useMarkdownName } from './MarkdownNameProvider';
 import { useDownloadDocumentAsMarkdownText } from './useMarkdownDocumentDownload';
 
-function useMarkdownShareModal() {
+function useMarkdownShareModal(props: ShareHostProps) {
   const { documentId, kind, permissions } = useMarkdownDocument();
   const { displayName } = useMarkdownName();
   const metadataQuery = useDocumentMetadataQuery(documentId);
@@ -51,6 +52,8 @@ function useMarkdownShareModal() {
       id: documentId(),
       blockAlias: documentKind === 'document' ? 'md' : documentKind,
       itemType: 'document',
+      sharePermissions: props.sharePermissions,
+      permissionOptions: props.permissionOptions,
       name: displayName() ?? '',
       userPermissions: userPermissions(),
       owner: queryReadyGate(metadataQuery)
@@ -60,15 +63,19 @@ function useMarkdownShareModal() {
   });
 }
 
-export function useMarkdownDocumentTools() {
+export function useMarkdownDocumentTools(props: ShareHostProps = {}) {
   const { documentId, kind, element } = useMarkdownDocument();
   const history = useHistory();
   const { displayName } = useMarkdownName();
   const downloadAsMarkdownText = useDownloadDocumentAsMarkdownText();
-  const openShare = useMarkdownShareModal();
+  const openShare = useMarkdownShareModal(props);
   const dispatchAgentActions = useDispatchAgentSplitFileActions();
   const isTask = kind() === 'task';
   const isDocument = kind() === 'document';
+  const shareBlockType = () => {
+    const current = kind();
+    return current === 'document' ? 'md' : current;
+  };
 
   const chatEntity = () => ({
     type: 'document' as const,
@@ -125,7 +132,14 @@ export function useMarkdownDocumentTools() {
       label: 'Share',
       icon: IconLink,
       action: openShare,
-      buttonComponent: () => <ShareTrigger onClick={openShare} />,
+      buttonComponent: () => (
+        <ShareTrigger
+          onClick={openShare}
+          id={documentId()}
+          blockType={shareBlockType()}
+          sharePermissions={props.sharePermissions}
+        />
+      ),
       focusTarget: getShareDrawerRecipientInput,
     },
   ];

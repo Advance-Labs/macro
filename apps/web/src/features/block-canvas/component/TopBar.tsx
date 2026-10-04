@@ -16,6 +16,7 @@ import {
 import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
 import { useBlockId } from '@core/block';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -39,7 +40,7 @@ import { useCanvasDocument } from '../context/canvas-document-context';
 import { useToolManager } from '../signal/toolManager';
 import { useRenderState } from '../store/RenderState';
 
-export function TopBar() {
+export function TopBar(props: ShareHostProps) {
   const analytics = useAnalytics();
 
   const toolManager = useToolManager();
@@ -55,6 +56,8 @@ export function TopBar() {
   const openShare = useShareModal(() => ({
     id: documentId,
     blockAlias: 'canvas',
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'document',
     name: fileName() ?? '',
     userPermissions: permissions(),
@@ -120,7 +123,13 @@ export function TopBar() {
       action: openShare,
       condition: () => !!canvasFile(),
       buttonComponent: () => (
-        <ShareTrigger onClick={openShare} copyLink={copyLink} />
+        <ShareTrigger
+          id={documentId}
+          blockType={'canvas'}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+          copyLink={copyLink}
+        />
       ),
       focusTarget: getShareDrawerRecipientInput,
     },

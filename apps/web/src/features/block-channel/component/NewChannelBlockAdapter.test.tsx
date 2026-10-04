@@ -36,9 +36,6 @@ vi.mock('@core/orchestrator', () => ({
 vi.mock('@core/signal/load', () => ({
   blockHandleSignal: { get: () => undefined },
 }));
-vi.mock('@core/signal/blockElement', () => ({
-  blockHotkeyScopeSignal: { set: () => {} },
-}));
 vi.mock('@solidjs/router', () => ({
   useSearchParams: () => [{}, () => {}],
 }));

@@ -20,7 +20,6 @@ export const definition = defineBlock({
   // A database is not a soup entity and not a cloud-storage item, so the
   // open-tracking path (history row + soup refetch) has nothing to write.
   openTrackingEnabled: false,
-  editPermissionEnabled: true,
   async load(source, _intent) {
     if (!(await waitForDatabaseRollout())) return LoadErrors.MISSING;
     if (source.type !== 'dss') return LoadErrors.MISSING;

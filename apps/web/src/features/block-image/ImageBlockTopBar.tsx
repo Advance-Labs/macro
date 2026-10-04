@@ -120,7 +120,6 @@ export function ImageBlockTopBar(props: {
           onClick={openShare}
           id={props.documentId}
           blockType="image"
-          hotkeyScope={panel.splitHotkeyScope}
         />
         <SidePanel.Toggle />
       </SplitHeaderRight>

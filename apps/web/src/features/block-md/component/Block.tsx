@@ -11,10 +11,14 @@ import { useCanAutofocusSplitContent } from '@components/app/split-layout/layout
 import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useBlockAliasedName, useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
-import { ENABLE_MARKDOWN_SIDE_PANEL } from '@core/constant/featureFlags';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
+import {
+  ENABLE_MARKDOWN_LIVE_COLLABORATION,
+  ENABLE_MARKDOWN_SIDE_PANEL,
+} from '@core/constant/featureFlags';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { blockDataSignal as blockLoaderDataSignal } from '@core/internal/BlockLoader';
 import { createMethodRegistration } from '@core/orchestrator';
-import { blockHotkeyScopeSignal } from '@core/signal/blockElement';
 import {
   blockErrorSignal,
   blockHandleSignal,
@@ -49,16 +53,23 @@ export interface BlockMarkdownProps {
   optimisticSnapshot?: Uint8Array<ArrayBufferLike>;
 }
 
-function ManagedTopBar() {
+function ManagedTopBar(props: ShareHostProps) {
   const { displayName } = useMarkdownName();
-  return <TopBar name={displayName} />;
+  return (
+    <TopBar
+      name={displayName}
+      sharePermissions={props.sharePermissions}
+      permissionOptions={props.permissionOptions}
+    />
+  );
 }
 
 export default function MarkdownBlockAdapter(props: BlockMarkdownProps) {
   const documentId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('md');
   useBlockEntityCommands({
     id: () => documentId,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const canAutofocus = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
@@ -72,7 +83,7 @@ export default function MarkdownBlockAdapter(props: BlockMarkdownProps) {
   useTaskBranchNameHotkey({
     documentId: () => documentId,
     kind: () => kind,
-    scopeId: blockHotkeyScopeSignal.get,
+    scopeId: () => hotkeyScope,
   });
   const persistedName = useBlockDocumentName('');
   const fallbackName = useBlockDocumentName();
@@ -123,72 +134,80 @@ export default function MarkdownBlockAdapter(props: BlockMarkdownProps) {
   const isOwner = useIsDocumentOwner();
 
   return (
-    <DocumentBlockContainer>
-      <MarkdownDocument
-        documentId={documentId}
-        kind={kind}
-        state={markdownState}
-        documentSource={documentSource()}
-        permissions={{
-          canComment: canComment(),
-          canEdit: canEdit(),
-          isOwner: isOwner(),
-        }}
-        persistedName={persistedName()}
-        fallbackName={fallbackName()}
-      >
-        <ModalsProvider>
-          <SidePanel.Layout floating>
-            <Show when={ENABLE_MARKDOWN_SIDE_PANEL && !isInstructions()}>
-              <MarkdownSidePanelSections />
-            </Show>
-            <div class="flex flex-col size-full">
-              <div class="relative shrink-0">
-                <SplitHeaderRight>
-                  <Show
-                    when={isCollaborationStatusVisible(collaborationStatus())}
-                  >
-                    <HeaderIsland class="-order-1">
-                      <CollaborationStatusIndicator
-                        status={collaborationStatus()}
-                      />
-                    </HeaderIsland>
-                  </Show>
-                </SplitHeaderRight>
-                <Suspense>
-                  <Show when={isInstructions()} fallback={<ManagedTopBar />}>
-                    <InstructionsTopBar />
-                  </Show>
-                </Suspense>
-                <Suspense>
-                  <Show when={!isInstructions()}>
-                    <div class="absolute right-4 top-1.5 z-action-menu flex justify-end">
-                      <FindAndReplace
-                        hotkeyScope={blockHotkeyScopeSignal.get()}
-                      />
-                    </div>
-                  </Show>
-                </Suspense>
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <MarkdownDocument
+          documentId={documentId}
+          kind={kind}
+          state={markdownState}
+          documentSource={documentSource()}
+          permissions={{
+            canComment: canComment(),
+            canEdit: canEdit(),
+            isOwner: isOwner(),
+          }}
+          persistedName={persistedName()}
+          fallbackName={fallbackName()}
+        >
+          <ModalsProvider>
+            <SidePanel.Layout floating>
+              <Show when={ENABLE_MARKDOWN_SIDE_PANEL && !isInstructions()}>
+                <MarkdownSidePanelSections />
+              </Show>
+              <div class="flex flex-col size-full">
+                <div class="relative shrink-0">
+                  <SplitHeaderRight>
+                    <Show
+                      when={isCollaborationStatusVisible(collaborationStatus())}
+                    >
+                      <HeaderIsland class="-order-1">
+                        <CollaborationStatusIndicator
+                          status={collaborationStatus()}
+                        />
+                      </HeaderIsland>
+                    </Show>
+                  </SplitHeaderRight>
+                  <Suspense>
+                    <Show
+                      when={isInstructions()}
+                      fallback={
+                        <ManagedTopBar
+                          permissionOptions={{
+                            edit: ENABLE_MARKDOWN_LIVE_COLLABORATION,
+                          }}
+                        />
+                      }
+                    >
+                      <InstructionsTopBar />
+                    </Show>
+                  </Suspense>
+                  <Suspense>
+                    <Show when={!isInstructions()}>
+                      <div class="absolute right-4 top-1.5 z-action-menu flex justify-end">
+                        <FindAndReplace />
+                      </div>
+                    </Show>
+                  </Suspense>
+                </div>
+                <DocumentDebouncedNotificationReadMarker
+                  notificationSource={notificationSource}
+                  documentId={documentId}
+                />
+                <MarkdownDocumentContent
+                  isInstructions={isInstructions()}
+                  autoFocus={canAutofocus && !navigatedFromJK()}
+                  doInitialSync={data()?.doInitialSync}
+                  optimisticSnapshot={props.optimisticSnapshot}
+                  loadCachedSnapshot={() =>
+                    loadMarkdownCachedSnapshot(documentId)
+                  }
+                  onDataReady={() => setLoadError(null)}
+                />
               </div>
-              <DocumentDebouncedNotificationReadMarker
-                notificationSource={notificationSource}
-                documentId={documentId}
-              />
-              <MarkdownDocumentContent
-                isInstructions={isInstructions()}
-                hotkeyScope={blockHotkeyScopeSignal.get()}
-                autoFocus={canAutofocus && !navigatedFromJK()}
-                doInitialSync={data()?.doInitialSync}
-                optimisticSnapshot={props.optimisticSnapshot}
-                loadCachedSnapshot={() =>
-                  loadMarkdownCachedSnapshot(documentId)
-                }
-                onDataReady={() => setLoadError(null)}
-              />
-            </div>
-          </SidePanel.Layout>
-        </ModalsProvider>
-      </MarkdownDocument>
-    </DocumentBlockContainer>
+            </SidePanel.Layout>
+          </ModalsProvider>
+        </MarkdownDocument>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }

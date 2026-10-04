@@ -42,15 +42,14 @@ import {
   storeChatState,
 } from '@core/component/AI/util/storage';
 import { CustomScrollbar } from '@core/component/CustomScrollbar';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import { useAiUsageLimitState } from '@core/constant/AiUsageLimitState';
 import { usePaywallState } from '@core/constant/PaywallState';
+import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { TOKENS } from '@core/hotkey/tokens';
 import { registerScopeSignalHotkey } from '@core/hotkey/utils';
 import { createMethodRegistration } from '@core/orchestrator';
-import {
-  blockElementSignal,
-  blockHotkeyScopeSignal,
-} from '@core/signal/blockElement';
+import { blockElementSignal } from '@core/signal/blockElement';
 import { blockHandleSignal } from '@core/signal/load';
 import { useCanEdit } from '@core/signal/permissions';
 import { markMessageSent } from '@core/util/message-send-motion';
@@ -60,7 +59,11 @@ import { cognitionApiServiceClient } from '@service-cognition/client';
 import { createCallback } from '@solid-primitives/rootless';
 import { createEffect, createSignal, getOwner, Show, Suspense } from 'solid-js';
 
-export function Chat(props: { data: ChatData }) {
+type ChatProps = ShareHostProps & {
+  data: ChatData;
+};
+
+export function Chat(props: ChatProps) {
   const loadedState = getChatInputStoredState(props.data.chat.id);
 
   // Seed the model selector, highest priority first:
@@ -83,6 +86,8 @@ export function Chat(props: { data: ChatData }) {
     >
       <ChatWithController
         data={props.data}
+        sharePermissions={props.sharePermissions}
+        permissionOptions={props.permissionOptions}
         loadedInputText={loadedState.input}
       />
     </ChatInputProvider>
@@ -94,10 +99,9 @@ export function Chat(props: { data: ChatData }) {
  * state — specifically, so a provider-outage error toast can switch the chat
  * to a model from a different provider.
  */
-function ChatWithController(props: {
-  data: ChatData;
-  loadedInputText: string | undefined;
-}) {
+function ChatWithController(
+  props: ChatProps & { loadedInputText: string | undefined }
+) {
   const { showPaywall } = usePaywallState();
   const { showUsageLimit } = useAiUsageLimitState();
   const input = useChatInputContext();
@@ -135,21 +139,24 @@ function ChatWithController(props: {
         hasAlternateModel: () => nextModel() !== undefined,
       }}
     >
-      <ChatInner data={props.data} loadedInputText={props.loadedInputText} />
+      <ChatInner
+        data={props.data}
+        loadedInputText={props.loadedInputText}
+        sharePermissions={props.sharePermissions}
+        permissionOptions={props.permissionOptions}
+      />
     </ChatProvider>
   );
 }
 
-function ChatInner(props: {
-  data: ChatData;
-  loadedInputText: string | undefined;
-}) {
+function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
   const owner = getOwner();
   const input = useChatInputContext();
   const chat = useChatContext();
   const canEdit = useCanEdit();
   const disabled = () => !canEdit();
-  const scopeId = blockHotkeyScopeSignal.get;
+  const hotkeyScope = useHotkeyScope();
+  const scopeId = () => hotkeyScope;
   const blockElement = blockElementSignal.get;
   const { navigatedFromJK } = useNavigatedFromJK();
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
@@ -334,6 +341,8 @@ function ChatInner(props: {
       <Show when={!isNestedBlock}>
         <Suspense>
           <TopBar
+            sharePermissions={props.sharePermissions}
+            permissionOptions={props.permissionOptions}
             showStreamDebug={showStreamDebug}
             toggleStreamDebug={() => setShowStreamDebug((p) => !p)}
           />

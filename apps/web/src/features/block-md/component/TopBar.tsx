@@ -12,12 +12,15 @@ import {
 } from '@components/app/split-layout/components/SplitLabel';
 import { useBlockAliasedName, useBlockId, useBlockName } from '@core/block';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { blockNameToItemType } from '@service-storage/client';
 import { type Accessor, Show } from 'solid-js';
 import { useMarkdownDocumentTools } from './useMarkdownDocumentTools';
 
-export function TopBar(props: { name?: Accessor<string | undefined> } = {}) {
+export function TopBar(
+  props: ShareHostProps & { name?: Accessor<string | undefined> } = {}
+) {
   const blockName = useBlockName();
   const blockId = useBlockId();
   const fallbackName = useBlockDocumentName();
@@ -28,7 +31,7 @@ export function TopBar(props: { name?: Accessor<string | undefined> } = {}) {
 
   const blockAliasedName = useBlockAliasedName();
   const isSkill = blockAliasedName === 'skill';
-  const { fileOperations, menuTools, tools } = useMarkdownDocumentTools();
+  const { fileOperations, menuTools, tools } = useMarkdownDocumentTools(props);
 
   return (
     <>

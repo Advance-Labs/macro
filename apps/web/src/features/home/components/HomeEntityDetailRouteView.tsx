@@ -91,7 +91,6 @@ function HomeEntityDetailBody(props: {
   navigationRequest: number | string;
   onClose: () => void;
 }) {
-  const panel = useSplitPanelOrThrow();
   const { openPreview } = useHomeView();
   const documentShareTarget = () => {
     const blockAlias = entityDetailBlockType(props.target);
@@ -114,7 +113,6 @@ function HomeEntityDetailBody(props: {
                   onClick={openShare}
                   id={target().documentId}
                   blockType={target().blockAlias}
-                  hotkeyScope={panel.splitHotkeyScope}
                 />
               )}
             </Show>

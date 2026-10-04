@@ -84,7 +84,6 @@ export const definition = defineBlock({
   },
   liveTrackingEnabled: true,
   syncServiceEnabled: ENABLE_MARKDOWN_LIVE_COLLABORATION,
-  editPermissionEnabled: ENABLE_MARKDOWN_LIVE_COLLABORATION,
 });
 
 export type MarkdownData = ExtractLoadType<(typeof definition)['load']>;

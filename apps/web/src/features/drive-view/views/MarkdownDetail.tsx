@@ -19,7 +19,6 @@ import {
   useGlobalNotificationSource,
 } from '@components/app/GlobalAppState';
 import { SidePanel } from '@components/app/side-panel';
-import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { ENABLE_MARKDOWN_SIDE_PANEL } from '@core/constant/featureFlags';
 import { createMethodRegistration } from '@core/orchestrator';
 import { DocumentDebouncedNotificationReadMarker } from '@notifications';
@@ -86,7 +85,6 @@ function MarkdownDetailContent(props: {
   data: MarkdownDocumentData;
   children?: (context: MarkdownDetailContext) => JSX.Element;
 }) {
-  const panel = useSplitPanelOrThrow();
   const notificationSource = useGlobalNotificationSource();
   const orchestrator = useGlobalBlockOrchestrator();
   const state = createMarkdownDocumentState();
@@ -123,14 +121,13 @@ function MarkdownDetailContent(props: {
           </Show>
           <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
             <div class="absolute top-1.5 right-4 z-action-menu flex justify-end">
-              <FindAndReplace hotkeyScope={panel.splitHotkeyScope} />
+              <FindAndReplace />
             </div>
             <DocumentDebouncedNotificationReadMarker
               notificationSource={notificationSource}
               documentId={props.documentId}
             />
             <MarkdownDocumentContent
-              hotkeyScope={panel.splitHotkeyScope}
               doInitialSync={props.data.doInitialSync}
               loadCachedSnapshot={() =>
                 loadMarkdownCachedSnapshot(props.documentId)

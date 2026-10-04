@@ -6,11 +6,9 @@ import {
   useIsNestedBlock,
 } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
+import { HotkeyScope, useHotkeyScopeOrCreate } from '@core/hotkey/HotkeyScope';
 import { createMethodRegistration } from '@core/orchestrator';
-import {
-  blockElementSignal,
-  blockHotkeyScopeSignal,
-} from '@core/signal/blockElement';
+import { blockElementSignal } from '@core/signal/blockElement';
 import { blockFileSignal, blockHandleSignal } from '@core/signal/load';
 import { useCanEdit } from '@core/signal/permissions';
 import { useSearchParams } from '@solidjs/router';
@@ -25,14 +23,14 @@ export type BlockCanvasProps = {
 
 export default function BlockCanvas(props: BlockCanvasProps) {
   const documentId = useBlockId();
+  const [attachHotkeyScope, hotkeyScope] = useHotkeyScopeOrCreate('canvas');
   const portalMount = blockElementSignal.get;
   const isNested = useIsNestedBlock();
   const nestedContext = useBlockNestedContext<'canvas'>();
   const canEdit = useCanEdit();
-  const hotkeyScope = blockHotkeyScopeSignal.get;
   useBlockEntityCommands({
     id: () => documentId,
-    scopeId: hotkeyScope,
+    scopeId: () => hotkeyScope,
   });
   const file = blockFileSignal.get;
   const blockHandle = blockHandleSignal.get;
@@ -43,40 +41,41 @@ export default function BlockCanvas(props: BlockCanvasProps) {
   };
 
   return (
-    <DocumentBlockContainer>
-      <CanvasDocument
-        documentId={documentId}
-        file={file()}
-        canEdit={canEdit()}
-        hotkeyScope={hotkeyScope()}
-        isNested={isNested}
-        portalMount={portalMount()}
-        view={props.view}
-        locationParams={locationParams}
-        onLocationChange={
-          nestedContext?.parentContext?.canvas?.onLocationChange
-        }
-        registerMethods={registerMethods}
-      >
-        {(content) => (
-          <div
-            class="size-full select-none flex flex-col"
-            on:click={(event) => {
-              if (isNested) event.stopPropagation();
-            }}
-          >
-            <Show when={!isNested} fallback={content}>
-              <SidePanel.Layout defaultOpen={false} floating>
-                <FileSidePanelSections />
-                <div class="flex size-full min-w-0 flex-col overflow-hidden">
-                  <TopBar />
-                  {content}
-                </div>
-              </SidePanel.Layout>
-            </Show>
-          </div>
-        )}
-      </CanvasDocument>
-    </DocumentBlockContainer>
+    <HotkeyScope scope={hotkeyScope}>
+      <DocumentBlockContainer attachHotkeyScope={attachHotkeyScope}>
+        <CanvasDocument
+          documentId={documentId}
+          file={file()}
+          canEdit={canEdit()}
+          isNested={isNested}
+          portalMount={portalMount()}
+          view={props.view}
+          locationParams={locationParams}
+          onLocationChange={
+            nestedContext?.parentContext?.canvas?.onLocationChange
+          }
+          registerMethods={registerMethods}
+        >
+          {(content) => (
+            <div
+              class="size-full select-none flex flex-col"
+              on:click={(event) => {
+                if (isNested) event.stopPropagation();
+              }}
+            >
+              <Show when={!isNested} fallback={content}>
+                <SidePanel.Layout defaultOpen={false} floating>
+                  <FileSidePanelSections />
+                  <div class="flex size-full min-w-0 flex-col overflow-hidden">
+                    <TopBar permissionOptions={{ edit: false }} />
+                    {content}
+                  </div>
+                </SidePanel.Layout>
+              </Show>
+            </div>
+          )}
+        </CanvasDocument>
+      </DocumentBlockContainer>
+    </HotkeyScope>
   );
 }

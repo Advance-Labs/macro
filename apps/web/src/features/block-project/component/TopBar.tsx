@@ -27,6 +27,7 @@ import {
   SplitToolbarRight,
 } from '@components/app/split-layout/components/SplitToolbar';
 import { useBlockId } from '@core/block';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -48,7 +49,7 @@ import { ProjectCreateMenu, useProjectCreateTools } from './ProjectCreateMenu';
 // TODO (SEAMUS) : Revisit this file when we figure out what we wanna do
 //     with folder block.
 
-export function TopBar() {
+export function TopBar(props: ShareHostProps) {
   const id = useBlockId();
   const isSpecialProject = getIsSpecialProject(id);
   const isOwner = useIsDocumentOwner();
@@ -61,6 +62,8 @@ export function TopBar() {
   const openShare = useShareModal(() => ({
     id,
     blockAlias: 'project',
+    sharePermissions: props.sharePermissions,
+    permissionOptions: props.permissionOptions,
     itemType: 'project',
     name: name(),
     userPermissions: permissions(),
@@ -103,7 +106,13 @@ export function TopBar() {
       action: openShare,
       condition: () => ENABLE_PROJECT_SHARING && !isSpecialProject,
       buttonComponent: () => (
-        <ShareTrigger onClick={openShare} copyLink={handleCopyLink} />
+        <ShareTrigger
+          id={id}
+          blockType={'project'}
+          sharePermissions={props.sharePermissions}
+          onClick={openShare}
+          copyLink={handleCopyLink}
+        />
       ),
       focusTarget: getShareDrawerRecipientInput,
     },
@@ -119,7 +128,13 @@ export function TopBar() {
       <SplitHeaderRight>
         <div class="order-[1000] flex items-center gap-1">
           <Show when={showShare()}>
-            <ShareTrigger onClick={openShare} copyLink={handleCopyLink} />
+            <ShareTrigger
+              id={id}
+              blockType={'project'}
+              sharePermissions={props.sharePermissions}
+              onClick={openShare}
+              copyLink={handleCopyLink}
+            />
           </Show>
         </div>
       </SplitHeaderRight>

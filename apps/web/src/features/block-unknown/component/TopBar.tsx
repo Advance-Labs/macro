@@ -6,10 +6,10 @@ import {
 import type { FileOperation } from '@components/app/split-layout/components/SplitFileMenu';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
 import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
-
 import { useBlockId } from '@core/block';
 import { FileTypeChip } from '@core/component/FileTypeChip';
 import { toast } from '@core/component/Toast/Toast';
+import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
@@ -24,7 +24,7 @@ import DownloadSimple from '@phosphor/download-simple.svg';
 import { createCallback } from '@solid-primitives/rootless';
 import { useGetFileBlob } from '../signal/blockData';
 
-export function TopBar(props: { onShare: () => void }) {
+export function TopBar(props: ShareHostProps & { onShare: () => void }) {
   const blockId = useBlockId();
   const fileName = useBlockDocumentName();
   const downloadName = useBlockDocumentDownloadName();
@@ -59,7 +59,14 @@ export function TopBar(props: { onShare: () => void }) {
       label: 'Share',
       icon: IconShared,
       action: props.onShare,
-      buttonComponent: () => <ShareTrigger onClick={props.onShare} />,
+      buttonComponent: () => (
+        <ShareTrigger
+          id={blockId}
+          blockType={'unknown'}
+          sharePermissions={props.sharePermissions}
+          onClick={props.onShare}
+        />
+      ),
       focusTarget: getShareDrawerRecipientInput,
     },
   ];
