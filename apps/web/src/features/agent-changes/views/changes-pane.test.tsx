@@ -180,6 +180,7 @@ describe('ChangesPane', () => {
     context.source.refresh = refresh;
     const { controller } = mount(context, () => <ChangesPane />);
     controller().layout.open();
+    await waitFor(() => expect(screen.getAllByTestId('diff')).toHaveLength(2));
     fireEvent.click(
       screen.getByRole('button', { name: /Refresh pull request changes/ })
     );
