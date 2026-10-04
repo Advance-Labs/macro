@@ -1,21 +1,7 @@
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
-import { Block, type BlockName } from '@core/block';
 import { createSignal, Show } from 'solid-js';
 import { CollabMdSurface } from '../CollabMdSurface';
 import type { CollabSurfaceParent } from '../createCollabSurface';
-
-/** The block type that hosts each parent entity type, for the demo's
- *  stand-in Block wrapper (in the app the hosting block already exists). */
-const BLOCK_FOR_PARENT: Partial<
-  Record<CollabSurfaceParent['entityType'], BlockName>
-> = {
-  document: 'md',
-  channel: 'channel',
-  project: 'project',
-  chat: 'chat',
-  email_thread: 'email',
-  call: 'call',
-};
 
 type Mounted = {
   surfaceId: string;
@@ -27,11 +13,9 @@ type Mounted = {
  * Dev-only playground for the collab-surface primitive
  * (`collab-surface-demo` in the split-component registry).
  *
- * The component derives its parent from the enclosing block, so this page
- * wraps it in a stand-in `<Block>` for the entity you name (a document you
- * own, a channel you're in). Enter a stable surface id — generate a fresh
- * one, or paste one from another window to join its session. Open the same
- * id in two windows and type in both.
+ * Pass the parent entity you name (a document you own, a channel you're in).
+ * Enter a stable surface id: generate a fresh one, or paste one from another
+ * window to join its session. Open the same id in two windows and type in both.
  */
 export default function CollabSurfaceDemoPage() {
   const [parentType, setParentType] =
@@ -133,17 +117,13 @@ export default function CollabSurfaceDemoPage() {
             <div class="text-xs text-ink-placeholder font-mono mb-2">
               {m.surfaceId}
             </div>
-            <Block
-              id={m.parent.entityId}
-              name={BLOCK_FOR_PARENT[m.parent.entityType] ?? 'md'}
-            >
-              <CollabMdSurface
-                resolveAppLink={resolveAppLink}
-                surfaceId={m.surfaceId}
-                initialMarkdown={m.initialMarkdown}
-                placeholder="Type here…"
-              />
-            </Block>
+            <CollabMdSurface
+              resolveAppLink={resolveAppLink}
+              surfaceId={m.surfaceId}
+              parent={m.parent}
+              initialMarkdown={m.initialMarkdown}
+              placeholder="Type here…"
+            />
           </div>
         )}
       </Show>
