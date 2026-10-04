@@ -17,7 +17,7 @@ import { toast } from '@core/component/Toast/Toast';
 import { enableDatabases } from '@core/constant/featureFlags';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
 import { useUserId } from '@core/context/user';
-import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
+import { HotkeyScope, useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { createMethodRegistration } from '@core/orchestrator';
@@ -569,6 +569,14 @@ function DatabaseSkeleton() {
   );
 }
 
+function DatabaseBlockHost() {
+  const panel = useSplitPanelOrThrow();
+  return (
+    <HotkeyScope scope={panel.splitHotkeyScope}>
+      <Block />
+    </HotkeyScope>
+  );
+}
 const DatabaseBlock: Component = () => {
   const flag = useFeatureFlag(enableDatabases);
   return (
@@ -580,7 +588,7 @@ const DatabaseBlock: Component = () => {
         </div>
       }
     >
-      <Block />
+      <DatabaseBlockHost />
     </Show>
   );
 };
