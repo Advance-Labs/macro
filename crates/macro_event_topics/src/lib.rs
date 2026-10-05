@@ -87,4 +87,6 @@ topics! {
     MacroAgentSessionLifecycleTopic => "macro.agent_session_lifecycle",
     /// Database lifecycle (created, renamed, trashed, restored, purged) and table-change events.
     MacroDatabasesTopic => "macro.databases",
+    /// Form lifecycle (created, renamed, trashed, restored, purged), sharing and response events.
+    MacroFormsTopic => "macro.forms",
 }
