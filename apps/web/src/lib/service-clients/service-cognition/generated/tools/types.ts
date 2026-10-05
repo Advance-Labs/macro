@@ -3182,6 +3182,9 @@ export type ToolActivityAction =
       type: 'sent';
     }
   | {
+      type: 'responded';
+    }
+  | {
       /**
        * The property definition id.
        */

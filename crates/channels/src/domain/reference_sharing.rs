@@ -9,6 +9,9 @@ use entity_access::domain::models::AccessLevel;
 /// A calendar event is shareable only by someone holding it on their own
 /// calendar: its owner or a linked account. A member who sees the event only
 /// through an earlier channel share holds view access and cannot pass it on.
+///
+/// Posting a form lets the channel respond to it: anyone who can see the form
+/// grants View, whatever their own level. Edit is never granted by posting.
 pub(crate) fn grant_level(
     item_type: ReferencedShareItemType,
     access: Option<AccessLevel>,
@@ -20,6 +23,7 @@ pub(crate) fn grant_level(
         (ReferencedShareItemType::CalendarEvent, Some(level)) if level >= AccessLevel::Edit => {
             Some(AccessLevel::View)
         }
+        (ReferencedShareItemType::Form, Some(_)) => Some(AccessLevel::View),
         (ReferencedShareItemType::AgentSession | ReferencedShareItemType::CalendarEvent, _)
         | (_, None) => None,
         (_, Some(_)) => Some(AccessLevel::View),
