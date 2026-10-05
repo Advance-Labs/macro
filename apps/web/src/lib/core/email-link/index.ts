@@ -3,7 +3,6 @@ import { updateUserAuth } from '@core/auth';
 import { createNativeAuthSession } from '@core/auth/native-auth';
 import { toast } from '@core/component/Toast/Toast';
 import { PaywallKey, usePaywallState } from '@core/constant/PaywallState';
-import { currentSettingsReturnTo } from '@core/constant/SettingsState';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import { useInitGmailLink } from '@queries/auth';
 import { useInitOutlookLink } from '@queries/auth/outlook-link';
@@ -349,7 +348,6 @@ export function useAddInboxFlow() {
       // everyone on a default layout.
       rememberInboxLinkReturn(result.value.link_id, {
         url: `${toBaseRelative(window.location.pathname)}${window.location.search}${window.location.hash}`,
-        settingsReturnTo: currentSettingsReturnTo(),
       });
       window.location.href = result.value.authorization_url;
     } else if (isPaymentRequired(result.error)) {
