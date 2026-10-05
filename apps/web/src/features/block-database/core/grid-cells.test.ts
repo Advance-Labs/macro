@@ -84,6 +84,27 @@ describe('engine cells as grid values', () => {
 });
 
 describe('a new read of rows the grid already shows', () => {
+  it('keeps the displayed array when every row and its position is unchanged', () => {
+    const previous = [
+      { rowId: 'ada', cells: { name: 'Ada', guests: 2 } },
+      { rowId: 'grace', cells: { name: 'Grace', guests: 1 } },
+    ];
+    expect(
+      keepUnchangedRows(previous, [
+        { rowId: 'ada', cells: { name: 'Ada', guests: 2 } },
+        { rowId: 'grace', cells: { name: 'Grace', guests: 1 } },
+      ])
+    ).toBe(previous);
+
+    const reordered = keepUnchangedRows(previous, [
+      { rowId: 'grace', cells: { name: 'Grace', guests: 1 } },
+      { rowId: 'ada', cells: { name: 'Ada', guests: 2 } },
+    ]);
+    expect(reordered).not.toBe(previous);
+    expect(reordered).toEqual([previous[1], previous[0]]);
+    expect(keepUnchangedRows(previous, [])).toEqual([]);
+  });
+
   it('hands back the shown row for each row whose cells read the same', () => {
     const ada = { rowId: 'ada', cells: { name: 'Ada', guests: 2 } };
     const grace = { rowId: 'grace', cells: { name: 'Grace', guests: 1 } };

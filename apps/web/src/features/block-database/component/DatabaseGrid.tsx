@@ -154,6 +154,7 @@ function RelatedDatabaseSync(props: {
 }
 
 function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
+  const canEdit = createMemo(() => props.canEdit);
   // Keep the final schema for this table available to already-queued writes
   // after its tab is closed; a new selected table must never redirect them.
   let ownedTable = props.table;
@@ -299,12 +300,12 @@ function TableAdapter(props: DatabaseGridProps & { tableId: string }) {
       </For>
       <StaticMarkdownContext>
         <OptionEditingContext.Provider
-          value={props.canEdit ? optionEditing : undefined}
+          value={canEdit() ? optionEditing : undefined}
         >
           <DatabaseRecordsView
             name={table().table.name}
             source={source}
-            canEdit={props.canEdit}
+            canEdit={canEdit()}
             view={props.view}
             stored={props.stored}
             preparingView={props.preparingView}

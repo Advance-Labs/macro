@@ -86,16 +86,20 @@ export function gridRows(
   }));
 }
 
-/** `next`, with each row whose cells read exactly as in `previous` kept as that row. */
+/** Reuse unchanged rows, and the array when their order also stays the same. */
 export function keepUnchangedRows(
-  previous: readonly DatabaseRow[],
+  previous: DatabaseRow[],
   next: DatabaseRow[]
 ): DatabaseRow[] {
   const shown = new Map(previous.map((row) => [row.rowId, row]));
-  return next.map((row) => {
+  const kept = next.map((row) => {
     const before = shown.get(row.rowId);
     return before && sameCells(before.cells, row.cells) ? before : row;
   });
+  return kept.length === previous.length &&
+    kept.every((row, index) => row === previous[index])
+    ? previous
+    : kept;
 }
 
 function sameCells(

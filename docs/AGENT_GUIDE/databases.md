@@ -479,3 +479,20 @@ Schema edits update their UI optimistically and finish after the write commits;
 they do not wait for the background catalog refresh. A refused edit rolls back
 its optimistic state when no newer cache update has replaced it, then refreshes.
 A slow or failed refresh is not a reason to resend a successful mutation.
+
+## Checking large tables locally
+
+Use synthetic records on an isolated local stack and the
+[database profiling harness](../../apps/web/scripts/database-profile/README.md).
+Record both stored and displayed counts: a 100,000-record table currently reads
+at most 20,000 records into the engine. A numeric or text filter can be applied
+after that cap; check the incomplete-results notice. Include a selective option
+or relation filter that is pushed to Soup, so the audit also covers a complete
+result from a large table.
+
+After loading, switch between tables and views several times, edit a cell,
+open a select picker, add and delete a temporary record, and scroll. Confirm
+that edits preserve focus and that background refreshes leave the grid mounted.
+Count a browser crash or the database error boundary as a failed run, even if
+the grid appeared before it. Keep heap/CPU profiling runs separate from timing
+runs, and preserve existing local data.

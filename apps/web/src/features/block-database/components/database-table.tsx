@@ -137,7 +137,7 @@ export type DatabaseTableProps = {
 
 export function DatabaseTable(props: DatabaseTableProps) {
   const columns = () => props.model.visibleColumns();
-  const rows = () => props.model.table.getRowModel().rows;
+  const rows = () => props.model.rows();
   let scrollContainer!: HTMLDivElement;
   let gridElement!: HTMLDivElement;
   const columnReorder = createHorizontalReorder({
@@ -205,7 +205,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
   const navigate = (rowId: string, columnId: string, direction: 1 | -1) => {
     if (!props.canEdit) return false;
     const editableColumns = columns().filter(canEditCell);
-    const rowIndex = rows().findIndex((row) => row.id === rowId);
+    const rowIndex = rows().findIndex((row) => row.rowId === rowId);
     const columnIndex = editableColumns.findIndex(
       (column) => column.id === columnId
     );
@@ -217,17 +217,17 @@ export function DatabaseTable(props: DatabaseTableProps) {
       return false;
     const row = rows()[Math.floor(nextIndex / editableColumns.length)];
     const column = editableColumns[nextIndex % editableColumns.length];
-    pendingEdit = { rowId: row.id, columnId: column.id };
+    pendingEdit = { rowId: row.rowId, columnId: column.id };
     editRequestedCell();
     return true;
   };
   const navigateRow = (rowId: string, columnId: string, direction: 1 | -1) => {
     if (!props.canEdit) return false;
     const column = columns().find((candidate) => candidate.id === columnId);
-    const rowIndex = rows().findIndex((row) => row.id === rowId);
+    const rowIndex = rows().findIndex((row) => row.rowId === rowId);
     const row = rows()[rowIndex + direction];
     if (rowIndex < 0 || !row || !column || !canEditCell(column)) return false;
-    pendingEdit = { rowId: row.id, columnId };
+    pendingEdit = { rowId: row.rowId, columnId };
     editRequestedCell();
     return true;
   };
@@ -260,7 +260,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
     };
   };
   const selection = createCellSelection({
-    rows: () => rows().map((row) => row.id),
+    rows: () => rows().map((row) => row.rowId),
     columns: () => columns().map((column) => column.id),
     cellAt: (target) => {
       if (!(target instanceof Element) || !gridElement?.contains(target))
@@ -384,7 +384,8 @@ export function DatabaseTable(props: DatabaseTableProps) {
     if (!next) return;
     const row = rows()[rowIndex];
     const column = columns()[columnIndex - 1];
-    const nextControl = row && column ? control(row.id, column.id) : undefined;
+    const nextControl =
+      row && column ? control(row.rowId, column.id) : undefined;
     // Stepping down onto the new-record row starts typing there, like a spreadsheet.
     if (
       nextControl &&
@@ -392,7 +393,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
       props.canEdit &&
       column &&
       canEditCell(column) &&
-      props.isUnsavedRow?.(row.id)
+      props.isUnsavedRow?.(row.rowId)
     )
       nextControl.edit();
     else if (nextControl) nextControl.focus();
@@ -598,10 +599,9 @@ export function DatabaseTable(props: DatabaseTableProps) {
                     captureContext(event.target);
                 }}
               >
-                {/* Preserve editor identity when TanStack refreshes its row models. */}
-                <Key each={rows()} by="id">
-                  {(tableRow, index) => {
-                    const row = () => tableRow().original;
+                {/* Keep unchanged records and their editors mounted across reads. */}
+                <Key each={rows()} by="rowId">
+                  {(row, index) => {
                     const highlighted = () =>
                       props.highlightRowId === row().rowId;
                     return (
@@ -667,9 +667,8 @@ export function DatabaseTable(props: DatabaseTableProps) {
                             </button>
                           </Show>
                         </div>
-                        <Key each={tableRow().getVisibleCells()} by="id">
-                          {(cell, columnIndex) => {
-                            const column = () => cell().column.columnDef.meta!;
+                        <Key each={columns()} by="id">
+                          {(column, columnIndex) => {
                             const presence = () =>
                               presenceAt(row().rowId, column().id);
                             return (

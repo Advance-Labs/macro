@@ -12,12 +12,11 @@ import {
   createSignal,
   For,
   type JSX,
-  Match,
   onCleanup,
   onMount,
   Show,
-  Switch,
 } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
 import { match } from 'ts-pattern';
 import { focusAdjacent } from '../components/cell-focus';
 
@@ -271,122 +270,123 @@ export function GridCell(props: GridCellProps) {
   );
   onCleanup(() => props.onReady?.(undefined));
 
+  const content: Record<GridCellKind, () => JSX.Element> = {
+    editing: () => (
+      <InlineEditor
+        column={props.column}
+        renderTextEditor={props.renderTextEditor}
+        onInferMention={selectMention}
+        originalValue={props.value}
+        emptyLabel={props.emptyLabel}
+        draft={draft()}
+        selectAll={selectAll()}
+        onDraft={updateDraft}
+        mentionOpen={mentionOpen()}
+        onMentionClose={closeMention}
+        onWrite={write}
+        onClose={finishEdit}
+        onEditorReady={(focus) => {
+          focusEditor = focus;
+          props.onEditorReady?.(focus);
+        }}
+        onNavigateRow={
+          props.onNavigateRow
+            ? (direction) => {
+                if (props.onNavigateRow?.(direction)) return true;
+                queueMicrotask(() => trigger?.focus());
+                return false;
+              }
+            : undefined
+        }
+        onNavigate={(direction) => {
+          if (props.onNavigate?.(direction)) return true;
+          const previousFocus = document.activeElement;
+          queueMicrotask(() => {
+            // Solid may still be replacing the input with its display trigger.
+            // Do not take focus back if another control received it meanwhile.
+            if (
+              document.activeElement === previousFocus ||
+              document.activeElement === document.body ||
+              document.activeElement === trigger
+            )
+              focusAdjacent(trigger, direction);
+          });
+          return true;
+        }}
+      />
+    ),
+    boolean: () => (
+      <BooleanCell
+        column={props.column}
+        value={props.value}
+        editable={editable()}
+        wrapperRef={(element) => {
+          booleanWrapper = element;
+        }}
+        inputRef={(element) => {
+          trigger = element;
+        }}
+        onNavigate={props.onNavigate}
+        onWrite={write}
+      />
+    ),
+    date: () => (
+      <DateCell
+        {...props}
+        onWrite={write}
+        onReady={(control) => {
+          popupControl = control;
+        }}
+      />
+    ),
+    select: () => (
+      <SelectCell
+        {...props}
+        onWrite={write}
+        onReady={(control) => {
+          popupControl = control;
+        }}
+      />
+    ),
+    'readonly-select': () => (
+      <div
+        ref={(element) => {
+          trigger = element;
+        }}
+        tabindex={-1}
+        class="px-2.5 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
+      >
+        <Show when={props.value !== null}>
+          <SelectPill label={String(props.value)} column={props.column} />
+        </Show>
+      </div>
+    ),
+    text: () => (
+      <TextCell
+        column={props.column}
+        value={props.value}
+        emptyLabel={props.emptyLabel}
+        editable={editable()}
+        isEntity={isEntity()}
+        mentionPreview={mentionPreview()}
+        hasResolvedMentionLabel={hasResolvedMentionLabel()}
+        renderTextValue={props.renderTextValue}
+        renderMentionValue={props.renderMentionValue}
+        ref={(element) => {
+          trigger = element;
+        }}
+        onNavigate={props.onNavigate}
+        onBeginEdit={beginEdit}
+        onClearEntity={() => {
+          setSelectedMention(undefined);
+          void write(null);
+        }}
+      />
+    ),
+  };
   return (
     <div ref={cell} class="relative min-w-0">
-      <Switch>
-        <Match when={cellKind() === 'editing'}>
-          <InlineEditor
-            column={props.column}
-            renderTextEditor={props.renderTextEditor}
-            onInferMention={selectMention}
-            originalValue={props.value}
-            emptyLabel={props.emptyLabel}
-            draft={draft()}
-            selectAll={selectAll()}
-            onDraft={updateDraft}
-            mentionOpen={mentionOpen()}
-            onMentionClose={closeMention}
-            onWrite={write}
-            onClose={finishEdit}
-            onEditorReady={(focus) => {
-              focusEditor = focus;
-              props.onEditorReady?.(focus);
-            }}
-            onNavigateRow={
-              props.onNavigateRow
-                ? (direction) => {
-                    if (props.onNavigateRow?.(direction)) return true;
-                    queueMicrotask(() => trigger?.focus());
-                    return false;
-                  }
-                : undefined
-            }
-            onNavigate={(direction) => {
-              if (props.onNavigate?.(direction)) return true;
-              const previousFocus = document.activeElement;
-              queueMicrotask(() => {
-                // Solid may still be replacing the input with its display trigger.
-                // Do not take focus back if another control received it meanwhile.
-                if (
-                  document.activeElement === previousFocus ||
-                  document.activeElement === document.body ||
-                  document.activeElement === trigger
-                )
-                  focusAdjacent(trigger, direction);
-              });
-              return true;
-            }}
-          />
-        </Match>
-        <Match when={cellKind() === 'boolean'}>
-          <BooleanCell
-            column={props.column}
-            value={props.value}
-            editable={editable()}
-            wrapperRef={(element) => {
-              booleanWrapper = element;
-            }}
-            inputRef={(element) => {
-              trigger = element;
-            }}
-            onNavigate={props.onNavigate}
-            onWrite={write}
-          />
-        </Match>
-        <Match when={cellKind() === 'date'}>
-          <DateCell
-            {...props}
-            onWrite={write}
-            onReady={(control) => {
-              popupControl = control;
-            }}
-          />
-        </Match>
-        <Match when={cellKind() === 'select'}>
-          <SelectCell
-            {...props}
-            onWrite={write}
-            onReady={(control) => {
-              popupControl = control;
-            }}
-          />
-        </Match>
-        <Match when={cellKind() === 'readonly-select'}>
-          <div
-            ref={(element) => {
-              trigger = element;
-            }}
-            tabindex={-1}
-            class="px-2.5 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ink/50"
-          >
-            <Show when={props.value !== null}>
-              <SelectPill label={String(props.value)} column={props.column} />
-            </Show>
-          </div>
-        </Match>
-        <Match when={cellKind() === 'text'}>
-          <TextCell
-            column={props.column}
-            value={props.value}
-            emptyLabel={props.emptyLabel}
-            editable={editable()}
-            isEntity={isEntity()}
-            mentionPreview={mentionPreview()}
-            hasResolvedMentionLabel={hasResolvedMentionLabel()}
-            renderTextValue={props.renderTextValue}
-            renderMentionValue={props.renderMentionValue}
-            ref={(element) => {
-              trigger = element;
-            }}
-            onNavigate={props.onNavigate}
-            onBeginEdit={beginEdit}
-            onClearEntity={() => {
-              setSelectedMention(undefined);
-              void write(null);
-            }}
-          />
-        </Match>
-      </Switch>
+      <Dynamic component={content[cellKind()]} />
       <Show when={mentionOpen() && mentionsEnabled()}>
         {props.renderMentionPicker?.({
           get anchor() {
@@ -480,7 +480,31 @@ function TextCell(props: {
   onBeginEdit: (seed?: string, event?: Event) => void;
   onClearEntity: () => void;
 }) {
-  const formatted = () => formatCellValue(props.column, props.value);
+  const formatted = createMemo(() =>
+    formatCellValue(props.column, props.value)
+  );
+  const shown = () => {
+    const preview = props.mentionPreview;
+    if (preview) return preview.mention.label;
+    const column = props.column;
+    const value = props.value;
+    if (
+      props.isEntity &&
+      typeof value === 'string' &&
+      column.specificEntityType &&
+      props.renderMentionValue
+    )
+      return props.renderMentionValue(value, column.specificEntityType);
+    return (
+      (column.dataType === 'STRING' &&
+      typeof value === 'string' &&
+      props.renderTextValue
+        ? props.renderTextValue(value)
+        : formatted()) || (
+        <span class="opacity-40">{props.emptyLabel || '—'}</span>
+      )
+    );
+  };
   return (
     <button
       ref={props.ref}
@@ -544,41 +568,10 @@ function TextCell(props: {
         }
       }}
     >
-      <Show when={props.hasResolvedMentionLabel}>
+      {props.hasResolvedMentionLabel && (
         <span class="sr-only">{props.column.name}: </span>
-      </Show>
-      <span class="truncate">
-        <Switch
-          fallback={
-            (props.column.dataType === 'STRING' &&
-            typeof props.value === 'string' &&
-            props.renderTextValue
-              ? props.renderTextValue(props.value)
-              : formatted()) || (
-              <span class="opacity-40">{props.emptyLabel || '—'}</span>
-            )
-          }
-        >
-          <Match when={props.mentionPreview}>
-            {(preview) => preview().mention.label}
-          </Match>
-          <Match
-            when={
-              props.isEntity &&
-              typeof props.value === 'string' &&
-              props.renderMentionValue
-                ? props.column.specificEntityType
-                : undefined
-            }
-          >
-            {(entityType) => (
-              <>
-                {props.renderMentionValue?.(String(props.value), entityType())}
-              </>
-            )}
-          </Match>
-        </Switch>
-      </span>
+      )}
+      <span class="truncate">{shown()}</span>
     </button>
   );
 }

@@ -8,7 +8,7 @@ import {
 } from '@solidjs/testing-library';
 import userEvent from '@testing-library/user-event';
 import { okAsync } from 'neverthrow';
-import { createSignal } from 'solid-js';
+import { createMemo, createSignal } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GridCell } from '../component/GridCell';
 import type { DatabaseViewColumn } from '../core/database-view';
@@ -143,6 +143,50 @@ afterEach(() => {
 });
 
 describe('spreadsheet interactions', () => {
+  it('only reads changed rows while keeping column changes reactive', () => {
+    const [records, setRecords] = createSignal(rows);
+    const [columns, setColumns] = createSignal([name, notes]);
+    const reads: string[] = [];
+    render(() => (
+      <DatabaseTable
+        name="Tasks"
+        rows={records()}
+        columns={columns()}
+        sort={[]}
+        widths={{}}
+        canEdit={false}
+        pending={false}
+        addColumn={null}
+        getRowTitle={(row) => String(row.cells.name)}
+        onOpen={() => {}}
+        onSort={() => {}}
+        renderCell={(row, column) => {
+          const value = createMemo(() => {
+            const text = `${row().rowId}:${column().name}:${row().cells[column().id]}`;
+            reads.push(text);
+            return text;
+          });
+          return <span>{value()}</span>;
+        }}
+      />
+    ));
+    reads.length = 0;
+    setRecords([
+      { rowId: 'one', cells: { name: 'Changed', notes: 'First note' } },
+      rows[1],
+    ]);
+    expect(reads).toEqual(['one:Name:Changed', 'one:Notes:First note']);
+    expect(screen.getByText('two:Name:Second')).toBeTruthy();
+
+    reads.length = 0;
+    setColumns([name, { ...notes, name: 'Details' }]);
+    expect(reads.toSorted()).toEqual([
+      'one:Details:First note',
+      'two:Details:Second note',
+    ]);
+    expect(screen.getByText('one:Details:First note')).toBeTruthy();
+  });
+
   function dragGeometry(scrollLeft = () => 0) {
     const positions: Record<string, number> = {
       Name: 40,
