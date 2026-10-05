@@ -187,23 +187,36 @@ export function createDatabaseViewQuery(
     > => {
       const built = await capabilities.catalog(current.schema, current.scope);
       if (run !== generation) return ok({ landed: false });
-      if (cached) {
-        const answer = await capabilities.readPage({
-          ...input,
-          requestPolicy: 'cache-only',
-        });
-        if (run !== generation) return ok({ landed: false });
-        if (answer.isOk()) publish(built, input.tableId, [answer.value], span);
-      }
       // A concurrent write may invalidate an in-progress multi-page refresh once.
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const fresh: DatabaseViewPage[] = [];
         let next: string | undefined;
         for (let index = 0; index < count; index += 1) {
-          const page = await capabilities.readPage({ ...input, cursor: next });
+          const initial = cached && attempt === 0 && index === 0;
+          const page = await capabilities.readPage({
+            ...input,
+            cursor: next,
+            requestPolicy: initial ? 'cache-and-network' : 'network-only',
+            onCachedPage: initial
+              ? (page) => {
+                  if (run === generation)
+                    publish(built, input.tableId, [page], span);
+                }
+              : undefined,
+          });
           if (run !== generation) return ok({ landed: false });
           if (page.isErr()) {
             if (page.error.stale && attempt === 0) break;
+            // A fast offline failure may arrive before the worker's cache hit.
+            if (initial) {
+              const saved = await capabilities.readPage({
+                ...input,
+                requestPolicy: 'cache-only',
+              });
+              if (run !== generation) return ok({ landed: false });
+              if (saved.isOk())
+                publish(built, input.tableId, [saved.value], span);
+            }
             return err(page.error);
           }
           fresh.push(page.value);

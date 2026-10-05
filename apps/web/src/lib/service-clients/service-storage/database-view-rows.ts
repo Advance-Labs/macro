@@ -2,6 +2,7 @@ import type { ViewQuery } from '@core/database-sql/generated/types';
 import type { Client, RequestPolicy } from '@urql/core';
 import { err, ok, type Result, ResultAsync } from 'neverthrow';
 import { match } from 'ts-pattern';
+import { filter, pipe, take, tap, toPromise } from 'wonka';
 import {
   type DatabaseViewFilterGroup,
   type DatabaseViewFilterTest,
@@ -27,6 +28,8 @@ export type DatabaseViewPageRequest = {
   requestPolicy: RequestPolicy;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  /** A usable cached page while a cache-and-network request revalidates. */
+  onCachedPage?: (page: DatabaseViewPage) => void;
 };
 
 function filterTest(
@@ -148,8 +151,8 @@ export function readDatabaseViewPage(
   client: Client = getGraphqlSoupClient()
 ): ResultAsync<DatabaseViewPage, DatabaseViewPageFailure> {
   return ResultAsync.fromPromise(
-    client
-      .query(
+    pipe(
+      client.query(
         DatabaseViewRowsDocument,
         {
           databaseId: request.databaseId,
@@ -164,8 +167,15 @@ export function readDatabaseViewPage(
           requestPolicy: request.requestPolicy,
           fetchOptions: { signal: request.signal, headers: request.headers },
         }
-      )
-      .toPromise(),
+      ),
+      tap((result) => {
+        if (result.stale && result.data && !result.error)
+          request.onCachedPage?.(result.data.user.databaseViewRows);
+      }),
+      filter((result) => !result.stale && !result.hasNext),
+      take(1),
+      toPromise
+    ),
     (error): DatabaseViewPageFailure => ({
       kind: 'fetch',
       message: error instanceof Error ? error.message : String(error),

@@ -114,7 +114,7 @@ describe('server view pages', () => {
       },
     });
     await Promise.resolve();
-    expect(readPage).toHaveBeenCalledTimes(2);
+    expect(readPage).toHaveBeenCalledTimes(1);
     expect(query.pagination?.hasMore()).toBe(true);
   });
   it('opens with one page and fetches the continuation only on demand', async () => {
@@ -131,10 +131,7 @@ describe('server view pages', () => {
         request.requestPolicy,
         request.cursor,
       ])
-    ).toEqual([
-      ['cache-only', undefined],
-      ['network-only', undefined],
-    ]);
+    ).toEqual([['cache-and-network', undefined]]);
     expect(query.pagination?.hasMore()).toBe(true);
     const firstCells = query.outcome()?.rows[0];
     await query.pagination?.loadMore();
@@ -145,7 +142,7 @@ describe('server view pages', () => {
     );
     expect(query.pagination?.hasMore()).toBe(false);
     await query.pagination?.loadMore();
-    expect(readPage).toHaveBeenCalledTimes(3);
+    expect(readPage).toHaveBeenCalledTimes(2);
   });
 
   it('shows the cached first page while the current server page is pending', async () => {
@@ -153,15 +150,31 @@ describe('server view pages', () => {
     const pending = new Promise<DatabaseViewPage>((done) => {
       resolve = done;
     });
-    const { query } = harness((request) =>
-      request.requestPolicy === 'cache-only'
-        ? okAsync(page(['cached'], 'cached-next'))
-        : ResultAsync.fromSafePromise(pending)
-    );
+    const { query } = harness((request) => {
+      request.onCachedPage?.(page(['cached'], 'cached-next'));
+      return ResultAsync.fromSafePromise(pending);
+    });
     await waitFor(() => expect(query.outcome()?.rowIds).toEqual(['cached']));
     expect(query.loading()).toBe(true);
     resolve(page(['fresh']));
     await waitFor(() => expect(query.outcome()?.rowIds).toEqual(['fresh']));
+    expect(query.loading()).toBe(false);
+  });
+
+  it('keeps a delayed cache hit when the network fails first', async () => {
+    let resolve!: (page: DatabaseViewPage) => void;
+    const pending = new Promise<DatabaseViewPage>((done) => {
+      resolve = done;
+    });
+    const { query, readPage } = harness((request) =>
+      request.requestPolicy === 'cache-only'
+        ? ResultAsync.fromSafePromise(pending)
+        : errAsync({ kind: 'fetch', message: 'Offline' })
+    );
+    await waitFor(() => expect(readPage).toHaveBeenCalledTimes(2));
+    resolve(page(['cached']));
+    await waitFor(() => expect(query.outcome()?.rowIds).toEqual(['cached']));
+    expect(query.error()).toEqual({ kind: 'fetch', message: 'Offline' });
     expect(query.loading()).toBe(false);
   });
 
@@ -199,7 +212,7 @@ describe('server view pages', () => {
           ? okAsync(page(['sorted']))
           : ResultAsync.fromSafePromise(pending)
     );
-    await waitFor(() => expect(readPage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(readPage).toHaveBeenCalledTimes(1));
     setCurrent({
       ...view,
       query: {
