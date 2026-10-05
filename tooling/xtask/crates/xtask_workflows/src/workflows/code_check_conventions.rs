@@ -84,6 +84,9 @@ fn paths_filter() -> Step<Use> {
             "d1c1ffe0248fe513906c8e24db8ea791d46f8590",
         ) // v3.0.3
         .id("filter")
+        // `**/*.test.ts*` catches a new `.test.tsx` anywhere (FE-35). Path
+        // validation rejects globs that match nothing, and no `.test.tsx`
+        // files exist, so the glob also matches the existing `.test.ts` files.
         .add_with((
             "filters",
             indoc::indoc! {r#"
@@ -93,7 +96,7 @@ fn paths_filter() -> Step<Use> {
                   - 'tooling/xtask/**'
                   - 'tooling/scripts/check-no-tsx-tests.sh'
                   - 'apps/web/**'
-                  - '**/*.test.tsx'
+                  - '**/*.test.ts*'
                   - 'packages/**'
                   - 'rules/**'
                   - 'sgconfig.yml'

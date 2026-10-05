@@ -34,7 +34,7 @@ jobs:
             - 'tooling/xtask/**'
             - 'tooling/scripts/check-no-tsx-tests.sh'
             - 'apps/web/**'
-            - '**/*.test.tsx'
+            - '**/*.test.ts*'
             - 'packages/**'
             - 'rules/**'
             - 'sgconfig.yml'
