@@ -42,6 +42,7 @@ fn graphiql_source(endpoint: &str) -> String {
         .finish()
 }
 
+#[tracing::instrument(skip_all, name = "graphql.execute")]
 async fn graphql_handler(
     State(state): State<ApiContext>,
     Cached(auth): Cached<
@@ -169,6 +170,17 @@ fn insert_graphql_context_data(
         state.projects_state.service.clone(),
     )));
     data.insert(state.channel_service.clone());
+    data.insert(state.graphql_initiative_context.clone());
+    data.insert(state.graphql_scheduled_action_context.clone());
+    data.insert(state.graphql_initiative_entity_loader.clone());
+    data.insert(graphql_initiative::initiative_detail_loader(
+        state.graphql_initiative_context.clone(),
+        macro_user_id.clone(),
+    ));
+    data.insert(graphql_initiative::initiative_summary_loader(
+        state.graphql_initiative_context.clone(),
+        macro_user_id.clone(),
+    ));
     data.insert(state.graphql_notification_reader.clone());
     data.insert(state.soup_router_state.email_service());
     data.insert(state.entity_access_service.clone());

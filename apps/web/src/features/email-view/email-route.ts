@@ -8,8 +8,10 @@ export const emailTabSearch = {
     tab: z.enum([
       'important',
       'noise',
+      'favorites',
       'sent',
       'scheduled',
+      'reminders',
       'calendar',
       'drafts',
       'shared',
@@ -25,8 +27,8 @@ export const EMAIL_DETAIL_SEARCH_NAMESPACE = 'email-detail';
 
 export const emailDetailSearch = {
   namespace: EMAIL_DETAIL_SEARCH_NAMESPACE,
-  schema: z.object({ messageId: z.string() }),
-  defaults: { messageId: '' },
+  schema: z.object({ messageId: z.string(), seek: z.string() }),
+  defaults: { messageId: '', seek: '' },
 };
 
 export const emailDetailSearchCodec =

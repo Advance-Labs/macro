@@ -118,8 +118,8 @@ const FIXTURE_MODELS: ModelOption[] = [
  * every option arrives named after its own slug.
  */
 const FIXTURE_INMEM_MODELS: ModelOption[] = [
-  'anthropic/claude-sonnet-5',
-  'anthropic/claude-opus-5',
+  'anthropic/claude-sonnet-5-5',
+  'anthropic/claude-opus-5-5',
   'anthropic/claude-haiku-4-5',
   'openai/gpt-5.5',
   'openai/gpt-5-mini',
@@ -915,12 +915,18 @@ const GALLERY_CHIP_HEADER = {
 };
 
 /** The chip through a turn: booting, writing, and done. */
-function MagicChipStateDemo(props: { presentation: MagicChipPresentation }) {
+function MagicChipStateDemo(props: {
+  presentation: MagicChipPresentation;
+  pullRequestUrl?: string;
+}) {
   return (
     <MagicChipView
       agentSessionId="gallery"
       presentation={props.presentation}
-      header={GALLERY_CHIP_HEADER}
+      header={{
+        ...GALLERY_CHIP_HEADER,
+        pullRequestUrl: props.pullRequestUrl,
+      }}
       onOpen={() => console.log('[gallery] open session')}
     />
   );
@@ -1020,6 +1026,13 @@ export default function AgentUiGallery() {
                 markdown:
                   '**Fixed.** The incremental machine now handles the replay; `cargo test -p agent_fold` passes.',
               }}
+            />
+            <MagicChipStateDemo
+              presentation={{
+                kind: 'settled',
+                markdown: 'Opened a pull request.',
+              }}
+              pullRequestUrl="https://github.com/macro-inc/macro/pull/7045"
             />
           </Item>
 

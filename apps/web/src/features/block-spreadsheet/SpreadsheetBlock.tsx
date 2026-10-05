@@ -13,18 +13,25 @@ import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
 import {
+  createParamsState,
+  ParamsProvider,
+} from '@core/component/ParamsProvider';
+import {
   getShareDrawerRecipientInput,
   ShareTrigger,
 } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
 import { useUserId } from '@core/context/user';
 import { blockDataSignal } from '@core/internal/BlockLoader';
-import { blockMetadataSignal } from '@core/signal/load';
+import { isMobile } from '@core/mobile/isMobile';
+import { createMethodRegistration } from '@core/orchestrator';
+import { blockHandleSignal, blockMetadataSignal } from '@core/signal/load';
 import { useCanEdit, useGetPermissions } from '@core/signal/permissions';
 import { getDisplayName, tryMacroId } from '@core/user';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { downloadFile } from '@filesystem/download';
 import IconShared from '@icon/share.svg';
+import { Badge } from '@ui';
 import { onMount, Show } from 'solid-js';
 import { spreadsheetChatContext } from './core/chat-context';
 import type { SpreadsheetData } from './definition';
@@ -37,17 +44,23 @@ import { SpreadsheetEditor } from './views/SpreadsheetEditor';
 
 export default function SpreadsheetBlock(props: { share?: string }) {
   const enabled = useSpreadsheetAccess();
+  const params = createParamsState();
+  createMethodRegistration(blockHandleSignal.get, {
+    goToLocationFromParams: params.navigate,
+  });
   return (
-    <Show
-      when={enabled()}
-      fallback={
-        <div class="p-6 text-ink-muted">
-          Spreadsheets are not enabled for this account.
-        </div>
-      }
-    >
-      <SpreadsheetBlockContent share={props.share} />
-    </Show>
+    <ParamsProvider state={params}>
+      <Show
+        when={enabled()}
+        fallback={
+          <div class="p-6 text-ink-muted">
+            Spreadsheets are not enabled for this account.
+          </div>
+        }
+      >
+        <SpreadsheetBlockContent share={props.share} />
+      </Show>
+    </ParamsProvider>
   );
 }
 
@@ -80,7 +93,15 @@ function SpreadsheetBlockContent(props: { share?: string }) {
     <DocumentBlockContainer>
       <div class="flex size-full min-h-0 min-w-0 flex-col overflow-hidden">
         <SplitHeaderLeft>
-          <BlockItemSplitLabel />
+          <BlockItemSplitLabel
+            trailingBadges={
+              <Show when={!isMobile()}>
+                <Badge variant="outline" size="xs">
+                  Beta
+                </Badge>
+              </Show>
+            }
+          />
         </SplitHeaderLeft>
         <SplitHeaderRight>
           <BlockLiveIndicators />
