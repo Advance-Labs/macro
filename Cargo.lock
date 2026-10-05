@@ -17505,6 +17505,7 @@ dependencies = [
  "macro_user_id",
  "mention_utils",
  "messages",
+ "notification",
  "reqwest 0.13.4",
  "rootcause",
  "serde",
@@ -17512,8 +17513,10 @@ dependencies = [
  "sha2 0.10.9",
  "slack_integration",
  "sqlx",
+ "teams",
  "tokio",
  "tokio-util",
+ "tracing",
  "uuid",
  "workspace-hack",
 ]
