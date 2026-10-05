@@ -366,6 +366,13 @@ a scalar answer, or compatible bar, line, area, scatter, and pie charts. A saved
 offers **Open view**, which opens that database/table and selects the created view.
 The same tools are exposed to agent sessions through the Macro MCP server.
 
+Row IDs in query answers open the row in its database and table. Both row links
+and **Open view** reuse an existing database pane through split-router target
+search. Repeated clicks reapply the target without recreating the database pane.
+Check a closed database, another table, and clicking the same row or view twice.
+If several targets arrive before records load, only the latest target applies;
+a view-only target must cancel an earlier pending row reveal.
+
 In a document, `/database` → **Database** opens the question box with the AI prompt focused
 immediately. The empty input rotates through example questions; a selected database
 uses its actual table and column names. Typing hides these hints, and reduced-motion

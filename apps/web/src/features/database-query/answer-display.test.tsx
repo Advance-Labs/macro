@@ -33,15 +33,9 @@ vi.mock(
 );
 const opened = vi.hoisted(() => ({
   split: vi.fn(),
-  location: vi.fn(),
 }));
 vi.mock('@app/signal/splitLayout', () => ({
   globalSplitManager: () => ({ openWithSplit: opened.split }),
-}));
-vi.mock('@components/app/GlobalAppState', () => ({
-  useGlobalBlockOrchestrator: () => ({
-    getBlockHandle: async () => ({ goToLocationFromParams: opened.location }),
-  }),
 }));
 vi.mock('@queries/storage/databases', () => ({
   useDatabasesQuery: () => ({
@@ -150,16 +144,21 @@ describe('answers in the app', () => {
     ));
     const link = result.getByRole('button', { name: 'row-maria' });
     fireEvent.click(link);
-    await vi.waitFor(() =>
-      expect(opened.location).toHaveBeenCalledWith({
-        tableId: 'guests',
-        rowId: 'row-maria',
-      })
-    );
     expect(opened.split).toHaveBeenCalledWith(
       { type: 'database', id: 'offsite' },
-      { activate: true }
+      {
+        activate: true,
+        search: expect.objectContaining({
+          'database-detail': expect.any(Function),
+        }),
+      }
     );
+    const search = opened.split.mock.lastCall?.[1].search['database-detail'];
+    expect(search({})).toMatchObject({
+      databaseId: ['offsite'],
+      tableId: ['guests'],
+      rowId: ['row-maria'],
+    });
     result.unmount();
   });
 });

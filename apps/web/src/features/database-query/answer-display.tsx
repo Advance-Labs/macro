@@ -2,9 +2,8 @@ import {
   DatabaseMentionValue,
   DatabaseTextValue,
 } from '@app/features/block-database/database-mentions';
+import { databaseLocationUpdates } from '@app/features/block-database/database-route';
 import { globalSplitManager } from '@app/signal/splitLayout';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
-import { toast } from '@core/component/Toast/Toast';
 import { useDatabasesQuery } from '@queries/storage/databases';
 import { type JSX, Show } from 'solid-js';
 import {
@@ -16,7 +15,6 @@ import { answerNames } from './queries/answer-names';
 
 /** A `row_id` as a link that opens its row, once its table's database is known. */
 function AnswerRowLink(props: AnswerRow) {
-  const orchestrator = useGlobalBlockOrchestrator();
   const listed = useDatabasesQuery();
   const destination = () => {
     const tableId = props.table;
@@ -26,17 +24,17 @@ function AnswerRowLink(props: AnswerRow) {
       .find((candidate) => candidate.id === tableId);
     return table ? { databaseId: table.database_id, tableId } : undefined;
   };
-  async function open(databaseId: string, tableId: string) {
+  function open(databaseId: string, tableId: string) {
     globalSplitManager()?.openWithSplit(
       { type: 'database', id: databaseId },
-      { activate: true }
+      {
+        activate: true,
+        search: databaseLocationUpdates(databaseId, {
+          tableId,
+          rowId: props.id,
+        }),
+      }
     );
-    try {
-      const handle = await orchestrator.getBlockHandle(databaseId, 'database');
-      await handle?.goToLocationFromParams({ tableId, rowId: props.id });
-    } catch {
-      toast.failure('This record could not be opened.');
-    }
   }
   return (
     <Show when={destination()} fallback={props.label}>
@@ -44,7 +42,7 @@ function AnswerRowLink(props: AnswerRow) {
         <button
           type="button"
           class="max-w-full truncate text-left text-accent hover:underline"
-          onClick={() => void open(target().databaseId, target().tableId)}
+          onClick={() => open(target().databaseId, target().tableId)}
         >
           {props.label}
         </button>

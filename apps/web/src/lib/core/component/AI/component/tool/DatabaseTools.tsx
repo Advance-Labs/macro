@@ -4,11 +4,11 @@
  * `crates/databases/src/inbound/toolset`.
  */
 
+import { databaseLocationUpdates } from '@app/features/block-database/database-route';
 import { AppAnswerDisplay } from '@app/features/database-query/answer-display';
 import { toolAnswers } from '@app/features/database-query/core/tool-answer';
 import { ToolQueryResults } from '@app/features/database-query/views/tool-query-results';
 import { globalSplitManager } from '@app/signal/splitLayout';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import {
   StaticMarkdown,
   StaticMarkdownContext,
@@ -355,22 +355,19 @@ const saveDatabaseViewHandler = createToolRenderer({
     if (typeof databaseId === 'string') await invalidateDatabase(databaseId);
   },
   render: (ctx) => {
-    const orchestrator = useGlobalBlockOrchestrator();
-    async function openView() {
+    function openView() {
       const viewId = ctx.response?.data.view.id;
       if (typeof viewId !== 'string') return;
       globalSplitManager()?.openWithSplit(
         { type: 'database', id: ctx.tool.data.databaseId },
-        { activate: true }
+        {
+          activate: true,
+          search: databaseLocationUpdates(ctx.tool.data.databaseId, {
+            tableId: ctx.tool.data.tableId,
+            viewId,
+          }),
+        }
       );
-      const handle = await orchestrator.getBlockHandle(
-        ctx.tool.data.databaseId,
-        'database'
-      );
-      await handle?.goToLocationFromParams({
-        tableId: ctx.tool.data.tableId,
-        viewId,
-      });
     }
     return (
       <BaseTool icon={TableIcon} renderContext={ctx.renderContext} type="call">

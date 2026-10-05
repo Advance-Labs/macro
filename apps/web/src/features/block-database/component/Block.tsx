@@ -1,7 +1,6 @@
 import { openChatWithInput } from '@app/features/chat/ChatWithAgentButton';
 import { toQuerySchema } from '@app/features/database-query/queries/query-source';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   returnSplitToRecentListView,
@@ -20,8 +19,6 @@ import { useUserId } from '@core/context/user';
 import { HotkeyScope, useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
-import { createMethodRegistration } from '@core/orchestrator';
-import { blockHandleSignal } from '@core/signal/load';
 import { createUserScopedStorage } from '@core/util/userScopedStorage';
 import {
   onDatabaseBatchCommitted,
@@ -51,6 +48,14 @@ import { databaseChat } from '../core/chat-context';
 import type { DatabaseRelatedDestination } from '../core/database-relations';
 import { allRecordsView, boardLayout } from '../core/views';
 import { databaseOpMessage } from '../core/write-failure';
+import {
+  createDatabaseRouteTarget,
+  databaseLocationUpdates,
+} from '../database-route';
+import {
+  createDatabaseNavigation,
+  type DatabaseTarget,
+} from '../primitives/database-navigation';
 import { createDatabaseSearch } from '../primitives/database-search';
 import { createDatabaseUndo } from '../primitives/undo-controller';
 import { createViewCreation } from '../primitives/view-creation';
@@ -71,13 +76,11 @@ import { DatabasePageShell } from './DatabasePageShell';
 import { DatabaseSidePanelSections } from './sidepanel/DatabaseSidePanelSections';
 import { TopBar } from './TopBar';
 
-const Block: Component = () => {
+const Block: Component<{ target: () => DatabaseTarget }> = (props) => {
   const databaseId = useBlockId();
   const hotkeyScope = useHotkeyScope();
   const panel = useSplitPanelOrThrow();
-  const { replaceOrInsertSplit } = useSplitLayout();
-  const orchestrator = useGlobalBlockOrchestrator();
-  let requestedRecord: DatabaseRelatedDestination | undefined;
+  const { openWithSplit } = useSplitLayout();
   const canAutofocus = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
   const userId = useUserId();
@@ -97,53 +100,36 @@ const Block: Component = () => {
         openRecord: (rowId: string) => void;
       }
     | undefined;
-  function openRequestedRecord() {
-    const target = requestedRecord;
-    if (!target || !gridEntry || gridEntry.tableId !== target.tableId) return;
-    requestedRecord = undefined;
-    gridEntry.openRecord(target.rowId);
-  }
-  async function openRelated(target: DatabaseRelatedDestination) {
+  const navigation = createDatabaseNavigation({
+    databaseId: () => databaseId,
+    target: props.target,
+    select: ({ tableId, viewId }) =>
+      setSelection((current) => ({
+        ...current,
+        tableId,
+        views: viewId ? { ...current.views, [tableId]: viewId } : current.views,
+      })),
+  });
+  function openRelated(target: DatabaseRelatedDestination) {
     if (target.databaseId !== databaseId) {
-      replaceOrInsertSplit({
-        type: 'database',
-        id: target.databaseId,
-      });
       try {
-        const handle = await orchestrator.getBlockHandle(
-          target.databaseId,
-          'database'
+        openWithSplit(
+          { type: 'database', id: target.databaseId },
+          {
+            activate: true,
+            search: databaseLocationUpdates(target.databaseId, {
+              tableId: target.tableId,
+              rowId: target.rowId,
+            }),
+          }
         );
-        await handle?.goToLocationFromParams({
-          tableId: target.tableId,
-          rowId: target.rowId,
-        });
       } catch {
         toast.failure('This related record could not be opened.');
       }
       return;
     }
-    requestedRecord = target;
-    setSelection((current) => ({ ...current, tableId: target.tableId }));
-    // Another table's grid takes the request when it mounts.
-    openRequestedRecord();
+    navigation.request(target);
   }
-  createMethodRegistration(blockHandleSignal.get, {
-    goToLocationFromParams: (params: Record<string, string>) => {
-      if (params.tableId && params.viewId)
-        setSelection((current) => ({
-          ...current,
-          tableId: params.tableId,
-          views: { ...current.views, [params.tableId]: params.viewId },
-        }));
-      if (params.tableId && params.rowId)
-        void openRelated({
-          databaseId,
-          tableId: params.tableId,
-          rowId: params.rowId,
-        });
-    },
-  });
   let requestedGridEntry = false;
   const enterFirstCell = () => {
     if (!gridEntry || gridEntry.tableId !== activeTableId()) {
@@ -467,12 +453,16 @@ const Block: Component = () => {
                             }}
                             onOpenRelated={openRelated}
                             actionsRef={(actions) => {
-                              gridEntry = {
+                              const entry = {
                                 tableId: table().table.id,
                                 focus: actions.focusFirstCell,
                                 openRecord: actions.openRecord,
                               };
-                              openRequestedRecord();
+                              gridEntry = entry;
+                              onCleanup(() => {
+                                if (gridEntry === entry) gridEntry = undefined;
+                              });
+                              navigation.register(entry);
                               if (requestedGridEntry) enterFirstCell();
                             }}
                             renderToolbar={(actions) => (
@@ -571,9 +561,10 @@ function DatabaseSkeleton() {
 
 function DatabaseBlockHost() {
   const panel = useSplitPanelOrThrow();
+  const target = createDatabaseRouteTarget(!panel.handle.isPopover());
   return (
     <HotkeyScope scope={panel.splitHotkeyScope}>
-      <Block />
+      <Block target={target} />
     </HotkeyScope>
   );
 }

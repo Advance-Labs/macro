@@ -1,4 +1,5 @@
 import { agentsRouteId } from '@app/features/agents-view/core/route';
+import { databaseLocationUpdates } from '@app/features/block-database/database-route';
 import { markdownLocationUpdates } from '@app/features/block-md/markdown-route';
 import { CALENDAR_PREFERENCES_KEY } from '@app/features/calendar/calendar-preferences';
 import { channelLocationUpdates } from '@app/features/channels-view/channels-route';
@@ -1224,6 +1225,133 @@ describe('layoutManager', () => {
       }
     );
 
+    it.each([
+      {
+        location: { tableId: 'table', rowId: 'record' },
+        field: 'rowId',
+        id: 'record',
+      },
+      {
+        location: { tableId: 'table', viewId: 'board' },
+        field: 'viewId',
+        id: 'board',
+      },
+    ])(
+      'routes a database $field on cold opening and repeated owner reuse',
+      async ({ location: target, field, id }) => {
+        const { manager, router, location, dispose } = ingressRouter('/search');
+        await router.settled();
+        const source = manager.getSplit(manager.splits()[0].id)!;
+        const sourceRoute = router.route(source.id);
+        const getBlockHandle = vi.fn();
+        manager.getOrchestrator().getBlockHandle = getBlockHandle;
+        const applied = vi.fn();
+        manager.openWithSplit(
+          { type: 'database', id: 'database' },
+          {
+            handle: source,
+            preferNewSplit: true,
+            search: databaseLocationUpdates('database', target),
+            onApplied: applied,
+          }
+        );
+        await router.settled();
+        const owner = manager.splits().find((split) => split.id !== source.id)!;
+        const ownerRoute = router.route(owner.id);
+        const mount = owner.mount;
+        expect(location.read().pathname).toContain('/database/database');
+        expect(router.search(owner.id, 'database-detail')).toMatchObject({
+          databaseId: ['database'],
+          tableId: ['table'],
+          [field]: [id],
+          seek: [expect.any(String)],
+        });
+        expect(applied).toHaveBeenCalledOnce();
+        let previousSeek = router.search(owner.id, 'database-detail')?.seek;
+        for (let request = 0; request < 2; request += 1) {
+          manager.openWithSplit(
+            { type: 'database', id: 'database' },
+            {
+              handle: source,
+              preferNewSplit: true,
+              search: databaseLocationUpdates('database', target),
+              onApplied: applied,
+            }
+          );
+          await router.settled();
+          const search = router.search(owner.id, 'database-detail');
+          expect(search).toMatchObject({
+            databaseId: ['database'],
+            tableId: ['table'],
+            [field]: [id],
+          });
+          expect(search?.seek).not.toEqual(previousSeek);
+          previousSeek = search?.seek;
+          expect(router.route(owner.id)).toEqual(ownerRoute);
+          expect(
+            manager.splits().find((split) => split.id === owner.id)?.mount
+          ).toBe(mount);
+          expect(router.route(source.id)).toEqual(sourceRoute);
+          expect(router.search(source.id, 'database-detail')).toBeUndefined();
+          expect(manager.activeSplitId()).toBe(owner.id);
+          expect(manager.splits()).toHaveLength(2);
+          expect(applied).toHaveBeenCalledTimes(request + 2);
+        }
+        expect(getBlockHandle).not.toHaveBeenCalled();
+        router.dispose();
+        dispose();
+      }
+    );
+
+    it('replaces database row/view targets without touching owner search or its mount', async () => {
+      const { manager, router, dispose } = ingressRouter(
+        '/database/database/~/search?s0.database-detail.tableId=old-table&s0.database-detail.rowId=old-record&s0.drive.filter=keep'
+      );
+      await router.settled();
+      const [owner, source] = manager.splits();
+      const ownerRoute = router.route(owner.id);
+      const mount = owner.mount;
+      let previousSeek: string[] | undefined;
+      for (const kind of ['view', 'record', 'record', 'view'] as const) {
+        manager.openWithSplit(
+          { type: 'database', id: 'database' },
+          {
+            handle: manager.getSplit(source.id),
+            search: databaseLocationUpdates(
+              'database',
+              kind === 'view'
+                ? { tableId: 'table', viewId: 'board' }
+                : { tableId: 'table', rowId: 'record' }
+            ),
+          }
+        );
+        await router.settled();
+        const target = router.search(owner.id, 'database-detail');
+        expect(target).toMatchObject({
+          databaseId: ['database'],
+          tableId: ['table'],
+          seek: [expect.any(String)],
+        });
+        if (kind === 'view') {
+          expect(target?.viewId).toEqual(['board']);
+          expect(target?.rowId).toBeUndefined();
+        } else {
+          expect(target?.rowId).toEqual(['record']);
+          expect(target?.viewId).toBeUndefined();
+        }
+        expect(target?.seek).not.toEqual(previousSeek);
+        previousSeek = target?.seek;
+        expect(router.search(owner.id, 'drive')).toEqual({ filter: ['keep'] });
+        expect(router.route(owner.id)).toEqual(ownerRoute);
+        expect(
+          manager.splits().find((split) => split.id === owner.id)?.mount
+        ).toBe(mount);
+        expect(router.search(source.id, 'database-detail')).toBeUndefined();
+        expect(manager.splits()).toHaveLength(2);
+      }
+      router.dispose();
+      dispose();
+    });
     it.each([
       '/drive/folder/folder/md/entity',
       '/home/md/entity',

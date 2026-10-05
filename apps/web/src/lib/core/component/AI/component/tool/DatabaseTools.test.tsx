@@ -17,9 +17,9 @@ vi.mock('@app/features/database-query/views/tool-query-results', () => ({
     <output aria-label="Query results" data-sql={props.sql} />
   ),
 }));
-vi.mock('@app/signal/splitLayout', () => ({ globalSplitManager: () => null }));
-vi.mock('@components/app/GlobalAppState', () => ({
-  useGlobalBlockOrchestrator: () => ({}),
+const opened = vi.hoisted(() => vi.fn());
+vi.mock('@app/signal/splitLayout', () => ({
+  globalSplitManager: () => ({ openWithSplit: opened }),
 }));
 const invalidateDatabase = vi.hoisted(() => vi.fn());
 vi.mock(
@@ -327,6 +327,36 @@ describe('SaveDatabaseQuery', () => {
 });
 
 describe('SaveDatabaseView', () => {
+  it('targets a saved view through split search without a block handle', () => {
+    renderTool(
+      databaseToolHandlers.SaveDatabaseView,
+      'SaveDatabaseView',
+      {
+        databaseId,
+        tableId,
+        name: 'Open',
+        layout: { kind: 'table', columns: [] },
+      },
+      { view: { id: 'view-1', databaseId }, created: true }
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open view' }));
+    expect(opened).toHaveBeenCalledWith(
+      { type: 'database', id: databaseId },
+      {
+        activate: true,
+        search: expect.objectContaining({
+          'database-detail': expect.any(Function),
+        }),
+      }
+    );
+    const update = opened.mock.lastCall?.[1].search['database-detail'];
+    expect(update({})).toMatchObject({
+      databaseId: [databaseId],
+      tableId: [tableId],
+      viewId: ['view-1'],
+    });
+  });
+
   it('rereads the database once the view is saved, not on each render', async () => {
     renderTool(databaseToolHandlers.SaveDatabaseView, 'SaveDatabaseView', {
       databaseId,

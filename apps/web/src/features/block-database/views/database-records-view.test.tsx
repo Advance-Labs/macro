@@ -718,6 +718,95 @@ describe('database table view', () => {
     );
   });
 
+  it('delivers only the latest pending record after readiness', async () => {
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'first', cells: { title: 'First', status: 'To do' } },
+          { rowId: 'second', cells: { title: 'Second', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    const snapshot = fixture.source.snapshot;
+    const [ready, setReady] = createSignal(false);
+    fixture.source.snapshot = () => (ready() ? snapshot() : undefined);
+    let actions!: DatabaseRecordsActions;
+    const result = render(() => (
+      <DatabaseRecordsView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={allRecords}
+        stored={false}
+        addColumn={() => null}
+        boardPositions={unplacedCards}
+        actionsRef={(value) => {
+          actions = value;
+        }}
+      />
+    ));
+    actions.openRecord('first');
+    actions.openRecord('second');
+    setReady(true);
+    const cell = await screen.findByRole('button', { name: /Name: Second/ });
+    await waitFor(() =>
+      expect(
+        cell
+          .closest('[data-grid-row-id="second"]')
+          ?.hasAttribute('data-highlighted')
+      ).toBe(true)
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    result.unmount();
+  });
+
+  it('discards invalidated requests and requests after disposal', async () => {
+    const fixture = createFakeRowsSource({
+      columns,
+      table: {
+        version: 1,
+        rows: [
+          { rowId: 'row', cells: { title: 'Plan launch', status: 'To do' } },
+        ],
+      },
+      view: allRecords,
+    });
+    const snapshot = fixture.source.snapshot;
+    const [ready, setReady] = createSignal(false);
+    fixture.source.snapshot = () => (ready() ? snapshot() : undefined);
+    let actions!: DatabaseRecordsActions;
+    const result = render(() => (
+      <DatabaseRecordsView
+        name="Projects"
+        source={fixture.source}
+        canEdit
+        view={allRecords}
+        stored={false}
+        addColumn={() => null}
+        boardPositions={unplacedCards}
+        actionsRef={(value) => {
+          actions = value;
+        }}
+      />
+    ));
+    let valid = true;
+    actions.openRecord('row', () => valid);
+    valid = false;
+    setReady(true);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /Name: Plan launch/ })
+      ).toBeTruthy()
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    result.unmount();
+    actions.openRecord('row');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('takes a record visited from elsewhere to its highlighted row without opening it', async () => {
     const fixture = createFakeRowsSource({
       columns,

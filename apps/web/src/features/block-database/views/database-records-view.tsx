@@ -1,9 +1,10 @@
 import type { DatabaseView } from '@service-storage/generated/schemas/databaseView';
-import { until } from '@solid-primitives/promise';
 import { Button } from '@ui/components/Button';
 import { DeleteDialog } from '@ui/components/DeleteDialog';
 import {
   type Accessor,
+  createEffect,
+  createSignal,
   type JSX,
   Match,
   onCleanup,
@@ -69,7 +70,7 @@ export type DatabaseRecordsActions = {
   createRecord: () => Promise<boolean>;
   focusFirstCell: () => Promise<void>;
   focusColumn: (columnId: string) => boolean;
-  openRecord: (rowId: string) => void;
+  openRecord: (rowId: string, isCurrent?: () => boolean) => void;
   pending: Accessor<boolean>;
 };
 
@@ -213,6 +214,19 @@ export function DatabaseRecordsView(props: {
       .filter((rowId): rowId is string => rowId !== undefined)
   );
   let boardControls: DatabaseBoardControls | undefined;
+  const [pendingRecord, setPendingRecord] = createSignal<{
+    rowId: string;
+    isCurrent?: () => boolean;
+  }>();
+  createEffect(() => {
+    const request = pendingRecord();
+    if (!request || !props.source.snapshot()) return;
+    // Clear before reveal; callbacks from an older request cannot replay it.
+    setPendingRecord(undefined);
+    untrack(() => {
+      if (request.isCurrent?.() !== false) records.reveal(request.rowId);
+    });
+  });
   const actions: DatabaseRecordsActions = {
     createRecord: async () =>
       layoutKind() === 'table'
@@ -221,10 +235,7 @@ export function DatabaseRecordsView(props: {
     focusFirstCell: records.focusFirstCell,
     focusColumn,
     // A grid just mounted for a record from elsewhere has no rows to find it in yet.
-    openRecord: (rowId) =>
-      void until(() => props.source.snapshot()).then(() =>
-        records.reveal(rowId)
-      ),
+    openRecord: (rowId, isCurrent) => setPendingRecord({ rowId, isCurrent }),
     pending: controller.pending,
   };
   props.actionsRef?.(actions);
