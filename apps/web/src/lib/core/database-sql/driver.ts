@@ -171,18 +171,18 @@ function drive(
   signal?: AbortSignal
 ): ResultAsync<Outcome, DatabaseSqlFailure> {
   if (signal?.aborted) return errAsync({ kind: 'cancelled' });
-  return ResultAsync.fromPromise(trace.open(opened), engineFailure).andThen(
-    (query) => {
-      const read = async () => {
-        try {
-          return await steps(query, source, trace, signal);
-        } finally {
-          query.free();
-        }
-      };
-      return new ResultAsync(read());
-    }
-  );
+  return ResultAsync.fromPromise(trace.open(opened), (thrown) =>
+    signal?.aborted ? ({ kind: 'cancelled' } as const) : engineFailure(thrown)
+  ).andThen((query) => {
+    const read = async () => {
+      try {
+        return await steps(query, source, trace, signal);
+      } finally {
+        query.free();
+      }
+    };
+    return new ResultAsync(read());
+  });
 }
 
 /** Run a read-only statement to its outcome; a write is refused. */

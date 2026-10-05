@@ -5,6 +5,26 @@ import type { Bin, GqlQuery, Page } from './generated/types';
 import { readTranscript, replay } from './tests/transcript';
 
 describe('runDatabaseSql', () => {
+  it('reports cancellation when opening the engine fails after an abort', async () => {
+    const pending = Promise.withResolvers<never>();
+    const open = vi.fn(() => pending.promise);
+    const page = vi.fn();
+    const bins = vi.fn();
+    const controller = new AbortController();
+    const reading = runDatabaseSql({ tables: [] }, 'SELECT 1', {
+      source: { page, bins },
+      open,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    controller.abort();
+    pending.reject(new Error('Engine module could not load'));
+
+    expect((await reading)._unsafeUnwrapErr()).toEqual({ kind: 'cancelled' });
+    expect(page).not.toHaveBeenCalled();
+    expect(bins).not.toHaveBeenCalled();
+  });
+
   it('stops a superseded read after its in-flight page and frees the engine', async () => {
     const paging = readTranscript('paging');
     const pending = Promise.withResolvers<Page>();
