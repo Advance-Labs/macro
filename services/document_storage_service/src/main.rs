@@ -1449,6 +1449,15 @@ async fn run() -> anyhow::Result<()> {
         ),
         macro_event_broker.clone(),
     ));
+    let forms_service = Arc::new(forms::wiring::build_service(
+        db.clone(),
+        databases_service.clone(),
+        entity_access_service.clone(),
+        forms::outbound::gateway_event_publisher::GatewayFormEventPublisher::new(
+            conn_gateway_client.as_ref().clone(),
+        ),
+        macro_event_broker.clone(),
+    ));
 
     // Individual initiative reads preserve read-after-write consistency when a
     // newly created project opens immediately. Lists retain the replica reader.
@@ -1809,6 +1818,7 @@ async fn run() -> anyhow::Result<()> {
             Arc::new(email_service.clone()),
             project_service.clone(),
             databases_service.clone(),
+            forms_service.clone(),
             entity_access_service.clone(),
             Arc::new(outbound::entity_mutation::DssEntityLifecycleAdapter::new(
                 db.clone(),
@@ -1882,6 +1892,11 @@ async fn run() -> anyhow::Result<()> {
         ),
         databases_state: databases::inbound::axum_router::DatabasesRouterState::new(
             databases_service,
+            entity_access_service.clone(),
+            authorization_state.clone(),
+        ),
+        forms_state: forms::inbound::axum_router::FormsRouterState::new(
+            forms_service,
             entity_access_service.clone(),
             authorization_state.clone(),
         ),
