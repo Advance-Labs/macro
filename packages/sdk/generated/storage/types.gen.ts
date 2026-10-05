@@ -174,6 +174,24 @@ export type AgentActionId = string;
 export type AgentChannelScope = 'all' | 'selected';
 
 /**
+ * Historical persona identity displayed beside a private conversation.
+ */
+export type AgentDmProfile = {
+    /**
+     * Persona avatar, when supplied.
+     */
+    avatar_url?: string | null;
+    /**
+     * Persona id without the bot principal prefix.
+     */
+    bot_id: string;
+    /**
+     * Persona display name.
+     */
+    name: string;
+};
+
+/**
  * One Pipedream app an agent lists under [`AgentMcpServers::Selected`].
  *
  * Only the catalog identity is stored. Whether a given person has connected
@@ -643,6 +661,7 @@ export type ApiChannelParticipant = {
  * Channel list response item.
  */
 export type ApiChannelWithLatest = {
+    agent_dm?: null | AgentDmProfile;
     /**
      * Whether team members automatically join the channel.
      */
@@ -6575,7 +6594,7 @@ export type GetOrCreateChannelResponse = {
  */
 export type GetOrCreateDmRequest = {
     /**
-     * Recipient user id.
+     * Recipient user id (`macro|...`) or agent persona id (`bot|...`).
      */
     recipient_id: string;
 };

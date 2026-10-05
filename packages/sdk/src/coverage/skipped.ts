@@ -36,7 +36,11 @@ export const agentHarnessExcluded = [
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
 
 export const agentHarnessBacklog = [
+  // Persona DM conversation controls (flag-gated in the web app); not wrapped yet.
+  'getAgentDm',
   'getAgentSessionPermissions',
+  'retryAgentDm',
+  'startFreshAgentDm',
   'updateAgentSessionPermissions',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
 
