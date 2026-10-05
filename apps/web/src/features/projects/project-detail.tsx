@@ -20,8 +20,8 @@ import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import StackIcon from '@phosphor/stack.svg';
 import { Button } from '@ui';
-import { Match, onCleanup, Show, Switch } from 'solid-js';
-import { ProjectComposerChip } from './components/project-chip';
+import { Match, onCleanup, Show, Suspense, Switch } from 'solid-js';
+import { ProjectContentSkeleton } from './components/project-skeletons';
 import {
   type ProjectsContext,
   useProjectsContext,
@@ -31,7 +31,6 @@ import {
   canEditProject,
   type ProjectDetail as ProjectDetailData,
   type ProjectSection,
-  projectDisplayName,
 } from './core/project';
 import type { ProjectRoute } from './core/route';
 import { createProjectDestination } from './primitives/project-destination';
@@ -110,15 +109,17 @@ type CreateProjectTask = ReturnType<
   ProjectsContext['createCommands']
 >['createTask'];
 
-/** Task composer props that add the new task to the project and say so. */
+/**
+ * Task composer props that start the composer's Project in this project, so
+ * the destination is visible before submitting, and add the new task to it.
+ */
 function projectTaskComposer(
-  project: ProjectDetailData,
+  projectId: string,
   createTask: CreateProjectTask
 ): DestinationTaskComposer {
-  const name = projectDisplayName(project);
   return {
-    createTask: (...args) => createTask(project.id, ...args),
-    leadingChip: () => <ProjectComposerChip name={name} />,
+    createTask: (...args) => createTask(projectId, ...args),
+    initialProjectId: projectId,
   };
 }
 
@@ -131,7 +132,7 @@ function ProjectCreateDestinationHost(props: { projectId: string }) {
     registerCreateDestination(
       panel.handle.id,
       createProjectDestination(source.project, (project) =>
-        projectTaskComposer(project, createTask)
+        projectTaskComposer(project.id, createTask)
       )
     )
   );
@@ -163,13 +164,11 @@ function ProjectDetailHost(props: ProjectDetailProps) {
       params: { projectId: props.route.id, section },
     });
   const createTask = () => {
-    const project = source.project();
-    if (!project) return;
     layout.popoverSplit({
       type: 'component',
       id: 'task-compose',
       params: {
-        ...projectTaskComposer(project, commands.createTask),
+        ...projectTaskComposer(props.route.id, commands.createTask),
         // The new row appears in the list this button sits above, so skip the
         // toast. Success lands after the composer has closed, so it must not
         // navigate either: the user may have moved on.
@@ -184,18 +183,16 @@ function ProjectDetailHost(props: ProjectDetailProps) {
       </Show>
       <EntityDetailTopBar
         navigation={
-          <Show when={source.project()}>
-            <TabsInset
-              list={[
-                { value: 'overview', label: 'Overview' },
-                { value: 'tasks', label: 'Tasks' },
-              ]}
-              value={props.route.section}
-              onChange={(value) => section(value as ProjectSection)}
-              aria-label="Project sections"
-              class="shrink-0 whitespace-nowrap"
-            />
-          </Show>
+          <TabsInset
+            list={[
+              { value: 'overview', label: 'Overview' },
+              { value: 'tasks', label: 'Tasks' },
+            ]}
+            value={props.route.section}
+            onChange={(value) => section(value as ProjectSection)}
+            aria-label="Project sections"
+            class="shrink-0 whitespace-nowrap"
+          />
         }
       >
         <Show when={source.project()}>
@@ -205,77 +202,79 @@ function ProjectDetailHost(props: ProjectDetailProps) {
         </Show>
       </EntityDetailTopBar>
       <div class="relative min-h-0 min-w-0 flex-1">
-        <Switch>
-          <Match when={source.loading() && !source.project()}>
-            <p role="status" class="p-6 text-ink-muted">
-              Loading project…
-            </p>
-          </Match>
-          <Match when={source.project()}>
-            {(project) => (
-              <ProjectWorkspace
-                project={project()}
-                source={source}
-                commands={commands}
-                section={props.route.section}
-                onDelete={
-                  props.onDelete ??
-                  (() => navigate({ route: tasksSplitRoute, params: {} }))
-                }
-                onOpenTask={(task, options) => {
-                  const event = options?.event;
-                  if (
-                    !isTouchDevice() &&
-                    !(
-                      event?.shiftKey ||
-                      event?.metaKey ||
-                      event?.ctrlKey ||
-                      event?.altKey
-                    )
-                  ) {
-                    navigate({
-                      route: projectTaskRoute,
-                      params: {
-                        projectId: props.route.id,
-                        section: props.route.section,
-                        taskId: task.id,
-                      },
-                    });
-                    return true;
+        <Suspense
+          fallback={<ProjectContentSkeleton section={props.route.section} />}
+        >
+          <Switch>
+            <Match when={source.loading() && !source.project()}>
+              <ProjectContentSkeleton section={props.route.section} />
+            </Match>
+            <Match when={source.project()}>
+              {(project) => (
+                <ProjectWorkspace
+                  project={project()}
+                  source={source}
+                  commands={commands}
+                  section={props.route.section}
+                  onDelete={
+                    props.onDelete ??
+                    (() => navigate({ route: tasksSplitRoute, params: {} }))
                   }
-                  layout.openWithSplit(
-                    { type: 'md', id: task.id },
-                    { preferNewSplit: options?.event?.shiftKey }
-                  );
-                  return true;
-                }}
-                onCreateTask={createTask}
-                description={
-                  <ProjectDescription
-                    documentId={project().descriptionDocumentId}
-                    canEdit={canEditProject(project())}
-                  />
-                }
-                discussion={
-                  <ProjectDiscussion
-                    projectId={project().id}
-                    canWrite={canDiscussProject(project())}
-                    targetId={props.route.discussionId}
-                  />
-                }
-              />
-            )}
-          </Match>
-          <Match when={true}>
-            <div role="alert" class="p-6">
-              <p>
-                Project unavailable. It may have been deleted, or you may no
-                longer have access.
-              </p>
-              <Button onClick={() => void source.refresh()}>Try again</Button>
-            </div>
-          </Match>
-        </Switch>
+                  onOpenTask={(task, options) => {
+                    const event = options?.event;
+                    if (
+                      !isTouchDevice() &&
+                      !(
+                        event?.shiftKey ||
+                        event?.metaKey ||
+                        event?.ctrlKey ||
+                        event?.altKey
+                      )
+                    ) {
+                      navigate({
+                        route: projectTaskRoute,
+                        params: {
+                          projectId: props.route.id,
+                          section: props.route.section,
+                          taskId: task.id,
+                        },
+                      });
+                      return true;
+                    }
+                    layout.openWithSplit(
+                      { type: 'md', id: task.id },
+                      { preferNewSplit: options?.event?.shiftKey }
+                    );
+                    return true;
+                  }}
+                  onCreateTask={createTask}
+                  description={
+                    <ProjectDescription
+                      projectId={project().id}
+                      canEdit={canEditProject(project())}
+                    />
+                  }
+                  discussion={
+                    <ProjectDiscussion
+                      projectId={project().id}
+                      canWrite={canDiscussProject(project())}
+                      targetId={props.route.discussionId}
+                    />
+                  }
+                />
+              )}
+            </Match>
+            <Match when={true}>
+              <div role="alert" class="p-6">
+                <p>
+                  Project unavailable. It may have been deleted, or you may no
+                  longer have access.
+                </p>
+                <Button onClick={() => void source.refresh()}>Try again</Button>
+              </div>
+            </Match>
+          </Switch>
+        </Suspense>
       </div>
     </>
   );

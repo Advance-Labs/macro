@@ -51,7 +51,6 @@ vi.mock('@core/constant/featureFlags', async (importOriginal) => ({
   isFeatureEnabled: (flag: { key: string }) =>
     flag.key === 'enable-projects' && host.projectFlag() === true,
 }));
-vi.mock('@block-automation/component', () => ({}));
 vi.mock('@block-md/observability', () => ({}));
 vi.mock('@channel/CreateChannelModal', () => ({}));
 vi.mock('@core/component/AI/component/input/ChatInput', () => ({}));
@@ -98,7 +97,7 @@ afterEach(() => {
 function openProject(): DestinationTaskComposer {
   const taskComposer: DestinationTaskComposer = {
     createTask: vi.fn(async () => null),
-    leadingChip: () => null,
+    initialProjectId: 'project-launch',
   };
   unregisterDestination = registerCreateDestination(
     'project-split' as SplitId,

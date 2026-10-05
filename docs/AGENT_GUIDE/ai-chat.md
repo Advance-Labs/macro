@@ -7,17 +7,17 @@ lighter bubble with the normal text palette. Preview Markdown and controls at
 
 ## Working with projects
 
-Project tools can list, read, create, update, delete, and share projects; set or
-clear task associations; and read project activity. Backend tool names use
-`Initiative`. These operate on the native Projects views in Tasks.
+Project tools can list, read, create, update, delete, and share projects, and
+read project activity. Backend tool names use `Initiative`. These operate on the
+native Projects views in Tasks. Agents set or clear a task's project with
+`SetEntityProperty` on the task's `Project` property.
 
 Each completed tool row has an expandable result toggle, including empty results
 and per-task failures. Project chips open the native project. Shift-click opens
 another split. **Result data** reveals the complete returned response. Successful
 mutations refresh the project views.
 Deleting a project shows its result without a link to the deleted project.
-Failed project deletions show `Not deleted`. Clearing projects from several tasks
-reports each task's outcome, including partial failures.
+Failed project deletions show `Not deleted`.
 
 ## Phones with new agents enabled
 
@@ -1014,6 +1014,14 @@ Regression check: open a long session, let a reply stream while at latest, then
 scroll several screens up and confirm output does not pull you down. Scroll down
 to reveal the overlay and return to latest. Repeat with a short session and on a
 physical phone while opening/dismissing the keyboard, both at latest and in history.
+
+After a harness server crashes and its lease expires, the session stops showing
+Working and becomes disconnected without requiring a new message. Its transcript
+is preserved; recovery does not replay the prompt or retry tool calls. Open chats
+refresh the durable history while preserving live events arriving during the read,
+so a session that has already resumed stays active. Verify that a transient history
+read failure retries automatically while live messages continue, and that closing
+the chat cancels pending retries.
 
 When a session reconnects using ACP load, the last committed conversation stays
 visible while history is reconstructed. A successful load replaces the transcript

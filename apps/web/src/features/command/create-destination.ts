@@ -8,7 +8,7 @@ import type { CreatableBlock } from './types';
 /** How a destination's task composer creates the task and shows where it goes. */
 export type DestinationTaskComposer = Pick<
   ComposeTaskProps,
-  'createTask' | 'leadingChip'
+  'createTask' | 'initialProjectId'
 >;
 
 /**

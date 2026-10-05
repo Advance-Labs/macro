@@ -11,7 +11,6 @@ function project(
   return {
     id: 'project-id',
     name,
-    descriptionDocumentId: 'description',
     updatedAt: '',
     createdAt: '',
     ownerId: 'owner',
