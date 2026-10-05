@@ -3,6 +3,7 @@ export const BlockRegistry = [
   'call',
   'calendar',
   'chat',
+  'database',
   'write',
   'pdf',
   'md',
@@ -10,6 +11,8 @@ export const BlockRegistry = [
   'image',
   'canvas',
   'spreadsheet',
+  // PowerPoint presentations, edited in the browser.
+  'pptx',
   'channel',
   'project',
   'unknown',
@@ -17,7 +20,7 @@ export const BlockRegistry = [
   'email',
   'contact',
   'company',
-  'automation',
+  'routine',
   'pr',
   'agent',
   // A task project (`project` is a folder).
