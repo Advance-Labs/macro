@@ -33,6 +33,7 @@ files:
   - apps/web/src/features/email-compose/components/**
   - apps/web/src/features/agent-changes/components/**
   - apps/web/src/features/block-write/components/**
+  - apps/web/src/features/block-form/components/**
 rule:
   any:
     - kind: string

@@ -44,7 +44,8 @@ export function tagEntityType(
         'reminder',
         'calendar_event',
         'foreign',
-        'database'
+        'database',
+        'form'
       ),
       () => undefined
     )
