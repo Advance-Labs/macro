@@ -8,8 +8,9 @@ use std::collections::BTreeSet;
 
 /// Maximum combined flat/grouped Soup snapshots retained on one viewer.
 pub const MAX_SOUP_PAGES: usize = 64;
-/// Encoded budget for page fields and their write-recency metadata.
-pub const MAX_SOUP_PAGE_BYTES: usize = 512 * 1024;
+/// Encoded budget for page fields and their write-recency metadata. Fits a
+/// 20,000-row database read, including 500-row pages and filter-bearing cursors.
+pub const MAX_SOUP_PAGE_BYTES: usize = 2 * 1024 * 1024;
 /// Viewer type owning the disposable query entry points.
 pub const SOUP_PAGE_OWNER: &str = "GraphqlUser";
 pub(crate) const PAGE_ORDER_FIELD: &str = "__cache_soup_page_order_v1";

@@ -72,7 +72,7 @@ fn combined_flat_and_grouped_pages_obey_encoded_byte_budget() {
     for n in 0..MAX_SOUP_PAGES {
         record.fields.insert(
             format!("groupSoup({n})"),
-            CacheValue::String("x".repeat(32 * 1024)),
+            CacheValue::String("x".repeat(64 * 1024)),
         );
     }
     record.fields.insert(key(0), page());
