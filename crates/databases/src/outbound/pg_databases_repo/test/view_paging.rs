@@ -435,6 +435,21 @@ async fn select_and_entity_pages_preserve_option_rank_membership_and_empty_sets(
             &filtered(
                 &table,
                 FilterTest::Options {
+                    operator: SetOperator::IsAnyOf,
+                    options: vec![first, second],
+                }
+            )
+        )
+        .await,
+        vec![rows[0], rows[1], rows[3], rows[5]]
+    );
+    assert_eq!(
+        pages(
+            &pool,
+            &table,
+            &filtered(
+                &table,
+                FilterTest::Options {
                     operator: SetOperator::IsNoneOf,
                     options: vec![second]
                 }
@@ -471,6 +486,21 @@ async fn select_and_entity_pages_preserve_option_rank_membership_and_empty_sets(
     assert_eq!(
         pages(&pool, &table, &ascending(&table)).await,
         vec![rows[1], rows[5], rows[3], rows[0], rows[2], rows[4]]
+    );
+    assert_eq!(
+        pages(
+            &pool,
+            &table,
+            &filtered(
+                &table,
+                FilterTest::Options {
+                    operator: SetOperator::HasAny,
+                    options: vec![first],
+                }
+            )
+        )
+        .await,
+        vec![rows[0], rows[3], rows[5]]
     );
     assert_eq!(
         pages(
@@ -538,6 +568,21 @@ async fn select_and_entity_pages_preserve_option_rank_membership_and_empty_sets(
     assert_eq!(
         pages(&pool, &table, &ascending(&table)).await,
         vec![rows[0], rows[1], rows[5], rows[3], rows[2], rows[4]]
+    );
+    assert_eq!(
+        pages(
+            &pool,
+            &table,
+            &filtered(
+                &table,
+                FilterTest::Entities {
+                    operator: SetOperator::HasAny,
+                    entities: vec!["a".into()],
+                }
+            )
+        )
+        .await,
+        vec![rows[1], rows[3], rows[5]]
     );
     assert_eq!(
         pages(

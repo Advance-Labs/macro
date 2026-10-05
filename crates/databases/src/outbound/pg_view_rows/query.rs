@@ -107,11 +107,13 @@ pub(super) fn page(
     for (index, column) in columns.0.iter().enumerate() {
         sql.push(", ");
         cell(&mut sql, index, &column.kind);
-        sql.push(format!(" AS v{index}"));
+        sql.push(format!(" AS v{index}, p{index}.values AS raw{index}"));
     }
     sql.push(" FROM database_rows r");
     for (index, column) in columns.0.iter().enumerate() {
-        sql.push(format!(" LEFT JOIN entity_properties p{index} ON p{index}.entity_id = r.id::text AND p{index}.entity_type = 'DATABASE_ROW' AND p{index}.property_definition_id = "))
+        // Keep both keys indexable: filters may start from properties, whereas
+        // an unfiltered ordered page starts from database_rows.
+        sql.push(format!(" LEFT JOIN entity_properties p{index} ON p{index}.entity_id = r.id::text AND r.id = CASE WHEN p{index}.entity_type = 'DATABASE_ROW' THEN p{index}.entity_id::uuid END AND p{index}.entity_type = 'DATABASE_ROW' AND p{index}.property_definition_id = "))
             .push_bind(column.id);
     }
     sql.push(" WHERE r.table_id = ")
@@ -293,6 +295,26 @@ fn literal(sql: &mut Sql, value: &Value) -> Result<(), ViewRowsError> {
 
 fn predicate(sql: &mut Sql, columns: &Columns<'_>, filter: &Filter) -> Result<(), ViewRowsError> {
     sql.push("(");
+    // The typed expressions below retain scalar/list and empty-cell semantics.
+    // Expose positive membership separately so the property GIN index can prune
+    // candidates before PostgreSQL expands JSON arrays.
+    match filter {
+        Filter::Has {
+            column,
+            value,
+            negated: false,
+        } => {
+            membership_index(sql, columns, *column, std::slice::from_ref(value))?;
+        }
+        Filter::In {
+            column,
+            values,
+            negated: false,
+        } => {
+            membership_index(sql, columns, *column, values)?;
+        }
+        _ => {}
+    }
     match filter {
         Filter::And(parts) | Filter::Or(parts) => {
             if parts.is_empty() {
@@ -382,5 +404,37 @@ fn predicate(sql: &mut Sql, columns: &Columns<'_>, filter: &Filter) -> Result<()
         }
     }
     sql.push(")");
+    Ok(())
+}
+
+fn membership_index(
+    sql: &mut Sql,
+    columns: &Columns<'_>,
+    column: Uuid,
+    values: &[Value],
+) -> Result<(), ViewRowsError> {
+    let index = columns.index(column)?;
+    let needles = values
+        .iter()
+        .map(|value| match (&columns.0[index].kind, value) {
+            (ColumnKind::Select { .. }, Value::Option(option)) => Some(serde_json::json!({
+                "type": "SelectOption", "value": [option.to_string()]
+            })),
+            (ColumnKind::Entity { .. }, Value::Entity(entity)) => Some(serde_json::json!({
+                "type": "EntityReference", "value": [{"entity_id": entity}]
+            })),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(needles) = needles.filter(|values| !values.is_empty()) {
+        sql.push("(");
+        for (at, needle) in needles.into_iter().enumerate() {
+            if at > 0 {
+                sql.push(" OR ");
+            }
+            sql.push(format!("raw{index} @> ")).push_bind(needle);
+        }
+        sql.push(") AND ");
+    }
     Ok(())
 }
