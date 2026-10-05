@@ -19,7 +19,7 @@ export type EmailQueryContext = {
   inboxIds: string[] | undefined;
   facets: FacetSelection;
   facetContext: EmailFacetContext;
-  /** Macro favorites, resolved before listing or searching the Favorites tab. */
+  /** Macro favorite IDs used only by the separate text-search service. */
   favoriteThreadIds?: readonly string[];
 };
 
@@ -35,7 +35,7 @@ export const emailViewForTab = (tab: EmailTab): string =>
     // Soup source on drafts so its query shape remains valid while disabled.
     .with('scheduled', () => 'drafts')
     .with('sent', () => 'sent')
-    .with('favorites', 'calendar', 'shared', 'all', () => 'all')
+    .with('favorites', 'calendar', 'shared', 'all', 'reminders', () => 'all')
     .exhaustive();
 
 const anyThread = (): TargetExpr => clause.not(clause.eq('threadId', NIL_UUID));
@@ -56,7 +56,6 @@ function threadIdsClause(ids: readonly string[]): TargetExpr {
 function tabClause(context: EmailQueryContext): TargetExpr {
   return (
     match(context.tab)
-      .with('favorites', () => threadIdsClause(context.favoriteThreadIds ?? []))
       .with('important', () =>
         clause.and(
           clause.eq('emailImportance', true),
@@ -78,7 +77,15 @@ function tabClause(context: EmailQueryContext): TargetExpr {
       .with('shared', () => clause.eq('emailShared', 'only'))
       // Sent and Drafts are scoped entirely by `emailView`; the server's sent
       // view already covers every linked inbox, so no sender filter is needed.
-      .with('drafts', 'scheduled', 'sent', 'all', anyThread)
+      .with(
+        'drafts',
+        'scheduled',
+        'sent',
+        'favorites',
+        'all',
+        'reminders',
+        anyThread
+      )
       .exhaustive()
   );
 }
@@ -117,6 +124,7 @@ export function buildEmailQuery(
   const body: SoupAstBody = {
     ...mergeAst(base, refinements),
     emailView: emailViewForTab(context.tab),
+    ...(context.tab === 'favorites' ? { favorites_only: true } : {}),
   };
 
   // Newest activity first: `updated_at` is the thread's latest message time.

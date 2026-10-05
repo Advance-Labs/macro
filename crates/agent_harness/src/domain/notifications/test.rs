@@ -242,6 +242,29 @@ fn a_chat_agents_announced_turn_waits_silently() {
     assert!(actions.is_empty(), "{actions:#?}");
 }
 
+#[test]
+fn assignment_session_links_keep_completion_and_question_notifications() {
+    let mut identity = identity();
+    identity.origin = Some(ThreadOrigin::new(
+        messages::domain::models::MessageParent::parse("document", "task-1").unwrap(),
+        Uuid::from_u128(4),
+        Uuid::from_u128(4),
+    ));
+    assert!(matches!(
+        plan(&settled(identity.clone(), 0), false).as_slice(),
+        [PlannedNotification::Settled(_)]
+    ));
+    let AgentSessionLifecycleEvent::WaitingForInput(mut event) = waiting(Some(Uuid::from_u128(4)))
+    else {
+        unreachable!();
+    };
+    event.identity = identity;
+    assert!(matches!(
+        plan(&AgentSessionLifecycleEvent::WaitingForInput(event), false).as_slice(),
+        [PlannedNotification::WaitingForInput(_)]
+    ));
+}
+
 /// Only the announced turn has a reply to speak through: a chat session
 /// asking from the session view still notifies its audience, and a coding
 /// agent's chip says nothing about a question.
@@ -276,6 +299,7 @@ fn mentioned_notifies_exactly_the_people_named() {
                 user("alice@macro.com"),
                 user("carol@macro.com"),
             ],
+            origin_message_id: None,
         },
     ));
 
@@ -302,10 +326,33 @@ fn a_mention_of_nobody_is_nothing() {
             action_id: AgentActionId::mint(),
             mentioned_by: Some(owner()),
             mentioned: Vec::new(),
+            origin_message_id: None,
         },
     ));
 
     assert!(actions.is_empty());
+}
+
+/// A prompt posted as a channel or document message already notified the
+/// users it named on the post itself; the session does not tell them twice.
+/// Whether the bot is a coding agent makes no difference: the message service
+/// notifies the mention regardless of who else the message names.
+#[test]
+fn a_mention_in_a_posted_message_is_already_announced() {
+    for is_coding in [true, false] {
+        let actions = plan(
+            &AgentSessionLifecycleEvent::Mentioned(SessionMentionedMetadata {
+                identity: identity(),
+                action_id: AgentActionId::mint(),
+                mentioned_by: Some(owner()),
+                mentioned: vec![user("carol@macro.com"), user("alice@macro.com")],
+                origin_message_id: Some(Uuid::from_u128(7)),
+            }),
+            is_coding,
+        );
+
+        assert!(actions.is_empty(), "is_coding={is_coding}: {actions:#?}");
+    }
 }
 
 #[test]

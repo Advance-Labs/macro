@@ -42,6 +42,13 @@ export default defineConfig({
           name: 'email-render-cache',
         },
       },
+      {
+        extends: './src/features/scheduling/vitest.config.ts',
+        test: {
+          include: ['src/features/scheduling/**/*.{test,spec}.{ts,tsx}'],
+          name: 'scheduling',
+        },
+      },
       '../../packages/email-renderer/vitest.config.ts',
       '../../packages/collaboration/vitest.collab.config.ts',
       '../../packages/collaboration/vitest.transport.config.ts',
@@ -223,6 +230,7 @@ export default defineConfig({
             ...configDefaults.exclude,
             'src/components/view-shell/**/*',
             'src/features/email-view/preparation-window.test.ts',
+            'src/features/scheduling/**/*',
             'src/features/{theme,block-channel,block-call,block-pr,block-md,channel,notifications,block-email,email-message,email-thread,email-compose}/**/*',
           ],
           include: [
@@ -234,7 +242,9 @@ export default defineConfig({
             'src/lib/fullcalendar-solid/**/*.{test,spec}.{ts,tsx}',
             'src/lib/persistence/**/*.{test,spec}.{ts,tsx}',
             'src/lib/utils/**/*.{test,spec}.{ts,tsx}',
+            'src/lib/workers/slack-import/**/*.{test,spec}.{ts,tsx}',
             'src/routes/**/*.{test,spec}.{ts,tsx}',
+            'src/observability/**/*.{test,spec}.{ts,tsx}',
           ],
           name: 'app',
         },
