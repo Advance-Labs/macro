@@ -37,6 +37,7 @@ type IdOnlyPreviewSelection = {
     | 'crm_company'
     | 'crm_contact'
     | 'database'
+    | 'form'
     | 'email'
     | 'project';
 };

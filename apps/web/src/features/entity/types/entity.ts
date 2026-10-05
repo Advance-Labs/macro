@@ -412,6 +412,13 @@ export type DatabaseEntity = EntityBase & {
   grant: AccessLevel;
 };
 
+/** A Macro Form. Like a database, not a Soup entity: `createdAt` is its only timestamp. */
+export type FormEntity = EntityBase & {
+  type: 'form';
+  /** What the viewer may do: view responds, edit builds and reads responses. */
+  access: 'view' | 'edit' | 'owner';
+};
+
 export type ReminderEntity = EntityBase & {
   type: 'reminder';
   /** What to remind the user about. Doubles as {@link EntityBase.name}. */
@@ -436,7 +443,7 @@ export type ReminderEntity = EntityBase & {
     // Databases are not Soup entities, so nothing can point a reminder at one.
     type: Exclude<
       EntityType,
-      'reminder' | 'calendar_event' | 'initiative' | 'database'
+      'reminder' | 'calendar_event' | 'initiative' | 'database' | 'form'
     >;
     fileType?: string;
     subType?: string;
@@ -512,6 +519,7 @@ export type EntityData =
   | CrmCompanyEntity
   | CrmContactEntity
   | DatabaseEntity
+  | FormEntity
   | RoutineEntity
   | ReminderEntity
   | CalendarEventEntity
@@ -531,6 +539,7 @@ const ENTITY_TYPE_VALUES = new Set<EntityData['type']>([
   'crm_company',
   'crm_contact',
   'database',
+  'form',
   'routine',
   'reminder',
   'calendar_event',
