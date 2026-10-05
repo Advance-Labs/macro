@@ -9846,6 +9846,7 @@ dependencies = [
  "macro_user_id",
  "mcp_select",
  "model-entity",
+ "model_user",
  "models_properties",
  "properties",
  "regex",
@@ -9857,6 +9858,7 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
+ "tower 0.5.3",
  "tracing",
  "utoipa",
  "uuid",
@@ -11720,6 +11722,7 @@ dependencies = [
  "mcp_client",
  "pipedream_mcp",
  "serde_json",
+ "tokio",
  "tracing",
  "workspace-hack",
 ]
