@@ -1,10 +1,33 @@
-import { errAsync, okAsync } from 'neverthrow';
+import { errAsync, okAsync, ResultAsync } from 'neverthrow';
 import { describe, expect, it, vi } from 'vitest';
 import { checkReadStatement, runDatabaseSql } from './driver';
 import type { Bin, GqlQuery, Page } from './generated/types';
 import { readTranscript, replay } from './tests/transcript';
 
 describe('runDatabaseSql', () => {
+  it('stops a superseded read after its in-flight page and frees the engine', async () => {
+    const paging = readTranscript('paging');
+    const pending = Promise.withResolvers<Page>();
+    const page = vi.fn(() => ResultAsync.fromSafePromise(pending.promise));
+    const free = vi.fn();
+    const open = replay(paging);
+    const controller = new AbortController();
+    const reading = runDatabaseSql(paging.catalog, paging.sql, {
+      source: { page, bins: vi.fn() },
+      signal: controller.signal,
+      open: async (catalog, sql) => ({ ...(await open(catalog, sql)), free }),
+    });
+    await vi.waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+    controller.abort();
+    const first = paging.exchanges[0];
+    if (!('page' in first)) throw new Error('recorded bins');
+    pending.resolve(first.page);
+
+    expect((await reading)._unsafeUnwrapErr()).toEqual({ kind: 'cancelled' });
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(free).toHaveBeenCalledTimes(1);
+  });
+
   it('asks the source for each page the engine wants, following the cursor', async () => {
     const paging = readTranscript('paging');
     const page = vi.fn(
