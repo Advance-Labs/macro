@@ -212,6 +212,14 @@ reviews. Affected Rust suites passed: `database_sql` (136), `databases_sql` (35)
 from the repository root with SQLX_OFFLINE unset. SQLx metadata and GraphQL schema
 were generated using the repository tools.
 
+For CI integration, the branch was merged with `main` at `55f06de203` and the
+dependency generator updated the closure entry for the relocated `agent_fold`
+crate. The database optimization code was unchanged. The 590 frontend tests,
+TypeScript and schema checks, scoped `just check`, generated dependency check,
+and the `database_sql`, `databases_sql`, `databases`, `graphql_databases`,
+`complete_graph` and DSS suites passed again. These checks used a separate test
+database; the measured 100k fixture and running bundle were preserved.
+
 ## Remaining limits
 
 - This achieves the requested opening target on the local table fixture. Broader

@@ -274,10 +274,13 @@ dependencies = [
  "macro_auth",
  "macro_db_client",
  "macro_user_id",
+ "macro_uuid",
+ "mcp_client",
  "model_owner",
  "pipedream_mcp",
  "rand 0.9.4",
  "reqwest 0.13.4",
+ "rmcp",
  "rootcause",
  "serde",
  "serde_json",
@@ -360,6 +363,7 @@ dependencies = [
  "macro_tower_layers",
  "macro_user_id",
  "macro_uuid",
+ "mcp_client",
  "messages",
  "mockall",
  "model-entity",
@@ -452,6 +456,7 @@ dependencies = [
  "macro_tower_layers",
  "macro_user_id",
  "macro_uuid",
+ "mcp_client",
  "messages",
  "notification",
  "pipedream_mcp",
@@ -473,6 +478,7 @@ dependencies = [
  "tokio-retry",
  "tokio-util",
  "tower 0.5.3",
+ "tower-http",
  "tracing",
  "url",
  "utoipa",
@@ -633,6 +639,7 @@ dependencies = [
  "non_empty",
  "opentelemetry",
  "opentelemetry_sdk",
+ "reqwest 0.13.4",
  "rootcause",
  "schemars 1.2.1",
  "serde",
@@ -860,6 +867,7 @@ version = "0.1.0"
 dependencies = [
  "activity",
  "agent",
+ "agent_session",
  "ai_billing",
  "ai_toolset",
  "ai_usage",
@@ -1978,11 +1986,13 @@ name = "authentication_service_client"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "model",
  "reqwest 0.13.4",
  "serde",
  "thiserror 2.0.18",
  "tracing",
+ "uuid",
  "workspace-hack",
 ]
 
@@ -4115,6 +4125,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "claude_fold"
+version = "0.1.0"
+dependencies = [
+ "agent_fold",
+ "insta",
+ "serde_json",
+ "workspace-hack",
+]
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4209,10 +4229,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex_fold"
+version = "0.1.0"
+dependencies = [
+ "agent_fold",
+ "insta",
+ "serde_json",
+ "workspace-hack",
+]
+
+[[package]]
 name = "coding_agent_worker"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "agent_fold",
  "agent_runtime_protocol",
  "agent_session",
  "agent_trigger",
@@ -4222,6 +4253,8 @@ dependencies = [
  "channels",
  "chrono",
  "clap",
+ "claude_fold",
+ "codex_fold",
  "crossterm 0.28.1",
  "dashmap",
  "eventsource-stream",
@@ -4361,6 +4394,7 @@ name = "complete_graph"
 version = "0.1.0"
 dependencies = [
  "activity",
+ "agent_session",
  "anyhow",
  "apollo-compiler",
  "async-graphql",
@@ -4400,6 +4434,7 @@ dependencies = [
  "rootcause",
  "scheduled_action",
  "serde",
+ "serde_json",
  "soup",
  "soup-filter-projection",
  "soup_realtime",
@@ -9870,6 +9905,7 @@ dependencies = [
  "macro_user_id",
  "mcp_select",
  "model-entity",
+ "model_user",
  "models_properties",
  "properties",
  "regex",
@@ -9881,6 +9917,7 @@ dependencies = [
  "strum 0.27.2",
  "thiserror 2.0.18",
  "tokio",
+ "tower 0.5.3",
  "tracing",
  "utoipa",
  "uuid",
@@ -11744,6 +11781,7 @@ dependencies = [
  "mcp_client",
  "pipedream_mcp",
  "serde_json",
+ "tokio",
  "tracing",
  "workspace-hack",
 ]
@@ -11887,6 +11925,7 @@ name = "memory"
 version = "0.1.0"
 dependencies = [
  "agent",
+ "ai_billing",
  "ai_tools",
  "ai_toolset",
  "ai_usage",
@@ -17525,6 +17564,7 @@ dependencies = [
  "macro_user_id",
  "mention_utils",
  "messages",
+ "notification",
  "reqwest 0.13.4",
  "rootcause",
  "serde",
@@ -17532,8 +17572,10 @@ dependencies = [
  "sha2 0.10.9",
  "slack_integration",
  "sqlx",
+ "teams",
  "tokio",
  "tokio-util",
+ "tracing",
  "uuid",
  "workspace-hack",
 ]

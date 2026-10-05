@@ -12,8 +12,8 @@ keeps loaded items visible. Wait for real rows before navigating or selecting.
 Low-emphasis right-aligned split-header actions (including Calendar's touch/preview
 New event and Channel's idle Call and Ask Macro) are borderless with a rounded-xl
 background on hover. Emphasized variants retain their treatment, including an
-active call's green ink and outline frame. Channel header tabs use fully rounded tracks and
-selected pills. Button sizes do not change variant colors or framing; individual
+active call's green ink and outline frame. Channel, company, contact, and project
+content tabs use bubble tabs in a separate row below the header. Button sizes do not change variant colors or framing; individual
 framed controls default to glass on touch and flat on desktop. Use `glass={true}`
 to enable glass on all devices, or `glass={false}` to disable it everywhere.
 Embedded and low-emphasis actions use `ghost`; inline calendar-invitation text
@@ -1430,7 +1430,13 @@ byline.
 
 Macro-linked GitHub pull requests open inside the Reviews shell, with a Reviews
 breadcrumb, PR title/status, linked GitHub metadata, discussion timeline, and Details/Checks
-side panel below the top bar. PRs are not tasks and do not appear in the Tasks list.
+side panel below the top bar. An open PR also shows a **Merge** button in the
+top bar beside **Changes**. It opens a confirmation with the repository, PR number,
+and title, then merges on GitHub as the signed-in user through their linked account.
+GitHub's permissions and branch protections decide; a refusal appears as a toast
+with GitHub's reason, and a merge refreshes the PR status in place. Without a linked
+GitHub account the toast points to Settings. Merged and closed PRs have no Merge
+button. PRs are not tasks and do not appear in the Tasks list.
 Opening **Changes** slides a full-height pane in from the right beside the PR details,
 including beside the PR top bar rather than underneath it. The PR details shrink
 alongside the entry slide instead of eagerly jumping narrower. The Changes pane
@@ -1472,6 +1478,8 @@ Narrow file trees start closed. **Show file tree** opens an animated drawer over
 diffs without resizing them, including on phones. File selection, Escape, the
 backdrop, or **Hide file tree** closes the drawer and restores focus to its opener.
 The drawer does not change the saved wide-tree visibility or preferred width.
+Closing releases the drawer's dialog handlers immediately while its inert visual
+frame finishes exiting, so rapid reopening does not restore focus to a stale opener.
 The file tree has its own draggable, keyboard-resizable divider and remembers its
 width locally. Tree visibility uses the sidebar's shared width transition while
 retaining directory state and diff owners. Reduced motion skips this transition.
@@ -1684,9 +1692,9 @@ the toggle to dismiss it; the open state is not restored on a later visit.
 It copies the record's direct URL and shows a confirmation toast; this is also
 available in the embedded company and contact breadcrumb header.
 
-A company is laid out like a project. Its top bar (the split header, or the
-embedded breadcrumb header) has `Overview`, `Team`, `Emails`, `Files`, `Tasks`
-and `Calls` tabs, collapsing to icons when narrow. Overview shows the name, pills
+A company is laid out like a project. Below its split header or embedded
+breadcrumb header, a separate bubble-tab row shows `Overview`, `Team`, `Emails`,
+`Files`, `Tasks`, and `Calls`. Narrow rows scroll horizontally with text labels. Overview shows the name, pills
 for each domain and `Last interacted`, the generated description and the
 Discussion. Team lists the contacts with `Add contact`. Emails keeps the
 `Signal`/`All` and `Team`/`Me` toggles. Files lists non-task documents whose
@@ -1832,11 +1840,17 @@ use a glass sheet with a title, description, Close confirmation button, and
 side-by-side cancel and confirm actions. Pending actions disable both buttons
 and prevent dismissal; canceling leaves the underlying data unchanged.
 
+## Onboarding bypass — `/app/onboarding`
+
+All `@macro.com` accounts see a **Bypass** button on every onboarding step. It
+skips the rest of the flow and leaves onboarding. Accounts on other domains
+do not see it.
+
 ## Setup plan step — `/app/onboarding`
 
-The plan step shows two cards: Free and Premium. Premium starts Stripe Checkout.
-The step has no Max card or Max checkout path. A returning account that already
-has Max still sees Max named as its active plan.
+Onboarding has no plan picker; it ends with the 30-day Premium trial offer and a
+Guest continuation (see [login](login.md#desktop-onboarding)). Plans are chosen
+afterwards in **Settings → Billing**, where Guest users can buy Premium or Max.
 
 ## Settings — `/app/settings/<section>`
 
@@ -1895,7 +1909,10 @@ Open **Settings → Email → Signatures**. Each owned inbox has a visible edito
 there is no expand/collapse control. Format the text, add links or images, and
 choose **Save signature**. **Clear signature** removes only the signature, while
 **Remove inbox** in Accounts uses the existing inbox removal confirmation.
-**Add to replies & forwards** saves that preference immediately. Unsaved drafts
+**Add to replies & forwards** saves that preference immediately. On desktop,
+**Import from Gmail** in each inbox's header fetches that account's Gmail
+signature and saves it right away, replacing any unsaved draft; a toast reports
+when Gmail has no signature. Unsaved drafts
 survive switching settings pages. On phones, signature editing remains desktop-only;
 the replies/forwards toggle and clear action are available.
 Email accounts can also be managed from **Integrations**. Its **Email settings**
@@ -1995,7 +2012,7 @@ uses the shared workspace width.
 Left nav (feature and platform gates still apply):
 
 - **Blocks**: Email, Calendar, Agents, CRM.
-- **Personal**: Account, Appearance, Notifications, Keyboard shortcuts, Billing, Mobile App.
+- **Personal**: Account, Appearance, Notifications, Keyboard shortcuts, Usage, Billing, Mobile App.
 - **Workspace**: Team, Tags, Integrations (personal Gmail/GitHub accounts).
 - **Developer**: Agent connections, Runtimes, MCP server, API Keys, Bots.
 
@@ -2015,19 +2032,50 @@ retains theme search, editing, copying, and custom theme creation.
 Existing settings URLs remain valid; `connections` still opens Integrations,
 `agent-connections` opens Agent connections, and `harness` aliases Runtimes.
 
-`Billing` (current plan card with
-`Manage`; only in dev (`dev.macro.com/app` or a local frontend using the dev
-backend), paid plans show an **AI usage** card with the period meter, credit
-balance, credit-pack buttons `$10`/`$25`/`$50`/`$100` that redirect to Stripe
-Checkout, and a `Usage billing` toggle with per-period limit pills; these
-controls and usage-billing promotional copy are hidden outside dev; an `Upgrade`
-card for Free users to buy Premium, no Max purchase or upgrade control, and a
-`Switch to Premium` link on Max; on a team the downgrade moves only the viewer's
-own seat)
+`Usage` appears directly above Billing, including for Free accounts. In
+production, the `enable-ai-usage-billing` PostHog flag controls activation. While
+it is off or loading, the page shows **AI billing changes take effect on October
+8, 2026.** and all Usage controls are disabled. Turning the flag on activates the
+page and removes the announcement. Dev and local remain interactive even with
+the flag off. The production usage-limit dialog follows the same flag. Its
+**Monthly limit** meter displays a percentage using the backend's current-period
+usage and allowance. The info button explains AI agent chat and AI document
+editing. **Usage Credits** shows the dollar balance and `Add more`, which opens
+**Need more usage?** with `$25` / `$50` / `$100` / `Other`. Supported amounts
+redirect to Stripe Checkout; unsupported custom amounts are disabled. Free
+accounts see `View plans` instead of purchase or reload controls; paid team
+members who are not the payer cannot manage billing.
+Unlimited enterprise plans show `Unlimited` and do not offer credit purchases
+or automatic reload. The development paid-plan preview can still display
+those controls, with purchases disabled.
+
+The **Automatic reload** switch opens **Auto-Reload** without toggling directly.
+It contains Minimum balance (default `$10`), Target balance (default `$100`),
+optional Maximum monthly spend (`No limit`), a payment-method management link,
+and the automatic-charge warning. Balance-triggered reload is not implemented
+by the backend yet, so saving is disabled outside its explicit developer preview.
+Existing postpaid usage billing is shown separately and can be turned off by the
+payer. Local **Developer tools** offer `Preview Free plan` and `Preview paid plan`
+to display either Usage page with sample usage, regardless of the signed-in
+account's tier. `Open Free usage-limit dialog` and `Open paid usage-limit dialog`
+open the corresponding exhausted-usage prompt directly. The previews also work
+before the usage summary loads or when it fails. The paid-plan preview allows
+testing Auto-Reload settings. Purchases and payment management are disabled during any
+preview; `Reset preview` restores server data and closes the usage-limit dialog.
+`Preview production before Oct 8` shows the October 8 announcement and disables
+Usage controls, including usage-limit dialogs. Dev tools remain interactive:
+Free and paid previews can be combined with this state, and `Reset preview`
+restores the normal dev view.
+
+`Billing` shows the current plan and `Manage`, an `Upgrade` section for Free
+users with Premium (`Upgrade now`) and Max (`Get Max`), an `Upgrade to Max` card
+on Premium, and a `Switch to Premium` link on Max. On a team, a plan change moves
+only the viewer's own seat. Plan allowance copy uses the backend catalog and
+still follows the `enable-ai-usage-billing` flag; usage controls live in Usage.
 
 `Team` (members list; on a paid team each row shows the seat's plan,
-and admins/owners can move an existing Max seat to Premium with the `Seat plan`
-menu; Premium seats have no Max option; moves are prorated at once). CRM (enable/disable; once enabled, a `Deal stages` section
+and admins/owners can move a seat between Premium and Max with the `Seat plan`
+menu; moves are prorated at once). CRM (enable/disable; once enabled, a `Deal stages` section
 with `Customize stages`, inline rename, reorder by drag handle or arrow keys (up/down
 buttons on touch), delete, `Add stage`, `Reset to defaults`, and `Closed stages`
 checkboxes, editable by the role set as `edit_stages_role`)
@@ -2063,6 +2111,14 @@ Provider and custom-server More menus contain Disable, Reconnect, and Disconnect
 custom servers also offer Rename. Disabled grants show Enable. Unauthenticated
 custom servers show Connect and Remove. Disconnect/Remove require confirmation.
 Adding a custom MCP saves its name and URL; Connect on its row starts OAuth.
+Enabled custom servers are offered to the owner's agent sessions (Cursor, Claude,
+Codex, macrod, in-memory) alongside connected apps, through the same session
+egress path: the sandbox sees the server under its name and a URL key, never the
+server's address or token. A disabled server is not offered. If a server's
+connection has expired, its tool calls return a message telling the agent to
+have the owner use Reconnect under Custom MCP; there is no `Connect` chip for
+custom servers. Agents configured with a fixed app selection do not receive the
+owner's custom servers.
 An agent reply's `Connect <app>` chip still starts that app's connection flow.
 Cursor stays in Agents → Runtimes with its API key and default model controls; it is not
 featured or offered in the Connections catalog. Personal Gmail and GitHub account
