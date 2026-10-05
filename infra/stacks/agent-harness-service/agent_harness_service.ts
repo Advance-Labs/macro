@@ -25,6 +25,7 @@ const gatewayLoadBalancer = getGatewayAlb();
 
 const BASE_NAME = pulumi.getProject();
 const REPO_ROOT = '../../..';
+const LEXICAL_PORT = 8096;
 
 type Args = {
   vpc: {
@@ -270,6 +271,23 @@ export class AgentHarnessService extends pulumi.ComponentResource {
     );
     this.ecr = image.ecr;
 
+    // The lexical service as a sidecar: the same Hono app the Cloudflare
+    // worker runs, reached over localhost instead of a ~250ms round trip to
+    // the edge on the prompt path.
+    const lexicalImage = new EcrImage(
+      `${BASE_NAME}-lexical-ecr-image-${stack}`,
+      {
+        repositoryId: `${BASE_NAME}-lexical-ecr-${stack}`,
+        repositoryName: `${BASE_NAME}-lexical-${stack}`,
+        imageId: `${BASE_NAME}-lexical-image-${stack}`,
+        imagePath: REPO_ROOT,
+        dockerfile: 'docker/lexical-service.Dockerfile',
+        platform,
+        tags,
+      },
+      { parent: this }
+    );
+
     const serviceSg = this.initializeSecurityGroups({ vpcId: vpc.vpcId });
     this.serviceSg = serviceSg;
 
@@ -317,6 +335,10 @@ export class AgentHarnessService extends pulumi.ComponentResource {
       { tags: this.tags },
       { parent: this }
     );
+    const dopplerKey = (name: string, key: string) => ({
+      name,
+      valueFrom: pulumi.interpolate`${dopplerEcsEnvironment.containerSecrets[0].valueFrom}:${key}::`,
+    });
 
     this.service = new awsx.ecs.FargateService(
       `${BASE_NAME}`,
@@ -368,6 +390,48 @@ export class AgentHarnessService extends pulumi.ComponentResource {
           containers: {
             log_router: fargateLogRouterSidecarContainer,
             datadog_agent: datadogAgentContainer,
+            lexical: {
+              name: 'lexical',
+              image: lexicalImage.image.imageUri,
+              essential: true,
+              memoryReservation: 256,
+              environment: [
+                { name: 'PORT', value: `${LEXICAL_PORT}` },
+                {
+                  name: 'SYNC_SERVICE_URL',
+                  value: getServiceUrl(ServiceUrl.SYNC_SERVICE_URL),
+                },
+              ],
+              // The harness authenticates with INTERNAL_API_KEY.
+              secrets: [
+                dopplerKey('INTERNAL_AUTH_KEY', 'INTERNAL_API_KEY'),
+                dopplerKey('SYNC_SERVICE_AUTH_KEY', 'SYNC_SERVICE_AUTH_KEY'),
+              ],
+              healthCheck: {
+                command: [
+                  'CMD',
+                  'bun',
+                  '-e',
+                  `fetch('http://localhost:${LEXICAL_PORT}/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))`,
+                ],
+                interval: 10,
+                timeout: 5,
+                retries: 3,
+                startPeriod: 10,
+              },
+              logConfiguration: {
+                logDriver: 'awsfirelens',
+                options: {
+                  Name: 'datadog',
+                  Host: 'http-intake.logs.us5.datadoghq.com',
+                  apikey: DATADOG_API_KEY,
+                  dd_service: 'agent-harness-lexical',
+                  dd_source: 'fargate',
+                  dd_tags: `project:agent-harness-service, env:${stack}`,
+                  provider: 'ecs',
+                },
+              },
+            },
             service: {
               name: BASE_NAME,
               image: image.image.imageUri,
@@ -376,8 +440,13 @@ export class AgentHarnessService extends pulumi.ComponentResource {
               stopTimeout: 120,
               cpu: 1024,
               memory: 2048,
+              dependsOn: [{ containerName: 'lexical', condition: 'HEALTHY' }],
               environment: [
                 ...containerEnvVars,
+                {
+                  name: 'OVERRIDE_LEXICAL_SERVICE_URL',
+                  value: `http://localhost:${LEXICAL_PORT}`,
+                },
                 { name: 'CLAUDE_OAUTH_KMS_KEY_ID', value: claudeOauthKey.arn },
                 {
                   name: 'BASE_URL',
