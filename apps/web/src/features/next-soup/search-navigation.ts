@@ -48,7 +48,7 @@ export function searchLocationTarget(
         threadId: target.threadId ?? '',
         seek,
       })!,
-      fields: ['messageId', 'threadId', 'seek'],
+      fields: ['messageId', 'threadId', 'latest', 'seek'],
     }))
     .with({ type: 'email' }, (target) => ({
       namespace: emailDetailSearch.namespace,

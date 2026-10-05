@@ -358,7 +358,7 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   ] as ChannelEntryStateSnapshot | undefined;
 
   const hasInitialTargetRequest = () => {
-    if (routeSearch.messageId) return true;
+    if (routeSearch.messageId || routeSearch.latest) return true;
     const hasPropsTarget =
       props[URL_PARAMS.message] !== undefined ||
       props[URL_PARAMS.thread] !== undefined;
@@ -380,10 +380,14 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
     !isOpenCallTabRequested(searchParams[CHANNEL_URL_PARAMS.openCallTab]) &&
     !hasInitialTargetRequest();
 
+  const initialTargetRequest: ChannelTargetRequest | undefined =
+    routeSearch.latest
+      ? { kind: 'latest' }
+      : toChannelTargetRequest(initialTargetMessageParams());
   const [activeTab, setActiveTabInternal] = createSignal<ChannelTabId>(
     initialChannelTab({
       wantsJoinCall,
-      hasActiveCallHere,
+      hasActiveCallHere: hasActiveCallHere && !initialTargetRequest,
       persistedTab: shouldHydratePersistedChannelState
         ? persistedChannelState?.activeTab
         : undefined,
@@ -395,8 +399,8 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   // whenever a fresh request lands, whether or not it was mounted at the time.
   const [targetRequest, setTargetRequest] = createSignal<
     ChannelTargetRequest | undefined
-  >(toChannelTargetRequest(initialTargetMessageParams()));
-  let routeOwnsTarget = Boolean(routeSearch.messageId);
+  >(initialTargetRequest);
+  let routeOwnsTarget = Boolean(routeSearch.messageId || routeSearch.latest);
   let surfaceApi: ChannelSurfaceApi | undefined;
 
   const setActiveTab = (tab: ChannelTabId) => {
@@ -405,9 +409,14 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
 
   createEffect(
     on(
-      () => [routeSearch.messageId, routeSearch.threadId, routeSearch.seek],
+      () => [
+        routeSearch.messageId,
+        routeSearch.threadId,
+        routeSearch.latest,
+        routeSearch.seek,
+      ],
       () => {
-        if (!routeSearch.messageId) {
+        if (!routeSearch.messageId && !routeSearch.latest) {
           if (routeOwnsTarget) {
             routeOwnsTarget = false;
             setTargetRequest(undefined);
@@ -416,11 +425,15 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
         }
         routeOwnsTarget = true;
         setActiveTab(DEFAULT_CHANNEL_TAB);
-        setTargetRequest({
-          kind: 'message',
-          messageId: routeSearch.messageId,
-          threadId: routeSearch.threadId || undefined,
-        });
+        setTargetRequest(
+          routeSearch.latest
+            ? { kind: 'latest' }
+            : {
+                kind: 'message',
+                messageId: routeSearch.messageId,
+                threadId: routeSearch.threadId || undefined,
+              }
+        );
       },
       { defer: true }
     )

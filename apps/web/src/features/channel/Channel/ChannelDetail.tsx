@@ -266,9 +266,8 @@ function ChannelDetailContent(props: ChannelDetailProps) {
     return `${location}:${props.navigationRequest ?? 0}`;
   };
 
-  // The surface navigates on a fresh request object. The host's `target` is
-  // value-semantic, so it only produces one when its value changes; a mention
-  // chip or notification arriving through the block handle always does.
+  // Routed destinations are value-semantic, with a fresh seek token for repeats.
+  // Compatibility methods still create a fresh request for non-routed hosts.
   let lastTargetKey = targetKey();
   const [targetRequest, setTargetRequest] = createSignal<
     ChannelTargetRequest | undefined
@@ -282,13 +281,19 @@ function ChannelDetailContent(props: ChannelDetailProps) {
   });
 
   const callCtx = useCallContextOptional();
-  // A channel that owns this client's active call opens on the Call tab, so
-  // selecting it never hides the live call — the block adapter's rule.
+  // Keep the active call visible on an ordinary open. An explicit routed target
+  // opens Messages, just like a target arriving through a compatibility method.
   const hasActiveCallHere = !!(
     callCtx?.isInCall() && callCtx.activeChannelId() === channelId
   );
+  const hasInitialNavigationTarget =
+    props.target !== undefined && props.navigationRequest !== undefined;
   const [activeTab, setActiveTabInternal] = createSignal<ChannelTabId>(
-    normalizeChannelTab(hasActiveCallHere ? 'call' : DEFAULT_CHANNEL_TAB)
+    normalizeChannelTab(
+      hasActiveCallHere && !hasInitialNavigationTarget
+        ? 'call'
+        : DEFAULT_CHANNEL_TAB
+    )
   );
   const setActiveTab = (tab: ChannelTabId) => {
     setActiveTabInternal(normalizeChannelTab(tab));
@@ -307,8 +312,8 @@ function ChannelDetailContent(props: ChannelDetailProps) {
     )
   );
 
-  // Mention chips, notifications, and call deep links aim an open channel
-  // through its block handle; without one the click only activates the view.
+  // Remaining preview and call-tab commands keep their compatibility methods.
+  // Routed message and latest targets arrive through props above.
   createComputed(() => {
     const handle = orchestrator.registerBlockHandle('channel', channelId);
     createMethodRegistration(() => handle, {

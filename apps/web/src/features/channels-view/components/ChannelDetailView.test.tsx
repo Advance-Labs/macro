@@ -3,10 +3,13 @@ import type { ChannelTargetRequest } from '@channel/Channel/ChannelSurface';
 import type { ChannelEntity } from '@entity/types/entity';
 import { cleanup, render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  routeSearch: vi.fn((): { seek?: string } => ({})),
+  routeSearch: vi.fn(
+    (): { seek?: string; latest?: boolean; messageId?: string } => ({})
+  ),
   entityCommands: vi.fn<(options: UseBlockEntityCommandsOptions) => void>(),
 }));
 vi.mock('@app/lib/split-router', async (importOriginal) => ({
@@ -98,6 +101,7 @@ describe('Chat detail navigation', () => {
   it('replays the same search target without re-deriving it from notifications', () => {
     const [seek, setSeek] = createSignal('first');
     mocks.routeSearch.mockReturnValue({
+      messageId: 'reply',
       get seek() {
         return seek();
       },
@@ -111,5 +115,30 @@ describe('Chat detail navigation', () => {
     expect(screen.getByTestId('target').textContent).toBe(
       JSON.stringify(replyTarget)
     );
+  });
+
+  it('lets routed latest override the unread destination and replays with a new request', () => {
+    const [search, setSearch] = createStore({ latest: true, seek: 'first' });
+    mocks.routeSearch.mockReturnValue(search);
+    render(() => <ChannelDetailView channel={channel} target={replyTarget} />);
+    const output = screen.getByTestId('target');
+    expect(output.textContent).toBe(JSON.stringify({ kind: 'latest' }));
+    expect(output.dataset.request).toBe('first');
+    setSearch('seek', 'repeat');
+    expect(output.dataset.request).toBe('repeat');
+    setSearch({ latest: false, seek: 'message' });
+    expect(output.textContent).toBe(JSON.stringify(replyTarget));
+  });
+
+  it('does not forward an orphan seek as navigation for a default latest target', () => {
+    mocks.routeSearch.mockReturnValue({
+      seek: 'orphan',
+      messageId: '',
+      latest: false,
+    });
+    render(() => (
+      <ChannelDetailView channel={channel} target={{ kind: 'latest' }} />
+    ));
+    expect(screen.getByTestId('target').dataset.request).toBeUndefined();
   });
 });

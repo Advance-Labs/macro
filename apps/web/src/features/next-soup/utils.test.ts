@@ -1518,7 +1518,7 @@ describe('getChannelEntityTarget', () => {
     });
     expect(openWithSplit).toHaveBeenCalledWith(
       expect.any(Object),
-      expect.objectContaining({ reopen: undefined })
+      expect.not.objectContaining({ reopen: expect.any(String) })
     );
     expect(getBlockHandle).not.toHaveBeenCalled();
   });
@@ -1648,8 +1648,12 @@ describe('getChannelEntityTarget', () => {
     );
     expect(openWithSplit.mock.calls[0]).toEqual([
       expect.anything(),
-      expect.objectContaining({ search: undefined, reopen: 'latest' }),
+      expect.not.objectContaining({ reopen: expect.any(String) }),
     ]);
+    expect(targetSearch(openWithSplit, 'channels')).toEqual({
+      latest: ['true'],
+      seek: [expect.any(String)],
+    });
     expect(bulkMarkAsRead).not.toHaveBeenCalled();
   });
 
@@ -1735,7 +1739,10 @@ describe('getChannelEntityTarget', () => {
       );
       const search = targetSearch(openWithSplit, 'channels');
       if (channelNavigation === 'latest') {
-        expect(search).toBeUndefined();
+        expect(search).toEqual({
+          latest: ['true'],
+          seek: [expect.any(String)],
+        });
       } else {
         expect(search).toMatchObject({
           messageId: ['message'],

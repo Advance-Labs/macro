@@ -1,7 +1,6 @@
 import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { navigateToChannelMessage } from '@block-channel/utils/link';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { toast } from '@core/component/Toast/Toast';
 import { getDisplayNameParts, tryMacroId } from '@core/user';
@@ -226,7 +225,6 @@ export function References(props: ReferenceProps) {
     () => props.entityType ?? 'document'
   );
   const { openWithSplit } = useSplitLayout();
-  const blockOrchestrator = useGlobalBlockOrchestrator();
 
   const navigateToItem = ({
     blockId,
@@ -249,15 +247,9 @@ export function References(props: ReferenceProps) {
     messageId: string;
     threadId?: string;
   }) => {
-    navigateToChannelMessage(
-      blockOrchestrator,
-      channelId,
-      messageId,
-      threadId,
-      {
-        preferNewSplit: true,
-      }
-    );
+    navigateToChannelMessage(channelId, messageId, threadId, {
+      preferNewSplit: true,
+    });
   };
 
   const navigateToGenericReference = (

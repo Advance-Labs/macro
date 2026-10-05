@@ -87,10 +87,8 @@ const UnifiedSearchToolResponse = (props: {
 
   const openEntity = async (entity: SearchEntity, event: MouseEvent) => {
     if (entity.type === 'channel_message') {
-      const orchestrator = globalSplitManager()?.getOrchestrator();
-      if (orchestrator) {
+      if (globalSplitManager()) {
         await navigateToChannelMessage(
-          orchestrator,
           entity.channelId,
           entity.messageId,
           entity.threadId,

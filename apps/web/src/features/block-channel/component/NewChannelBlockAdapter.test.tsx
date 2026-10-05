@@ -1,13 +1,22 @@
 import type { ChannelTargetRequest } from '@channel/Channel/ChannelSurface';
 import { cleanup, render } from '@solidjs/testing-library';
+import { createComputed } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { afterEach, expect, it, vi } from 'vitest';
 import { NewChannelBlockAdapter } from './NewChannelBlockAdapter';
 
 const state = vi.hoisted(() => ({
-  search: {} as { messageId: string; threadId: string; seek: string },
+  search: {} as {
+    messageId: string;
+    threadId: string;
+    latest: boolean;
+    seek: string;
+  },
   navigate: (_params: Record<string, unknown>) => {},
   latest: () => {},
+  requests: [] as (ChannelTargetRequest | undefined)[],
+  activeCall: false,
+  initialTab: undefined as string | undefined,
 }));
 vi.mock('@app/lib/split-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@app/lib/split-router')>()),
@@ -56,7 +65,14 @@ vi.mock('@components/app/useNavigatedFromJK', () => ({
   useNavigatedFromJK: () => ({ navigatedFromJK: () => false }),
 }));
 vi.mock('@channel/Call/CallContext', () => ({
-  useCallContextOptional: () => undefined,
+  useCallContextOptional: () =>
+    state.activeCall
+      ? {
+          isInCall: () => true,
+          activeChannelId: () => 'channel',
+          syncCallPageTab: vi.fn(),
+        }
+      : undefined,
 }));
 vi.mock('@channel/Bots/use-channel-bot-management', () => ({
   useChannelBotManagement: () => ({}),
@@ -85,25 +101,35 @@ vi.mock('@ui', () => ({
   cn: (...values: string[]) => values.join(' '),
 }));
 vi.mock('@channel/Channel/use-channel-tab-items', () => ({
-  normalizeChannelTab: (tab: string) => tab,
+  normalizeChannelTab: (tab: string) => {
+    state.initialTab = tab;
+    return tab;
+  },
 }));
 vi.mock('./Top', () => ({}));
 // Observe the real adapter's requests without mounting the timeline/chrome.
 vi.mock('@channel/Channel/ChannelSurface', () => ({
-  ChannelSurface: (props: { targetRequest?: ChannelTargetRequest }) => (
-    <output>{JSON.stringify(props.targetRequest)}</output>
-  ),
+  ChannelSurface: (props: { targetRequest?: ChannelTargetRequest }) => {
+    createComputed(() => state.requests.push(props.targetRequest));
+    return <output>{JSON.stringify(props.targetRequest)}</output>;
+  },
   ChannelMessages: () => null,
 }));
 afterEach(cleanup);
 
-function setup() {
+function setup(
+  latest = false,
+  options: { activeCall?: boolean; messageId?: string; seek?: string } = {}
+) {
+  state.activeCall = options.activeCall ?? false;
   const [search, setSearch] = createStore({
-    messageId: 'route-message',
+    messageId: options.messageId ?? 'route-message',
     threadId: '',
-    seek: 'first',
+    latest,
+    seek: options.seek ?? 'first',
   });
   state.search = search;
+  state.requests = [];
   const view = render(() => <NewChannelBlockAdapter />);
   const target = () => {
     const text = view.container.querySelector('output')!.textContent;
@@ -145,5 +171,48 @@ it.each(['message', 'latest'] as const)(
     });
     setSearch({ messageId: '', seek: '' });
     expect(target()).toBeUndefined();
+  }
+);
+
+it('keeps cold and repeated latest requests in the feature-owned target', () => {
+  const { setSearch, target } = setup(true);
+  const initial = target();
+  const initialRequest = state.requests.at(-1);
+  expect(initial).toEqual({ kind: 'latest' });
+  setSearch({ seek: 'repeat' });
+  expect(target()).toEqual(initial);
+  expect(state.requests.at(-1)).not.toBe(initialRequest);
+  setSearch({
+    latest: false,
+    messageId: 'reply',
+    threadId: 'root',
+    seek: 'message',
+  });
+  expect(target()).toEqual({
+    kind: 'message',
+    messageId: 'reply',
+    threadId: 'root',
+  });
+  setSearch({ latest: true, messageId: '', threadId: '', seek: 'latest' });
+  expect(target()).toEqual({ kind: 'latest' });
+  setSearch({ latest: false, messageId: '', seek: '' });
+  expect(target()).toBeUndefined();
+});
+
+it('keeps the active call selected for a seek without a message or latest target', () => {
+  const { target } = setup(false, {
+    activeCall: true,
+    messageId: '',
+    seek: 'orphan',
+  });
+  expect(target()).toBeUndefined();
+  expect(state.initialTab).toBe('call');
+});
+
+it.each([false, true])(
+  'opens Messages for an actual target with no seek (latest: %s)',
+  (latest) => {
+    setup(latest, { activeCall: true, seek: '' });
+    expect(state.initialTab).toBe('messages');
   }
 );

@@ -1,4 +1,13 @@
+import {
+  createMemorySplitRouterLocation,
+  createRoutesManifest,
+  createSplitRouter,
+} from '@app/lib/split-router';
 import { createSplitLayout } from '@components/app/split-layout/layoutManager';
+import { createAppSplitRouterMiddleware } from '@components/app/split-layout/split-router/app-middleware';
+import { appSplitRoutes } from '@components/app/split-layout/split-router/app-routes';
+import { createContentNavigator } from '@components/app/split-layout/split-router/content-navigation';
+import { createAppSplitRouterLayout } from '@components/app/split-layout/splitRouterLayout';
 import { toast } from '@core/component/Toast/Toast';
 import type { BlockOrchestrator } from '@core/orchestrator';
 import { createRoot } from 'solid-js';
@@ -15,6 +24,16 @@ vi.mock('@components/app/split-layout/componentRegistry', () => ({
 vi.mock('@core/constant/settingsTabsConfig', () => ({
   settingsTabToSlug: (tab: string) => tab,
 }));
+// Import the real route graph without opening service sockets in jsdom.
+vi.mock('@service-storage/websocket', () => ({
+  storageWS: { reconnectIfDisconnected: vi.fn() },
+  createWebSocketJob: vi.fn(),
+}));
+vi.mock('@service-connection/websocket', () => ({
+  ws: { addEventListener: vi.fn(), send: vi.fn() },
+  state: () => 'closed',
+  createConnectionWebsocketEffect: vi.fn(),
+}));
 vi.mock('@core/component/Toast/Toast', () => ({ toast: { alert: vi.fn() } }));
 vi.mock('@app/features/calendar-view/calendar-range', () => ({
   createCalendarRange: vi.fn(),
@@ -22,14 +41,18 @@ vi.mock('@app/features/calendar-view/calendar-range', () => ({
 vi.mock('@app/features/calendar-view/calendar-navigation', () => ({
   openCalendarView: vi.fn(),
 }));
-vi.mock('@app/lib/constants/file-metadata', () => ({
+vi.mock('@app/lib/constants/file-metadata', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@app/lib/constants/file-metadata')
+  >()),
   isBlockAlias: () => false,
   itemToBlockName: (value: { fileType: string }) => value.fileType,
   resolveBlockAlias: (type: string) => type,
 }));
 
 beforeEach(() => vi.clearAllMocks());
-vi.mock('@core/constant/featureFlags', () => ({
+vi.mock('@core/constant/featureFlags', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@core/constant/featureFlags')>()),
   enableCalendarUi: false,
   enableReminders: false,
   isFeatureEnabled: vi.fn(),
@@ -64,7 +87,7 @@ vi.mock('../notification-stacking', () => ({
   stackNotifications: vi.fn(),
 }));
 
-function setup(location: 'preview' | 'split' | 'closed') {
+async function setup(location: 'preview' | 'split' | 'closed') {
   const navigate = vi.fn();
   const createBlockInstance = vi.fn(() => ({
     element: undefined,
@@ -75,15 +98,36 @@ function setup(location: 'preview' | 'split' | 'closed') {
     createBlockInstance,
     getBlockHandle: async () => ({ goToLocationFromParams: navigate }),
   } as unknown as BlockOrchestrator;
-  const layout = createRoot((dispose) => {
-    onTestFinished(dispose);
-    return createSplitLayout(orchestrator, [
+  const { layout, router } = createRoot((dispose) => {
+    const layout = createSplitLayout(orchestrator, [
       location === 'split'
         ? { type: 'channel', id: 'channel' }
         : { type: 'component', id: 'channels' },
       { type: 'component', id: 'home' },
     ]);
+    const routes = createRoutesManifest(appSplitRoutes);
+    const path =
+      location === 'split'
+        ? '/channel/channel'
+        : location === 'preview'
+          ? '/channels/channel'
+          : '/channels';
+    const router = createSplitRouter({
+      routes,
+      layout: createAppSplitRouterLayout(layout, routes),
+      location: createMemorySplitRouterLocation(`${path}/~/home`),
+      middleware: createAppSplitRouterMiddleware({
+        isTouchDevice: () => location === 'split',
+      }),
+    });
+    layout.setContentNavigator(createContentNavigator(layout, router, routes));
+    onTestFinished(() => {
+      router.dispose();
+      dispose();
+    });
+    return { layout, router };
   });
+  await router.settled();
   const [first, other] = layout.splits();
   layout.activateSplit(other.id);
   const activate = vi.fn(() => layout.activateSplit(first.id));
@@ -98,7 +142,15 @@ function setup(location: 'preview' | 'split' | 'closed') {
         ]
       : []
   );
-  return { layout, activate, navigate, release, createBlockInstance, first };
+  return {
+    layout,
+    router,
+    activate,
+    navigate,
+    release,
+    createBlockInstance,
+    first,
+  };
 }
 
 it.each([
@@ -106,10 +158,12 @@ it.each([
   'channel_message_reply',
   'channel_mention',
 ] as const)(
-  'reuses the Chat preview for %s and navigates to the notification target',
+  'reuses the route-backed Chat detail for %s and navigates to the notification target',
   async (tag) => {
-    const { layout, activate, navigate, release, createBlockInstance, first } =
-      setup('preview');
+    const { layout, router, navigate, release, createBlockInstance, first } =
+      await setup('preview');
+    const mount = first.mount;
+    const ownerRoute = router.route(first.id);
     const notification = {
       entity_id: 'channel',
       notification_metadata: {
@@ -119,22 +173,30 @@ it.each([
     } as UnifiedNotification;
 
     const result = await openNotification(notification, layout);
+    await router.settled();
 
     expect(result.isOk()).toBe(true);
-    expect(activate).toHaveBeenCalledOnce();
     expect(layout.activeSplitId()).toBe(first.id);
     expect(createBlockInstance).not.toHaveBeenCalled();
     expect(toast.alert).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith({
-      channel_message_id: 'message',
-      ...(tag === 'channel_message_send'
-        ? {}
-        : { channel_thread_id: 'thread' }),
+    expect(navigate).not.toHaveBeenCalled();
+    expect(router.search(first.id, 'channels')).toMatchObject({
+      messageId: ['message'],
+      ...(tag === 'channel_message_send' ? {} : { threadId: ['thread'] }),
+      seek: [expect.any(String)],
     });
+    expect(router.route(first.id)).toEqual(ownerRoute);
+    expect(layout.splits().find((split) => split.id === first.id)?.mount).toBe(
+      mount
+    );
 
     release();
+    router.navigate(first.id, '/channels');
+    await router.settled();
     await openNotification(notification, layout);
-    expect(createBlockInstance).toHaveBeenCalledOnce();
+    await router.settled();
+    expect(router.search(first.id, 'channels')?.messageId).toEqual(['message']);
+    expect(createBlockInstance).not.toHaveBeenCalled();
   }
 );
 
@@ -142,7 +204,7 @@ it.each(['channel_invite', 'call_started'] as const)(
   'activates the existing preview for %s without opening a split',
   async (tag) => {
     const { layout, activate, navigate, createBlockInstance } =
-      setup('preview');
+      await setup('preview');
     await openNotification(
       {
         entity_id: 'channel',
@@ -159,7 +221,7 @@ it.each(['channel_invite', 'call_started'] as const)(
 );
 
 it('reports an ordinary channel notification applied after preview activation', async () => {
-  const { layout, activate } = setup('preview');
+  const { layout, activate } = await setup('preview');
   const onApplied = vi.fn();
 
   await openNotification(
@@ -181,7 +243,8 @@ it('reports an ordinary channel notification applied after preview activation', 
 it.each(['split', 'closed'] as const)(
   'preserves notification navigation when the channel is %s',
   async (location) => {
-    const { layout, navigate, createBlockInstance, first } = setup(location);
+    const { layout, router, navigate, createBlockInstance, first } =
+      await setup(location);
     await openNotification(
       {
         entity_id: 'channel',
@@ -192,10 +255,17 @@ it.each(['split', 'closed'] as const)(
       } as UnifiedNotification,
       layout
     );
+    await router.settled();
 
-    expect(createBlockInstance).toHaveBeenCalledOnce();
+    if (location === 'split')
+      expect(createBlockInstance).toHaveBeenCalledOnce();
+    else expect(createBlockInstance).not.toHaveBeenCalled();
     if (location === 'split') expect(layout.activeSplitId()).toBe(first.id);
     expect(toast.alert).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith({ channel_message_id: 'message' });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(router.search(layout.activeSplitId()!, 'channels')).toMatchObject({
+      messageId: ['message'],
+      seek: [expect.any(String)],
+    });
   }
 );

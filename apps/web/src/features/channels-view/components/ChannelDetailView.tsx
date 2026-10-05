@@ -26,8 +26,10 @@ export function ChannelDetailView(props: {
   return (
     <ChannelDetail
       channelId={props.channel.id}
-      target={props.target}
-      navigationRequest={search.seek}
+      target={search.latest ? { kind: 'latest' } : props.target}
+      navigationRequest={
+        search.messageId || search.latest ? search.seek : undefined
+      }
       fallbackName={props.channel.name}
       autofocus={false}
     >

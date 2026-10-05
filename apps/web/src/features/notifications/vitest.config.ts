@@ -1,11 +1,2 @@
-import solidPlugin from 'vite-plugin-solid';
-import tsconfigPaths from 'vite-tsconfig-paths';
-import { defineConfig } from 'vitest/config';
-
-export default defineConfig({
-  plugins: [tsconfigPaths(), solidPlugin()],
-  test: {
-    environment: 'jsdom',
-    globals: true,
-  },
-} as any);
+// Router integration tests need the same Solid/browser resolution as app tests.
+export { default } from '../../lib/core/vitest.config';

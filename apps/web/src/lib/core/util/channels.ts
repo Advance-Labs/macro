@@ -1,5 +1,4 @@
-import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
+import { channelLocationUpdates } from '@app/features/channels-view/channels-route';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { toast } from '@core/component/Toast/Toast';
 import { useUserId } from '@core/context/user';
@@ -41,8 +40,7 @@ type SendToChannelArgs = SendContent & {
 };
 
 export function useSendMessageToPeople() {
-  const { replaceSplit } = useSplitLayout();
-  const orchestrator = useGlobalBlockOrchestrator();
+  const { openWithSplit } = useSplitLayout();
   const getOrCreateDmMutation = useGetOrCreateDirectMessageMutation();
   const getOrCreatePrivateChannelMutation =
     useGetOrCreatePrivateChannelMutation();
@@ -74,17 +72,17 @@ export function useSendMessageToPeople() {
     invalidateContacts();
 
     const navigateToChannel = async () => {
-      replaceSplit({
-        content: {
-          type: 'channel',
-          id: channelId,
-        },
-        mergeHistory: navigate?.mergeHistory,
-      });
-      const handle = await orchestrator.getBlockHandle(channelId);
-      await handle?.goToLocationFromParams({
-        [CHANNEL_PARAMS.message]: messageResponse.id,
-      });
+      openWithSplit(
+        { type: 'channel', id: channelId },
+        {
+          activate: true,
+          mergeHistory: navigate?.mergeHistory,
+          search: channelLocationUpdates({
+            kind: 'message',
+            messageId: messageResponse.id,
+          }),
+        }
+      );
     };
 
     if (navigate?.navigate) {

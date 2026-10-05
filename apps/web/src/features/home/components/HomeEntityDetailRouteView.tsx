@@ -88,7 +88,7 @@ function entityDetailTarget(
 function HomeEntityDetailBody(props: {
   target: EntityDetailTarget;
   value: Accessor<string>;
-  navigationRequest: number | string;
+  navigationRequest?: number | string;
   onClose: () => void;
 }) {
   const { openPreview } = useHomeView();
@@ -208,7 +208,7 @@ function HomeEntityDetailBody(props: {
 function HomeDirectDetail(props: {
   target: EntityDetailTarget;
   closePreview: () => void;
-  navigationRequest: number | string;
+  navigationRequest?: number | string;
 }) {
   const value = () => `${props.target.type}:${props.target.id}`;
 
@@ -255,7 +255,13 @@ export function HomeEntityDetailRouteView() {
           <HomeDirectDetail
             target={target()}
             closePreview={closePreview}
-            navigationRequest={`${previewNavigationRequest()}:${search.seek}`}
+            navigationRequest={
+              previewNavigationRequest() > 0 ||
+              search.messageId ||
+              search.latest
+                ? `${previewNavigationRequest()}:${search.seek}`
+                : undefined
+            }
           />
         )}
       </Match>

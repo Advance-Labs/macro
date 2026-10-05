@@ -1,6 +1,11 @@
 import { createBlockOrchestrator } from '@core/orchestrator';
 import { cleanup, render } from '@solidjs/testing-library';
-import { type Accessor, createComputed, type JSX } from 'solid-js';
+import {
+  type Accessor,
+  createComputed,
+  createSignal,
+  type JSX,
+} from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChannelTargetRequest } from '../ChannelSurface';
 import { useChannelTab } from '../ChannelTabContext';
@@ -11,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   pass: (props: { children?: JSX.Element }) => props.children,
   requests: [] as (ChannelTargetRequest | undefined)[],
   joinRequested: false,
+  activeCall: false,
 }));
 
 vi.mock('@channel/Channel/ChannelSurface', () => ({
@@ -42,7 +48,14 @@ vi.mock('@channel/Bots/use-channel-bot-management', () => ({
   }),
 }));
 vi.mock('@channel/Call/CallContext', () => ({
-  useCallContextOptional: () => undefined,
+  useCallContextOptional: () =>
+    mocks.activeCall
+      ? {
+          isInCall: () => true,
+          activeChannelId: () => 'channel-1',
+          syncCallPageTab: vi.fn(),
+        }
+      : undefined,
 }));
 vi.mock('@channel/Call/CallEventSync', () => ({ CallEventSync: () => null }));
 vi.mock('@channel/Call/ChannelCallAutoJoin', () => ({
@@ -129,6 +142,7 @@ const messageRequests = () =>
 beforeEach(() => {
   mocks.requests.length = 0;
   mocks.joinRequested = false;
+  mocks.activeCall = false;
 });
 afterEach(cleanup);
 
@@ -174,6 +188,93 @@ describe('channel detail navigation', () => {
       { kind: 'message', messageId: 'deep-link' },
     ]);
   });
+
+  it('delivers cold and repeated routed latest requests without a block-handle lookup', () => {
+    mocks.activeCall = true;
+    const [seek, setSeek] = createSignal('first');
+    let tab!: ReturnType<typeof useChannelTab>;
+    const lookup = vi.spyOn(orchestrator, 'getBlockHandle');
+    render(() => (
+      <ChannelDetail
+        channelId={CHANNEL_ID}
+        target={{ kind: 'latest' }}
+        navigationRequest={seek()}
+      >
+        {() => {
+          tab = useChannelTab();
+          return null;
+        }}
+      </ChannelDetail>
+    ));
+    const initialRequest = mocks.requests.at(-1);
+    expect(initialRequest).toEqual({ kind: 'latest' });
+    expect(tab.activeTab()).toBe(DEFAULT_CHANNEL_TAB);
+    tab.setActiveTab('call');
+    setSeek('repeat');
+    expect(mocks.requests.at(-1)).toEqual(initialRequest);
+    expect(mocks.requests.at(-1)).not.toBe(initialRequest);
+    expect(tab.activeTab()).toBe(DEFAULT_CHANNEL_TAB);
+    expect(lookup).not.toHaveBeenCalled();
+    lookup.mockRestore();
+  });
+
+  it.each(['orphan-seek', '', 0])(
+    'keeps an active call visible for a targetless token %s',
+    (request) => {
+      mocks.activeCall = true;
+      const [token, setToken] = createSignal<string | number>(request);
+      let tab!: ReturnType<typeof useChannelTab>;
+      render(() => (
+        <ChannelDetail channelId={CHANNEL_ID} navigationRequest={token()}>
+          {() => {
+            tab = useChannelTab();
+            return null;
+          }}
+        </ChannelDetail>
+      ));
+      expect(tab.activeTab()).toBe('call');
+      setToken('another-orphan-seek');
+      expect(tab.activeTab()).toBe('call');
+    }
+  );
+
+  it('keeps an active call visible when latest is a default target rather than a navigation request', () => {
+    mocks.activeCall = true;
+    let tab!: ReturnType<typeof useChannelTab>;
+    render(() => (
+      <ChannelDetail channelId={CHANNEL_ID} target={{ kind: 'latest' }}>
+        {() => {
+          tab = useChannelTab();
+          return null;
+        }}
+      </ChannelDetail>
+    ));
+    expect(tab.activeTab()).toBe('call');
+  });
+
+  it.each<ChannelTargetRequest>([
+    { kind: 'latest' },
+    { kind: 'message', messageId: 'message' },
+  ])(
+    'opens Messages for a real $kind target with an empty request token',
+    (target) => {
+      mocks.activeCall = true;
+      let tab!: ReturnType<typeof useChannelTab>;
+      render(() => (
+        <ChannelDetail
+          channelId={CHANNEL_ID}
+          target={target}
+          navigationRequest=""
+        >
+          {() => {
+            tab = useChannelTab();
+            return null;
+          }}
+        </ChannelDetail>
+      ));
+      expect(tab.activeTab()).toBe(DEFAULT_CHANNEL_TAB);
+    }
+  );
 
   it('sends call params to the call tab and joins only when asked', async () => {
     let activeTab: Accessor<ChannelTabId> | undefined;

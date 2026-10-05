@@ -153,8 +153,7 @@ async function openChannelNotification(
     return;
   }
 
-  const orchestrator = layoutManager.getOrchestrator();
-  await navigateToChannelMessage(orchestrator, channelId, messageId, threadId, {
+  await navigateToChannelMessage(channelId, messageId, threadId, {
     splitManager: layoutManager,
     preferNewSplit: newSplit,
     sourceHandle,

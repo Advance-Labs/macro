@@ -13,6 +13,7 @@ import {
   CALENDAR_VIEW_ID,
   type CalendarViewTarget,
 } from '@app/features/calendar-view/types';
+import { channelLocationUpdates } from '@app/features/channels-view/channels-route';
 import { driveHostedContent } from '@app/features/drive-view/drive-hosted-content';
 import { projectRouteId } from '@app/features/projects/core/route';
 import {
@@ -832,7 +833,9 @@ export const openEntityInSplitFromUnifiedList = async (
       ? searchLocationUpdates(content.id, target)
       : markdownCommentId
         ? markdownLocationUpdates(content.id, { commentId: markdownCommentId })
-        : undefined,
+        : openChannelAtLatest
+          ? channelLocationUpdates({ kind: 'latest' })
+          : undefined,
     onApplied: markNotificationsSeen,
     referredFrom,
     activate: true,
@@ -841,10 +844,6 @@ export const openEntityInSplitFromUnifiedList = async (
     mergeHistory,
     // Hosted details have distinct routes even when they share a component identity.
     allowDuplicate: allowDuplicate || hostedContent !== undefined,
-    reopen:
-      entity.type === 'channel' && !location && openChannelAtLatest
-        ? 'latest'
-        : undefined,
   });
   if (result.status === 'reused' && result.owner !== result.sourceOwner) {
     toast.alert('Content already open');
@@ -860,11 +859,6 @@ export const openEntityInSplitFromUnifiedList = async (
       entity,
       splitManager.getOrchestrator()
     );
-  } else if (!target && openChannelAtLatest) {
-    // Force the scroll-to-bottom even when the channel is already open in a
-    // (preview) split, where reopen: 'latest' only reactivates the parked
-    // split without re-pinning it to the newest message.
-    await goToChannelLatest(splitManager.getOrchestrator(), content.id);
   }
 };
 

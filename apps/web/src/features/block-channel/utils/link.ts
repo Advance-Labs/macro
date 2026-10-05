@@ -1,3 +1,4 @@
+import { channelLocationUpdates } from '@app/features/channels-view/channels-route';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { URL_PARAMS } from '@block-channel/constants';
 import type {
@@ -53,7 +54,6 @@ export async function goToChannelLatest(
 }
 
 export async function navigateToChannelMessage(
-  orchestrator: BlockOrchestrator,
   channelId: string,
   messageId: string,
   threadId?: string,
@@ -82,27 +82,16 @@ export async function navigateToChannelMessage(
     }
   };
 
-  const existing = splitManager.getSplitByContent('channel', channelId);
-  if (existing) {
-    existing.activate();
-    reportApplied();
-  } else {
-    const result = splitManager.openWithSplit(
-      {
-        type: 'channel',
-        id: channelId,
-        params: getChannelParams(messageId, threadId),
-      },
-      {
-        activate: true,
-        referredFrom: null,
-        preferNewSplit: options?.preferNewSplit,
-        handle: options?.sourceHandle,
-        ...(options?.onApplied ? { onApplied: reportApplied } : {}),
-      }
-    );
-    reportImmediateResult(result);
-  }
-
-  await goToChannelMessage(orchestrator, channelId, messageId, threadId);
+  const result = splitManager.openWithSplit(
+    { type: 'channel', id: channelId },
+    {
+      activate: true,
+      referredFrom: null,
+      preferNewSplit: options?.preferNewSplit,
+      handle: options?.sourceHandle,
+      search: channelLocationUpdates({ kind: 'message', messageId, threadId }),
+      ...(options?.onApplied ? { onApplied: reportApplied } : {}),
+    }
+  );
+  reportImmediateResult(result);
 }

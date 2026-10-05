@@ -1,6 +1,7 @@
 import { agentsRouteId } from '@app/features/agents-view/core/route';
 import { markdownLocationUpdates } from '@app/features/block-md/markdown-route';
 import { CALENDAR_PREFERENCES_KEY } from '@app/features/calendar/calendar-preferences';
+import { channelLocationUpdates } from '@app/features/channels-view/channels-route';
 import { driveHostedContent } from '@app/features/drive-view/drive-hosted-content';
 import { driveDestination } from '@app/features/drive-view/drive-route-navigation';
 import { driveSplitRoute } from '@app/features/drive-view/route';
@@ -28,6 +29,7 @@ import {
 import { createMemorySplitRouterLocation } from '@app/lib/split-router/integrations/memory';
 import { createSplitRouter } from '@app/lib/split-router/router';
 import { createRoutesManifest } from '@app/lib/split-router/routes';
+import { navigateToChannelMessage } from '@block-channel/utils/link';
 import type { ResizeZoneCtx } from '@core/component/Resize/types';
 import { toast } from '@core/component/Toast/Toast';
 import type { BlockOrchestrator } from '@core/orchestrator';
@@ -1106,6 +1108,117 @@ describe('layoutManager', () => {
         );
         expect(manager.activeSplitId()).toBe(owner.id);
         expect(onApplied).toHaveBeenCalledTimes(2);
+        router.dispose();
+        dispose();
+      }
+    );
+
+    it.each(['/channels/entity', '/home/channel/entity'])(
+      'replaces message and latest targets in %s without replacing its owner or filters',
+      async (ownerPath) => {
+        const { manager, router, dispose } = ingressRouter(
+          `${ownerPath}/~/search?s0.channels.tab=threads&s0.channels.messageId=old&s0.channels.threadId=old-root`
+        );
+        await router.settled();
+        const [owner, source] = manager.splits();
+        const ownerRoute = router.route(owner.id);
+        const mount = owner.mount;
+        const getBlockHandle = vi.fn();
+        manager.getOrchestrator().getBlockHandle = getBlockHandle;
+        let previousSeek: string[] | undefined;
+        for (const kind of [
+          'message',
+          'latest',
+          'latest',
+          'message',
+        ] as const) {
+          manager.openWithSplit(
+            { type: 'channel', id: 'entity' },
+            {
+              handle: manager.getSplit(source.id),
+              search: channelLocationUpdates(
+                kind === 'message'
+                  ? { kind, messageId: 'reply', threadId: 'root' }
+                  : { kind }
+              ),
+            }
+          );
+          await router.settled();
+          const target = router.search(owner.id, 'channels');
+          expect(target).toMatchObject({
+            tab: ['threads'],
+            seek: [expect.any(String)],
+          });
+          if (kind === 'latest') {
+            expect(target?.latest).toEqual(['true']);
+            expect(target?.messageId).toBeUndefined();
+            expect(target?.threadId).toBeUndefined();
+          } else {
+            expect(target?.messageId).toEqual(['reply']);
+            expect(target?.threadId).toEqual(['root']);
+            expect(target?.latest).toBeUndefined();
+          }
+          expect(target?.seek).not.toEqual(previousSeek);
+          previousSeek = target?.seek;
+          expect(router.route(owner.id)).toEqual(ownerRoute);
+          expect(
+            manager.splits().find((split) => split.id === owner.id)?.mount
+          ).toBe(mount);
+          expect(router.search(source.id, 'channels')).toBeUndefined();
+          expect(manager.activeSplitId()).toBe(owner.id);
+          expect(manager.splits()).toHaveLength(2);
+        }
+        expect(getBlockHandle).not.toHaveBeenCalled();
+        router.dispose();
+        dispose();
+      }
+    );
+
+    it.each([
+      { ownerPath: '/channels/entity', sourcePath: '/home/channel/other' },
+      { ownerPath: '/home/channel/entity', sourcePath: '/channels/other' },
+    ])(
+      'routes repeated messages from $sourcePath to the route-backed owner in $ownerPath',
+      async ({ ownerPath, sourcePath }) => {
+        const { manager, router, dispose } = ingressRouter(
+          `${ownerPath}/~${sourcePath}?s0.channels.tab=threads&s0.home.tab=noise&s1.channels.messageId=source-message&s1.channels.seek=source-seek`
+        );
+        await router.settled();
+        const [owner, source] = manager.splits();
+        const ownerRoute = router.route(owner.id);
+        const sourceRoute = router.route(source.id);
+        const sourceSearch = router.search(source.id, 'channels');
+        const mount = owner.mount;
+        const applied = vi.fn();
+        let previousSeek: string[] | undefined;
+        for (let request = 0; request < 2; request += 1) {
+          manager.activateSplit(source.id);
+          await navigateToChannelMessage('entity', 'reply', 'root', {
+            splitManager: manager,
+            sourceHandle: manager.getSplit(source.id),
+            onApplied: applied,
+          });
+          await router.settled();
+          const target = router.search(owner.id, 'channels');
+          expect(target).toMatchObject({
+            tab: ['threads'],
+            messageId: ['reply'],
+            threadId: ['root'],
+            seek: [expect.any(String)],
+          });
+          expect(target?.seek).not.toEqual(previousSeek);
+          previousSeek = target?.seek;
+          expect(router.search(owner.id, 'home')).toEqual({ tab: ['noise'] });
+          expect(router.route(owner.id)).toEqual(ownerRoute);
+          expect(router.route(source.id)).toEqual(sourceRoute);
+          expect(router.search(source.id, 'channels')).toEqual(sourceSearch);
+          expect(
+            manager.splits().find((split) => split.id === owner.id)?.mount
+          ).toBe(mount);
+          expect(manager.activeSplitId()).toBe(owner.id);
+          expect(manager.splits()).toHaveLength(2);
+          expect(applied).toHaveBeenCalledTimes(request + 1);
+        }
         router.dispose();
         dispose();
       }

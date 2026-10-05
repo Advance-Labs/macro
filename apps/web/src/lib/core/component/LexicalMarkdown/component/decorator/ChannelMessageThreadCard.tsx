@@ -1,6 +1,5 @@
 import { navigateToChannelMessage } from '@block-channel/utils/link';
 import { ReadonlyThread } from '@channel/StandaloneThread';
-import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 
 type ChannelMessageThreadCardProps = {
   channelId: string;
@@ -8,8 +7,6 @@ type ChannelMessageThreadCardProps = {
 };
 
 export function ChannelMessageThreadCard(props: ChannelMessageThreadCardProps) {
-  const orchestrator = useGlobalBlockOrchestrator();
-
   return (
     <ReadonlyThread
       channelId={props.channelId}
@@ -18,7 +15,6 @@ export function ChannelMessageThreadCard(props: ChannelMessageThreadCardProps) {
         e.stopPropagation();
         const isReply = clickedMessageId !== props.messageId;
         navigateToChannelMessage(
-          orchestrator,
           props.channelId,
           clickedMessageId,
           isReply ? props.messageId : undefined

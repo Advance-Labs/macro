@@ -1,3 +1,8 @@
+import type {
+  OpenSplitResult,
+  OpenWithSplitOptions,
+  SplitContent,
+} from '@components/app/split-layout/layoutManager';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useSendMessageToPeople } from './channels';
 
@@ -5,15 +10,12 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   direct: vi.fn(),
   group: vi.fn(),
-}));
-vi.mock('@block-channel/constants', () => ({
-  URL_PARAMS: { message: 'message' },
-}));
-vi.mock('@components/app/GlobalAppState', () => ({
-  useGlobalBlockOrchestrator: () => ({ getBlockHandle: vi.fn() }),
+  open: vi.fn<
+    (content: SplitContent, options?: OpenWithSplitOptions) => OpenSplitResult
+  >(),
 }));
 vi.mock('@components/app/split-layout/layout', () => ({
-  useSplitLayout: () => ({ replaceSplit: vi.fn() }),
+  useSplitLayout: () => ({ openWithSplit: mocks.open }),
 }));
 vi.mock('@core/component/Toast/Toast', () => ({ toast: { failure: vi.fn() } }));
 vi.mock('@core/context/user', () => ({ useUserId: () => () => 'owner' }));
@@ -34,6 +36,7 @@ beforeEach(() => {
   mocks.direct.mockResolvedValue({ channel_id: 'resolved-dm' });
   mocks.group.mockResolvedValue({ channel_id: 'resolved-group' });
   mocks.send.mockResolvedValue({ id: 'message' });
+  mocks.open.mockReturnValue({ status: 'navigating' });
 });
 
 it.each([['recipient'], ['recipient', 'other']])(
@@ -79,4 +82,73 @@ it('does not post an attachment when its destination grant fails', async () => {
     })
   ).rejects.toThrow('Only owner');
   expect(mocks.send).not.toHaveBeenCalled();
+});
+
+it('routes to the returned message only after authorization and sending finish', async () => {
+  const { sendToUsers } = useSendMessageToPeople();
+  const order: string[] = [];
+  mocks.send.mockImplementation(async () => {
+    order.push('send');
+    return { id: 'returned-message' };
+  });
+  mocks.open.mockImplementation(() => {
+    order.push('open');
+    return { status: 'navigating' };
+  });
+  await sendToUsers({
+    users: ['recipient'],
+    content: '',
+    mentions: [],
+    beforeSend: async () => {
+      order.push('grant');
+    },
+    navigate: { navigate: true, mergeHistory: true },
+  });
+  expect(order).toEqual(['grant', 'send', 'open']);
+  expect(mocks.open).toHaveBeenCalledWith(
+    { type: 'channel', id: 'resolved-dm' },
+    expect.objectContaining({ activate: true, mergeHistory: true })
+  );
+  const update = mocks.open.mock.calls[0][1]?.search?.channels;
+  expect(typeof update).toBe('function');
+  const target =
+    typeof update === 'function'
+      ? update({
+          tab: ['threads'],
+          messageId: ['old'],
+          threadId: ['old-root'],
+          latest: ['true'],
+        })
+      : update;
+  expect(target).toEqual({
+    tab: ['threads'],
+    messageId: ['returned-message'],
+    seek: [expect.any(String)],
+  });
+});
+
+it('keeps deferred navigation explicit and gives repeated callbacks fresh requests', async () => {
+  const { sendToChannel } = useSendMessageToPeople();
+  const result = await sendToChannel({
+    channelId: 'channel',
+    content: '',
+    mentions: [],
+  });
+  expect(mocks.open).not.toHaveBeenCalled();
+  await result?.navigateToChannel();
+  await result?.navigateToChannel();
+  expect(mocks.open).toHaveBeenCalledTimes(2);
+  const targets = mocks.open.mock.calls.map(([, options]) => {
+    const update = options?.search?.channels;
+    return typeof update === 'function' ? update(undefined) : update;
+  });
+  expect(targets[0]).toMatchObject({
+    messageId: ['message'],
+    seek: [expect.any(String)],
+  });
+  expect(targets[1]).toMatchObject({
+    messageId: ['message'],
+    seek: [expect.any(String)],
+  });
+  expect(targets[1]?.seek).not.toEqual(targets[0]?.seek);
 });

@@ -367,6 +367,13 @@ A newer message navigation cancels a pending jump to latest. Scrolling manually
 or choosing another destination also cancels the initial target's delayed fallback.
 A touch tap leaves pending navigation intact; a vertical finger drag cancels it.
 
+Message links from notifications, AI search, references, and thread cards should
+reuse an existing Channel or Home detail pane without replacing its list route
+or composer draft. Verify cold opening, clicking the same message twice, and
+opening at latest after a message jump. Each explicit target should return to
+Messages even when the Call tab is selected; ordinary opening should still
+preserve an active call.
+
 The **Unread notification** chip points to the most recent unread notification.
 There is only one chip: above the list for a target above the viewport, or below
 for a target below it. The number counts distinct parent-message threads across
