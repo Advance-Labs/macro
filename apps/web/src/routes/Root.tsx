@@ -109,6 +109,7 @@ import {
 } from 'solid-js';
 import { useReminderAlerts } from '../features/reminders/reminder-alerts';
 import { AppRouterView } from './app-router-view';
+import { usesFocusedShell } from './focused-shell';
 
 // Only first-time mobile web users see it, and only once it opens.
 const InteractiveOnboardingModal = lazyNamed(
@@ -380,18 +381,18 @@ function useBootShellHandoff(isPublicPath: () => boolean) {
   });
 }
 
-/** Meeting and booking links have a focused shell and skip app onboarding. */
+/** Public booking and form links use a focused shell and skip app onboarding. */
 function AppRouteLayout(props: RouteSectionProps) {
   const location = useLocation();
-  const isBookingPath = () =>
-    location.pathname.startsWith(`${ROUTER_BASE_CONCAT}book/`) ||
-    location.pathname.startsWith(`${ROUTER_BASE_CONCAT}booking/`);
+  const isAuthenticated = useIsAuthenticated();
+  const isFocusedPath = () =>
+    usesFocusedShell(location.pathname, isAuthenticated());
   useBootShellHandoff(
-    () => isBookingPath() || isMeetingPath(location.pathname)
+    () => isFocusedPath() || isMeetingPath(location.pathname)
   );
   return (
     <Show
-      when={!isBookingPath()}
+      when={!isFocusedPath()}
       fallback={
         <div class="h-dvh overflow-y-auto bg-page text-ink">
           {props.children}

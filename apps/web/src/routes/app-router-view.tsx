@@ -53,6 +53,7 @@ import {
   emailSplitRoute,
   emailThreadRoute,
   foldersRoute,
+  formRespondRoute,
   homeCalendarRoute,
   homeChannelRoute,
   homeDocumentRoute,
@@ -243,6 +244,10 @@ const BookingReceiptRoutePage = lazyNamed(
   () => import('./pages'),
   'BookingReceiptRoutePage'
 );
+const FormRespondRoutePage = lazyNamed(
+  () => import('./pages'),
+  'FormRespondRoutePage'
+);
 const EmailCallback = lazyNamed(() => import('./pages'), 'EmailCallback');
 const EmailLinkCallback = lazyNamed(
   () => import('./pages'),
@@ -351,6 +356,7 @@ export function AppRouterView() {
         definition={bookingReceiptRoute}
         component={BookingReceiptRoutePage}
       />
+      <Route definition={formRespondRoute} component={FormRespondRoutePage} />
       <Route definition={meetRoute} component={MeetingRouter} />
       <Route definition={taskSlugRoute} component={TaskSlugPage} />
       <Route definition={signupRoute} component={SignupPage} />
