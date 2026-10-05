@@ -1,10 +1,17 @@
 import {
+  getCompanyHandler,
+  listCompaniesHandler,
+} from '@app/features/crm/crm-tool-renderers';
+import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { enableDatabases } from '@core/constant/featureFlags';
+import {
   deserializeToolCall,
   deserializeToolResponse,
   type ToolName,
 } from '@service-cognition/generated/tools/tool';
-import { createMemo } from 'solid-js';
+import { createMemo, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import { configureAgentHandler, listAgentsHandler } from './Agents';
 import { bashCodeExecutionHandler } from './BashCodeExecution';
 import {
   configureBotHandler,
@@ -30,15 +37,20 @@ import {
 import { createDocumentHandler } from './CreateDocument';
 import { createProjectHandler } from './CreateProject';
 import { createTagHandler } from './CreateTag';
-import { getCompanyHandler, listCompaniesHandler } from './Crm';
+import {
+  DatabaseToolPlaceholder,
+  isToolShown,
+  lazyDatabaseToolHandlers,
+} from './DatabaseToolHandlers';
 import { deleteTagHandler } from './DeleteTag';
 import { displayResultsHandler } from './DisplayResults';
 import {
-  replyToDocumentCommentHandler,
+  commentOnDocumentHandler,
   resolveDocumentCommentHandler,
 } from './DocumentComments';
 import { editDocumentHandler } from './EditDocument';
 import { editTagHandler } from './EditTag';
+import { generateImageHandler } from './GenerateImage';
 import { getThreadHandler } from './GetThread';
 import {
   createImportEntityHandler,
@@ -46,6 +58,8 @@ import {
   importNotionPageHandler,
   listImportEntitiesHandler,
 } from './ImportTools';
+import { initiativeToolHandlers } from './Initiatives';
+import { LegacyGeneratedImage } from './LegacyGeneratedImage';
 import { listEntitiesHandler } from './ListEntities';
 import { listInboxesHandler } from './ListInboxes';
 import { listLabelsHandler } from './ListLabels';
@@ -58,6 +72,10 @@ import {
   markNotificationsDoneHandler,
   markNotificationsSeenHandler,
 } from './Notifications';
+import {
+  editPresentationHandler,
+  readPresentationHandler,
+} from './Presentation';
 import {
   bulkSetEntityPropertyOptionsHandler,
   getEntityPropertiesHandler,
@@ -74,6 +92,7 @@ import { readChatHandler } from './ReadChat';
 import { readContentHandler } from './ReadContent';
 import { readMetadataHandler } from './ReadMetadata';
 import { readProjectHandler } from './ReadProject';
+import { readSkillHandler } from './ReadSkill';
 import { readThreadHandler } from './ReadThread';
 import {
   createReminderHandler,
@@ -82,11 +101,18 @@ import {
   updateReminderHandler,
 } from './Reminders';
 import { renameDocumentHandler } from './RenameDocument';
+import {
+  createRoutineHandler,
+  listRoutinesHandler,
+  readRoutineHandler,
+  updateRoutineHandler,
+} from './Routines';
 import { contentSearchHandler, nameSearchHandler } from './Search';
 import { listSkillsHandler, searchSkillsHandler } from './SearchSkills';
 import { searchToolsHandler } from './SearchTools';
 import { selfKnowledgeHandler } from './SelfKnowledge';
 import { sendChannelMessageHandler } from './SendChannelMessage';
+import { sendConfirmedEmailHandler } from './SendConfirmedEmail';
 import { sendEmailHandler } from './SendEmail';
 import { setSenderPolicyHandler } from './SetSenderPolicy';
 import {
@@ -107,11 +133,22 @@ import { updateThreadLabelsHandler } from './UpdateThreadLabels';
 import { uploadFileHandler } from './UploadFile';
 import { webFetchHandler } from './WebFetch';
 import { webSearchHandler } from './WebSearch';
+import {
+  editWordDocumentHandler,
+  readWordDocumentHandler,
+} from './WordDocument';
 
 const toolHandlers: ToolHandlerMap<RenderContext> = {
+  ...initiativeToolHandlers,
   ReadSpreadsheet: readSpreadsheetHandler,
   CalculateSpreadsheet: calculateSpreadsheetHandler,
   EditSpreadsheet: editSpreadsheetHandler,
+  ReadPresentation: readPresentationHandler,
+  EditPresentation: editPresentationHandler,
+  ReadWordDocument: readWordDocumentHandler,
+  EditWordDocument: editWordDocumentHandler,
+  ConfigureAgent: configureAgentHandler,
+  ListAgents: listAgentsHandler,
   ConfigureBot: configureBotHandler,
   CreateChannel: createChannelHandler,
   CreateBot: createBotHandler,
@@ -132,6 +169,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   GetEntityProperties: getEntityPropertiesHandler,
   ListCompanies: listCompaniesHandler,
   ListImportEntities: listImportEntitiesHandler,
+  ...lazyDatabaseToolHandlers,
   ListEntities: listEntitiesHandler,
   ListInboxes: listInboxesHandler,
   ListLabels: listLabelsHandler,
@@ -139,6 +177,10 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ManageChannelParticipants: manageChannelParticipantsHandler,
   ListNotifications: listNotificationsHandler,
   ListReminders: listRemindersHandler,
+  CreateRoutine: createRoutineHandler,
+  ListRoutines: listRoutinesHandler,
+  ReadRoutine: readRoutineHandler,
+  UpdateRoutine: updateRoutineHandler,
   ListTags: listTagsHandler,
   ListTeamMembers: listTeamMembersHandler,
   LoadTools: loadToolsHandler,
@@ -150,6 +192,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ContentSearch: contentSearchHandler,
   CreateDocument: createDocumentHandler,
   UploadFile: uploadFileHandler,
+  GenerateImage: generateImageHandler,
   CreateProject: createProjectHandler,
   CreateReminder: createReminderHandler,
   CreateTag: createTagHandler,
@@ -169,14 +212,16 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ReadContent: readContentHandler,
   ReadMetadata: readMetadataHandler,
   ReadProject: readProjectHandler,
+  ReadSkill: readSkillHandler,
   RenameChannel: renameChannelHandler,
   RenameDocument: renameDocumentHandler,
-  ReplyToDocumentComment: replyToDocumentCommentHandler,
+  CommentOnDocument: commentOnDocumentHandler,
   ResolveDocumentComment: resolveDocumentCommentHandler,
   SearchSkills: searchSkillsHandler,
   SearchTools: searchToolsHandler,
   SelfKnowledge: selfKnowledgeHandler,
   SendChannelMessage: sendChannelMessageHandler,
+  SendConfirmedEmail: sendConfirmedEmailHandler,
   SendEmail: sendEmailHandler,
   SetSenderPolicy: setSenderPolicyHandler,
   SetEntityProperty: setEntityPropertyHandler,
@@ -217,6 +262,7 @@ export function hasToolRenderer(name: string): boolean {
 }
 
 export function RenderTool(props: ToolProps) {
+  const databasesEnabled = useFeatureFlag(enableDatabases);
   const maybeTool = deserializeToolCall({
     id: props.tool_id,
     json: props.json,
@@ -280,19 +326,32 @@ export function RenderTool(props: ToolProps) {
   });
 
   return (
-    <ToolErrorContext.Provider
-      value={() => (props.isComplete && !response() ? 'failed' : undefined)}
+    <LegacyGeneratedImage
+      name={props.name}
+      response={
+        props.response?.name === props.name ? props.response.json : undefined
+      }
     >
-      <Dynamic
-        component={handler.render}
-        {...context}
-        response={response()}
-        renderContext={{
-          isStreaming: props.renderContext.renderContext.isStreaming,
-          grouped: props.renderContext.renderContext.grouped,
-        }}
-      />
-    </ToolErrorContext.Provider>
+      <ToolErrorContext.Provider
+        value={() => (props.isComplete && !response() ? 'failed' : undefined)}
+      >
+        <Show
+          when={isToolShown(tool.name, databasesEnabled().enabled)}
+          fallback={<DatabaseToolPlaceholder />}
+        >
+          <Dynamic
+            component={handler.render}
+            {...context}
+            response={response()}
+            renderContext={{
+              isStreaming: props.renderContext.renderContext.isStreaming,
+              grouped: props.renderContext.renderContext.grouped,
+              followedBy: props.renderContext.renderContext.followedBy,
+            }}
+          />
+        </Show>
+      </ToolErrorContext.Provider>
+    </LegacyGeneratedImage>
   );
 }
 

@@ -266,6 +266,9 @@ fn render_part(part: &MessagePart) -> String {
             MessagePart::Control { control, outcome } => {
                 let label = match control {
                     Control::SetModel { model } => format!("model changed to {model}"),
+                    Control::SetConfigOption { config_id, value } => {
+                        format!("{config_id} changed to {value}")
+                    }
                     Control::Compact => "context compacted".to_owned(),
                     Control::Stop => "stop requested".to_owned(),
                 };
@@ -621,7 +624,7 @@ fn render_stop(stop: &StopReason) -> String {
         StopReason::Refusal => "refused".to_owned(),
         StopReason::Cancelled => "cancelled".to_owned(),
         StopReason::Other { reason } => format!("stopped: {reason}"),
-        StopReason::Failed { message } => format!("failed: {message}"),
+        StopReason::Failed { message, .. } => format!("failed: {message}"),
     }
 }
 

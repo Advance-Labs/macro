@@ -36,6 +36,7 @@ import {
   CountSummary,
   DiffChanges,
   ElicitationForm,
+  FailureNoticeCard,
   PierreDiff,
   QuestionAnswers,
   type QuoteInsert,
@@ -44,9 +45,9 @@ import {
   TodoList,
   ToolCard,
   ToolErrorCard,
-  ToolGroup,
   ToolStatusTitle,
 } from '../ui';
+import { LiveToolGroup } from '../views/LiveToolGroup';
 
 /**
  * A Cursor-shaped catalog: long enough to scroll, with one grouped tail. Auto
@@ -117,8 +118,8 @@ const FIXTURE_MODELS: ModelOption[] = [
  * every option arrives named after its own slug.
  */
 const FIXTURE_INMEM_MODELS: ModelOption[] = [
-  'anthropic/claude-sonnet-5',
-  'anthropic/claude-opus-5',
+  'anthropic/claude-sonnet-5-5',
+  'anthropic/claude-opus-5-5',
   'anthropic/claude-haiku-4-5',
   'openai/gpt-5.5',
   'openai/gpt-5-mini',
@@ -914,18 +915,24 @@ const GALLERY_CHIP_HEADER = {
 };
 
 /** The chip through a turn: booting, writing, and done. */
-function MagicChipStateDemo(props: { presentation: MagicChipPresentation }) {
+function MagicChipStateDemo(props: {
+  presentation: MagicChipPresentation;
+  pullRequestUrl?: string;
+}) {
   return (
     <MagicChipView
       agentSessionId="gallery"
       presentation={props.presentation}
-      header={GALLERY_CHIP_HEADER}
+      header={{
+        ...GALLERY_CHIP_HEADER,
+        pullRequestUrl: props.pullRequestUrl,
+      }}
       onOpen={() => console.log('[gallery] open session')}
     />
   );
 }
 
-/** The chip asking, one per request kind; answers land in the console. */
+/** The chip asking: the question on its line, answered in the session. */
 function MagicChipAskingDemo(props: {
   request: PendingElicitation['request'];
 }) {
@@ -950,12 +957,6 @@ function MagicChipAskingDemo(props: {
       agentSessionId="gallery"
       presentation={presentation}
       header={GALLERY_CHIP_HEADER}
-      answer={{
-        respond: async (answer) => {
-          console.log('[gallery] elicitation answer', answer);
-          return true;
-        },
-      }}
       onOpen={() => console.log('[gallery] open session')}
     />
   );
@@ -1026,6 +1027,13 @@ export default function AgentUiGallery() {
                   '**Fixed.** The incremental machine now handles the replay; `cargo test -p agent_fold` passes.',
               }}
             />
+            <MagicChipStateDemo
+              presentation={{
+                kind: 'settled',
+                markdown: 'Opened a pull request.',
+              }}
+              pullRequestUrl="https://github.com/macro-inc/macro/pull/7045"
+            />
           </Item>
 
           <Item label="MagicChip asking (form, url, tool draft)">
@@ -1081,6 +1089,21 @@ export default function AgentUiGallery() {
             />
           </Item>
 
+          <Item label="FailureNoticeCard">
+            <FailureNoticeCard
+              notice={{
+                kind: 'provider_usage_limit',
+                title: 'Cursor usage limit reached',
+                body: "Your Cursor account has no background-agent budget left, so this message wasn't sent. Raise the spending limit in your Cursor dashboard, then send it again.",
+                link: {
+                  label: 'Manage Cursor usage',
+                  url: 'https://www.cursor.com/dashboard?tab=settings',
+                },
+              }}
+              onOpenLink={(url) => window.open(url, '_blank', 'noopener')}
+            />
+          </Item>
+
           <Item label="ToolCard">
             <ToolCard
               title="Shell"
@@ -1107,7 +1130,7 @@ export default function AgentUiGallery() {
           </Item>
 
           <Item label="ToolGroup (active / settled)">
-            <ToolGroup count={3} active={pulse()}>
+            <LiveToolGroup count={3} active={pulse()}>
               <ToolCard
                 title="Read"
                 icon={<FileText />}
@@ -1126,8 +1149,8 @@ export default function AgentUiGallery() {
                 subtitle="cargo test -p agent_fold"
                 status={pulse() ? 'running' : 'completed'}
               />
-            </ToolGroup>
-            <ToolGroup count={2} active={false} defaultOpen>
+            </LiveToolGroup>
+            <LiveToolGroup count={2} active={false} defaultOpen>
               <ToolCard
                 title="Search"
                 icon={<MagnifyingGlass />}
@@ -1136,7 +1159,7 @@ export default function AgentUiGallery() {
                 trailing="3 results"
               />
               <ToolCard title="Read" icon={<FileText />} status="completed" />
-            </ToolGroup>
+            </LiveToolGroup>
           </Item>
 
           <Item label="Thought (active / settled)">

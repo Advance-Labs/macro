@@ -13,6 +13,7 @@ use super::permission::{PermissionOption, PermissionOutcome};
 use super::plan::PlanEntry;
 use super::tool::{ToolDetail, ToolName, ToolStatus};
 use super::user_tool::UserToolOutcome;
+use agent_runtime_protocol::domain::turn::FailureNotice;
 
 /// A unit of renderable content.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
@@ -158,6 +159,13 @@ pub enum Control {
         /// The model slug requested by the caller.
         model: String,
     },
+    /// The runtime was asked to change an advertised session setting.
+    SetConfigOption {
+        /// Opaque config id supplied by the runtime.
+        config_id: String,
+        /// Opaque select value requested by the caller.
+        value: String,
+    },
     /// The runtime was asked to compact its context.
     Compact,
     /// The runtime was asked to stop its current work.
@@ -218,6 +226,11 @@ pub enum StopReason {
     Failed {
         /// The runtime's error message, verbatim.
         message: String,
+        /// The failure in the person's terms, when the runtime classified it
+        /// as one they can act on. Absent for an opaque failure, which a
+        /// reader shows as `message` alone.
+        #[serde(default)]
+        notice: Option<FailureNotice>,
     },
 }
 

@@ -157,6 +157,14 @@ export type Control =
       /**  The model slug requested by the caller. */
       model: string;
     }
+  /**  The runtime was asked to change an advertised session setting. */
+  | {
+      kind: 'set_config_option';
+      /**  Opaque config id supplied by the runtime. */
+      config_id: string;
+      /**  Opaque select value requested by the caller. */
+      value: string;
+    }
   /**  The runtime was asked to compact its context. */
   | { kind: 'compact' }
   /**  The runtime was asked to stop its current work. */
@@ -412,6 +420,43 @@ export type ElicitationSchema = {
   /**  Property names the agent requires an answer for. */
   required: string[];
 };
+
+/**  An external page where the person can act on a [`FailureNotice`]. */
+export type FailureLink = {
+  /**  The link's text, e.g. `Manage Cursor usage`. */
+  label: string;
+  /**  The page, absolute. */
+  url: string;
+};
+
+/**
+ *  A turn failure the person who prompted can act on, in their terms.
+ *
+ *  A runtime attaches this to the `session/prompt` error as its `data`; the
+ *  fold reads it back onto the failed turn's stop reason. It exists so a
+ *  billing wall or a disconnected integration renders as an instruction with
+ *  somewhere to go, not as the runtime's error text - and so the runtime's
+ *  error text, which for a report includes source locations, never has to
+ *  double as the thing a person reads.
+ */
+export type FailureNotice = {
+  /**  Which class of failure, for readers that treat one specially. */
+  kind: FailureNoticeKind;
+  /**  One short line naming what happened. */
+  title: string;
+  /**  What it means and what to do, in plain language. */
+  body: string;
+  /**  Where acting on it happens, when that is somewhere else. */
+  link?: FailureLink | null;
+};
+
+/**  The classes of actionable failure a runtime can report. */
+export type FailureNoticeKind =
+  /**
+   *  The person's own account with the provider has no budget left for
+   *  this work; the fix is on the provider's billing page.
+   */
+  'provider_usage_limit';
 
 /**  A file modification a tool reported. */
 export type FileDiff = {
@@ -786,6 +831,47 @@ export type PlanEntryStatus =
   /**  Successfully completed. */
   | 'completed';
 
+/**  The supported ACP session-config shapes. */
+export type SessionConfigKind =
+  /**  A single-value selector. */
+  | {
+      type: 'select';
+      /**  The value currently selected by the agent. */
+      currentValue: string;
+      /**  Choices in the order advertised by the agent. */
+      options: SessionConfigSelectOption[];
+    }
+  /**  An on/off setting. */
+  | {
+      type: 'boolean';
+      /**  The value currently selected by the agent. */
+      currentValue: boolean;
+    };
+
+/**  One session setting advertised by an ACP agent. */
+export type SessionConfigOption = {
+  /**  Opaque id to return in `session/set_config_option`. */
+  id: string;
+  /**  Human-readable label supplied by the agent. */
+  name: string;
+  /**  Optional explanatory copy supplied by the agent. */
+  description: string | null;
+  /**  ACP semantic category, such as `model` or `thought_level`. */
+  category: string | null;
+} & SessionConfigKind;
+
+/**  One value in an ACP select option. */
+export type SessionConfigSelectOption = {
+  /**  Opaque value to return in `session/set_config_option`. */
+  value: string;
+  /**  Human-readable label supplied by the agent. */
+  name: string;
+  /**  Optional explanatory copy supplied by the agent. */
+  description: string | null;
+  /**  Optional group heading supplied by the agent. */
+  group: string | null;
+};
+
 /**
  *  Session-level state derived from the log, latest-wins and carried whole.
  *  Fields start absent and fill in as the log reveals them.
@@ -802,6 +888,11 @@ export type SessionMetadata = {
   model: string | null;
   /**  The models the runtime offers, in the order it listed them. */
   supportedModels: ModelOption[];
+  /**
+   *  Every setting the ACP agent currently advertises. The list is replaced
+   *  whole whenever ACP returns a new `configOptions` snapshot.
+   */
+  configOptions: SessionConfigOption[];
   /**  Session title, when the harness reports one. */
   title: string | null;
   /**
@@ -870,6 +961,12 @@ export type StopReason =
       kind: 'failed';
       /**  The runtime's error message, verbatim. */
       message: string;
+      /**
+       *  The failure in the person's terms, when the runtime classified it
+       *  as one they can act on. Absent for an opaque failure, which a
+       *  reader shows as `message` alone.
+       */
+      notice?: FailureNotice | null;
     };
 
 /**

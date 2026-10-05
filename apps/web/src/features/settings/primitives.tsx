@@ -37,6 +37,7 @@ export function SettingsPage(props: {
   const inSheet = useContext(SettingsSheetContext);
   return (
     <div
+      data-settings-page
       data-drawer-scroll-body={inSheet ? true : undefined}
       class="@container/settings-page h-full min-h-0 overflow-y-auto [overflow-anchor:none] select-children"
     >
@@ -48,7 +49,7 @@ export function SettingsPage(props: {
           'mx-auto w-full max-w-[710px]',
           inSheet
             ? '@container px-3 pt-2 pb-[max(24px,var(--mobile-sheet-safe-padding))]'
-            : 'px-10 pt-14 pb-24 @max-[480px]/settings-page:px-4 @max-[480px]/settings-page:pt-6 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]'
+            : 'px-10 pt-4 pb-24 @max-[480px]/settings-page:px-4 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]'
         )}
       >
         {/* Headers are inset by the card's inner padding so the title and
@@ -234,7 +235,6 @@ export function ChoiceRow(props: {
       class="flex min-w-0 items-start gap-3 rounded-lg border border-edge-muted p-3 has-checked:border-accent has-checked:bg-accent-bg"
       classList={{
         'cursor-not-allowed opacity-50': props.disabled,
-        'cursor-pointer': !props.disabled,
       }}
     >
       <input

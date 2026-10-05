@@ -24,10 +24,25 @@ export type AddServerRequest = {
 };
 
 /**
+ * Public admission error payload. Handlers with additional fields can reuse the
+ * domain error's code and message and [`admission_status`].
+ */
+export type AiAdmissionErrorBody = {
+    /**
+     * Stable denial or unavailability code.
+     */
+    code: string;
+    /**
+     * Human-readable explanation, without internal billing diagnostics.
+     */
+    error: string;
+};
+
+/**
  * Everything we use AI for. The wire / DB form of each variant is its
  * `snake_case` name.
  */
-export type AiFeature = 'chat' | 'memory' | 'automation' | 'dynamic_completions_api' | 'chat_rename' | 'call_summary' | 'channel_bot' | 'ai_projection' | 'ai_editing' | 'import' | 'agent_session' | 'agent_repository_choice' | 'dictation';
+export type AiFeature = 'chat' | 'memory' | 'automation' | 'dynamic_completions_api' | 'chat_rename' | 'call_summary' | 'channel_bot' | 'ai_projection' | 'ai_editing' | 'import' | 'agent_session' | 'agent_repository_choice' | 'dictation' | 'image_generation';
 
 /**
  * A structured part within an assistant message.
@@ -293,6 +308,10 @@ export type ChatMessageContent = string | Array<AssistantMessagePart>;
  * Error response for chat message endpoints
  */
 export type ChatMessageError = {
+    /**
+     * Stable machine-readable code for admission errors (402 or 503).
+     */
+    code?: string | null;
     error: string;
     stream_id?: string | null;
 };
@@ -459,6 +478,18 @@ export type CreateChatRequest = {
     projectId?: string | null;
 };
 
+/**
+ * What a successful tool call committed to the user's databases.
+ */
+export type DatabaseChange = {
+    kind: 'none';
+} | {
+    kind: 'schema';
+} | {
+    count: number;
+    kind: 'rows';
+};
+
 export type DocumentCognitionServiceApiVersion = 'v1' | 'v2';
 
 export type DocumentReference = UserPdfRect & {
@@ -507,7 +538,7 @@ export type Entity = {
 /**
  * The type of an entity in Macro
  */
-export type EntityType = 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative';
+export type EntityType = 'user' | 'chat' | 'channel' | 'channel_message' | 'document' | 'project' | 'email_thread' | 'calendar_event' | 'team' | 'call' | 'foreign_entity' | 'static_file' | 'crm_company' | 'crm_contact' | 'reminder' | 'skill' | 'agent_session' | 'scheduled_action' | 'initiative' | 'database' | 'database_row';
 
 /**
  * Error response body.
@@ -768,7 +799,7 @@ export type ImportStatus = 'staged' | 'importing' | 'imported' | 'discarded';
  * Where an import entity was first staged from. Provenance only — never a
  * visibility filter.
  */
-export type Initiator = 'onboarding' | 'chat';
+export type Initiator = 'onboarding' | 'chat' | 'archive';
 
 export type JwtPayload = {
     token: string;
@@ -1410,7 +1441,19 @@ export type StringIdResponse = {
 };
 
 export type StructuredCompletionError = {
+    /**
+     * Stable machine-readable code for admission errors (402 or 503).
+     */
+    code?: string | null;
     error: string;
+};
+
+export type StructuredCompletionOutcome = {
+    result: unknown;
+    status: 'completed';
+} | {
+    reason: string;
+    status: 'interrupted';
 };
 
 export type StructuredCompletionRequest = {
@@ -1422,7 +1465,19 @@ export type StructuredCompletionRequest = {
 };
 
 export type StructuredCompletionResponse = {
-    result: unknown;
+    outcome: StructuredCompletionOutcome;
+    /**
+     * Actual completed tools, independent of the model's claims.
+     */
+    toolActivity: Array<StructuredToolActivity>;
+};
+
+/**
+ * One tool call the agent finished, and what it did.
+ */
+export type StructuredToolActivity = {
+    name: string;
+    outcome: ToolOutcome;
 };
 
 /**
@@ -1430,10 +1485,21 @@ export type StructuredCompletionResponse = {
  */
 export type TargetType = 'user' | 'team';
 
+export type ToolOutcome = {
+    changes: DatabaseChange;
+    status: 'succeeded';
+} | {
+    status: 'failed';
+};
+
 export type ToolSet = {
     type: 'all';
 } | {
     type: 'none';
+} | {
+    type: 'databases';
+} | {
+    type: 'databases_read_only';
 };
 
 export type UpdateChannelSharePermission = {
@@ -1869,6 +1935,7 @@ export type CreateChatData = {
 
 export type CreateChatErrors = {
     401: string;
+    403: string;
     500: string;
 };
 
@@ -2281,10 +2348,20 @@ export type RetryGatherHandlerErrors = {
      */
     400: unknown;
     /**
+     * AI allowance exhausted
+     */
+    402: AiAdmissionErrorBody;
+    /**
      * Internal server error
      */
     500: unknown;
+    /**
+     * AI usage validation unavailable; retry later
+     */
+    503: AiAdmissionErrorBody;
 };
+
+export type RetryGatherHandlerError = RetryGatherHandlerErrors[keyof RetryGatherHandlerErrors];
 
 export type RetryGatherHandlerResponses = {
     /**
@@ -2734,13 +2811,17 @@ export type SendChatMessageErrors = {
      */
     401: unknown;
     /**
-     * Payment required — user lacks access to the requested model
+     * Payment required — the user's AI allowance is used up
      */
-    402: unknown;
+    402: ChatMessageError;
     /**
-     * Forbidden
+     * Forbidden — user lacks access to the requested model
      */
-    403: unknown;
+    403: ChatMessageError;
+    /**
+     * AI usage validation unavailable — retry later
+     */
+    503: ChatMessageError;
 };
 
 export type SendChatMessageError = SendChatMessageErrors[keyof SendChatMessageErrors];
@@ -2798,11 +2879,19 @@ export type StructuredCompletionErrors = {
     /**
      * Payment required
      */
-    402: unknown;
+    402: StructuredCompletionError;
+    /**
+     * No access to the requested model
+     */
+    403: StructuredCompletionError;
     /**
      * Internal error
      */
     500: StructuredCompletionError;
+    /**
+     * AI usage validation unavailable — retry later
+     */
+    503: StructuredCompletionError;
 };
 
 export type StructuredCompletionError2 = StructuredCompletionErrors[keyof StructuredCompletionErrors];

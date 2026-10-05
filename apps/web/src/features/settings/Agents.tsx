@@ -1,3 +1,4 @@
+import { isCoderHarness } from '@app/features/agents-view/core/agent-kind';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { ModelCatalogPicker } from '@core/component/AI/component/input/ModelCatalogPicker';
 import { isLargeModelCatalog } from '@core/component/AI/component/input/modelCatalog';
@@ -26,6 +27,7 @@ import {
   useDeleteAgentMutation,
   useUpdateAgentMutation,
 } from '@queries/agents/agents';
+import { useUploadAgentAvatarMutation } from '@queries/agents/avatar';
 import {
   type AgentModelTarget,
   buildAgentModelTargets,
@@ -96,7 +98,7 @@ const MACRO_AGENT: AgentSummary = {
   tag: 'macro',
   instructions: '',
   harness: MACRO_HARNESS_NAME,
-  defaultModel: MODEL_PRETTYNAME[Model.sonnet5],
+  defaultModel: MODEL_PRETTYNAME[Model.sonnet55],
   channelSummary: 'All channels',
   share: 'Team',
 };
@@ -533,7 +535,7 @@ function AgentDeleteDialog(props: {
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="strong"
             size="sm"
             disabled={props.pending}
             onClick={props.onConfirm}
@@ -563,6 +565,9 @@ function AgentEditorPage(props: {
   const [avatarUrl, setAvatarUrl] = createSignal<string | undefined>(
     props.agent?.bot.avatar_url ?? undefined
   );
+  const uploadAvatar = useUploadAgentAvatarMutation();
+  const [uploadingAvatar, setUploadingAvatar] = createSignal(false);
+  const busy = () => props.pending || uploadingAvatar();
   const [instructions, setInstructions] = createSignal(
     props.agent?.instructions ?? ''
   );
@@ -682,11 +687,21 @@ function AgentEditorPage(props: {
   const autoAcceptPermissions = () =>
     selectedHarness()?.kind === 'builtin' ||
     (allowPermissionBypass() && autoAcceptChoice());
+  // The saved choice, or none: an agent that never chose follows its
+  // harness, so a fresh form and a re-picked runtime both start from there.
+  const [codingChoice, setCodingChoice] = createSignal<boolean | undefined>(
+    props.agent?.is_coding ?? undefined
+  );
+  const harnessCodes = () => {
+    const harness = selectedHarness();
+    return isCoderHarness(harness?.kind === 'macrod' ? 'macrod' : harness?.id);
+  };
+  const isCoding = () => codingChoice() ?? harnessCodes();
   let avatarInputRef: HTMLInputElement | undefined;
   let pageContentRef: HTMLDivElement | undefined;
 
   const close = () => {
-    if (!props.pending) props.onClose();
+    if (!busy()) props.onClose();
   };
 
   const handleNameInput = (value: string) => {
@@ -698,19 +713,26 @@ function AgentEditorPage(props: {
     setHarnessId(id);
     setDefaultModelId(preferredModelId(id));
     setAutoAcceptChoice(false);
+    setCodingChoice(undefined);
   };
 
-  const handleAvatarInput = (file: File | undefined) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') setAvatarUrl(reader.result);
-    });
-    reader.readAsDataURL(file);
+  const handleAvatarInput = async (file: File | undefined) => {
+    if (!file || busy()) return;
+    setUploadingAvatar(true);
+    try {
+      setAvatarUrl(await uploadAvatar.mutateAsync(file));
+    } catch (error) {
+      toast.failure(
+        error instanceof Error ? error.message : 'Failed to upload avatar'
+      );
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef) avatarInputRef.value = '';
+    }
   };
 
   const canCreate = () =>
-    !props.pending &&
+    !busy() &&
     name().trim().length > 0 &&
     tag().trim().length > 0 &&
     selectedHarness() !== undefined &&
@@ -748,6 +770,7 @@ function AgentEditorPage(props: {
       mcp: mcp(),
       teamId: selectedTeamId(),
       autoAcceptPermissions: autoAcceptPermissions(),
+      isCoding: isCoding(),
     });
     if (saved) close();
   };
@@ -758,12 +781,7 @@ function AgentEditorPage(props: {
       showTitleInSheet
       description="Give your agent an identity, instructions, and a runtime."
       actions={
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={close}
-          disabled={props.pending}
-        >
+        <Button variant="ghost" size="sm" onClick={close} disabled={busy()}>
           <ArrowLeftIcon /> Back
         </Button>
       }
@@ -789,6 +807,7 @@ function AgentEditorPage(props: {
               <button
                 type="button"
                 aria-label="Upload avatar"
+                disabled={busy()}
                 class="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 onClick={() => avatarInputRef?.click()}
               >
@@ -817,18 +836,20 @@ function AgentEditorPage(props: {
                 type="file"
                 accept="image/*"
                 class="hidden"
+                disabled={busy()}
                 onChange={(event) =>
-                  handleAvatarInput(event.currentTarget.files?.[0])
+                  void handleAvatarInput(event.currentTarget.files?.[0])
                 }
               />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={busy()}
                 onClick={() => avatarInputRef?.click()}
               >
                 <UploadIcon />
-                Upload
+                {uploadingAvatar() ? 'Uploading…' : 'Upload'}
               </Button>
             </div>
 
@@ -985,6 +1006,27 @@ function AgentEditorPage(props: {
                 </Show>
               </div>
             </div>
+            <fieldset class="mt-4 grid gap-2 border-t border-ink/[0.06] pt-4">
+              <legend class="text-xs font-medium text-ink">
+                Answering a mention
+              </legend>
+              <ChoiceRow
+                name="agent-coding"
+                value="coding"
+                title="Coding agent"
+                description="Posts a magic chip you can open into the live session and watch it work in a repository."
+                checked={isCoding()}
+                onChange={() => setCodingChoice(true)}
+              />
+              <ChoiceRow
+                name="agent-coding"
+                value="chat"
+                title="Chat agent"
+                description="Replies in the thread the way a person would, like @macro."
+                checked={!isCoding()}
+                onChange={() => setCodingChoice(false)}
+              />
+            </fieldset>
             <Show when={selectedHarness()?.kind === 'macrod'}>
               <fieldset class="mt-4 grid gap-2 border-t border-ink/[0.06] pt-4">
                 <legend class="text-xs font-medium text-ink">
@@ -1147,14 +1189,14 @@ function AgentEditorPage(props: {
             variant="ghost"
             size="sm"
             onClick={close}
-            disabled={props.pending}
+            disabled={busy()}
           >
             Cancel
           </Button>
           <Button
             type="submit"
             form="agent-form"
-            variant="cta"
+            variant="strong"
             size="sm"
             disabled={!canCreate()}
           >
