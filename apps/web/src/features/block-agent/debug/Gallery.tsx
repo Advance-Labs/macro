@@ -1061,7 +1061,7 @@ export default function AgentUiGallery() {
                   },
                   attendees: [],
                   recurrenceLines: [],
-                  addGoogleMeet: false,
+                  addConference: false,
                   eventType: 'default',
                 },
                 schema: FIXTURE_ELICITATION,
