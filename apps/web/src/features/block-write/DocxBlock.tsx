@@ -1,4 +1,9 @@
 import {
+  ChatWithAgentButton,
+  ChatWithAgentIcon,
+  openChatWithAgent,
+} from '@app/features/chat/ChatWithAgentButton';
+import {
   ResponsiveBlockToolbar,
   ResponsivePermissionsBadge,
 } from '@components/app/ResponsiveBlockToolbar';
@@ -79,6 +84,12 @@ export default function DocxBlock(props: { share?: string }) {
     userPermissions: permissions(),
     owner: blockMetadataSignal()?.owner,
   }));
+  const chatEntity = () => ({
+    type: 'document' as const,
+    id: documentId,
+    name: name() ?? '',
+    fileType: 'docx',
+  });
   onMount(() => {
     if (props.share === 'true') openShare();
   });
@@ -135,6 +146,14 @@ export default function DocxBlock(props: { share?: string }) {
           name={name()}
           ops={[{ op: 'rename' }, { op: 'moveToProject' }, { op: 'delete' }]}
           tools={[
+            {
+              label: 'Ask Macro',
+              icon: ChatWithAgentIcon,
+              action: () => openChatWithAgent(chatEntity()),
+              buttonComponent: () => (
+                <ChatWithAgentButton entity={chatEntity()} label="Ask Macro" />
+              ),
+            },
             {
               group: 'sharing',
               label: 'Share',
