@@ -68,6 +68,18 @@ export function useChannelPicture(channelId: Accessor<string>) {
   };
 }
 
+/**
+ * The picture id already in cache, for menus that must decide synchronously.
+ *
+ * `undefined` means unknown rather than absent, so a caller gating a "remove"
+ * item stays silent until something has loaded the channel's picture.
+ */
+export function cachedChannelPictureId(channelId: string) {
+  return queryClient.getQueryData<string | null>(
+    channelKeys.picture(channelId).queryKey
+  );
+}
+
 export function useSetChannelPictureMutation(
   upload: (file: File) => Promise<string>
 ) {
