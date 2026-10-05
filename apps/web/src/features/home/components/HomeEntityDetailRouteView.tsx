@@ -20,12 +20,14 @@ import {
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useDocumentShareModal } from '@core/component/TopBar/shareModal';
 import { type Accessor, createMemo, Match, Show, Switch } from 'solid-js';
-import { isHomeDocumentType } from '../home-route-schema';
+import { homeBaseBlockType, isHomeDocumentType } from '../home-route-schema';
 import { useHomeView } from '../home-view-context';
 import { HomeReturnBreadcrumb } from './HomeReturnBreadcrumb';
 
 type DetailParams = {
   channelId?: string;
+  blockType?: string;
+  previewId?: string;
   documentType?: string;
   documentId?: string;
 };
@@ -65,8 +67,7 @@ function entityDetailTarget(
     !documentId ||
     !isHomeDocumentType(documentType) ||
     documentType === 'spreadsheet' ||
-    documentType === 'unknown' ||
-    preview.params
+    documentType === 'unknown'
   ) {
     // The shared file details do not yet navigate to document comments.
     return;
@@ -268,6 +269,25 @@ export function HomeEntityDetailRouteView() {
       <Match when={true}>
         <PreviewPanel
           target={previewTarget()}
+          routeOwner={(() => {
+            const target = previewTarget();
+            if (!target) return;
+            const routeId =
+              params.previewId ?? params.channelId ?? params.documentId;
+            const routeType = params.blockType
+              ? homeBaseBlockType(
+                  params.blockType as Parameters<typeof homeBaseBlockType>[0]
+                )
+              : params.channelId
+                ? 'channel'
+                : params.documentType;
+            return routeId === target.blockId && routeType === target.blockType
+              ? {
+                  blockType: target.blockType,
+                  blockId: routeId,
+                }
+              : undefined;
+          })()}
           navigationRequest={previewNavigationRequest()}
           orchestrator={orchestrator}
           splitPanelContext={panel}

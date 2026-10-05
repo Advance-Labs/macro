@@ -1,9 +1,17 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import {
+  createSearchParams,
+  useOwnsSearchNamespace,
+} from '@app/lib/split-router';
+import {
   CollaborationStatusIndicator,
   isCollaborationStatusVisible,
 } from '@components/app/CollaborationStatusIndicator';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import { SidePanel } from '@components/app/side-panel';
 import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
 import { SplitHeaderRight } from '@components/app/split-layout/components/SplitHeader';
@@ -32,9 +40,10 @@ import {
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { DocumentDebouncedNotificationReadMarker } from '@notifications';
 import { useInstructionsMdIdQuery } from '@queries/storage/instructions-md';
-import { Show, Suspense } from 'solid-js';
+import { createEffect, on, Show, Suspense } from 'solid-js';
 import { createMarkdownDocumentState } from '../context/markdown-document-state';
 import type { MarkdownData } from '../definition';
+import { markdownDetailSearch } from '../markdown-route';
 import { createMarkdownRouteNavigation } from '../primitives/create-markdown-route-navigation';
 import { loadMarkdownCachedSnapshot } from '../queries/markdown-document-operations';
 import type { MarkdownDocumentKind, MarkdownDocumentSource } from '../types';
@@ -91,6 +100,36 @@ export default function MarkdownBlockAdapter(props: BlockMarkdownProps) {
   const isInstructions = () =>
     instructionsMdId.isSuccess && documentId === instructionsMdId.data;
   const markdownState = createMarkdownDocumentState();
+  const preview = useMaybePreviewPanel();
+  const ownsRoute = useOwnsSearchNamespace(markdownDetailSearch.namespace);
+  const [routeSearch] = createSearchParams(markdownDetailSearch);
+  createEffect(
+    on(
+      () => [
+        JSON.stringify(preview?.previewTarget().params),
+        preview?.navigationRequest(),
+        ownsRoute(),
+        routeSearch.documentId,
+        routeSearch.nodeId,
+        routeSearch.commentId,
+        routeSearch.seek,
+      ],
+      () => {
+        const target = preview?.previewTarget();
+        if (
+          ownsRoute() &&
+          previewOwnsRoute(preview, 'md', documentId) &&
+          routeSearch.documentId === documentId &&
+          (routeSearch.nodeId || routeSearch.commentId)
+        )
+          return;
+        if (target?.blockId === documentId && target.params)
+          markdownState.params.navigate(
+            target.params as Record<string, string>
+          );
+      }
+    )
+  );
   if (!useIsNestedBlock())
     createMarkdownRouteNavigation(
       () => documentId,

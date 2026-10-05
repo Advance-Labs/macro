@@ -11,6 +11,7 @@ import {
   markdownDetailSearchCodec,
 } from '@app/features/block-md/markdown-route';
 import {
+  PDF_LOCATION_FIELDS,
   pdfDetailSearch,
   pdfDetailSearchCodec,
 } from '@app/features/block-pdf/pdf-route';
@@ -71,6 +72,7 @@ export function searchLocationTarget(
     .with({ type: 'pdf' }, (target) => ({
       namespace: pdfDetailSearch.namespace,
       params: pdfDetailSearchCodec.serialize({
+        ...pdfDetailSearch.defaults,
         documentId: entityId,
         page: target.searchPage,
         highlightTerms: target.highlightTerms,
@@ -78,14 +80,7 @@ export function searchLocationTarget(
         query: target.searchRawQuery,
         seek,
       })!,
-      fields: [
-        'documentId',
-        'page',
-        'highlightTerms',
-        'snippet',
-        'query',
-        'seek',
-      ],
+      fields: PDF_LOCATION_FIELDS,
     }))
     .with({ type: 'agent' }, (target) => ({
       namespace: agentDetailSearch.namespace,

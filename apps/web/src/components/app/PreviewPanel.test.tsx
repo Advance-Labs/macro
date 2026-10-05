@@ -7,14 +7,13 @@ import {
   type PreviewPanelProps,
   useMaybePreviewPanel,
 } from './PreviewPanel';
+import { previewOwnsRoute } from './preview-panel-context';
 import type {
   PreviewBlockTarget,
   PreviewPanelSelection,
 } from './previewTarget';
 
 const mocks = vi.hoisted(() => ({
-  goToLocationFromParams: vi.fn(),
-  goToLatest: vi.fn(),
   mounts: vi.fn(),
   unmounts: vi.fn(),
   imageMounts: vi.fn(),
@@ -86,7 +85,11 @@ afterEach(() => {
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
+function setup(
+  initial: PreviewBlockTarget,
+  entity?: PreviewPanelSelection,
+  routeOwner?: PreviewPanelProps['routeOwner']
+) {
   const [target, setTarget] = createSignal(initial);
   const [selectedEntity, setSelectedEntity] = createSignal(entity);
   const [navigationRequest, setNavigationRequest] = createSignal(0);
@@ -108,10 +111,7 @@ function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
       );
     },
   }));
-  const getBlockHandle = vi.fn(async () => ({
-    goToLocationFromParams: mocks.goToLocationFromParams,
-    goToLatest: mocks.goToLatest,
-  }));
+  const getBlockHandle = vi.fn();
   const orchestrator = {
     isBlockMounted: () => false,
     createBlockInstance,
@@ -123,6 +123,7 @@ function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
       <PreviewPanel
         target={target()}
         selectedEntity={selectedEntity()}
+        routeOwner={routeOwner}
         navigationRequest={navigationRequest()}
         orchestrator={orchestrator}
         splitPanelContext={{} as PreviewPanelProps['splitPanelContext']}
@@ -136,6 +137,10 @@ function setup(initial: PreviewBlockTarget, entity?: PreviewPanelSelection) {
     setSelectedEntity,
     requestNavigation: () => setNavigationRequest((count) => count + 1),
     previewEntity: () => preview?.previewEntity(),
+    previewTarget: () => preview?.previewTarget(),
+    previewRequest: () => preview?.navigationRequest(),
+    ownsRoute: (type: PreviewBlockTarget['blockType'], id: string) =>
+      previewOwnsRoute(preview, type, id),
     createBlockInstance,
     getBlockHandle,
     onFocusOut,
@@ -153,21 +158,34 @@ const channel = (
 });
 
 describe('preview block navigation', () => {
+  it('keeps local previews unowned and requires matching feature and entity', () => {
+    const local = setup(channel('channel-1'));
+    expect(local.ownsRoute('channel', 'channel-1')).toBe(false);
+    local.unmount();
+    const route = setup(channel('channel-1'), undefined, {
+      blockType: 'channel',
+      blockId: 'channel-1',
+    });
+    expect(route.ownsRoute('channel', 'channel-1')).toBe(true);
+    expect(route.ownsRoute('chat', 'channel-1')).toBe(false);
+    expect(route.ownsRoute('channel', 'channel-2')).toBe(false);
+  });
+
   it('does not relocate or remount when the same target arrives as a fresh object', async () => {
     const view = setup(channel('channel-1', { channel_message_id: 'm-1' }));
     await flush();
     expect(view.getByTestId('hotkey-scope').textContent).toBe('preview-scope');
     const draft = view.getByLabelText('Message draft');
     fireEvent.input(draft, { target: { value: 'Unsent draft' } });
-    expect(view.getBlockHandle).toHaveBeenCalledTimes(1);
-    expect(mocks.goToLocationFromParams).toHaveBeenCalledTimes(1);
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
+    expect(view.previewTarget()?.params).toEqual({ channel_message_id: 'm-1' });
 
     // Hosts recompute targets from cache revisions unrelated to this block.
     view.setTarget(channel('channel-1', { channel_message_id: 'm-1' }));
     view.setTarget(channel('channel-1', { channel_message_id: 'm-1' }));
     await flush();
 
-    expect(view.getBlockHandle).toHaveBeenCalledTimes(1);
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
     expect(view.createBlockInstance).toHaveBeenCalledTimes(1);
     expect(mocks.mounts).toHaveBeenCalledTimes(1);
     expect(mocks.unmounts).not.toHaveBeenCalled();
@@ -184,11 +202,10 @@ describe('preview block navigation', () => {
     expect(view.onFocusOut).not.toHaveBeenCalled();
   });
 
-  it('lands untargeted channels on their latest message', async () => {
-    setup(channel('channel-1'));
-    await flush();
-    expect(mocks.goToLatest).toHaveBeenCalledTimes(1);
-    expect(mocks.goToLocationFromParams).not.toHaveBeenCalled();
+  it('exposes an untargeted local preview without requesting a handle', () => {
+    const view = setup(channel('channel-1'));
+    expect(view.previewTarget()?.params).toBeUndefined();
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
   });
 
   it('creates a new block when selecting another channel', async () => {
@@ -196,7 +213,7 @@ describe('preview block navigation', () => {
     view.setTarget(channel('channel-2'));
     await flush();
     expect(view.createBlockInstance).toHaveBeenCalledTimes(2);
-    expect(mocks.goToLatest).toHaveBeenCalledTimes(2);
+    expect(view.getBlockHandle).not.toHaveBeenCalled();
     expect(view.getByTestId('block').textContent).toBe('channel-2');
   });
 
@@ -214,8 +231,7 @@ describe('preview block navigation', () => {
       })
     );
     await flush();
-    expect(mocks.goToLocationFromParams).toHaveBeenCalledTimes(2);
-    expect(mocks.goToLocationFromParams).toHaveBeenLastCalledWith({
+    expect(view.previewTarget()?.params).toEqual({
       channel_message_id: 't-2',
       channel_thread_id: 't-2',
     });
@@ -226,11 +242,11 @@ describe('preview block navigation', () => {
   it('re-aims the same block on an explicit request without remounting', async () => {
     const view = setup(channel('channel-1', { channel_message_id: 'm-1' }));
     await flush();
-    expect(mocks.goToLocationFromParams).toHaveBeenCalledTimes(1);
+    expect(view.previewRequest()).toBe(0);
 
     view.requestNavigation();
     await flush();
-    expect(mocks.goToLocationFromParams).toHaveBeenCalledTimes(2);
+    expect(view.previewRequest()).toBe(1);
     expect(view.createBlockInstance).toHaveBeenCalledTimes(1);
     expect(mocks.mounts).toHaveBeenCalledTimes(1);
   });

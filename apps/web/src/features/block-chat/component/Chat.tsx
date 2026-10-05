@@ -1,8 +1,19 @@
+import {
+  createSearchParams,
+  useOwnsSearchNamespace,
+} from '@app/lib/split-router';
 import type { SendBuilder } from '@block-chat/blockClient';
 import { TopBar } from '@block-chat/component/TopBar';
 import type { ChatData } from '@block-chat/definition';
 import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
-import { useCanAutofocusSplitContent } from '@components/app/split-layout/layoutUtils';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
+import {
+  useCanAutofocusSplitContent,
+  useSplitPanel,
+} from '@components/app/split-layout/layoutUtils';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
 import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useHasPaidAccess } from '@core/auth/license';
@@ -56,7 +67,17 @@ import { createRenameDssEntityMutation } from '@entity';
 import { invalidateUserQuota } from '@queries/auth';
 import { cognitionApiServiceClient } from '@service-cognition/client';
 import { createCallback } from '@solid-primitives/rootless';
-import { createEffect, createSignal, getOwner, Show, Suspense } from 'solid-js';
+import {
+  createEffect,
+  createSignal,
+  getOwner,
+  on,
+  Show,
+  Suspense,
+} from 'solid-js';
+import { chatDetailSearch } from '../chat-route';
+
+import { createChatRouteNavigation } from '../primitives/create-chat-route-navigation';
 
 type ChatProps = ShareHostProps & {
   data: ChatData;
@@ -163,6 +184,42 @@ function ChatInner(props: ChatProps & { loadedInputText: string | undefined }) {
   const [pendingLocationParams, setPendingLocationParams] = createSignal<
     Record<string, string> | undefined
   >();
+  const panel = useSplitPanel();
+  const preview = useMaybePreviewPanel();
+  const ownsRoute = useOwnsSearchNamespace(chatDetailSearch.namespace);
+  const [routeSearch] = createSearchParams(chatDetailSearch);
+  createEffect(
+    on(
+      () => [
+        JSON.stringify(preview?.previewTarget().params),
+        preview?.navigationRequest(),
+        ownsRoute(),
+        routeSearch.chatId,
+        routeSearch.messageId,
+        routeSearch.seek,
+      ],
+      () => {
+        const current = preview?.previewTarget();
+        if (current?.blockId !== chat.chatId()) return;
+        if (
+          ownsRoute() &&
+          previewOwnsRoute(preview, 'chat', chat.chatId()) &&
+          routeSearch.chatId === chat.chatId() &&
+          routeSearch.messageId
+        )
+          return;
+        const params = current.params as Record<string, string> | undefined;
+        // A repeated preview request must reach the message queue even when
+        // the host reuses the same params object.
+        setPendingLocationParams(params ? { ...params } : undefined);
+      }
+    )
+  );
+  createChatRouteNavigation(
+    () => chat.chatId(),
+    setPendingLocationParams,
+    !useIsNestedBlock() && !!panel && !panel.handle.isPopover()
+  );
   const [showStreamDebug, setShowStreamDebug] = createSignal(false);
   const [markdownText, setMarkdownText] = createSignal(
     props.loadedInputText ?? ''

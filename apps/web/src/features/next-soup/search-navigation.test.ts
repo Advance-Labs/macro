@@ -1,7 +1,10 @@
 import { agentDetailSearchCodec } from '@app/features/block-agent/agent-route';
 import { callDetailSearchCodec } from '@app/features/block-call/call-route';
 import { markdownDetailSearchCodec } from '@app/features/block-md/markdown-route';
-import { pdfDetailSearchCodec } from '@app/features/block-pdf/pdf-route';
+import {
+  pdfDetailSearch,
+  pdfDetailSearchCodec,
+} from '@app/features/block-pdf/pdf-route';
 import { channelsSearchCodec } from '@app/features/channels-view/channels-route';
 import { emailDetailSearchCodec } from '@app/features/email-view/email-route';
 import {
@@ -56,6 +59,7 @@ describe('search target URLs', () => {
       expect(restored).toEqual(target.params);
       if (location.type === 'pdf')
         expect(parsed.value).toEqual({
+          ...pdfDetailSearch.defaults,
           documentId: 'entity',
           page: 3,
           highlightTerms: ['one two', '日本語'],

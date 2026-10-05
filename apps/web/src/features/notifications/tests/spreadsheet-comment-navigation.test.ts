@@ -60,15 +60,13 @@ it.each([
   async (tag) => {
     const commentId = '019f862a-84b6-7f00-8000-000000000042';
     const threadId = '019f862a-84b6-7f00-8000-000000000007';
-    const navigate = vi.fn();
+    const getBlockHandle = vi.fn();
     const open = vi.fn();
     const activate = vi.fn();
     const layout = {
       getSplitByContent: vi.fn(() => undefined as unknown),
       openWithSplit: open,
-      getOrchestrator: () => ({
-        getBlockHandle: async () => ({ goToLocationFromParams: navigate }),
-      }),
+      getOrchestrator: () => ({ getBlockHandle }),
     };
     const notification = {
       entity_id: 'sheet-doc',
@@ -82,22 +80,29 @@ it.each([
       layout as unknown as SplitManager
     );
     expect(result.isOk()).toBe(true);
-    await vi.waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ comment_id: commentId })
-    );
     expect(open).toHaveBeenCalledWith(
       { type: 'spreadsheet', id: 'sheet-doc' },
-      expect.anything()
+      expect.objectContaining({ search: expect.any(Object) })
     );
+    const firstTarget =
+      open.mock.calls[0][1].search['markdown-detail'](undefined);
+    expect(firstTarget).toMatchObject({
+      documentId: ['sheet-doc'],
+      commentId: [commentId],
+      seek: [expect.any(String)],
+    });
     layout.getSplitByContent.mockReturnValue({ activate });
-    open.mockClear();
-    navigate.mockClear();
     await openNotification(notification, layout as unknown as SplitManager);
-    await vi.waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ comment_id: commentId })
-    );
-    expect(activate).toHaveBeenCalledOnce();
-    expect(open).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledTimes(2);
+    const secondTarget =
+      open.mock.calls[1][1].search['markdown-detail'](undefined);
+    expect(secondTarget).toMatchObject({
+      documentId: ['sheet-doc'],
+      commentId: [commentId],
+    });
+    expect(secondTarget.seek).not.toEqual(firstTarget.seek);
+    expect(getBlockHandle).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
   }
 );
 

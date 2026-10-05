@@ -1,3 +1,4 @@
+import { canvasDetailSearch } from '@app/features/block-canvas/canvas-route';
 import { SPREADSHEET_COMMENT_PARAMS } from '@app/features/block-spreadsheet/core/spreadsheet-comments';
 import {
   createSearchParams,
@@ -83,7 +84,11 @@ const documentRemountKey = ({
 
 export const driveRootDocumentRoute = defineRoute({
   id: 'drive-document',
-  search: [markdownDetailSearch.namespace, pdfDetailSearch.namespace],
+  search: [
+    markdownDetailSearch.namespace,
+    pdfDetailSearch.namespace,
+    canvasDetailSearch.namespace,
+  ],
   path: ':documentType/:documentId',
   params: driveDocumentParams,
   state: driveDetailTrailSchema,
@@ -99,7 +104,11 @@ export const driveRootDocumentRoute = defineRoute({
 
 export const driveFolderDocumentRoute = defineRoute({
   id: 'drive-folder-document',
-  search: [markdownDetailSearch.namespace, pdfDetailSearch.namespace],
+  search: [
+    markdownDetailSearch.namespace,
+    pdfDetailSearch.namespace,
+    canvasDetailSearch.namespace,
+  ],
   path: ':documentType/:documentId',
   params: driveDocumentParams,
   state: driveDetailTrailSchema,
@@ -115,7 +124,11 @@ export const driveFolderDocumentRoute = defineRoute({
 
 export const driveTabDocumentRoute = defineRoute({
   id: 'drive-tab-document',
-  search: [markdownDetailSearch.namespace, pdfDetailSearch.namespace],
+  search: [
+    markdownDetailSearch.namespace,
+    pdfDetailSearch.namespace,
+    canvasDetailSearch.namespace,
+  ],
   path: ':documentType/:documentId',
   params: driveDocumentParams,
   state: driveDetailTrailSchema,

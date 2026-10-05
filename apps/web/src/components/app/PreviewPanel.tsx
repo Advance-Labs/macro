@@ -2,7 +2,6 @@ import { FileEntityDetail } from '@app/components/entity-detail/FileEntityDetail
 import { HotkeyScope } from '@core/hotkey/HotkeyScope';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import type { BlockOrchestrator } from '@core/orchestrator';
-import { createContextProvider } from '@solid-primitives/context';
 import deepEqual from 'fast-deep-equal';
 import {
   type Accessor,
@@ -19,6 +18,10 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ViewShell } from '../view-shell/ViewShell';
+import {
+  PreviewPanelContext,
+  type PreviewRouteOwner,
+} from './preview-panel-context';
 import type {
   PreviewBlockTarget,
   PreviewPanelSelection,
@@ -40,18 +43,11 @@ const ImageBlockTopBar = lazy(async () => ({
   default: (await import('@app/features/block-image/ImageBlockTopBar'))
     .ImageBlockTopBar,
 }));
-export const [PreviewPanelContext, useMaybePreviewPanel] =
-  createContextProvider(
-    (props: {
-      previewTarget: PreviewBlockTarget;
-      previewEntity?: PreviewPanelSelection;
-      onFocusOut?: VoidFunction;
-    }) => ({
-      previewTarget: () => props.previewTarget,
-      previewEntity: () => props.previewEntity,
-      onFocusOut: () => props.onFocusOut?.(),
-    })
-  );
+
+export {
+  PreviewPanelContext,
+  useMaybePreviewPanel,
+} from './preview-panel-context';
 
 export type PreviewFrameProps = {
   splitPanelContext: SplitPanelContextType;
@@ -179,7 +175,8 @@ export function PreviewFrame(props: PreviewFrameProps) {
 export type PreviewPanelProps = {
   target: PreviewBlockTarget | undefined;
   /** Re-open the same target without replacing its mounted block. */
-  navigationRequest?: number;
+  navigationRequest?: number | string;
+  routeOwner?: PreviewRouteOwner;
   /** Live selection metadata when a row opened this route. */
   selectedEntity?: PreviewPanelSelection;
   /** Only the remaining legacy feature previews require an orchestrator. */
@@ -233,21 +230,6 @@ function PreviewBlock(
         a.request === b.request && sameLocation(a.target, b.target),
     }
   );
-  const locate = async (target: PreviewBlockTarget) => {
-    const handle = await orchestrator.getBlockHandle(
-      target.blockId,
-      target.blockType
-    );
-    if (target.params) await handle?.goToLocationFromParams(target.params);
-    else if (target.blockType === 'channel') await handle?.goToLatest();
-  };
-
-  createRenderEffect(
-    on(navigation, ({ target }) => {
-      if (!blockInstance()) return;
-      void locate(target);
-    })
-  );
 
   return (
     <PreviewFrame
@@ -259,6 +241,8 @@ function PreviewBlock(
     >
       <PreviewPanelContext
         previewTarget={props.target}
+        navigationRequest={props.navigationRequest}
+        routeOwner={props.routeOwner}
         previewEntity={props.selectedEntity}
         onFocusOut={props.onFocusOut}
       >
@@ -292,6 +276,7 @@ function ImagePreview(
     >
       <PreviewPanelContext
         previewTarget={props.target}
+        navigationRequest={props.navigationRequest}
         previewEntity={props.selectedEntity}
         onFocusOut={props.onFocusOut}
       >

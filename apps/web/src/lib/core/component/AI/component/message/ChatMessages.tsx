@@ -15,6 +15,8 @@ import {
   createSignal,
   For,
   Match,
+  on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -156,34 +158,41 @@ export function ChatMessages(props: ChatMessagesProps) {
     string | undefined
   >(undefined);
 
-  createEffect(() => {
+  const readyLocationParams = createMemo(() => {
     const params = props.pendingLocationParams?.();
-    if (!params) return;
-
-    if (params.message_id) {
-      setActiveTargetMessageId(params.message_id);
-      setTimeout(() => {
+    if (
+      !params?.message_id ||
+      !messages().some((message) => message.id === params.message_id)
+    )
+      return;
+    return params;
+  });
+  createEffect(
+    on(readyLocationParams, (params) => {
+      setActiveTargetMessageId(params?.message_id);
+      if (!params) return;
+      const scrollTimer = setTimeout(() => {
         const messageElement = document.getElementById(
           `chat-${params.message_id}`
         );
-        if (messageElement) {
-          const scrollContainer = messageElement.closest(
-            '[data-chat-scroll]'
-          ) as HTMLElement;
-          if (scrollContainer) {
-            messageElement.scrollIntoView({
-              behavior: 'smooth',
-              block: 'center',
-            });
-          }
+        const scrollContainer = messageElement?.closest('[data-chat-scroll]');
+        if (messageElement && scrollContainer) {
+          messageElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
         }
       }, 0);
-
-      setTimeout(() => {
-        setActiveTargetMessageId(undefined);
-      }, 1500);
-    }
-  });
+      const highlightTimer = setTimeout(
+        () => setActiveTargetMessageId(undefined),
+        1500
+      );
+      onCleanup(() => {
+        clearTimeout(scrollTimer);
+        clearTimeout(highlightTimer);
+      });
+    })
+  );
 
   const lastPair = () => {
     const msgs = messages();

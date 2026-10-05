@@ -43,7 +43,14 @@ vi.mock('@app/features/agents-view/mobile-agent-composer', () => ({
   MobileAgentComposer: () => null,
 }));
 
+vi.mock('@app/lib/split-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@app/lib/split-router')>()),
+  createSearchParams: (descriptor: { defaults: object }) => [
+    descriptor.defaults,
+  ],
+}));
 vi.mock('@components/app/split-layout/layoutUtils', () => ({
+  useSplitPanel: () => undefined,
   useSplitPanelOrThrow: () => ({ handle: { replace: mocks.replace } }),
   useCanAutofocusSplitContent: () => false,
 }));

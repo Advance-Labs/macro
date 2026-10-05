@@ -29,15 +29,10 @@ import {
   getEntityNotifications,
   scopeChannelNotificationsForEntity,
 } from '@app/features/soup/entity-notifications';
-import {
-  fileTypeToBlockName,
-  resolveBlockAlias,
-} from '@app/lib/constants/file-metadata';
+import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
 import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
-import { URL_PARAMS as MARKDOWN_URL_PARAMS } from '@block-md/constants';
-import { markdownLocationUpdates } from '@block-md/markdown-route';
 import type {
   ReferredFrom,
   SplitContent,
@@ -97,6 +92,7 @@ import {
   setDoneOverride,
   type UnifiedNotification,
 } from '@notifications';
+import { documentCommentLocationUpdates } from '@notifications/document-comment-location';
 import { isTopLevelChannelNotification } from '@notifications/top-level-channel-notification';
 import { hydrateChannelNotificationSelection } from '@queries/channel/notification-selection';
 import { queryClient } from '@queries/client';
@@ -566,21 +562,6 @@ export function getDocumentCommentTarget(entity: {
   return notification && getDocumentCommentLocation(notification, document);
 }
 
-/** Scrolls an already-open document block to the row's comment target. */
-export async function navigateDocumentEntityToComment(
-  entity: Pick<DocumentEntity, 'id' | 'type' | 'fileType' | 'subType'>,
-  blockOrchestrator: BlockOrchestrator
-): Promise<void> {
-  const target = getDocumentCommentTarget(entity);
-  if (!target?.params) return;
-
-  const handle = await blockOrchestrator.getBlockHandle(
-    entity.id,
-    resolveBlockAlias(target.blockName)
-  );
-  await handle?.goToLocationFromParams(target.params);
-}
-
 export type CalendarPreviewSelection = WithNotification<
   Pick<CalendarEventEntity, 'id' | 'type' | 'time' | 'occurrenceKey'>
 >;
@@ -754,10 +735,9 @@ export const openEntityInSplitFromUnifiedList = async (
       ? getDocumentCommentTarget(entity)
       : undefined;
   const commentParams = commentTarget?.params;
-  const markdownCommentId =
-    commentTarget && resolveBlockAlias(commentTarget.blockName) === 'md'
-      ? commentParams?.[MARKDOWN_URL_PARAMS.commentId]
-      : undefined;
+  const commentSearch = commentTarget
+    ? documentCommentLocationUpdates(content.id, commentTarget)
+    : undefined;
 
   const sourceContent =
     splitHandle?.content() ?? splitManager.activeSplit()?.content();
@@ -768,12 +748,11 @@ export const openEntityInSplitFromUnifiedList = async (
       : undefined;
   const referredFrom = options.referredFrom ?? sourceListView;
 
-  // Compose hosted details before opening, including route-owned Markdown comments.
+  // Compose hosted details before opening, including route-owned document comments.
   const hostedContent =
     reviewsHostedContent(content) ??
     driveHostedContent(content, {
-      allowDocuments:
-        !isTouchDevice() && (!commentParams || !!markdownCommentId),
+      allowDocuments: !isTouchDevice() && (!commentParams || !!commentSearch),
     });
   let splitContent: SplitContent = hostedContent ?? {
     ...content,
@@ -796,8 +775,8 @@ export const openEntityInSplitFromUnifiedList = async (
   const result = splitManager.openWithSplit(splitContent, {
     search: target
       ? searchLocationUpdates(content.id, target)
-      : markdownCommentId
-        ? markdownLocationUpdates(content.id, { commentId: markdownCommentId })
+      : commentSearch
+        ? commentSearch
         : openChannelAtLatest
           ? channelLocationUpdates({ kind: 'latest' })
           : undefined,
@@ -816,14 +795,6 @@ export const openEntityInSplitFromUnifiedList = async (
 
   if (result.status === 'opened' || result.status === 'reused') {
     markNotificationsSeen();
-  }
-
-  if (commentParams && entity.type === 'document' && !markdownCommentId) {
-    // Other document features retain their existing imperative comment delivery.
-    await navigateDocumentEntityToComment(
-      entity,
-      splitManager.getOrchestrator()
-    );
   }
 };
 

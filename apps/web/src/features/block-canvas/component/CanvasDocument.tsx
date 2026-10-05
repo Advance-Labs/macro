@@ -56,6 +56,7 @@ export type CanvasDocumentProps = {
   portalMount?: HTMLElement;
   view?: CanvasView;
   locationParams?: Record<string, string | string[] | undefined>;
+  navigationTarget?: Record<string, string>;
   onLocationChange?: (location: CanvasView) => void;
   registerMethods?: (methods: Partial<CanvasDocumentMethods>) => void;
   children?: (content: JSX.Element) => JSX.Element;
@@ -94,8 +95,38 @@ function CanvasDocumentState(props: CanvasDocumentProps) {
   const [pendingLocationParams, setPendingLocationParams] =
     createSignal<Record<string, unknown>>();
 
+  let routeOwnsTarget = false;
+  createEffect(
+    on(
+      () => props.navigationTarget,
+      (target) => {
+        if (!target) {
+          if (routeOwnsTarget) {
+            routeOwnsTarget = false;
+            // Withdraw an unapplied request, but do not navigate away from a
+            // location the initialized Canvas has already displayed.
+            setPendingLocationParams(
+              dataState() === 'initialized'
+                ? {
+                    x: renderState.x,
+                    y: renderState.y,
+                    scale: renderState.scale * 100,
+                  }
+                : undefined
+            );
+          }
+          return;
+        }
+        routeOwnsTarget = true;
+        setPendingLocationParams({ ...target });
+      }
+    )
+  );
   props.registerMethods?.({
-    goToLocationFromParams: setPendingLocationParams,
+    goToLocationFromParams: (params) => {
+      routeOwnsTarget = false;
+      setPendingLocationParams({ ...params });
+    },
   });
 
   createEffect(() => {

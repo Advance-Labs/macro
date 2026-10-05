@@ -59,7 +59,7 @@ successfully rather than hashing the empty JavaScript placeholder.
 | `/app/invite?token=<token>` | GTM invite welcome page ("Welcome, <first name>", Continue → signup). Links come from the staff portal, last 48h, and grant the first month of Premium free once the account is created |
 | `/app/internal/invite-links` | Macro staff only (`@macro.com`): create GTM invite links and track opens, signups, and subscriptions |
 | `/app/home` | Desktop: Home (notifications + recent activity); mobile: Notifications soup |
-| `/app/home/<block-type>/<uuid>` | Home with an item opened inline; `<block-type>` may be an alias such as `task`; a targeted channel message uses `sN.channels.messageId` (and optionally `sN.channels.threadId`) and a document comment `sN.drive.commentId`; a calendar row renders the Calendar view inline at `/app/home/calendar/<month-or-week-or-day>` with the event, occurrence, and locator range in `sN.calendar.*`; reminders use `/app/home/reminder/<uuid>` |
+| `/app/home/<block-type>/<uuid>` | Home with an item opened inline; `<block-type>` may be an alias such as `task`; location targets use the owning feature's pane-local namespace, while `sN.drive.commentId` remains a compatibility form for document comments; a calendar row renders the Calendar view inline at `/app/home/calendar/<month-or-week-or-day>` with the event, occurrence, and locator range in `sN.calendar.*`; reminders use `/app/home/reminder/<uuid>` |
 | `/app/mail` | Email client |
 | `/app/mail/<uuid>` | Email with a thread opened inline; a targeted message uses `sN.email-detail.messageId` |
 | `/app/channels` | Channels list |
@@ -109,6 +109,23 @@ message/thread target when opening a channel or reusing its existing pane.
 Returning to Home's list clears the prior target, so reopening an item without
 a specific location does not replay the previous search hit.
 
+Document-location links also use pane-local targets: Markdown nodes/comments,
+PDF annotations and precise rectangles, Canvas coordinates/scale, Chat messages,
+and Email messages. Clicking a location in the document already open must retarget
+that pane without remounting its editor or replacing its surrounding list route.
+Repeated clicks must reapply the location. Shift-click prefers another split for
+closed content; content already owned by a pane still reuses that owner. Check a
+cold target and two rapid targets before content becomes ready: only the newest
+request should apply. A plain Channel link explicitly requests latest messages.
+Activity selections that reuse another pane show **Content already open** after
+the destination is applied, not while its route request is still pending.
+Home and Agents Chat previews retain their owner route when an external link targets
+content already open inline. Repeated location requests must reach that existing
+preview without recreating its block or fetching its content again. Plain Channel
+opens must preserve an active Call tab; only an explicit message/latest request or
+reopen switches to Messages. The document preview's **Open in New Split** action
+uses the same route-target delivery as a document-location link.
+
 Reminder navigation is native-route only: list, Home, notifications, commands,
 copied links, and new browser tabs use `/app/reminders`,
 `/app/home/reminder/<uuid>`, or `/app/reminder/<uuid>`. Imperative callers use
@@ -123,9 +140,10 @@ Back/Forward restores the period and its event locator from `sN.calendar.*`.
 
 Home uses the shared channel and file details for channel conversations and
 supported documents, with a **Home** breadcrumb that returns to the list. A
-channel message or thread target stays in its conversation. Document comment
-targets, spreadsheets, unknown items, and other unsupported block types retain
-the legacy inline preview so their navigation still works. The URL shape stays
+channel message or thread target stays in its conversation. Document comments
+retarget the supported document detail without switching renderers. Spreadsheets
+and other unsupported block types retain inline preview rendering with explicit
+host-owned location targets. The URL shape stays
 `/app/home/<block-type>/<uuid>` in either rendering mode.
 
 Desktop Home names a document comment event only when it is the latest

@@ -397,6 +397,19 @@ function AgentsWorkspace(props: { initialRoute?: AgentsRoute }) {
                               >
                                 <PreviewPanel
                                   target={previewBlockTarget(conversation)}
+                                  routeOwner={
+                                    props.initialRoute?.conversation.type ===
+                                      conversation.type &&
+                                    props.initialRoute.conversation.id ===
+                                      conversation.id
+                                      ? {
+                                          blockType:
+                                            previewBlockTarget(conversation)
+                                              .blockType,
+                                          blockId: conversation.id,
+                                        }
+                                      : undefined
+                                  }
                                   orchestrator={orchestrator}
                                   splitPanelContext={panel}
                                   headerLeading={

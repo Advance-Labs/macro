@@ -36,6 +36,7 @@ import {
 import type { ChannelTargetRequest } from '@channel/Channel/ChannelSurface';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { PreviewPanel } from '@components/app/PreviewPanel';
+import type { PreviewRouteOwner } from '@components/app/preview-panel-context';
 import { previewBlockTarget } from '@components/app/previewTarget';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { ENABLE_VIDEO_BLOCK } from '@core/constant/featureFlags';
@@ -68,6 +69,8 @@ export type EntityDetailProps = {
   target: EntityDetailTarget;
   previewHeaderLeading?: JSX.Element;
   navigationRequest?: number | string;
+  /** Only a host whose route names this target grants route-search ownership. */
+  routeOwner?: PreviewRouteOwner;
   children?: (context: EntityDetailContext) => JSX.Element;
 };
 
@@ -90,6 +93,8 @@ function PreviewPanelEntityDetail(props: EntityDetailProps) {
   return (
     <PreviewPanel
       target={previewBlockTarget(props.target)}
+      routeOwner={props.routeOwner}
+      navigationRequest={props.navigationRequest}
       orchestrator={orchestrator}
       splitPanelContext={panel}
       headerLeading={props.previewHeaderLeading}
@@ -271,6 +276,8 @@ export function EntityDetail(props: EntityDetailProps) {
         <PreviewPanelEntityDetail
           target={props.target}
           previewHeaderLeading={props.previewHeaderLeading}
+          navigationRequest={props.navigationRequest}
+          routeOwner={props.routeOwner}
         />
       </Match>
     </Switch>

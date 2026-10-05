@@ -1237,14 +1237,17 @@ describe('Inbox channel preview navigation', () => {
       blockType: 'channel',
       previewId: 'channel-1',
     });
-    expect(result.search).toEqual({
-      channels: { messageId: ['message-1'], threadId: ['thread-1'] },
+    expect(result.search.channels).toEqual({
+      messageId: ['message-1'],
+      threadId: ['thread-1'],
+      seek: [expect.any(String)],
     });
   });
-  it('keeps untargeted channels at latest', () => {
+  it('keeps ordinary channel opens untargeted so an active Call tab stays visible', () => {
     expect(
       homePreviewNavigation({ type: 'channel', id: 'channel-1' }).search
-    ).toEqual({ channels: undefined });
+        .channels
+    ).toBeUndefined();
   });
   it('names markdown subtypes in the path', () => {
     expect(
@@ -1985,34 +1988,44 @@ describe('getDocumentCommentTarget', () => {
     ).toBeUndefined();
   });
 
-  it('opens the row at its comment like a comment link', async () => {
-    const openWithSplit = vi.fn(() => ({ status: 'unavailable' }));
-    const goToLocationFromParams = vi.fn();
-    const getBlockHandle = vi.fn(async () => ({ goToLocationFromParams }));
-    setGlobalSplitManager({
-      activeSplit: vi.fn(),
-      getOrchestrator: vi.fn(() => ({ getBlockHandle })),
-      getSplitByContent: vi.fn(),
-      openWithSplit,
-    } as unknown as SplitManager);
+  it.each([
+    ['md', 'markdown-detail', 'commentId'],
+    ['pdf', 'pdf-detail', 'annotationId'],
+    ['spreadsheet', 'markdown-detail', 'commentId'],
+  ] as const)(
+    'opens a %s row at its routed comment without a block handle',
+    async (fileType, namespace, field) => {
+      const openWithSplit = vi.fn(() => ({ status: 'unavailable' }));
+      const goToLocationFromParams = vi.fn();
+      const getBlockHandle = vi.fn(async () => ({ goToLocationFromParams }));
+      setGlobalSplitManager({
+        activeSplit: vi.fn(),
+        getOrchestrator: vi.fn(() => ({ getBlockHandle })),
+        getSplitByContent: vi.fn(),
+        openWithSplit,
+      } as unknown as SplitManager);
 
-    await openEntityInSplitFromUnifiedList(
-      documentRow([commentNotification('n1', 'comment-1')]),
-      {}
-    );
+      await openEntityInSplitFromUnifiedList(
+        {
+          ...documentRow([commentNotification('n1', 'comment-1')]),
+          fileType,
+        } as EntityData,
+        {}
+      );
 
-    expect(openWithSplit).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'component', id: 'documents' }),
-      expect.objectContaining({ activate: true })
-    );
-    expect(targetSearch(openWithSplit, 'markdown-detail')).toMatchObject({
-      documentId: ['doc-1'],
-      commentId: ['comment-1'],
-      seek: [expect.any(String)],
-    });
-    expect(getBlockHandle).not.toHaveBeenCalled();
-    expect(goToLocationFromParams).not.toHaveBeenCalled();
-  });
+      expect(openWithSplit).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'component', id: 'documents' }),
+        expect.objectContaining({ activate: true })
+      );
+      expect(targetSearch(openWithSplit, namespace)).toMatchObject({
+        documentId: ['doc-1'],
+        [field]: ['comment-1'],
+        seek: [expect.any(String)],
+      });
+      expect(getBlockHandle).not.toHaveBeenCalled();
+      expect(goToLocationFromParams).not.toHaveBeenCalled();
+    }
+  );
 
   it('carries the comment through the Inbox preview route', () => {
     const result = homePreviewNavigation(

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
 vi.mock('@app/lib/split-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@app/lib/split-router')>()),
   createSearchParams: () => [state.search],
+  useOwnsSearchNamespace: () => () => true,
 }));
 vi.mock('@app/signal/splitLayout', () => ({
   globalSplitManager: () => undefined,

@@ -8,7 +8,10 @@ import {
   makeRenameAction,
   useBlockEntityCommands,
 } from '@app/features/next-soup/actions';
-import { createSearchParams } from '@app/lib/split-router';
+import {
+  createSearchParams,
+  useOwnsSearchNamespace,
+} from '@app/lib/split-router';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { URL_PARAMS } from '@block-channel/constants';
 import { ChannelAttachmentsTab } from '@channel/Attachments/ChannelAttachmentsTab';
@@ -52,6 +55,10 @@ import {
 import { ChannelInviteButton } from '@channel/channel-invite-button';
 import { useChannelPictureActions } from '@channel/channel-picture';
 import { ChannelParticipantsTab } from '@channel/Participants/ChannelParticipantsTab';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
 import { BlockSplitFileMenu } from '@components/app/split-layout/components/SplitFileMenu';
 import { SplitHeaderRight } from '@components/app/split-layout/components/SplitHeader';
@@ -307,6 +314,7 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
   const { navigatedFromJK } = useNavigatedFromJK();
   const channelId = useBlockId();
+  const preview = useMaybePreviewPanel();
   useBlockEntityCommands({
     id: () => channelId,
     scopeId: () => splitPanel.splitHotkeyScope,
@@ -314,9 +322,20 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   const blockHandle = blockHandleSignal.get;
   const [searchParams, setSearchParams] = useSearchParams();
   const [routeSearch] = createSearchParams(channelsSearch);
+  const ownsSearch = useOwnsSearchNamespace(channelsSearch.namespace);
+  const routeTarget = () =>
+    ownsSearch() &&
+    (!preview || previewOwnsRoute(preview, 'channel', channelId)) &&
+    !!(routeSearch.messageId || routeSearch.latest);
 
   const initialTargetMessageParams = (): ChannelTargetMessageParams => {
-    if (routeSearch.messageId)
+    if (preview && !routeTarget()) {
+      const current = preview.previewTarget();
+      return current.blockId === channelId
+        ? ((current.params as ChannelTargetMessageParams | undefined) ?? {})
+        : {};
+    }
+    if (routeTarget() && routeSearch.messageId)
       return {
         [URL_PARAMS.message]: routeSearch.messageId,
         [URL_PARAMS.thread]: routeSearch.threadId || undefined,
@@ -358,6 +377,7 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   ] as ChannelEntryStateSnapshot | undefined;
 
   const hasInitialTargetRequest = () => {
+    if (preview) return Boolean(preview.previewTarget().params);
     if (routeSearch.messageId || routeSearch.latest) return true;
     const hasPropsTarget =
       props[URL_PARAMS.message] !== undefined ||
@@ -381,9 +401,13 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
     !hasInitialTargetRequest();
 
   const initialTargetRequest: ChannelTargetRequest | undefined =
-    routeSearch.latest
-      ? { kind: 'latest' }
-      : toChannelTargetRequest(initialTargetMessageParams());
+    preview && !routeTarget()
+      ? (toChannelTargetRequest(initialTargetMessageParams()) ?? {
+          kind: 'latest',
+        })
+      : routeTarget() && routeSearch.latest
+        ? { kind: 'latest' }
+        : toChannelTargetRequest(initialTargetMessageParams());
   const [activeTab, setActiveTabInternal] = createSignal<ChannelTabId>(
     initialChannelTab({
       wantsJoinCall,
@@ -400,7 +424,28 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   const [targetRequest, setTargetRequest] = createSignal<
     ChannelTargetRequest | undefined
   >(initialTargetRequest);
-  let routeOwnsTarget = Boolean(routeSearch.messageId || routeSearch.latest);
+  let routeOwnsTarget = routeTarget();
+  createEffect(
+    on(
+      () => [
+        JSON.stringify(preview?.previewTarget().params),
+        preview?.navigationRequest(),
+        routeTarget(),
+        routeSearch.seek,
+      ],
+      () => {
+        const current = preview?.previewTarget();
+        if (current?.blockId !== channelId || routeTarget()) return;
+        setActiveTab(DEFAULT_CHANNEL_TAB);
+        setTargetRequest(
+          toChannelTargetRequest(
+            (current.params as ChannelTargetMessageParams | undefined) ?? {}
+          ) ?? { kind: 'latest' }
+        );
+      },
+      { defer: true }
+    )
+  );
   let surfaceApi: ChannelSurfaceApi | undefined;
 
   const setActiveTab = (tab: ChannelTabId) => {
@@ -410,16 +455,19 @@ export function NewChannelBlockAdapter(props: BlockChannelProps) {
   createEffect(
     on(
       () => [
+        routeTarget(),
         routeSearch.messageId,
         routeSearch.threadId,
         routeSearch.latest,
         routeSearch.seek,
+        ownsSearch(),
+        preview?.routeOwner(),
       ],
       () => {
-        if (!routeSearch.messageId && !routeSearch.latest) {
+        if (!routeTarget()) {
           if (routeOwnsTarget) {
             routeOwnsTarget = false;
-            setTargetRequest(undefined);
+            if (!preview) setTargetRequest(undefined);
           }
           return;
         }

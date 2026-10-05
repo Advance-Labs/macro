@@ -1,5 +1,10 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import { FileSidePanelSections, SidePanel } from '@components/app/side-panel';
+import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
 import {
   useBlockId,
   useBlockNestedContext,
@@ -12,8 +17,9 @@ import { blockElementSignal } from '@core/signal/blockElement';
 import { blockFileSignal, blockHandleSignal } from '@core/signal/load';
 import { useCanEdit } from '@core/signal/permissions';
 import { useSearchParams } from '@solidjs/router';
-import { Show } from 'solid-js';
+import { createMemo, Show } from 'solid-js';
 import type { CanvasView } from '../context/canvas-document-context';
+import { createCanvasRouteTarget } from '../primitives/create-canvas-route-target';
 import { CanvasDocument, type CanvasDocumentMethods } from './CanvasDocument';
 import { TopBar } from './TopBar';
 
@@ -35,6 +41,24 @@ export default function BlockCanvas(props: BlockCanvasProps) {
   const file = blockFileSignal.get;
   const blockHandle = blockHandleSignal.get;
   const [locationParams] = useSearchParams();
+  const panel = useSplitPanel();
+  const preview = useMaybePreviewPanel();
+  const routeTarget = createCanvasRouteTarget(
+    () => documentId,
+    !isNested && !!panel && !panel.handle.isPopover()
+  );
+  const target = createMemo(() => {
+    if (!preview) return routeTarget();
+    if (previewOwnsRoute(preview, 'canvas', documentId)) {
+      const route = routeTarget();
+      if (route) return route;
+    }
+    const current = preview.previewTarget();
+    preview.navigationRequest();
+    return current.blockId === documentId && current.params
+      ? { ...(current.params as Record<string, string>) }
+      : undefined;
+  });
 
   const registerMethods = (methods: Partial<CanvasDocumentMethods>) => {
     createMethodRegistration(blockHandle, methods);
@@ -50,7 +74,8 @@ export default function BlockCanvas(props: BlockCanvasProps) {
           isNested={isNested}
           portalMount={portalMount()}
           view={props.view}
-          locationParams={locationParams}
+          locationParams={preview ? {} : locationParams}
+          navigationTarget={target()}
           onLocationChange={
             nestedContext?.parentContext?.canvas?.onLocationChange
           }

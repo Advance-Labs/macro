@@ -28,7 +28,7 @@ import {
 import { EntityIcon } from '@core/component/EntityIcon';
 import { useHoldParentHoverCardOpen } from '@core/component/HoverCard';
 import {
-  isBlockNameWithLocation,
+  documentLocationUpdates,
   openDocument as openBlockDocument,
 } from '@core/component/LexicalMarkdown/component/core/BlockLink';
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
@@ -601,10 +601,19 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
       return;
     }
 
-    if (event.shiftKey) {
-      splitManager.openWithSplit(
-        { type, id: props.documentInfo.id, params: props.documentInfo.params },
-        { preferNewSplit: true }
+    const hasLocation =
+      Object.keys(props.documentInfo.params).length > 0 &&
+      documentLocationUpdates(
+        type,
+        props.documentInfo.id,
+        props.documentInfo.params
+      );
+    if (event.shiftKey || hasLocation) {
+      openBlockDocument(
+        type,
+        props.documentInfo.id,
+        props.documentInfo.params,
+        event.shiftKey
       );
       return;
     }
@@ -708,36 +717,12 @@ export function DocumentPreviewContent(props: DocumentPreviewContentProps) {
       await openCalendarEventSplit({ ...calendarTarget, openInNewSplit: true });
       return;
     }
-    const splitManager = globalSplitManager();
-    if (!splitManager) return;
-
-    const type = targetBlockType();
-    const existing = splitManager.getSplitByContent(
-      type,
-      props.documentInfo.id
-    );
-    if (existing) {
-      existing.activate();
-    } else {
-      splitManager.createNewSplit({
-        content: {
-          type,
-          id: props.documentInfo.id,
-          params: props.documentInfo.params,
-        },
-        referredFrom: null,
-      });
-    }
-
-    if (!isBlockNameWithLocation(type)) return;
-
-    const orchestrator = splitManager.getOrchestrator();
-    const handle = await orchestrator.getBlockHandle(
+    openBlockDocument(
+      targetBlockType(),
       props.documentInfo.id,
-      resolveBlockAlias(type)
+      props.documentInfo.params,
+      true
     );
-
-    await handle?.goToLocationFromParams(props.documentInfo.params);
   });
 
   const PreviewTitle = (local: { name: string }) => (

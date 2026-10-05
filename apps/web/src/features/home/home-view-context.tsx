@@ -215,13 +215,9 @@ export const [HomeViewProvider, useHomeView] = createAssertedContextProvider<
   const openPreviewTarget = (target: PreviewBlockTarget) => {
     if (!selectPreview.canSelect(target)) return false;
     const current = previewTarget();
-    if (
-      current &&
-      deepEqual(
-        homePreviewTargetNavigation(current),
-        homePreviewTargetNavigation(target)
-      )
-    ) {
+    // Compare destinations before encoding a fresh route request token.
+    if (current && deepEqual(current, target)) {
+      navigateTarget(target, true);
       setPreviewNavigationRequest((count) => count + 1);
       return true;
     }

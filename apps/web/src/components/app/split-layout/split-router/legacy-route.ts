@@ -431,8 +431,11 @@ export const legacySplitRoute = defineRoute({
       const [section, conversationId] = agentsRouteSegments(content.id) ?? [];
       if (section && conversationId) {
         return {
-          namespace: section === 'agent-chats' ? 'chat' : 'agent',
-          id: conversationId,
+          namespace: section === 'agent-chats' ? 'block' : 'agent',
+          id:
+            section === 'agent-chats'
+              ? `chat:${conversationId}`
+              : conversationId,
         };
       }
       return { namespace: 'component', id: content.id };

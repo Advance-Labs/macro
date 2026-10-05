@@ -12,6 +12,7 @@ import {
 import { ViewBreadcrumbs, ViewShell } from '@app/components/view-shell';
 import { MarkdownDetailBreadcrumbItem } from '@block-md/component/MarkdownDetailBreadcrumbItem';
 import type { MarkdownDocumentKind } from '@block-md/types';
+import { previewBlockTarget } from '@components/app/previewTarget';
 import { SidePanel } from '@components/app/side-panel';
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { useDocumentShareModal } from '@core/component/TopBar/shareModal';
@@ -100,6 +101,7 @@ function StackEntityDetail(props: {
   entry: EntityDetailNavigationEntry;
   order: number;
 }) {
+  // The stack mounts only its active, route-backed endpoint.
   const navigationStack = useDriveDetailNavigation();
   const markdownTarget = () => {
     const target = props.entry.data;
@@ -161,6 +163,7 @@ function StackEntityDetail(props: {
         </Show>
         <EntityDetail
           target={props.entry.data}
+          routeOwner={previewBlockTarget(props.entry.data)}
           previewHeaderLeading={
             <Show
               when={entityDetailBlockType(props.entry.data) === 'spreadsheet'}

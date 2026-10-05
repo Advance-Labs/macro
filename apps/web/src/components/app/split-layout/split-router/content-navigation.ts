@@ -1,5 +1,5 @@
 import type { SplitRouter, SplitRoutesManifest } from '@app/lib/split-router';
-import { encodeRoute } from '@app/lib/split-router/routes';
+import { encodeRoute, getRouteClaim } from '@app/lib/split-router/routes';
 import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import type {
   OpenWithSplitOptions,
@@ -22,7 +22,22 @@ export function createContentNavigator(
       manager.activeSplit() ??
       (firstVisible ? manager.getSplit(firstVisible.id) : undefined);
     if (!source) return;
-    const location = resolveContentLocation(routes, content);
+    let location = resolveContentLocation(routes, content);
+    const current = router.location(source.id);
+    const requestedClaim = getRouteClaim(routes, location.route);
+    const currentClaim = current && getRouteClaim(routes, current.route);
+    // A location request for the current owner must retain its surrounding route
+    // and search, rather than redirecting through the content's legacy URL.
+    if (
+      options.search &&
+      current &&
+      requestedClaim &&
+      currentClaim &&
+      requestedClaim.namespace === currentClaim.namespace &&
+      requestedClaim.id === currentClaim.id
+    ) {
+      location = current;
+    }
     const path = `/${encodeRoute(routes, { location }).map(encodeURIComponent).join('/')}`;
     const query = new URLSearchParams();
     replaceSplitSearchParams(query, [{ location }]);

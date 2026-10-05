@@ -4,6 +4,8 @@ import { downloadFileOperation } from '@app/components/entity-detail/file-detail
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { CanvasDocument } from '@block-canvas/component/CanvasDocument';
 import { useCanvasDocument } from '@block-canvas/context/canvas-document-context';
+import { createCanvasRouteTarget } from '@block-canvas/primitives/create-canvas-route-target';
+import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
 import {
   getPermissions,
   hasPermissions,
@@ -60,6 +62,11 @@ export function CanvasDetailDocument(props: {
   children?: (context: CanvasDetailContext) => JSX.Element;
 }) {
   const [searchParams] = useSearchParams();
+  const panel = useSplitPanel();
+  const target = createCanvasRouteTarget(
+    () => props.documentId,
+    !!panel && !panel.handle.isPopover()
+  );
   const canEdit = () =>
     hasPermissions(
       getPermissions(props.data.userAccessLevel),
@@ -78,6 +85,7 @@ export function CanvasDetailDocument(props: {
         canEdit={canEdit()}
         portalScope="split"
         locationParams={searchParams}
+        navigationTarget={target()}
       >
         {(content) => (
           <CanvasDetailContent

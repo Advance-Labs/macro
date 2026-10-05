@@ -5,10 +5,22 @@ const mocks = vi.hoisted(() => ({
   projectsEnabled: false,
   openWithSplit: vi.fn(),
   openDocument: vi.fn(),
+  findOpenView: vi.fn(),
+  alert: vi.fn(),
 }));
 
 vi.mock('@app/signal/splitLayout', () => ({
-  globalSplitManager: () => ({ openWithSplit: mocks.openWithSplit }),
+  globalSplitManager: () => ({
+    openWithSplit: mocks.openWithSplit,
+    findOpenView: mocks.findOpenView,
+    activeSplitId: () => 'source',
+  }),
+}));
+vi.mock('@components/app/split-layout/layoutUtils', () => ({
+  useSplitPanel: () => undefined,
+}));
+vi.mock('@core/component/Toast/Toast', () => ({
+  toast: { alert: mocks.alert },
 }));
 vi.mock('@core/component/LexicalMarkdown/component/core/BlockLink', () => ({
   openDocument: mocks.openDocument,
@@ -21,6 +33,8 @@ vi.mock('@core/constant/featureFlags', () => ({
 beforeEach(() => {
   mocks.projectsEnabled = false;
   vi.clearAllMocks();
+  mocks.findOpenView.mockReset();
+  mocks.openDocument.mockReset();
 });
 
 describe('activity project navigation', () => {
@@ -50,7 +64,39 @@ describe('activity project navigation', () => {
       'project',
       'folder',
       undefined,
-      false
+      false,
+      expect.any(Function)
     );
+  });
+});
+
+describe('activity reused-owner notices', () => {
+  it('waits for route application and reports reuse once', () => {
+    mocks.findOpenView.mockReturnValue({ owner: 'other' });
+    openEntityInSplit({ block: 'md', id: 'document', newSplit: false });
+    expect(mocks.alert).not.toHaveBeenCalled();
+    const applied = mocks.openDocument.mock.calls[0][4];
+    applied();
+    applied();
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith('Content already open');
+  });
+
+  it('does not report navigation within the current owner as reuse', () => {
+    mocks.findOpenView.mockReturnValue({ owner: 'source' });
+    openEntityInSplit({ block: 'md', id: 'document', newSplit: false });
+    mocks.openDocument.mock.calls[0][4]();
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates synchronous reuse and its applied callback', () => {
+    mocks.findOpenView.mockReturnValue({ owner: 'other' });
+    mocks.openDocument.mockImplementation(
+      (_block, _id, _params, _newSplit, applied) => {
+        applied();
+        return { status: 'reused', owner: 'other', sourceOwner: 'source' };
+      }
+    );
+    openEntityInSplit({ block: 'md', id: 'document', newSplit: false });
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith('Content already open');
   });
 });

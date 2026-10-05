@@ -1,4 +1,7 @@
-import { createSearchParamsCodec } from '@app/lib/split-router';
+import {
+  createSearchParamsCodec,
+  type SplitSearchUpdate,
+} from '@app/lib/split-router';
 import { z } from 'zod';
 import type { EmailTab } from './types';
 
@@ -33,3 +36,17 @@ export const emailDetailSearch = {
 
 export const emailDetailSearchCodec =
   createSearchParamsCodec(emailDetailSearch);
+
+/** Replace the message target without changing the owning mail view. */
+export function emailLocationUpdates(
+  messageId: string,
+  seek = crypto.randomUUID()
+): Record<string, SplitSearchUpdate> {
+  const target = emailDetailSearchCodec.serialize({ messageId, seek });
+  return {
+    [emailDetailSearch.namespace]: (current) => {
+      const { messageId: _messageId, seek: _seek, ...rest } = current ?? {};
+      return { ...rest, ...target };
+    },
+  };
+}

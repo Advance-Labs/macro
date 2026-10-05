@@ -3,6 +3,7 @@ import { createCalendarRange } from '@app/features/calendar-view/calendar-range'
 import { openReminderDetail } from '@app/features/reminders/reminder-navigation';
 import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import { resolveBlockAlias } from '@app/lib/constants/file-metadata';
+import type { SplitSearchUpdate } from '@app/lib/split-router';
 import {
   getChannelParams,
   navigateToChannelMessage,
@@ -27,6 +28,7 @@ import { errAsync, ResultAsync } from 'neverthrow';
 import { match, P } from 'ts-pattern';
 import { projectRouteId } from '../projects/core/route';
 import {
+  documentCommentLocationUpdates,
   getDocumentCommentLocation,
   type NotificationEntityOverride,
 } from './document-comment-location';
@@ -63,6 +65,7 @@ function openSplitIfNotOpen(
   options: {
     newSplit?: boolean;
     params?: Record<string, unknown>;
+    search?: Record<string, SplitSearchUpdate>;
     sourceHandle?: SplitHandle;
     onApplied?: VoidFunction;
   } = {}
@@ -79,7 +82,7 @@ function openSplitIfNotOpen(
       reportApplied();
     }
   };
-  const existing = layoutManager.getSplitByContent(type, id);
+  const existing = !options.search && layoutManager.getSplitByContent(type, id);
   if (existing) {
     existing.activate();
     reportApplied();
@@ -89,6 +92,7 @@ function openSplitIfNotOpen(
       referredFrom: null,
       preferNewSplit: options.newSplit,
       handle: options.sourceHandle,
+      search: options.search,
       ...(options.onApplied ? { onApplied: reportApplied } : {}),
     });
     reportImmediateResult(result);
@@ -348,7 +352,10 @@ function getSupportedHandler(
           return async (lm: SplitManager, newSplit: boolean = false) =>
             openSplitIfNotOpen(lm, location.blockName, notification.entity_id, {
               newSplit,
-              params: location.params,
+              search: documentCommentLocationUpdates(
+                notification.entity_id,
+                location
+              ),
               sourceHandle,
               onApplied,
             });

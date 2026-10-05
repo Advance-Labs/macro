@@ -1,11 +1,15 @@
+import { markdownLocationUpdates } from '@app/features/block-md/markdown-route';
+import { pdfLocationUpdates } from '@app/features/block-pdf/pdf-route';
 import type { BlockAlias, BlockName } from '@app/lib/constants/block-registry';
 import {
   type ItemLike,
   itemToBlockName,
   resolveBlockAlias,
 } from '@app/lib/constants/file-metadata';
+import type { SplitSearchUpdate } from '@app/lib/split-router';
 import { URL_PARAMS as MD_URL_PARAMS } from '@block-md/constants';
 import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
+import { match } from 'ts-pattern';
 import type { UnifiedNotification } from './types';
 
 // Minimal entity shape — the live entity from the UI is authoritative when
@@ -59,6 +63,23 @@ export function documentCommentLocation(
     commentId,
     params: commentParamName ? { [commentParamName]: commentId } : undefined,
   };
+}
+
+/** Route-owned comment requests, including repeats, never require a block handle. */
+export function documentCommentLocationUpdates(
+  documentId: string,
+  location: DocumentCommentLocation
+): Record<string, SplitSearchUpdate> | undefined {
+  return match(resolveBlockAlias(location.blockName))
+    .with('md', 'spreadsheet', () =>
+      markdownLocationUpdates(documentId, { commentId: location.commentId })
+    )
+    .with('pdf', () =>
+      pdfLocationUpdates(documentId, {
+        [PDF_URL_PARAMS.annotationId]: location.commentId,
+      })
+    )
+    .otherwise(() => undefined);
 }
 
 /** {@link documentCommentLocation} for a document comment notification. */

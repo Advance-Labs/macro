@@ -4,7 +4,14 @@ import type {
 } from '@app/features/email-thread/context/email-thread-context';
 import { URL_PARAMS } from '@app/features/email-thread/core/location';
 import { emailDetailSearch } from '@app/features/email-view/email-route';
-import { createSearchParams } from '@app/lib/split-router';
+import {
+  createSearchParams,
+  useOwnsSearchNamespace,
+} from '@app/lib/split-router';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import {
   useCanAutofocusSplitContent,
   useSplitPanel,
@@ -38,16 +45,37 @@ export function EmailBlockAdapter(props: {
   source: EmailThreadSource;
   threadTransport: EmailThreadHostViewProps['threadTransport'];
 }) {
+  const preview = useMaybePreviewPanel();
   const [params] = useSearchParams();
   const [routeSearch] = createSearchParams(emailDetailSearch);
+  const ownsSearch = useOwnsSearchNamespace(emailDetailSearch.namespace);
+  const routeTarget = () =>
+    ownsSearch() &&
+    !!routeSearch.messageId &&
+    (!preview || previewOwnsRoute(preview, 'email', props.threadId()));
   const rawTarget = params[URL_PARAMS.messageId];
+  const previewMessageId = () => {
+    const current = preview?.previewTarget();
+    return current?.blockId === props.threadId()
+      ? (current.params as Record<string, string> | undefined)?.[
+          URL_PARAMS.messageId
+        ]
+      : undefined;
+  };
   const [targetMessageId, setTargetMessageId] = createSignal(
-    routeSearch.messageId ||
-      (Array.isArray(rawTarget) ? rawTarget[0] : rawTarget)
+    routeTarget()
+      ? routeSearch.messageId
+      : preview
+        ? previewMessageId()
+        : Array.isArray(rawTarget)
+          ? rawTarget[0]
+          : rawTarget
   );
-  let routeOwnsTarget = Boolean(routeSearch.messageId);
+  let routeOwnsTarget = routeTarget();
   const [targetRequest, setTargetRequest] = createSignal<string | undefined>(
-    routeOwnsTarget ? routeSearch.seek : undefined
+    routeOwnsTarget
+      ? routeSearch.seek
+      : preview?.navigationRequest()?.toString()
   );
   const split = useSplitPanel();
   const listNavigation = useEmailListNavigation(props.threadId);
@@ -59,13 +87,37 @@ export function EmailBlockAdapter(props: {
   let targetTimer: ReturnType<typeof setTimeout> | undefined;
   createEffect(
     on(
-      () => [routeSearch.messageId, routeSearch.seek],
+      () => [
+        previewMessageId(),
+        preview?.navigationRequest(),
+        routeTarget(),
+        routeSearch.seek,
+      ],
       () => {
-        if (!routeSearch.messageId) {
+        if (!preview || routeTarget()) return;
+        setTargetMessageId(previewMessageId());
+        setTargetRequest(preview.navigationRequest()?.toString());
+      },
+      { defer: true }
+    )
+  );
+  createEffect(
+    on(
+      () => [
+        routeTarget(),
+        routeSearch.messageId,
+        routeSearch.seek,
+        ownsSearch(),
+        preview?.routeOwner(),
+      ],
+      () => {
+        if (!routeTarget()) {
           if (routeOwnsTarget) {
             routeOwnsTarget = false;
-            setTargetMessageId(undefined);
-            setTargetRequest(undefined);
+            if (!preview) {
+              setTargetMessageId(undefined);
+              setTargetRequest(undefined);
+            }
           }
           return;
         }

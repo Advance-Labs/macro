@@ -1,5 +1,14 @@
+import { markdownDetailSearch } from '@app/features/block-md/markdown-route';
 import { ChatWithAgentButton } from '@app/features/chat/ChatWithAgentButton';
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
+import {
+  createSearchParams,
+  useOwnsSearchNamespace,
+} from '@app/lib/split-router';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import {
   ResponsiveBlockToolbar,
   ResponsivePermissionsBadge,
@@ -37,7 +46,7 @@ import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { downloadFile } from '@filesystem/download';
 import IconShared from '@icon/share.svg';
 import { Badge } from '@ui';
-import { onMount, Show } from 'solid-js';
+import { createEffect, on, onMount, Show } from 'solid-js';
 import { spreadsheetChatContext } from './core/chat-context';
 import type { SpreadsheetData } from './definition';
 import { createSpreadsheetStore } from './primitives/create-spreadsheet-store';
@@ -52,6 +61,41 @@ export default function SpreadsheetBlock(props: { share?: string }) {
     useHotkeyScopeOrCreate('spreadsheet');
   const enabled = useSpreadsheetAccess();
   const params = createParamsState();
+  const documentId = useBlockId();
+  const preview = useMaybePreviewPanel();
+  const ownsSearch = useOwnsSearchNamespace(markdownDetailSearch.namespace);
+  const [search] = createSearchParams(markdownDetailSearch);
+  const routeTarget = () =>
+    ownsSearch() &&
+    (!preview || previewOwnsRoute(preview, 'spreadsheet', documentId)) &&
+    search.documentId === documentId &&
+    !!search.commentId;
+  createEffect(
+    on(
+      () => [
+        preview
+          ? JSON.stringify(preview.previewTarget().params)
+          : search.commentId,
+        preview ? preview.navigationRequest() : search.seek,
+        preview ? preview.previewTarget().blockId : search.documentId,
+        routeTarget(),
+      ],
+      () => {
+        if (routeTarget()) {
+          params.navigate({ comment_id: search.commentId });
+        } else if (preview) {
+          const target = preview.previewTarget();
+          if (target.blockId === documentId)
+            params.navigate({
+              ...(target.params as Record<string, string> | undefined),
+              comment_id:
+                (target.params as Record<string, string> | undefined)
+                  ?.comment_id ?? '',
+            });
+        }
+      }
+    )
+  );
   createMethodRegistration(blockHandleSignal.get, {
     goToLocationFromParams: params.navigate,
   });

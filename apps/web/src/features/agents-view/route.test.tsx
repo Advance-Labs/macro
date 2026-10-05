@@ -1,7 +1,7 @@
 import { cleanup, render } from '@solidjs/testing-library';
 import { createSignal, Suspense } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { AgentsRouteView } from './route';
+import { AgentsRouteView, agentChatsRoute } from './route';
 
 const state = vi.hoisted(() => ({
   flag: (): { enabled: boolean; loading: boolean } => ({
@@ -110,4 +110,12 @@ it('replaces the mobile conversation alias instead of trapping Back in a redirec
     { type: 'agent', id: 'session-id' },
     true
   );
+});
+
+it('claims agent chats as chat blocks and owns chat detail targets', () => {
+  expect(agentChatsRoute.claim?.({ id: 'chat-1' })).toEqual({
+    namespace: 'block',
+    id: 'chat:chat-1',
+  });
+  expect(agentChatsRoute.search).toContain('chat-detail');
 });

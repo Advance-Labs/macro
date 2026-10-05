@@ -206,6 +206,7 @@ function HomeDetailRouteContent() {
     <DebugSuspense name="HomeView.detail-content">
       <PreviewPanel
         target={previewTarget()}
+        routeOwner={previewTarget()}
         navigationRequest={previewNavigationRequest()}
         orchestrator={orchestrator}
         splitPanelContext={panel}

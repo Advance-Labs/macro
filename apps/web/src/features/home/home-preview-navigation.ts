@@ -1,7 +1,21 @@
 import { agentDetailSearch } from '@app/features/block-agent/agent-route';
 import { callDetailSearch } from '@app/features/block-call/call-route';
-import { markdownDetailSearch } from '@app/features/block-md/markdown-route';
-import { pdfDetailSearch } from '@app/features/block-pdf/pdf-route';
+import {
+  canvasDetailSearch,
+  canvasLocationUpdates,
+} from '@app/features/block-canvas/canvas-route';
+import {
+  chatDetailSearch,
+  chatLocationUpdates,
+} from '@app/features/block-chat/chat-route';
+import {
+  markdownDetailSearch,
+  markdownLocationUpdates,
+} from '@app/features/block-md/markdown-route';
+import {
+  pdfDetailSearch,
+  pdfLocationUpdates,
+} from '@app/features/block-pdf/pdf-route';
 import { getPreferredCalendarPeriodView } from '@app/features/calendar/calendar-preferences';
 import type { CalendarPeriodView } from '@app/features/calendar/types';
 import {
@@ -18,8 +32,15 @@ import {
   driveSearch,
   driveSearchCodec,
 } from '@app/features/drive-view/primitives/drive-search';
-import { emailDetailSearch } from '@app/features/email-view/email-route';
-import type { SerializedSearchParams } from '@app/lib/split-router';
+import { URL_PARAMS as EMAIL_URL_PARAMS } from '@app/features/email-thread/core/location';
+import {
+  emailDetailSearch,
+  emailLocationUpdates,
+} from '@app/features/email-view/email-route';
+import type {
+  SerializedSearchParams,
+  SplitSearchUpdate,
+} from '@app/lib/split-router';
 import { URL_PARAMS as CHANNEL_URL_PARAMS } from '@block-channel/constants';
 import { URL_PARAMS as MD_URL_PARAMS } from '@block-md/constants';
 import { URL_PARAMS as PDF_URL_PARAMS } from '@block-pdf/constants';
@@ -28,6 +49,7 @@ import {
   type PreviewPanelSelection,
   previewBlockTarget,
 } from '@components/app/previewTarget';
+import { match, P } from 'ts-pattern';
 import type { HomePreviewRouteParams } from './home-route-schema';
 
 type DetailSearch = Record<string, SerializedSearchParams | undefined>;
@@ -48,14 +70,21 @@ export function homeDetailSearch(
     channel?: SerializedSearchParams;
     document?: SerializedSearchParams;
     calendar?: SerializedSearchParams;
+    markdown?: SerializedSearchParams;
+    pdf?: SerializedSearchParams;
+    canvas?: SerializedSearchParams;
+    chat?: SerializedSearchParams;
+    email?: SerializedSearchParams;
   } = {}
 ): DetailSearch {
   return {
     [agentDetailSearch.namespace]: undefined,
     [callDetailSearch.namespace]: undefined,
-    [markdownDetailSearch.namespace]: undefined,
-    [pdfDetailSearch.namespace]: undefined,
-    [emailDetailSearch.namespace]: undefined,
+    [markdownDetailSearch.namespace]: detail.markdown,
+    [pdfDetailSearch.namespace]: detail.pdf,
+    [emailDetailSearch.namespace]: detail.email,
+    [chatDetailSearch.namespace]: detail.chat,
+    [canvasDetailSearch.namespace]: detail.canvas,
     [channelsSearch.namespace]: detail.channel,
     [driveSearch.namespace]: detail.document,
     [CALENDAR_SEARCH_NAMESPACE]: detail.calendar,
@@ -88,11 +117,40 @@ function channelTargetSearch(
     const raw = params[key];
     return typeof raw === 'string' ? raw : '';
   };
+  const messageId = value(CHANNEL_URL_PARAMS.message);
+  if (!messageId) return;
   return channelsSearchCodec.serialize({
     ...channelsSearch.defaults,
-    messageId: value(CHANNEL_URL_PARAMS.message),
+    messageId,
     threadId: value(CHANNEL_URL_PARAMS.thread),
+    seek: crypto.randomUUID(),
   });
+}
+
+function featureTargetSearch(target: PreviewBlockTarget): DetailSearch {
+  const id = target.blockId;
+  const params = (target.params ?? {}) as Record<string, string>;
+  const updates = match(target.blockType)
+    .returnType<Record<string, SplitSearchUpdate>>()
+    .with(P.union('md', 'spreadsheet'), () =>
+      markdownLocationUpdates(id, {
+        nodeId: params[MD_URL_PARAMS.nodeId] ?? '',
+        commentId: params[MD_URL_PARAMS.commentId] ?? '',
+      })
+    )
+    .with('pdf', () => pdfLocationUpdates(id, params))
+    .with('canvas', () => canvasLocationUpdates(id, params))
+    .with('chat', () => chatLocationUpdates(id, params))
+    .with('email', () =>
+      emailLocationUpdates(params[EMAIL_URL_PARAMS.messageId] ?? '')
+    )
+    .otherwise(() => ({}));
+  return Object.fromEntries(
+    Object.entries(updates).map(([namespace, update]) => [
+      namespace,
+      typeof update === 'function' ? update(undefined) : update,
+    ])
+  );
 }
 
 /** Route destination for a resolved block target. */
@@ -104,10 +162,13 @@ export function homePreviewTargetNavigation(
       blockType: target.aliasContext?.alias ?? target.blockType,
       previewId: target.blockId,
     },
-    search: homeDetailSearch({
-      channel: channelTargetSearch(target),
-      document: documentDetailSearch(target),
-    }),
+    search: {
+      ...homeDetailSearch({
+        channel: channelTargetSearch(target),
+        document: documentDetailSearch(target),
+      }),
+      ...featureTargetSearch(target),
+    },
   };
 }
 

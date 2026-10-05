@@ -1,9 +1,14 @@
+import { canvasDetailSearch } from '@app/features/block-canvas/canvas-route';
+import { chatDetailSearch } from '@app/features/block-chat/chat-route';
+import { markdownDetailSearch } from '@app/features/block-md/markdown-route';
+import { pdfDetailSearch } from '@app/features/block-pdf/pdf-route';
 import { channelsSearch } from '@app/features/channels-view/channels-route';
 import {
   DRIVE_DOCUMENT_TYPES,
   type DriveDocumentType,
 } from '@app/features/drive-view/primitives/drive-route-schema';
 import { driveSearch } from '@app/features/drive-view/primitives/drive-search';
+import { emailDetailSearch } from '@app/features/email-view/email-route';
 import {
   type BlockAlias,
   BlockAliasRegistry,
@@ -53,4 +58,9 @@ export function homeBaseBlockType(
 export const HOME_PREVIEW_SEARCH_NAMESPACES = [
   channelsSearch.namespace,
   driveSearch.namespace,
+  markdownDetailSearch.namespace,
+  pdfDetailSearch.namespace,
+  canvasDetailSearch.namespace,
+  chatDetailSearch.namespace,
+  emailDetailSearch.namespace,
 ] as const;

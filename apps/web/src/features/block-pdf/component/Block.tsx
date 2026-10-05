@@ -1,4 +1,8 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
+import {
+  previewOwnsRoute,
+  useMaybePreviewPanel,
+} from '@components/app/preview-panel-context';
 import { SidePanel } from '@components/app/side-panel';
 import { blockDataSignalAs, useBlockId, useIsNestedBlock } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
@@ -14,11 +18,15 @@ import {
 } from '@core/signal/permissions';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { useSearchParams } from '@solidjs/router';
-import { Show } from 'solid-js';
+import { createMemo, Show } from 'solid-js';
 import { usePdfDocument } from '../context/pdf-document-context';
 import type { PdfBlockData } from '../definition';
 import { createPdfRouteTarget } from '../primitives/create-pdf-route-target';
-import { type LocationSearchParams, URL_PARAMS } from '../signal/location';
+import {
+  type LocationBlockParams,
+  type LocationSearchParams,
+  URL_PARAMS,
+} from '../signal/location';
 import {
   PdfDocument,
   PdfDocumentContent,
@@ -37,9 +45,23 @@ export default function BlockPdf() {
     scopeId: () => hotkeyScope,
   });
   const isNested = useIsNestedBlock();
-  const target = isNested
+  const preview = useMaybePreviewPanel();
+  const routeTarget = isNested
     ? () => undefined
     : createPdfRouteTarget(() => documentId);
+  const target = createMemo(() => {
+    if (!preview) return routeTarget();
+    if (previewOwnsRoute(preview, 'pdf', documentId)) {
+      const route = routeTarget();
+      if (route) return route;
+    }
+    const current = preview.previewTarget();
+    preview.navigationRequest();
+    return current.blockId === documentId && current.params
+      ? { ...(current.params as LocationBlockParams) }
+      : undefined;
+  });
+
   const metadata = blockMetadataSignal.get;
   const documentName = useBlockDocumentName('Unknown Filename');
   const canComment = useCanComment();
@@ -69,7 +91,7 @@ export default function BlockPdf() {
             canEdit: canEdit(),
             isOwner: isOwner(),
           }}
-          locationParams={getLocationParams(searchParams)}
+          locationParams={preview ? undefined : getLocationParams(searchParams)}
           navigationTarget={target()}
           registerMethods={registerMethods}
         >
