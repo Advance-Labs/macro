@@ -1457,6 +1457,7 @@ async fn run() -> anyhow::Result<()> {
             conn_gateway_client.as_ref().clone(),
         ),
         macro_event_broker.clone(),
+        collab_surface_service.clone(),
     ));
 
     // Individual initiative reads preserve read-after-write consistency when a

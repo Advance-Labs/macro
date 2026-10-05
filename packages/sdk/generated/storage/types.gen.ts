@@ -1139,6 +1139,20 @@ export type BomPart = {
 };
 
 /**
+ * An existing native Macro scheduling event offered after an accepted response.
+ */
+export type BookingTarget = {
+    /**
+     * The event type to book.
+     */
+    eventTypeId: string;
+    /**
+     * The scheduling profile that owns the event.
+     */
+    profileId: string;
+};
+
+/**
  * Bot row.
  *
  * Clients deserialize this, so both derives are used.
@@ -6412,6 +6426,21 @@ export type Form = {
 export type FormAccess = 'view' | 'edit' | 'owner';
 
 /**
+ * A ready collaborative form and the result of publishing its latest draft.
+ */
+export type FormCollaboration = {
+    /**
+     * The latest validated form. The form id also identifies its surface.
+     */
+    detail: FormDetail;
+    /**
+     * Why the current draft cannot yet replace the respondent layout.
+     * Only editors can request this result.
+     */
+    publicationError?: string;
+};
+
+/**
  * A form with its layout, as the caller may see it.
  */
 export type FormDetail = {
@@ -6583,6 +6612,24 @@ export type FormSection = {
      * Its title, for editors.
      */
     title: string;
+} | {
+    /**
+     * What respondents read before choosing a time.
+     */
+    description: string;
+    /**
+     * The section, under an id the client mints.
+     */
+    id: string;
+    kind: 'booking';
+    /**
+     * The native booking event. Respondent layouts never include this target.
+     */
+    target: BookingTarget;
+    /**
+     * Its title.
+     */
+    title: string;
 };
 
 /**
@@ -6624,6 +6671,24 @@ export type FormSectionDetail = {
      * The rules.
      */
     rules: FilterGroup;
+    /**
+     * Its title.
+     */
+    title: string;
+} | {
+    /**
+     * Its description.
+     */
+    description: string;
+    /**
+     * The section.
+     */
+    id: string;
+    kind: 'booking';
+    /**
+     * Editors can configure the destination; respondent layouts omit it.
+     */
+    target?: BookingTarget;
     /**
      * Its title.
      */
@@ -8082,6 +8147,8 @@ export type LatestMessage = {
  * Why a layout does not fit the form's table.
  */
 export type LayoutProblem = {
+    kind: 'bookingMustBeLast';
+} | {
     /**
      * The column.
      */
@@ -8995,6 +9062,11 @@ export type MyResponse = {
      * left out; none when the row is gone.
      */
     answers: Array<Answer>;
+    /**
+     * The form's booking step, while the saved row still passes the form's
+     * current required questions and gates.
+     */
+    booking?: UnlockedBooking;
     /**
      * The ledger entry.
      */
@@ -12719,6 +12791,10 @@ export type Submission = {
  * What a submission came to.
  */
 export type SubmissionOutcome = {
+    /**
+     * The form's booking step, unlocked by this accepted response.
+     */
+    booking?: UnlockedBooking;
     outcome: 'submitted';
     /**
      * The ledger entry.
@@ -13488,6 +13564,28 @@ export type UndoOutcome = {
  * Why an undo was refused. Nothing was written.
  */
 export type UndoRefusal = 'row_in_use' | 'option_in_use' | 'not_yours' | 'not_undoable' | 'row_edited_since' | 'column_written_since' | 'changed_since' | 'already_back';
+
+/**
+ * A booking step a passing response has unlocked, with its destination.
+ */
+export type UnlockedBooking = {
+    /**
+     * What respondents read before choosing a time.
+     */
+    description: string;
+    /**
+     * The booking section.
+     */
+    section: string;
+    /**
+     * The native booking event to open.
+     */
+    target: BookingTarget;
+    /**
+     * Its title.
+     */
+    title: string;
+};
 
 /**
  * Request to replace the editable configuration of a persisted AI agent.
@@ -18743,6 +18841,34 @@ export type UpdateFormResponses = {
 };
 
 export type UpdateFormResponse = UpdateFormResponses[keyof UpdateFormResponses];
+
+export type CollaborateFormData = {
+    body?: never;
+    path: {
+        /**
+         * Form id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/forms/{id}/collaboration';
+};
+
+export type CollaborateFormErrors = {
+    401: FormErrorResponse;
+    403: FormErrorResponse;
+    404: FormErrorResponse;
+    409: FormErrorResponse;
+    500: FormErrorResponse;
+};
+
+export type CollaborateFormError = CollaborateFormErrors[keyof CollaborateFormErrors];
+
+export type CollaborateFormResponses = {
+    200: FormCollaboration;
+};
+
+export type CollaborateFormResponse = CollaborateFormResponses[keyof CollaborateFormResponses];
 
 export type PutFormLayoutData = {
     body: FormLayout;

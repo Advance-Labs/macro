@@ -13945,6 +13945,27 @@ export const getFormResponse = zod
               .describe(
                 "A check of earlier answers. The rules are sent to every caller so a\nrespondent's page can stop them before submitting; respondents are\nnever shown them."
               ),
+            zod
+              .object({
+                description: zod.string().describe('Its description.'),
+                id: zod.uuid().describe('The section.'),
+                kind: zod.enum(['booking']),
+                target: zod
+                  .object({
+                    eventTypeId: zod.uuid().describe('The event type to book.'),
+                    profileId: zod
+                      .uuid()
+                      .describe('The scheduling profile that owns the event.'),
+                  })
+                  .optional()
+                  .describe(
+                    'An existing native Macro scheduling event offered after an accepted response.'
+                  ),
+                title: zod.string().describe('Its title.'),
+              })
+              .describe(
+                'A booking step. Its destination is withheld from respondents until\ntheir response has passed every screener and been accepted.'
+              ),
           ])
           .describe('One section of a form as it reads.')
       )
@@ -14041,6 +14062,485 @@ export const updateFormResponse = zod
   })
   .describe(
     'A form: a view of one database table whose rows are its responses.'
+  );
+
+/**
+ * @summary Open the editor-only collaborative layout, or publish its latest valid
+revision. Content stays in the existing collaboration surface.
+ */
+export const collaborateFormParams = zod.object({
+  id: zod.uuid().describe('Form id'),
+});
+
+export const collaborateFormResponse = zod
+  .object({
+    detail: zod
+      .object({
+        access: zod
+          .enum(['view', 'edit', 'owner'])
+          .describe(
+            "The caller's level on a form: view responds, edit changes questions and\nreads responses, owner also sets the audience, closes and trashes it."
+          ),
+        form: zod
+          .object({
+            audience: zod
+              .enum(['members', 'public'])
+              .describe('Who may respond to a form.'),
+            closesAt: zod.iso
+              .datetime({})
+              .nullable()
+              .describe('When it stops taking responses, if it does.'),
+            confirmationMessage: zod
+              .string()
+              .describe(
+                'What a respondent reads once their response is saved; empty for the\ndefault.'
+              ),
+            createdAt: zod.iso.datetime({}).describe('When it was created.'),
+            databaseId: zod
+              .uuid()
+              .describe('The database holding its responses.'),
+            description: zod
+              .string()
+              .describe('What respondents read under the name.'),
+            id: zod.uuid().describe('The form.'),
+            name: zod
+              .string()
+              .describe("Its name, independent of its database's."),
+            ownerId: zod.string().describe('Its owner.'),
+            respondentColumnId: zod
+              .uuid()
+              .nullable()
+              .describe(
+                'The person column each signed-in submission names its respondent in;\n`null` once deleted.'
+              ),
+            status: zod
+              .enum(['open', 'closed'])
+              .describe(
+                'Whether a form takes responses, as its owner set it. A form also stops\ntaking them once its closing time passes.'
+              ),
+            submittedColumnId: zod
+              .uuid()
+              .nullable()
+              .describe(
+                'The date column each submission stamps; `null` once deleted.'
+              ),
+            tableId: zod
+              .uuid()
+              .describe('The table whose rows are its responses.'),
+            tallyVisible: zod
+              .boolean()
+              .describe('Whether respondents may read option tallies.'),
+            updatedAt: zod.iso
+              .datetime({})
+              .describe('When its facts or layout last changed.'),
+          })
+          .describe(
+            'A form: a view of one database table whose rows are its responses.'
+          ),
+        sections: zod
+          .array(
+            zod
+              .union([
+                zod
+                  .object({
+                    description: zod.string().describe('Its description.'),
+                    id: zod.uuid().describe('The section.'),
+                    kind: zod.enum(['questions']),
+                    questions: zod
+                      .array(
+                        zod
+                          .object({
+                            column: zod
+                              .uuid()
+                              .describe('The column it writes.'),
+                            helpText: zod
+                              .string()
+                              .describe(
+                                'What respondents read under the title.'
+                              ),
+                            id: zod.uuid().describe('The question.'),
+                            kind: zod
+                              .union([
+                                zod
+                                  .object({
+                                    type: zod.enum(['text']),
+                                  })
+                                  .describe('Free text.'),
+                                zod
+                                  .object({
+                                    type: zod.enum(['number']),
+                                  })
+                                  .describe('A number.'),
+                                zod
+                                  .object({
+                                    type: zod.enum(['boolean']),
+                                  })
+                                  .describe('A checkbox.'),
+                                zod
+                                  .object({
+                                    type: zod.enum(['date']),
+                                  })
+                                  .describe('A date-time.'),
+                                zod
+                                  .object({
+                                    type: zod.enum(['link']),
+                                  })
+                                  .describe('A URL.'),
+                                zod
+                                  .object({
+                                    multi: zod
+                                      .boolean()
+                                      .describe(
+                                        'Whether a cell holds several options.'
+                                      ),
+                                    type: zod.enum(['select']),
+                                  })
+                                  .describe('Text options.'),
+                                zod
+                                  .object({
+                                    multi: zod
+                                      .boolean()
+                                      .describe(
+                                        'Whether a cell holds several options.'
+                                      ),
+                                    type: zod.enum(['select_number']),
+                                  })
+                                  .describe('Numeric options.'),
+                                zod
+                                  .object({
+                                    type: zod.enum(['tag']),
+                                  })
+                                  .describe(
+                                    'Colored labels; always several per cell.'
+                                  ),
+                                zod
+                                  .object({
+                                    multi: zod
+                                      .boolean()
+                                      .describe(
+                                        'Whether a cell holds several references.'
+                                      ),
+                                    target: zod
+                                      .enum([
+                                        'USER',
+                                        'DOCUMENT',
+                                        'TASK',
+                                        'COMPANY',
+                                        'CONTACT',
+                                        'CALL_RECORD',
+                                        'CHANNEL',
+                                        'CHAT',
+                                        'PROJECT',
+                                        'THREAD',
+                                        'CALENDAR_EVENT',
+                                        'INITIATIVE',
+                                      ])
+                                      .describe(
+                                        'A kind of Macro entity a reference column can point at.'
+                                      ),
+                                    type: zod.enum(['entity']),
+                                  })
+                                  .describe('References to Macro entities.'),
+                                zod
+                                  .object({
+                                    database: zod
+                                      .uuid()
+                                      .describe(
+                                        'The database of the related table.'
+                                      ),
+                                    table: zod
+                                      .uuid()
+                                      .describe('The related table.'),
+                                    type: zod.enum(['relation']),
+                                  })
+                                  .describe('Rows of another table.'),
+                              ])
+                              .describe('A type a column can have.'),
+                            options: zod
+                              .array(
+                                zod
+                                  .object({
+                                    color: zod
+                                      .string()
+                                      .nullable()
+                                      .describe(
+                                        'Its colour, a hex string, if it has one.'
+                                      ),
+                                    id: zod.uuid().describe('The option.'),
+                                    label: zod.string().describe('Its label.'),
+                                  })
+                                  .describe(
+                                    "One option of a question's column."
+                                  )
+                              )
+                              .describe(
+                                "The column's options, in order, for a select or tag column."
+                              ),
+                            required: zod
+                              .boolean()
+                              .describe('Whether a response must answer it.'),
+                            title: zod.string().describe("The column's name."),
+                            widget: zod.union([
+                              zod.null(),
+                              zod
+                                .enum([
+                                  'short',
+                                  'paragraph',
+                                  'datetime',
+                                  'date',
+                                  'url',
+                                  'file',
+                                  'choice',
+                                  'dropdown',
+                                  'checkboxes',
+                                ])
+                                .describe(
+                                  'How a question is asked. Each column kind takes a few, the first its\ndefault; kinds asked one way only (numbers, checkboxes, entity and row\npickers) take none.'
+                                ),
+                            ]),
+                          })
+                          .describe("A question with its column's facts.")
+                      )
+                      .describe('Its questions, in order.'),
+                    title: zod.string().describe('Its title.'),
+                  })
+                  .describe('Questions asked together.'),
+                zod
+                  .object({
+                    description: zod.string().describe('Its description.'),
+                    id: zod.uuid().describe('The section.'),
+                    kind: zod.enum(['gate']),
+                    message: zod
+                      .string()
+                      .describe('What a stopped respondent reads.'),
+                    rules: zod
+                      .object({
+                        conditions: zod
+                          .array(
+                            zod
+                              .union([
+                                zod
+                                  .object({
+                                    column: zod
+                                      .uuid()
+                                      .describe('The column tested.'),
+                                    test: zod
+                                      .union([
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['presence']),
+                                            operator: zod
+                                              .enum(['isEmpty', 'isNotEmpty'])
+                                              .describe(
+                                                'Whether a cell is empty.'
+                                              ),
+                                          })
+                                          .describe(
+                                            'Whether the cell is empty; fits a column of any type.'
+                                          ),
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['text']),
+                                            operator: zod
+                                              .enum([
+                                                'is',
+                                                'isNot',
+                                                'contains',
+                                                'doesNotContain',
+                                                'startsWith',
+                                                'endsWith',
+                                              ])
+                                              .describe(
+                                                'How a text cell compares to a text.'
+                                              ),
+                                            value: zod
+                                              .string()
+                                              .describe(
+                                                'The text compared against, ignoring case for the containment\ntests.'
+                                              ),
+                                          })
+                                          .describe('A text or link column.'),
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['number']),
+                                            operator: zod
+                                              .enum([
+                                                'is',
+                                                'isNot',
+                                                'greaterThan',
+                                                'greaterThanOrEqual',
+                                                'lessThan',
+                                                'lessThanOrEqual',
+                                              ])
+                                              .describe(
+                                                'How a number cell compares to a number.'
+                                              ),
+                                            value: zod
+                                              .number()
+                                              .describe(
+                                                'The number compared against; finite.'
+                                              ),
+                                          })
+                                          .describe('A number column.'),
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['date']),
+                                            operator: zod
+                                              .enum([
+                                                'before',
+                                                'after',
+                                                'onOrBefore',
+                                                'onOrAfter',
+                                              ])
+                                              .describe(
+                                                'How a date cell compares to a date-time.'
+                                              ),
+                                            value: zod.iso
+                                              .datetime({})
+                                              .describe(
+                                                'The date-time compared against.'
+                                              ),
+                                          })
+                                          .describe('A date column.'),
+                                        zod
+                                          .object({
+                                            checked: zod
+                                              .boolean()
+                                              .describe(
+                                                'Whether the box is checked.'
+                                              ),
+                                            kind: zod.enum(['checkbox']),
+                                          })
+                                          .describe(
+                                            'A checkbox column. An unchecked box and an empty cell are the same.'
+                                          ),
+                                        zod
+                                          .object({
+                                            kind: zod.enum(['options']),
+                                            operator: zod
+                                              .enum([
+                                                'isAnyOf',
+                                                'isNoneOf',
+                                                'hasAny',
+                                                'hasAll',
+                                                'hasNone',
+                                              ])
+                                              .describe(
+                                                "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                              ),
+                                            options: zod
+                                              .array(zod.uuid())
+                                              .describe(
+                                                'Options of the column; at least one.'
+                                              ),
+                                          })
+                                          .describe('A select or tag column.'),
+                                        zod
+                                          .object({
+                                            entities: zod
+                                              .array(zod.string())
+                                              .describe(
+                                                "Entity ids, or for a relation the related rows' ids; at least\none."
+                                              ),
+                                            kind: zod.enum(['entities']),
+                                            operator: zod
+                                              .enum([
+                                                'isAnyOf',
+                                                'isNoneOf',
+                                                'hasAny',
+                                                'hasAll',
+                                                'hasNone',
+                                              ])
+                                              .describe(
+                                                "How a cell's options or references relate to a set of them. The first\ntwo fit a column holding one value, the last three one holding several."
+                                              ),
+                                          })
+                                          .describe(
+                                            'A reference or relation column.'
+                                          ),
+                                      ])
+                                      .describe(
+                                        "What a column's cell must be, by the kind of value the column holds."
+                                      ),
+                                  })
+                                  .describe("A test of one column's cells.")
+                                  .and(
+                                    zod.object({
+                                      kind: zod.enum(['condition']),
+                                    })
+                                  )
+                                  .describe('A test of one column.'),
+                                zod
+                                  .unknown()
+                                  .and(
+                                    zod.object({
+                                      kind: zod.enum(['group']),
+                                    })
+                                  )
+                                  .describe('A nested group.'),
+                              ])
+                              .describe(
+                                'One entry of a group: a condition, or a group of its own.'
+                              )
+                          )
+                          .describe(
+                            'The conditions and nested groups. A group without any keeps every\nrow.'
+                          ),
+                        conjunction: zod
+                          .enum(['and', 'or'])
+                          .describe("How a group's conditions combine."),
+                      })
+                      .describe('Conditions joined by one conjunction.'),
+                    title: zod.string().describe('Its title.'),
+                  })
+                  .describe(
+                    "A check of earlier answers. The rules are sent to every caller so a\nrespondent's page can stop them before submitting; respondents are\nnever shown them."
+                  ),
+                zod
+                  .object({
+                    description: zod.string().describe('Its description.'),
+                    id: zod.uuid().describe('The section.'),
+                    kind: zod.enum(['booking']),
+                    target: zod
+                      .object({
+                        eventTypeId: zod
+                          .uuid()
+                          .describe('The event type to book.'),
+                        profileId: zod
+                          .uuid()
+                          .describe(
+                            'The scheduling profile that owns the event.'
+                          ),
+                      })
+                      .optional()
+                      .describe(
+                        'An existing native Macro scheduling event offered after an accepted response.'
+                      ),
+                    title: zod.string().describe('Its title.'),
+                  })
+                  .describe(
+                    'A booking step. Its destination is withheld from respondents until\ntheir response has passed every screener and been accepted.'
+                  ),
+              ])
+              .describe('One section of a form as it reads.')
+          )
+          .describe('Its sections, in order.'),
+        tableGone: zod
+          .boolean()
+          .describe(
+            'Whether its database is in the trash, so it has no table to show or\nwrite: its sections keep no questions and it takes no responses.'
+          ),
+      })
+      .describe('A form with its layout, as the caller may see it.'),
+    publicationError: zod
+      .string()
+      .optional()
+      .describe(
+        'Why the current draft cannot yet replace the respondent layout.\nOnly editors can request this result.'
+      ),
+  })
+  .describe(
+    'A ready collaborative form and the result of publishing its latest draft.'
   );
 
 /**
@@ -14302,6 +14802,30 @@ export const putFormLayoutBody = zod
               })
               .describe(
                 'A check of earlier answers: a respondent whose answers fail the rules\nis stopped here with the message, and nothing is written.'
+              ),
+            zod
+              .object({
+                description: zod
+                  .string()
+                  .describe('What respondents read before choosing a time.'),
+                id: zod
+                  .uuid()
+                  .describe('The section, under an id the client mints.'),
+                kind: zod.enum(['booking']),
+                target: zod
+                  .object({
+                    eventTypeId: zod.uuid().describe('The event type to book.'),
+                    profileId: zod
+                      .uuid()
+                      .describe('The scheduling profile that owns the event.'),
+                  })
+                  .describe(
+                    'An existing native Macro scheduling event offered after an accepted response.'
+                  ),
+                title: zod.string().describe('Its title.'),
+              })
+              .describe(
+                'The final step, revealed only after the server accepts the response.'
               ),
           ])
           .describe(
@@ -14720,6 +15244,27 @@ export const putFormLayoutResponse = zod
               .describe(
                 "A check of earlier answers. The rules are sent to every caller so a\nrespondent's page can stop them before submitting; respondents are\nnever shown them."
               ),
+            zod
+              .object({
+                description: zod.string().describe('Its description.'),
+                id: zod.uuid().describe('The section.'),
+                kind: zod.enum(['booking']),
+                target: zod
+                  .object({
+                    eventTypeId: zod.uuid().describe('The event type to book.'),
+                    profileId: zod
+                      .uuid()
+                      .describe('The scheduling profile that owns the event.'),
+                  })
+                  .optional()
+                  .describe(
+                    'An existing native Macro scheduling event offered after an accepted response.'
+                  ),
+                title: zod.string().describe('Its title.'),
+              })
+              .describe(
+                'A booking step. Its destination is withheld from respondents until\ntheir response has passed every screener and been accepted.'
+              ),
           ])
           .describe('One section of a form as it reads.')
       )
@@ -15036,6 +15581,28 @@ export const submitFormResponseResponse = zod
   .union([
     zod
       .object({
+        booking: zod
+          .object({
+            description: zod
+              .string()
+              .describe('What respondents read before choosing a time.'),
+            section: zod.uuid().describe('The booking section.'),
+            target: zod
+              .object({
+                eventTypeId: zod.uuid().describe('The event type to book.'),
+                profileId: zod
+                  .uuid()
+                  .describe('The scheduling profile that owns the event.'),
+              })
+              .describe(
+                'An existing native Macro scheduling event offered after an accepted response.'
+              ),
+            title: zod.string().describe('Its title.'),
+          })
+          .optional()
+          .describe(
+            'A booking step a passing response has unlocked, with its destination.'
+          ),
         outcome: zod.enum(['submitted']),
         response: zod.uuid().describe('The ledger entry.'),
         row: zod.uuid().describe('The row holding the answers.'),
@@ -15204,6 +15771,28 @@ export const getMyFormResponseResponse = zod
       )
       .describe(
         "The row's cells for the form's current questions, the empty ones\nleft out; none when the row is gone."
+      ),
+    booking: zod
+      .object({
+        description: zod
+          .string()
+          .describe('What respondents read before choosing a time.'),
+        section: zod.uuid().describe('The booking section.'),
+        target: zod
+          .object({
+            eventTypeId: zod.uuid().describe('The event type to book.'),
+            profileId: zod
+              .uuid()
+              .describe('The scheduling profile that owns the event.'),
+          })
+          .describe(
+            'An existing native Macro scheduling event offered after an accepted response.'
+          ),
+        title: zod.string().describe('Its title.'),
+      })
+      .optional()
+      .describe(
+        'A booking step a passing response has unlocked, with its destination.'
       ),
     response: zod
       .object({
@@ -15397,6 +15986,28 @@ export const editMyFormResponseResponse = zod
   .union([
     zod
       .object({
+        booking: zod
+          .object({
+            description: zod
+              .string()
+              .describe('What respondents read before choosing a time.'),
+            section: zod.uuid().describe('The booking section.'),
+            target: zod
+              .object({
+                eventTypeId: zod.uuid().describe('The event type to book.'),
+                profileId: zod
+                  .uuid()
+                  .describe('The scheduling profile that owns the event.'),
+              })
+              .describe(
+                'An existing native Macro scheduling event offered after an accepted response.'
+              ),
+            title: zod.string().describe('Its title.'),
+          })
+          .optional()
+          .describe(
+            'A booking step a passing response has unlocked, with its destination.'
+          ),
         outcome: zod.enum(['submitted']),
         response: zod.uuid().describe('The ledger entry.'),
         row: zod.uuid().describe('The row holding the answers.'),

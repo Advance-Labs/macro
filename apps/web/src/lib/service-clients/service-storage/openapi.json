@@ -11008,6 +11008,87 @@
         }
       }
     },
+    "/forms/{id}/collaboration": {
+      "post": {
+        "tags": ["forms"],
+        "summary": "Open the editor-only collaborative layout, or publish its latest valid\nrevision. Content stays in the existing collaboration surface.",
+        "operationId": "collaborate_form",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Form id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormCollaboration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/forms/{id}/layout": {
       "put": {
         "tags": ["forms"],
@@ -18995,6 +19076,23 @@
           "sha": {
             "type": "string",
             "description": "The sha of the bom part content\nThere is an index on sha for more performant queries based on it."
+          }
+        }
+      },
+      "BookingTarget": {
+        "type": "object",
+        "description": "An existing native Macro scheduling event offered after an accepted response.",
+        "required": ["profileId", "eventTypeId"],
+        "properties": {
+          "eventTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event type to book."
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The scheduling profile that owns the event."
           }
         }
       },
@@ -27311,6 +27409,21 @@
         "description": "The caller's level on a form: view responds, edit changes questions and\nreads responses, owner also sets the audience, closes and trashes it.",
         "enum": ["view", "edit", "owner"]
       },
+      "FormCollaboration": {
+        "type": "object",
+        "description": "A ready collaborative form and the result of publishing its latest draft.",
+        "required": ["detail"],
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FormDetail",
+            "description": "The latest validated form. The form id also identifies its surface."
+          },
+          "publicationError": {
+            "type": "string",
+            "description": "Why the current draft cannot yet replace the respondent layout.\nOnly editors can request this result."
+          }
+        }
+      },
       "FormDetail": {
         "type": "object",
         "description": "A form with its layout, as the caller may see it.",
@@ -27588,6 +27701,34 @@
                 "description": "Its title, for editors."
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "The final step, revealed only after the server accepts the response.",
+            "required": ["id", "title", "description", "target", "kind"],
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "What respondents read before choosing a time."
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The section, under an id the client mints."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["booking"]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BookingTarget",
+                "description": "The native booking event. Respondent layouts never include this target."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              }
+            }
           }
         ],
         "description": "One section of a layout: questions on one screen, or a gate the answers\nso far must pass."
@@ -27657,6 +27798,34 @@
               "rules": {
                 "$ref": "#/components/schemas/FilterGroup",
                 "description": "The rules."
+              },
+              "title": {
+                "type": "string",
+                "description": "Its title."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A booking step. Its destination is withheld from respondents until\ntheir response has passed every screener and been accepted.",
+            "required": ["id", "title", "description", "kind"],
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "Its description."
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The section."
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["booking"]
+              },
+              "target": {
+                "$ref": "#/components/schemas/BookingTarget",
+                "description": "Editors can configure the destination; respondent layouts omit it."
               },
               "title": {
                 "type": "string",
@@ -29789,6 +29958,17 @@
         "oneOf": [
           {
             "type": "object",
+            "description": "A booking step must be unique and follow all questions and screeners.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["bookingMustBeLast"]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "A question names a column the form's table does not have.",
             "required": ["column", "kind"],
             "properties": {
@@ -31213,6 +31393,10 @@
               "$ref": "#/components/schemas/Answer"
             },
             "description": "The row's cells for the form's current questions, the empty ones\nleft out; none when the row is gone."
+          },
+          "booking": {
+            "$ref": "#/components/schemas/UnlockedBooking",
+            "description": "The form's booking step, while the saved row still passes the form's\ncurrent required questions and gates."
           },
           "response": {
             "$ref": "#/components/schemas/FormResponse",
@@ -37307,6 +37491,10 @@
             "description": "The answers are saved as a row of the form's table.",
             "required": ["response", "row", "outcome"],
             "properties": {
+              "booking": {
+                "$ref": "#/components/schemas/UnlockedBooking",
+                "description": "The form's booking step, unlocked by this accepted response."
+              },
               "outcome": {
                 "type": "string",
                 "enum": ["submitted"]
@@ -38476,6 +38664,30 @@
           "changed_since",
           "already_back"
         ]
+      },
+      "UnlockedBooking": {
+        "type": "object",
+        "description": "A booking step a passing response has unlocked, with its destination.",
+        "required": ["section", "title", "description", "target"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "What respondents read before choosing a time."
+          },
+          "section": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The booking section."
+          },
+          "target": {
+            "$ref": "#/components/schemas/BookingTarget",
+            "description": "The native booking event to open."
+          },
+          "title": {
+            "type": "string",
+            "description": "Its title."
+          }
+        }
       },
       "UpdateAgentRequest": {
         "type": "object",
