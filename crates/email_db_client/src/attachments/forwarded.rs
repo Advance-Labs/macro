@@ -20,10 +20,14 @@ where
 {
     sqlx::query!(
         r#"
+        WITH editable AS (
+            SELECT id FROM email_messages
+            WHERE id = $1 AND link_id = $3 AND is_draft AND NOT is_sent
+            FOR UPDATE
+        )
         INSERT INTO email_attachments_fwd (message_id, attachment_id)
             SELECT $1, $2
-            FROM email_messages m
-            WHERE m.id = $1 AND m.link_id = $3
+            FROM editable
         ON CONFLICT DO NOTHING
         "#,
         draft_id,
@@ -49,10 +53,14 @@ where
 {
     let result = sqlx::query!(
         r#"
+        WITH editable AS (
+            SELECT id FROM email_messages
+            WHERE id = $1 AND link_id = $3 AND is_draft AND NOT is_sent
+            FOR UPDATE
+        )
         DELETE FROM email_attachments_fwd eaf
-        USING email_messages m
-        WHERE eaf.message_id = m.id
-        AND eaf.message_id = $1 AND eaf.attachment_id = $2 AND m.link_id = $3
+        USING editable m
+        WHERE eaf.message_id = m.id AND eaf.attachment_id = $2
         "#,
         draft_id,
         attachment_id,

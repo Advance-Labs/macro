@@ -133,7 +133,7 @@ where
         }))
     }
 
-    async fn hydrate_full_messages(
+    pub(super) async fn hydrate_full_messages(
         &self,
         message_rows: Vec<MessageRow>,
         mut senders: HashMap<Uuid, ContactInfo>,

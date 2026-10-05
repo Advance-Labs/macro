@@ -9,7 +9,7 @@ use super::label::MessageLabel;
 use super::link::Link;
 
 /// Input for creating a draft message. Mirrors the fields from `MessageToSend`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CreateDraftInput {
     /// Existing message DB ID (for updating an existing draft).
     pub db_id: Option<Uuid>,

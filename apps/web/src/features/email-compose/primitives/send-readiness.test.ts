@@ -24,6 +24,27 @@ const ready = {
 };
 
 describe('sendRefusalBeforeSave', () => {
+  it('allows offline immediate sends on the durable transport', () => {
+    expect(
+      sendRefusalBeforeSave({ looksOffline: () => true }, true)
+    ).toBeUndefined();
+    expect(
+      sendRefusalAfterSave({
+        ...ready,
+        queueActive: true,
+        identity: { ...handle, queued: true },
+      })
+    ).toBeUndefined();
+    expect(
+      sendRefusalAfterSave({
+        ...ready,
+        queueActive: true,
+        identity: { ...handle, queued: true },
+        attachments: [pending],
+      })
+    ).toBe('attachment-not-uploaded');
+  });
+
   it('refuses only while the device looks offline', () => {
     expect(sendRefusalBeforeSave({ looksOffline: () => true })).toBe('offline');
     expect(

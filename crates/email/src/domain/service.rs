@@ -2,6 +2,7 @@ mod draft;
 mod followup;
 mod previews;
 mod send;
+mod send_attempt;
 pub(crate) mod signature;
 mod thread;
 mod thread_labels;

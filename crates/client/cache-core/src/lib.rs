@@ -6,6 +6,7 @@ pub mod codec;
 pub mod denormalize;
 pub mod deps;
 pub mod document;
+pub mod durable_intent;
 pub mod engine;
 pub mod entity_resolver;
 pub mod identity;

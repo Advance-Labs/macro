@@ -1,5 +1,6 @@
 import { DEFAULT_THREAD_MESSAGES_LIMIT } from '@core/constant/pagination';
 import {
+  type DurableMutationIntent,
   executeOptimisticMutation,
   type OptimisticResponse,
   optimisticMutationDispositionOf,
@@ -71,6 +72,7 @@ export type GraphqlSaveEmailDraftArgs = Omit<
   senderIsSignal?: boolean;
   /** Original queue coalescing key survives adoption of server IDs. */
   mutationUuid?: string;
+  durableIntent?: DurableMutationIntent;
 };
 
 /** Maps a REST-shaped contact to the mutation's input shape. */
@@ -184,7 +186,7 @@ function optimisticContact(
  * The cache binds the handle to the server identity atomically at settlement,
  * rebasing later queued edits and preserving reads through the old handle.
  */
-function optimisticDraftEntity(
+export function optimisticDraftEntity(
   args: GraphqlSaveEmailDraftArgs
 ): OptimisticDraftEntity {
   const now = new Date().toISOString();
@@ -248,6 +250,7 @@ export async function executeGraphqlSaveEmailDraft(
     newThreadOwnerId: _newThreadOwnerId,
     senderIsSignal: _senderIsSignal,
     mutationUuid: _mutationUuid,
+    durableIntent: _durableIntent,
     ...input
   } = args;
   const variables: SaveEmailDraftMutationVariables = { input };
@@ -295,6 +298,7 @@ export async function executeGraphqlSaveEmailDraft(
       // draft instead of one per debounce tick. The delete reuses the key —
       // a discard supersedes any still-queued save.
       uuid: args.mutationUuid ?? String(args.draftId),
+      durableIntent: args.durableIntent,
       identityBindings: [
         {
           localKey: `GraphqlSoupEmailMessage:${args.draftId}`,

@@ -11,6 +11,7 @@ export default defineConfig({
     'cache-wasm-packaging.browser.e2e.ts',
     'notification-projection.browser.e2e.ts',
     'mail-projection.browser.e2e.ts',
+    'email-send.browser.e2e.ts',
     'mail-tabs.browser.e2e.ts',
     'query-write-scope.browser.e2e.ts',
     'search-buckets.browser.e2e.ts',

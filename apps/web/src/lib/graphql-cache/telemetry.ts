@@ -502,6 +502,7 @@ export function operationCategoryForRequest(
     .with(
       'read',
       'current-revision',
+      'durable-mutation-intents',
       'read-records-by-keys',
       'search',
       'entity-filter',
@@ -514,6 +515,7 @@ export function operationCategoryForRequest(
       'defer-optimistic-write',
       'commit-optimistic-write',
       'rollback-optimistic-write',
+      'retire-durable-mutation-intent',
       () => 'transaction' as const
     )
     .with(

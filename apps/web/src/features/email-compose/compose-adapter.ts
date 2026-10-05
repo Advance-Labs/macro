@@ -54,6 +54,16 @@ import {
   nonPrimaryEmailLinkIdHeader,
 } from '@queries/email/link';
 import { useMailAccountsQuery } from '@queries/email/mail-accounts';
+import { useQueuedEmailSends } from '@queries/email/queued-sends';
+import {
+  cancelEmailSendQueued,
+  emailSendLocked,
+  emailSendMatchesDraft,
+  emailSendQueueSelected,
+  readEmailSendIntents,
+  restoreCancelledEmailSend,
+  sendEmailQueued,
+} from '@queries/email/send-queue';
 import {
   fetchAndCacheThread,
   type ThreadQueryTransport,
@@ -62,6 +72,7 @@ import {
 } from '@queries/email/thread';
 import { invalidateSoupEntity, refetchSoupEntity } from '@queries/soup/cache';
 import type { ApiThread } from '@service-email/generated/schemas';
+import { getGraphqlCacheHost } from '@service-storage/graphql-soup';
 import type { InfiniteData } from '@tanstack/solid-query';
 import { confirmDialog } from '@ui';
 import { type Accessor, getOwner } from 'solid-js';
@@ -99,6 +110,18 @@ export function createEmailComposeContext(
       options.threadTransport?.() ??
         (graphqlSoupFlag().enabled ? 'graphql' : 'rest')
     );
+  // Transport degradation cannot release authority held by a durable send.
+  const durableSendSelected = () =>
+    emailSendQueueSelected(
+      options.threadTransport?.() ??
+        (graphqlSoupFlag().enabled ? 'graphql' : 'rest')
+    );
+  let durableSendWasSelected = durableSendSelected();
+  const observeSends = () => {
+    durableSendWasSelected ||= durableSendSelected();
+    return durableSendWasSelected;
+  };
+  const sends = useQueuedEmailSends(observeSends);
   // Attach handlers run as event handlers, which have no Solid owner of
   // their own; the dialog needs the surface's.
   const dialogOwner = getOwner();
@@ -375,9 +398,50 @@ export function createEmailComposeContext(
       },
     },
     delivery: {
+      queueActive: durableSendSelected,
+      sendLocked: (draftId) =>
+        (observeSends() &&
+          (!sends.ready() ||
+            !getGraphqlCacheHost() ||
+            getGraphqlCacheHost()?.disabled === true)) ||
+        (!!draftId &&
+          sends
+            .intents()
+            .some(
+              (intent) =>
+                emailSendMatchesDraft(intent, draftId) &&
+                emailSendLocked(intent)
+            )),
       async sendMessage({ completingThread, inboxId, ...input }) {
+        if (durableSendSelected()) {
+          const senderLinkId = inboxId ?? primaryId() ?? '';
+          const draftId = input.clientHandles?.draftId ?? input.message.db_id;
+          const threadId =
+            input.clientHandles?.threadId ?? input.message.thread_db_id;
+          if (!draftId || !threadId)
+            throw new Error('Draft identity is required to queue a send');
+          return await sendEmailQueued({
+            draft: queuedDraftSaveArgs({
+              draft: input.message,
+              handles: { draftId, threadId },
+              senderLinkId,
+              senderAccount: accounts.isSuccess
+                ? accounts.data?.links.find((link) => link.id === senderLinkId)
+                : undefined,
+              senderEmail:
+                inboxSource.inboxes().find((inbox) => inbox.id === senderLinkId)
+                  ?.email_address ?? '',
+            }),
+            attachmentIds: input.attachmentIds ?? [],
+            forwardedAttachmentIds: input.forwardedAttachmentIds ?? [],
+            includeSignature: input.message.include_signature,
+            restoreBodyHtml: input.restoreBodyHtml,
+            restoreBodyText: input.restoreBodyText,
+            restoreBodyMacro: input.restoreBodyMacro,
+          });
+        }
         const result = await send.mutateAsync({
-          ...input,
+          message: input.message,
           linkId: headerId(inboxId),
           skipSoupRefetch: completingThread,
         });
@@ -442,8 +506,26 @@ export function createEmailComposeContext(
       archive: async ({ threadId, value }, inboxId) => {
         await archiveEmailThread({ id: threadId, value }, headerId(inboxId));
       },
-      undoSend: (input) =>
-        runUndoSend({
+      undoSend: async (input) => {
+        if (input.sendAttemptId) {
+          const intent = (await readEmailSendIntents()).find(
+            (row) => row.uuid === input.sendAttemptId
+          );
+          if (!intent)
+            throw new Error('This send is no longer available to undo');
+          await cancelEmailSendQueued(intent);
+          await sends.refresh();
+          const updated = sends
+            .intents()
+            .find((row) => row.uuid === intent.uuid);
+          if (updated && !emailSendLocked(updated)) {
+            await restoreCancelledEmailSend(updated);
+            await sends.refresh();
+            await input.onUndone({ draftRestored: true });
+          }
+          return;
+        }
+        await runUndoSend({
           draftId: input.draftId,
           linkId: headerId(input.inboxId),
           onUndone: async () => {
@@ -451,7 +533,8 @@ export function createEmailComposeContext(
             if (input.threadId)
               void refetchSoupEntity(input.threadId, 'emailThread');
           },
-        }),
+        });
+      },
     },
     attachmentStorage: {
       uploadAttachments: ({ draftId, inboxId, ...input }) =>

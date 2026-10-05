@@ -6557,6 +6557,7 @@ dependencies = [
  "macro_uuid",
  "model-entity",
  "model-error-response",
+ "models_email",
  "models_pagination",
  "non_empty",
  "recursion",

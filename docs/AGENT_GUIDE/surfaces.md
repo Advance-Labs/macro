@@ -638,17 +638,38 @@ A failure from an older, unmounted editor must not overwrite a newer edited repl
 A presentation or refresh error after successful delivery is not a reason to send
 again.
 
-Send and schedule are refused with a notice while the device is offline, while a
-draft is still syncing (its save was accepted locally but not yet confirmed by the
-server; retry after a moment), or while an attachment has no completed upload. The
-composer keeps its content in each case. Attachments cannot be added while
-offline: a blocking notice explains and nothing is attached.
+With the durable GraphQL transport enabled, **Send** accepts an immediate new
+message, reply, or forward while offline. The approved recipients, selected
+inbox, subject, body, and uploaded attachment references are frozen in the local
+queue. A queued draft is read-only. Replay resumes while the app is running or
+when it is reopened with service; closing the app does not guarantee delivery.
+**Send Later** and the legacy REST transport still require an online, confirmed
+draft. All sends require completed attachment uploads. Attachments cannot be
+added while offline.
+
+Queued sends remain visible in **Drafts** and their conversation with a persistent
+status and **Cancel** action. A never-attempted send can be cancelled offline.
+If admission may have reached the server, **Cancellation pending** keeps it locked
+until the server confirms cancellation. Once delivery starts, cancellation may
+be too late. **Restore draft** restores the pre-send editor content and preserves
+its attachment associations. A failed queue attempt retains recovery content;
+cancel it before restoring and sending again. The server starts the undo delay
+at first admission, so reconnecting does not consume that delay while offline.
+
+Verify: queue a new message and a reply offline, close and reopen the app, and
+check their persistent status and read-only content. Cancel one before reconnect
+and confirm its send mutation is never issued. Reconnect the other and check
+that one stable attempt is replayed even after a lost response. Also test a
+cancel racing admission, unavailable local storage, and a pending upload. Queue
+admission means **Email queued to send** or **Email sending**, not provider delivery.
+
 For a new standalone email, a failed REST draft save is best-effort: Send can
 still proceed without a draft ID when no save was queued and no attachment is
 waiting to upload. A server rejection blocks sending even an existing draft.
 An internal draft-save failure, including a failed response read after the save
 commits, stays queued and retries with backoff. It must not permanently disable
-autosave; Send stays blocked until a save is confirmed. Invalid or unauthorized
+autosave; the durable Send queues behind the save, while legacy Send and Send Later
+stay blocked until a save is confirmed. Invalid or unauthorized
 writes still stop retrying.
 A successful save response with an invalid cache identity binding still commits
 its normalizable server data and reports a cache diagnostic without replaying

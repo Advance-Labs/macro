@@ -29,6 +29,7 @@ mod preview;
 mod preview_views;
 mod project;
 mod scheduled;
+mod send_attempt;
 mod settings;
 mod thread;
 

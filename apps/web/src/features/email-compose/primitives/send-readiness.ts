@@ -5,12 +5,7 @@ import type {
 import type { DraftIdentity } from './draft-session';
 import type { DraftFormAttachment } from './email-form-state';
 
-/**
- * Why an immediate send cannot proceed. Send is a REST call that resolves
- * server ids only and is never queued (it moves onto the durable queue in a
- * later change), so it needs the device online, a draft the server can
- * address, and every attachment uploaded.
- */
+/** Immediate GraphQL sends accept durable local handles; attachments must be uploaded. */
 export type SendRefusal =
   | 'offline'
   | 'draft-not-saved'
@@ -30,11 +25,12 @@ export function refuseSend(notices: EmailComposeFeedback, reason: SendRefusal) {
   });
 }
 
-/** Offline, the pre-send save could only queue; refuse before it runs. */
+/** Legacy sending and Send Later still require connectivity. */
 export function sendRefusalBeforeSave(
-  connectivity: EmailConnectivity
+  connectivity: EmailConnectivity,
+  queueActive = false
 ): SendRefusal | undefined {
-  return connectivity.looksOffline() ? 'offline' : undefined;
+  return connectivity.looksOffline() && !queueActive ? 'offline' : undefined;
 }
 
 /**
@@ -48,12 +44,14 @@ export function sendRefusalAfterSave(input: {
   autosaveAllowed: boolean;
   attachments: readonly DraftFormAttachment[];
   unqueuedHandleMaySend: boolean;
+  queueActive?: boolean;
 }): SendRefusal | undefined {
   const { identity } = input;
   if (!input.autosaveAllowed) return 'draft-not-confirmed';
-  if (identity.kind === 'server' && identity.queued)
+  if (!input.queueActive && identity.kind === 'server' && identity.queued)
     return 'draft-not-confirmed';
   if (
+    !input.queueActive &&
     identity.kind === 'handle' &&
     (!input.unqueuedHandleMaySend || identity.queued)
   ) {

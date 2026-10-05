@@ -13,7 +13,7 @@ async fn fetch_pending_returns_only_eligible_messages(pool: Pool<Postgres>) -> R
 
     let results = fetch_pending_scheduled_messages(&pool).await?;
 
-    // Should return exactly 2 messages:
+    // Legacy non-draft immediate sends must never be resurrected.
     // - Message 1: Draft with past send_time, not sent
     // - Message 5: Draft with past send_time, not sent (different link)
     assert_eq!(results.len(), 2);
@@ -60,14 +60,41 @@ async fn fetch_pending_excludes_already_sent(pool: Pool<Postgres>) -> Result<()>
     migrator = "MACRO_DB_MIGRATIONS",
     fixtures(path = "test/fixtures", scripts("fetch_pending_scheduled_messages"))
 )]
-async fn fetch_pending_excludes_non_drafts(pool: Pool<Postgres>) -> Result<()> {
-    let results = fetch_pending_scheduled_messages(&pool).await?;
-
-    let message_ids: Vec<Uuid> = results.iter().map(|r| r.message_id).collect();
-
-    // Message 4 has is_draft = false, should not be included
-    assert!(!message_ids.contains(&Uuid::parse_str("00000000-0000-0000-0000-00000000f504")?));
-
+async fn fetch_pending_recovers_only_admitted_graphql_immediate_sends(
+    pool: Pool<Postgres>,
+) -> Result<()> {
+    let message_id = Uuid::parse_str("00000000-0000-0000-0000-00000000f504")?;
+    sqlx::query!(
+        "UPDATE email_messages SET is_sent = false WHERE id = $1",
+        message_id
+    )
+    .execute(&pool)
+    .await?;
+    assert!(
+        !fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message_id)
+    );
+    sqlx::query!("INSERT INTO email_send_attempts (user_id,link_id,attempt_id,message_id) SELECT 'test',link_id,$1,id FROM email_messages WHERE id=$2", Uuid::new_v4(),message_id).execute(&pool).await?;
+    assert!(
+        fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message_id)
+    );
+    sqlx::query!(
+        "UPDATE email_scheduled_messages SET processing = true WHERE message_id=$1",
+        message_id
+    )
+    .execute(&pool)
+    .await?;
+    assert!(
+        !fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message_id)
+    );
     Ok(())
 }
 

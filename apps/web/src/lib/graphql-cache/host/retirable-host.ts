@@ -17,6 +17,9 @@ export function createRetirableCacheHost(inner: CacheHost): CacheHost {
       return current.disabled;
     },
     currentRevision: () => current.currentRevision(),
+    retireDurableMutationIntent: (uuid) =>
+      current.retireDurableMutationIntent(uuid),
+    durableMutationIntents: () => current.durableMutationIntents(),
     currentStorageGeneration: () => current.currentStorageGeneration(),
     readQuery: (args) => current.readQuery(args),
     readRecordsByKeys: (args) => current.readRecordsByKeys(args),

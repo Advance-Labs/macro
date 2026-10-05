@@ -48,7 +48,7 @@ pub async fn handler(
 /// Only returns messages where:
 /// - send_time has passed (< now())
 /// - sent = false
-/// - the associated email message is still a draft (is_draft = true)
+/// - the associated email message has not been sent (including immediate sends)
 #[tracing::instrument(skip(pool), err)]
 pub async fn fetch_pending_scheduled_messages(
     pool: &PgPool,
@@ -63,7 +63,12 @@ pub async fn fetch_pending_scheduled_messages(
         WHERE
             esm.send_time < now()
             AND esm.sent = FALSE
-            AND em.is_draft = TRUE
+            AND em.is_sent = FALSE
+            AND esm.processing = FALSE
+            AND (em.is_draft OR EXISTS (
+                SELECT 1 FROM email_send_attempts a
+                WHERE a.link_id = esm.link_id AND a.message_id = esm.message_id AND NOT a.cancelled
+            ))
         "#,
     )
     .fetch_all(pool)

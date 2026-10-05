@@ -340,6 +340,34 @@ fn test_email_err() -> EmailErr {
     EmailErr::RepoErr(anyhow::anyhow!("counting email service"))
 }
 
+impl email::domain::send_attempt::EmailSendService for CountingEmailService {
+    async fn send_email(
+        &self,
+        _: MacroUserIdStr<'static>,
+        _: Uuid,
+        _: email::domain::send_attempt::SendAttemptId,
+        _: email::domain::send_attempt::SendSnapshot,
+    ) -> Result<email::domain::send_attempt::SendAttempt, EmailErr> {
+        Err(test_email_err())
+    }
+    async fn cancel_email_send(
+        &self,
+        _: MacroUserIdStr<'static>,
+        _: Uuid,
+        _: email::domain::send_attempt::SendAttemptId,
+    ) -> Result<email::domain::send_attempt::SendAttempt, EmailErr> {
+        Err(test_email_err())
+    }
+    async fn email_send_status(
+        &self,
+        _: MacroUserIdStr<'static>,
+        _: Uuid,
+        _: email::domain::send_attempt::SendAttemptId,
+    ) -> Result<Option<email::domain::send_attempt::SendAttempt>, EmailErr> {
+        Err(test_email_err())
+    }
+}
+
 impl EmailUserService for CountingEmailService {
     async fn get_user_email_labels(
         &self,

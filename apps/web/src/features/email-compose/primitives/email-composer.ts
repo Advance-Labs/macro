@@ -185,6 +185,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
   );
   const currentDraftId = session.draftId;
   const currentThreadId = session.threadId;
+  const sendLocked = () =>
+    props.delivery.sendLocked?.(currentDraftId()) ?? false;
   observeDraftIdentity(
     props.drafts,
     session,
@@ -381,6 +383,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
   >();
   let schedule: ReturnType<typeof createEmailSendSchedule>;
   const persistencePaused = () =>
+    sendLocked() ||
     submitting() ||
     discarding() ||
     movingInbox() ||
@@ -518,26 +521,32 @@ export function createEmailComposer(props: EmailComposerOptions) {
   const restoreAfterUndoSend = async (
     draftId: string,
     threadId: string | undefined,
-    inboxId: string | undefined
+    inboxId: string | undefined,
+    draftRestored = false
   ) => {
     const snapshot = composeUndo.peek(draftId);
-    await props.drafts.restoreDraft({
-      draftId,
-      threadId,
-      draft: snapshot
-        ? {
-            bcc: snapshot.recipients.bcc.map(
-              convertEmailRecipientToContactInfo
-            ),
-            cc: snapshot.recipients.cc.map(convertEmailRecipientToContactInfo),
-            db_id: draftId,
-            subject: snapshot.subject,
-            to: snapshot.recipients.to.map(convertEmailRecipientToContactInfo),
-          }
-        : undefined,
-      html: snapshot?.bodyHtml,
-      inboxId,
-    });
+    if (!draftRestored)
+      await props.drafts.restoreDraft({
+        draftId,
+        threadId,
+        draft: snapshot
+          ? {
+              bcc: snapshot.recipients.bcc.map(
+                convertEmailRecipientToContactInfo
+              ),
+              cc: snapshot.recipients.cc.map(
+                convertEmailRecipientToContactInfo
+              ),
+              db_id: draftId,
+              subject: snapshot.subject,
+              to: snapshot.recipients.to.map(
+                convertEmailRecipientToContactInfo
+              ),
+            }
+          : undefined,
+        html: snapshot?.bodyHtml,
+        inboxId,
+      });
 
     props.host?.showDraft?.(draftId);
   };
@@ -546,13 +555,16 @@ export function createEmailComposer(props: EmailComposerOptions) {
   const undoSend = (
     draftId: string,
     threadId: string | undefined,
-    inboxId: string | undefined
+    inboxId: string | undefined,
+    sendAttemptId?: string
   ) =>
     props.delivery.undoSend({
+      sendAttemptId,
       threadId,
       draftId,
       inboxId,
-      onUndone: () => restoreAfterUndoSend(draftId, threadId, inboxId),
+      onUndone: (result) =>
+        restoreAfterUndoSend(draftId, threadId, inboxId, result?.draftRestored),
     });
 
   const afterSend = (
@@ -563,22 +575,33 @@ export function createEmailComposer(props: EmailComposerOptions) {
     const threadId = identity.threadId;
     if (draftId) endUndoSend(draftId);
     try {
-      const toastId = props.notices.feedback.success('Email sent', {
-        actions: draftId
-          ? [
-              {
-                label: 'Undo',
-                onClick: () => {
-                  if (toastId != null) props.notices.feedback.dismiss(toastId);
-                  void undoSend(draftId, threadId ?? undefined, inboxId).catch(
-                    props.notices.reportError
-                  );
+      const toastId = props.notices.feedback.success(
+        identity.sendAttemptId
+          ? identity.persistence === 'queued'
+            ? 'Email queued to send'
+            : 'Email sending'
+          : 'Email sent',
+        {
+          actions: draftId
+            ? [
+                {
+                  label: 'Undo',
+                  onClick: () => {
+                    if (toastId != null)
+                      props.notices.feedback.dismiss(toastId);
+                    void undoSend(
+                      draftId,
+                      threadId ?? undefined,
+                      inboxId,
+                      identity.sendAttemptId
+                    ).catch(props.notices.reportError);
+                  },
                 },
-              },
-            ]
-          : undefined,
-        duration: 5_000,
-      });
+              ]
+            : undefined,
+          duration: 5_000,
+        }
+      );
     } catch (error) {
       props.notices.reportError(error);
     }
@@ -596,7 +619,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
       discarding() ||
       movingInbox() ||
       completed() ||
-      terminalState()
+      terminalState() ||
+      sendLocked()
     )
       return;
     setValidationError(null);
@@ -637,7 +661,10 @@ export function createEmailComposer(props: EmailComposerOptions) {
       return;
     }
 
-    const offline = sendRefusalBeforeSave(props.connectivity);
+    const offline = sendRefusalBeforeSave(
+      props.connectivity,
+      props.delivery.queueActive?.() && schedule.action() === 'send'
+    );
     if (offline) return refuseSend(props.notices, offline);
     const scheduleAction = schedule.action();
     if (scheduleAction === 'unavailable') {
@@ -683,6 +710,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
         attachments: form.attachments.list(),
         // A failed REST save leaves unused handles; the send can still create the message.
         unqueuedHandleMaySend: true,
+        queueActive: props.delivery.queueActive?.(),
       });
       if (refusal) return refuseSend(props.notices, refusal);
 
@@ -701,6 +729,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
       // Append watermark after all validation passes so failed sends don't
       // leave orphaned watermark nodes in the editor tree.
+      const restoration = prepareEmailBody(currentEditor);
+      const restoreMacro = content();
       const cleanupWatermark = $appendWatermarkNodeToLast(
         currentEditor,
         !hasPaidAccess() ? MACRO_EMAIL_SIGNATURE : undefined
@@ -717,6 +747,21 @@ export function createEmailComposer(props: EmailComposerOptions) {
       try {
         setSendPhase('sending');
         const result = await props.delivery.sendMessage({
+          clientHandles: {
+            draftId: currentDraftId()!,
+            threadId: currentThreadId(),
+          },
+          attachmentIds: form.attachments
+            .list()
+            .filter((a) => a.type !== 'forwarded')
+            .flatMap((a) => (a.attachmentId ? [a.attachmentId] : [])),
+          forwardedAttachmentIds: form.attachments
+            .list()
+            .filter((a) => a.type === 'forwarded')
+            .map((a) => a.attachmentId!),
+          restoreBodyHtml: restoration?.bodyHtml,
+          restoreBodyText: restoration?.bodyText,
+          restoreBodyMacro: restoreMacro,
           message: {
             to: convertToContactInfoArray(recipients.to),
             cc:
@@ -838,10 +883,27 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
   let lastScheduledTime = schedule.confirmedTime()?.toISOString();
   let handledTerminalIdentity: string | undefined;
+  let reconcileAfterQueuedSend = false;
   const lifecycleInputs = () =>
-    [lifecycle.state(), scheduling(), movingInbox(), submitting()] as const;
+    [
+      lifecycle.state(),
+      scheduling(),
+      movingInbox(),
+      submitting(),
+      sendLocked(),
+    ] as const;
   createEffect(
-    on(lifecycleInputs, ([state, , moving, sending]) => {
+    on(lifecycleInputs, ([state, , moving, sending, queued]) => {
+      if (queued) {
+        reconcileAfterQueuedSend = true;
+        return;
+      }
+      if (reconcileAfterQueuedSend) {
+        reconcileAfterQueuedSend = false;
+        // Admission's non-draft observation predates the cancellation.
+        void lifecycle.refresh().catch(props.notices.reportError);
+        return;
+      }
       // While this composer sends, the draft turning into a sent message is
       // its own doing; the send settles the composer and replays the rest.
       if (
@@ -1049,6 +1111,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
     // Status
     disabled: () =>
+      sendLocked() ||
       hasInboxError() ||
       submitting() ||
       discarding() ||
@@ -1058,6 +1121,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
       scheduling() ||
       schedule.state().type === 'scheduled',
     primaryActionDisabled: () =>
+      sendLocked() ||
       hasInboxError() ||
       submitting() ||
       discarding() ||
@@ -1072,6 +1136,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
       terminalState() ??
       (schedule.state().type === 'scheduled' ? 'scheduled' : 'draft'),
     sendUnavailableReason: () => {
+      if (sendLocked())
+        return 'Queued to send. Cancel the send before editing.';
       if (terminalState() === 'sent')
         return 'This email has already been sent.';
       if (terminalState() === 'missing')

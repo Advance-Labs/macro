@@ -114,6 +114,9 @@ export interface CacheHost {
   /** Durable database identity, preserved across engine restarts and replaced
    * whenever the stored cache is cleared or recreated. */
   currentStorageGeneration(): Promise<string>;
+  /** Recovery records persisted atomically with mutation lifecycle changes. */
+  durableMutationIntents(): Promise<unknown[]>;
+  retireDurableMutationIntent(uuid: string): Promise<boolean>;
   readQuery(args: CacheReadArgs): Promise<ReadResult>;
   /** Projects a bounded explicit set of normalized entity keys. */
   readRecordsByKeys(

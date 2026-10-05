@@ -10,6 +10,7 @@ mod preview;
 mod project;
 mod project_scope_dynamic_query;
 mod scheduled;
+mod send_attempt;
 mod settings;
 mod signal_flag;
 mod thread;

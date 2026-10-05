@@ -2,6 +2,7 @@ use super::*;
 
 mod conjunction_cost;
 mod conjunction_semantics;
+mod durable_intent;
 mod engine_writes;
 mod fact_lookup_cost;
 mod filter_scope_cost;
@@ -743,6 +744,7 @@ fn settlement_fences_queue_identity_and_atomically_replaces_affected_shadows() {
                     claim.clone(),
                     OptimisticShadowReconciliation {
                         expected_queue: vec![first],
+                        expected_tail_generations: vec![],
                         affected_keys: vec![key.clone()],
                         replacements: vec![],
                     },
@@ -754,6 +756,7 @@ fn settlement_fences_queue_identity_and_atomically_replaces_affected_shadows() {
 
         let reconciliation = OptimisticShadowReconciliation {
             expected_queue: vec![first, second],
+            expected_tail_generations: vec![(second, 0)],
             affected_keys: vec![key.clone()],
             replacements: vec![replacement.clone()],
         };

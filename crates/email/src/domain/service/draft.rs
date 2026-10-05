@@ -114,7 +114,7 @@ where
     /// re-read it guards converge concurrent first saves on one row, and the
     /// upsert's owner guard rejects a write the resolution shouldn't have
     /// reached.
-    async fn resolve_client_handles(
+    pub(super) async fn resolve_client_handles(
         &self,
         input: &mut CreateDraftInput,
         accessible_link_ids: &[Uuid],
@@ -281,71 +281,14 @@ where
         &self,
         link: &Link,
         accessible_inboxes: &[Link],
-        mut input: CreateDraftInput,
+        input: CreateDraftInput,
         is_draft: bool,
     ) -> Result<CreatedDraft, EmailErr> {
+        let (resolved, contacts, new_thread) = self
+            .prepare_message(link, accessible_inboxes, input, is_draft, true)
+            .await?;
         let link_id = link.id;
         let accessible_link_ids: Vec<Uuid> = accessible_inboxes.iter().map(|l| l.id).collect();
-
-        self.validate_existing_message(link_id, &accessible_link_ids, &mut input)
-            .await?;
-
-        self.validate_replying_to(link_id, &accessible_link_ids, &mut input)
-            .await?;
-
-        self.validate_thread_hint(link_id, &mut input).await?;
-
-        decode_and_sanitize_html_body(&mut input)?;
-
-        // On send (not drafts), inject the inbox's signature into the body per
-        // the user's settings + per-message override. Best-effort: never blocks
-        // the send.
-        if !is_draft {
-            self.maybe_inject_signature(link, &mut input).await;
-        }
-
-        // Build parsed addresses
-        let from_email = String::from(link.email_address.clone());
-        let addresses = ParsedAddresses {
-            from_email: from_email.clone(),
-            from_name: None,
-            to: input.to.clone(),
-            cc: input.cc.clone(),
-            bcc: input.bcc.clone(),
-        };
-
-        // Upsert contacts (outside transaction to avoid deadlocks)
-        let contacts = self
-            .email_repo
-            .upsert_contacts(link_id, addresses)
-            .await
-            .map_err(anyhow::Error::from)?;
-
-        // Build new thread if one doesn't already exist
-        let (thread_db_id, new_thread) = self.build_new_thread_if_needed(link_id, &input);
-
-        // Resolve all IDs and build the insert-ready struct
-        let message_db_id = input.db_id.unwrap_or_else(macro_uuid::generate_uuid_v7);
-
-        let resolved = ResolvedDraftInput {
-            db_id: message_db_id,
-            provider_id: input.provider_id,
-            replying_to_id: input.replying_to_id,
-            provider_thread_id: input.provider_thread_id,
-            thread_db_id,
-            subject: input.subject,
-            to: input.to,
-            cc: input.cc,
-            bcc: input.bcc,
-            body_text: input.body_text,
-            body_html: input.body_html,
-            body_macro: input.body_macro,
-            headers_json: input.headers_json,
-            send_time: input.send_time,
-            actor_id: input.actor.as_ref().map(|actor| actor.as_ref().to_owned()),
-            draft_client_id: input.draft_client_binding,
-            thread_client_id: input.thread_client_binding,
-        };
 
         // The insert reports the IDs it settled on rather than echoing the
         // candidates above: a save whose client handle raced a concurrent
@@ -407,6 +350,87 @@ where
         })
     }
 
+    pub(super) async fn prepare_message(
+        &self,
+        link: &Link,
+        accessible_inboxes: &[Link],
+        mut input: CreateDraftInput,
+        is_draft: bool,
+        allow_inbox_move: bool,
+    ) -> Result<
+        (
+            ResolvedDraftInput,
+            crate::domain::models::UpsertedContacts,
+            Option<ThreadRow>,
+        ),
+        EmailErr,
+    > {
+        let link_id = link.id;
+        let accessible_link_ids: Vec<Uuid> = accessible_inboxes.iter().map(|l| l.id).collect();
+
+        self.validate_existing_message(link_id, &accessible_link_ids, &mut input, allow_inbox_move)
+            .await?;
+
+        self.validate_replying_to(link_id, &accessible_link_ids, &mut input)
+            .await?;
+
+        self.validate_thread_hint(link_id, &mut input).await?;
+
+        decode_and_sanitize_html_body(&mut input)?;
+
+        // On send (not drafts), inject the inbox's signature into the body per
+        // the user's settings + per-message override. Best-effort: never blocks
+        // the send.
+        if !is_draft {
+            self.maybe_inject_signature(link, &mut input).await;
+        }
+
+        // Build parsed addresses
+        let from_email = String::from(link.email_address.clone());
+        let addresses = ParsedAddresses {
+            from_email: from_email.clone(),
+            from_name: None,
+            to: input.to.clone(),
+            cc: input.cc.clone(),
+            bcc: input.bcc.clone(),
+        };
+
+        // Upsert contacts (outside transaction to avoid deadlocks)
+        let contacts = self
+            .email_repo
+            .upsert_contacts(link_id, addresses)
+            .await
+            .map_err(anyhow::Error::from)?;
+
+        // Build new thread if one doesn't already exist
+        let (thread_db_id, new_thread) = self.build_new_thread_if_needed(link_id, &input);
+
+        // Resolve all IDs and build the insert-ready struct
+        let message_db_id = input.db_id.unwrap_or_else(macro_uuid::generate_uuid_v7);
+
+        let resolved = ResolvedDraftInput {
+            db_id: message_db_id,
+            provider_id: input.provider_id,
+            replying_to_id: input.replying_to_id,
+            provider_thread_id: input.provider_thread_id,
+            thread_db_id,
+            subject: input.subject,
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            body_text: input.body_text,
+            body_html: input.body_html,
+            body_macro: input.body_macro,
+            headers_json: input.headers_json,
+            send_time: input.send_time,
+            actor_id: input.actor.as_ref().map(|actor| actor.as_ref().to_owned()),
+            draft_client_id: input.draft_client_binding,
+            thread_client_id: input.thread_client_binding,
+        };
+
+        Ok((resolved, contacts, new_thread))
+    }
+
     /// Appends the inbox's signature to the outgoing body (send path only).
     /// Gated by the per-message override and the inbox's settings; replies and
     /// forwards (a `replying_to_id` is present) require
@@ -440,6 +464,7 @@ where
         link_id: Uuid,
         accessible_link_ids: &[Uuid],
         input: &mut CreateDraftInput,
+        allow_inbox_move: bool,
     ) -> Result<(), EmailErr> {
         let Some(db_id) = input.db_id else {
             return Ok(());
@@ -464,6 +489,11 @@ where
         }
 
         if msg.link_id != link_id {
+            if !allow_inbox_move {
+                return Err(EmailErr::InvalidSendSnapshot(
+                    "save the draft in the selected inbox before sending".into(),
+                ));
+            }
             // The sender was switched to a different inbox. A draft belongs to a
             // single inbox, so discard it (and its now-empty thread) and create a
             // fresh draft in the sending inbox; validate_replying_to re-derives
@@ -676,7 +706,7 @@ fn resolve_thread_hint(existing: Option<&ThreadRow>, link_id: Uuid) -> ThreadHin
 /// matters: the links list includes delegated inboxes, which are primary for
 /// *their* account. Mirrors the `X-Email-Link-Id` axum extractor's semantics
 /// for transports that carry the inbox by value instead of a header.
-fn resolve_target_link<'a>(
+pub(super) fn resolve_target_link<'a>(
     links: &'a [Link],
     link_id: Option<Uuid>,
     caller: &macro_user_id::user_id::MacroUserIdStr<'_>,

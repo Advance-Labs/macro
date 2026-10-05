@@ -93,6 +93,8 @@ async fn change_schedule(
             if deleted.rows_affected() != 1 {
                 return Err(EmailErr::MessageDeliveryConflict(message_id));
             }
+            sqlx::query!("UPDATE email_send_attempts SET cancelled = true WHERE message_id = $1 AND link_id = $2 AND NOT cancelled", message_id, link_id)
+                .execute(&mut *tx).await.map_err(anyhow::Error::from)?;
             sqlx::query!(
                 "UPDATE email_messages SET is_draft = true, updated_at = NOW() WHERE id = $1 AND link_id = $2 AND NOT is_sent",
                 message_id, link_id,

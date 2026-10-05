@@ -17,16 +17,20 @@ where
 {
     let db_att: db::attachment::AttachmentDraft = attachment.into();
 
-    sqlx::query!(
+    let inserted = sqlx::query!(
         r#"
+            WITH editable AS (
+                SELECT id FROM email_messages
+                WHERE id = $2 AND link_id = $8 AND is_draft AND NOT is_sent
+                FOR UPDATE
+            )
             INSERT INTO email_attachments_drafts (
                 id, draft_id, file_name, content_type, sha, size, s3_key
             )
             -- if the message belongs to a different link_id, nothing will be returned from this
             -- and thus nothing will be inserted
                 SELECT $1, $2, $3, $4, $5, $6, $7
-                FROM email_messages m
-                WHERE m.id = $2 AND m.link_id = $8
+                FROM editable
             "#,
         db_att.id,
         db_att.draft_id,
@@ -39,6 +43,7 @@ where
     )
     .execute(executor)
     .await?;
+    anyhow::ensure!(inserted.rows_affected() == 1, "draft is no longer editable");
 
     Ok(())
 }
@@ -79,10 +84,15 @@ where
 {
     let result = sqlx::query!(
         r#"
+                WITH editable AS (
+                    -- Sent rows are used by the worker's post-delivery cleanup.
+                    SELECT id FROM email_messages
+                    WHERE id = $2 AND link_id = $3 AND (is_draft OR is_sent)
+                    FOR UPDATE
+                )
                 DELETE FROM email_attachments_drafts ead
-                USING email_messages m
-                WHERE ead.draft_id = m.id
-                AND ead.id = $1 AND ead.draft_id = $2 AND m.link_id = $3
+                USING editable m
+                WHERE ead.draft_id = m.id AND ead.id = $1
                 "#,
         attachment_id,
         draft_id,

@@ -113,7 +113,16 @@ export type QueryRevalidation = {
   variables: AnyVariables;
 };
 
+export type DurableMutationIntent = {
+  kind: string;
+  payload: Record<string, unknown>;
+  /** Fence and replace the same UUID's current request, including a live lease. */
+  replace?: boolean;
+};
+
 export type OptimisticMutationOptions = {
+  /** Preserve recovery data through rollback and forbid a non-durable network fallback. */
+  durableIntent?: DurableMutationIntent;
   /** Required RFC UUID; reuse only when the newer intent safely replaces the older one. */
   uuid: string;
   identityBindings?: readonly IdentityBindingWire[];
@@ -132,6 +141,7 @@ export type OptimisticResponse<T> = T extends readonly (infer Item)[]
     : T;
 
 export type OptimisticMutationContext<TData = unknown> = {
+  durableIntent?: DurableMutationIntent;
   uuid: string;
   optimisticResponse: TData;
   identityBindings?: IdentityBindingWire[];
@@ -471,6 +481,7 @@ export function executeOptimisticMutation<
   const context: OptimisticMutationContext<OptimisticResponse<TData>> = {
     uuid: options.uuid,
     optimisticResponse: optimisticData,
+    durableIntent: options.durableIntent,
     identityBindings: options.identityBindings
       ? [...options.identityBindings]
       : undefined,
@@ -517,6 +528,7 @@ export function optimisticContextOf(
     return {
       uuid: context.uuid,
       optimisticResponse: context.optimisticResponse,
+      durableIntent: context.durableIntent,
       identityBindings: context.identityBindings,
       linkPatches: Array.isArray(context.linkPatches)
         ? context.linkPatches
