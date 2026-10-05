@@ -10,3 +10,12 @@ GIFs are compressed previews; MP4s retain full quality. Contact sheets and still
 Local demo: `http://localhost:35110/app/form/01a10a44-23d0-76a2-89d1-17493417797e`. Use local email login as `forms-owner@local.macro.test`. These links work on the development machine running the local stack.
 
 Additional final-build checks: sent-card Collapse/Expand, and mobile touch dragging with edge scrolling across sections and into an empty section. Exactly one successful layout write per touch drop; the original demo layout was restored.
+
+
+## Collaborative builder and screened booking followup
+
+`forms-screened-booking.mp4` and its GIF show sidebar section dragging, the screener and linked booking step, native public-link sharing, an anonymous visitor stopped by the screener, a passing submission unlocking the calendar, and the accepted response appearing live in the grid. Recorded from the real local HTTPS stack after the final browser fixes.
+
+The local test host has no connected calendar: the recording shows the native availability error explicitly. No external calendar invitation is claimed. Desktop/mobile screenshots and the two review rounds plus a final browser-fix review are included.
+
+Source head: b2ab4bb6df01b1981e7d4095ea60bed3dd8ca807.
