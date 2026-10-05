@@ -40,7 +40,7 @@ export function CopyFilePathButton(props: {
         onClick={() => void copy()}
       >
         <Show when={copied()} fallback={<CopyIcon />}>
-          <CheckIcon class="text-success motion-safe:animate-pulse" />
+          <CheckIcon class="text-success" />
         </Show>
       </Button>
       <span class="sr-only" aria-live="polite">

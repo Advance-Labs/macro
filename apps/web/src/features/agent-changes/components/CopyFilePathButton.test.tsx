@@ -16,6 +16,12 @@ describe('CopyFilePathButton', () => {
     await waitFor(() => expect(screen.getByText('Path copied')).toBeTruthy());
     expect(onCopy).toHaveBeenCalledWith('src/a.ts');
     expect(button.querySelector('svg')).not.toBe(initialIcon);
+    expect(
+      button.querySelector('svg')?.classList.contains('text-success')
+    ).toBe(true);
+    expect(button.querySelector('svg')?.getAttribute('class')).not.toContain(
+      'animate-'
+    );
     expect(screen.getByRole('button', { name: 'Copy path' })).toBe(button);
     vi.useFakeTimers();
     // Start a fresh feedback window with fake timers.
