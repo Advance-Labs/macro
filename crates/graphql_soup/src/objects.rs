@@ -112,7 +112,7 @@ pub trait SoupEntityEdges: ObjectType + Clone + Send + Sync + 'static {
     type AgentSessionEdges: ObjectType + Clone + Send + Sync + 'static;
 
     /// Construct the agent-session-specific edge object.
-    fn agent_session_edges(bot_id: Uuid) -> Self::AgentSessionEdges;
+    fn agent_session_edges(session_id: Uuid, bot_id: Uuid) -> Self::AgentSessionEdges;
 
     /// Resolve properties assigned to this entity.
     fn resolve_properties(
@@ -1024,11 +1024,6 @@ impl<E: SoupEntityEdges> GraphqlSoupInitiative<E> {
         }
     }
 
-    /// Document backing the project's description, when one exists.
-    async fn description_document_id(&self) -> Option<ID> {
-        self.0.description_document_id.map(|id| ID(id.to_string()))
-    }
-
     /// Common entity edges, including properties and viewer permissions.
     #[graphql(flatten)]
     async fn edges(&self) -> E {
@@ -1233,7 +1228,7 @@ where
     #[graphql(flatten)]
     /// Fields hydrated through the bot domain.
     async fn agent_session_edges(&self) -> E::AgentSessionEdges {
-        E::agent_session_edges(self.0.bot_id)
+        E::agent_session_edges(self.0.id, self.0.bot_id)
     }
 
     /// The runtime snapshotted when the session was created.

@@ -2,35 +2,26 @@ import { openEntityInSplit } from '@app/features/activity/open-entity-in-split';
 import { createCanvasRouteTarget } from '@app/features/block-canvas/primitives/create-canvas-route-target';
 import { createChatRouteNavigation } from '@app/features/block-chat/primitives/create-chat-route-navigation';
 import { createPdfRouteTarget } from '@app/features/block-pdf/primitives/create-pdf-route-target';
-import {
-  createMemorySplitRouterLocation,
-  createRoutesManifest,
-  createSplitRouter,
-  SplitRouter,
-} from '@app/lib/split-router';
-import {
-  SplitRouterContext,
-  type SplitRouterContextValue,
-} from '@app/lib/split-router/solid';
-import {
-  createSplitLayout,
-  type SplitHandle,
-  type SplitManager,
+import { type PaneId, SplitRouter } from '@app/lib/split-router';
+import type {
+  SplitHandle,
+  SplitManager,
 } from '@components/app/split-layout/layoutManager';
 import { createAppSplitRouterMiddleware } from '@components/app/split-layout/split-router/app-middleware';
-import { appSplitRoutes } from '@components/app/split-layout/split-router/app-routes';
-import { createContentNavigator } from '@components/app/split-layout/split-router/content-navigation';
-import { createAppSplitRouterLayout } from '@components/app/split-layout/splitRouterLayout';
+import {
+  createRoutedDetailLayout,
+  createRoutedSplitLayout,
+  detailRoutes,
+  historyFor,
+  locationFor,
+  routeFor,
+  searchFor,
+  updateSearchFor,
+} from '@components/app/split-layout/tests/fixtures';
 import { toast } from '@core/component/Toast/Toast';
 import type { BlockOrchestrator } from '@core/orchestrator';
 import { render } from '@solidjs/testing-library';
-import {
-  createEffect,
-  createRoot,
-  createSignal,
-  type JSX,
-  onCleanup,
-} from 'solid-js';
+import { createEffect, createRoot, createSignal, type JSX } from 'solid-js';
 import { beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { openDocument } from './BlockLink';
 
@@ -86,28 +77,18 @@ async function setup(path = '/search', sourceIndex = 0) {
     getBlockHandle,
   } as unknown as BlockOrchestrator;
   app.orchestrator = orchestrator;
-  const { manager, router, location } = createRoot((dispose) => {
-    const manager = createSplitLayout(orchestrator, [
-      { type: 'component', id: 'search' },
-    ]);
-    const routes = createRoutesManifest(appSplitRoutes);
-    const location = createMemorySplitRouterLocation(path);
-    const router = createSplitRouter({
-      routes,
-      layout: createAppSplitRouterLayout(manager, routes),
-      location,
-      middleware: createAppSplitRouterMiddleware({
-        isTouchDevice: () => false,
-      }),
-    });
-    manager.setContentNavigator(
-      createContentNavigator(manager, router, routes)
+  const { manager, router } = createRoot((dispose) => {
+    const result = createRoutedDetailLayout(
+      orchestrator,
+      path,
+      detailRoutes,
+      createAppSplitRouterMiddleware({ isTouchDevice: () => false })
     );
     onTestFinished(() => {
-      router.dispose();
+      result.router.dispose();
       dispose();
     });
-    return { manager, router, location };
+    return result;
   });
   await router.settled();
   const owner = manager.splits()[0];
@@ -119,7 +100,6 @@ async function setup(path = '/search', sourceIndex = 0) {
   return {
     manager,
     router,
-    location,
     owner,
     source,
     getBlockHandle,
@@ -141,8 +121,8 @@ it.each([false, true])(
       '/channels/channel/~/home?s0.channels.tab=threads&s0.home.tab=noise',
       1
     );
-    const ownerRoute = router.route(owner.id);
-    const sourceRoute = router.route(source.id);
+    const ownerRoute = routeFor(router, owner.id);
+    const sourceRoute = routeFor(router, source.id);
     const mount = owner.mount;
     let previousSeek: string[] | undefined;
     for (let request = 0; request < 2; request++) {
@@ -156,7 +136,7 @@ it.each([false, true])(
         newSplit
       );
       await router.settled();
-      const target = router.search(owner.id, 'channels');
+      const target = searchFor(router, owner.id, 'channels');
       expect(target).toMatchObject({
         tab: ['threads'],
         messageId: ['message'],
@@ -165,9 +145,9 @@ it.each([false, true])(
       });
       expect(target?.seek).not.toEqual(previousSeek);
       previousSeek = target?.seek;
-      expect(router.search(owner.id, 'home')).toEqual({ tab: ['noise'] });
-      expect(router.route(owner.id)).toEqual(ownerRoute);
-      expect(router.route(source.id)).toEqual(sourceRoute);
+      expect(searchFor(router, owner.id, 'home')).toEqual({ tab: ['noise'] });
+      expect(routeFor(router, owner.id)).toEqual(ownerRoute);
+      expect(routeFor(router, source.id)).toEqual(sourceRoute);
       expect(manager.splits()[0].mount).toBe(mount);
       expect(manager.activeSplitId()).toBe(owner.id);
       expect(manager.splits()).toHaveLength(2);
@@ -184,12 +164,12 @@ it('keeps explicit latest-message navigation when reusing an open channel', asyn
   );
   openDocument('channel', 'channel');
   await router.settled();
-  expect(router.search(owner.id, 'channels')).toMatchObject({
+  expect(searchFor(router, owner.id, 'channels')).toMatchObject({
     latest: ['true'],
     seek: [expect.any(String)],
   });
-  expect(router.search(owner.id, 'channels')?.messageId).toBeUndefined();
-  expect(router.search(owner.id, 'channels')?.threadId).toBeUndefined();
+  expect(searchFor(router, owner.id, 'channels')?.messageId).toBeUndefined();
+  expect(searchFor(router, owner.id, 'channels')?.threadId).toBeUndefined();
   expect(getBlockHandle).not.toHaveBeenCalled();
   expect(toast.alert).not.toHaveBeenCalled();
 });
@@ -284,19 +264,21 @@ it.each(targets)(
   async ({ type, path, params, namespace, fields }) => {
     const { manager, router, owner, getBlockHandle, createBlockInstance } =
       await setup(`${path}?s0.drive.filter=keep`);
-    const ownerRoute = router.route(owner.id);
+    const ownerRoute = routeFor(router, owner.id);
     const mount = owner.mount;
     let previousSeek: string[] | undefined;
     for (let request = 0; request < 2; request++) {
       openDocument(type, 'entity', params);
       await router.settled();
-      const target = router.search(owner.id, namespace);
+      const target = searchFor(router, owner.id, namespace);
       expect(target).toMatchObject({ ...fields, seek: [expect.any(String)] });
       expect(target?.seek).not.toEqual(previousSeek);
       previousSeek = target?.seek;
-      expect(router.route(owner.id)).toEqual(ownerRoute);
+      expect(routeFor(router, owner.id)).toEqual(ownerRoute);
       expect(manager.splits()[0].mount).toBe(mount);
-      expect(router.search(owner.id, 'drive')).toEqual({ filter: ['keep'] });
+      expect(searchFor(router, owner.id, 'drive')).toEqual({
+        filter: ['keep'],
+      });
       expect(manager.splits()).toHaveLength(1);
     }
     expect(getBlockHandle).not.toHaveBeenCalled();
@@ -311,12 +293,12 @@ it.each(targets)(
     openDocument(type, 'entity', params, true);
     await router.settled();
     const owner = manager.splits().find((split) => split.id !== source.id)!;
-    expect(router.search(owner.id, namespace)).toMatchObject({
+    expect(searchFor(router, owner.id, namespace)).toMatchObject({
       ...fields,
       seek: [expect.any(String)],
     });
-    expect(router.route(source.id)!.matches[0].id).toBe('view-search');
-    expect(router.search(source.id, namespace)).toBeUndefined();
+    expect(routeFor(router, source.id)!.matches.at(-1)!.id).toBe('view-search');
+    expect(searchFor(router, source.id, namespace)).toBeUndefined();
     expect(manager.splits()).toHaveLength(2);
     expect(getBlockHandle).not.toHaveBeenCalled();
   }
@@ -331,7 +313,7 @@ it('replaces PDF annotation and precise fields before applying a search link', a
     pdf_search_snippet: 'first page',
   });
   await router.settled();
-  const target = router.search(owner.id, 'pdf-detail');
+  const target = searchFor(router, owner.id, 'pdf-detail');
   expect(target).toMatchObject({
     documentId: ['entity'],
     snippet: ['first page'],
@@ -360,15 +342,17 @@ it.each([false, true])(
       .splits()
       .find(
         (split) =>
-          router.search(split.id, 'markdown-detail')?.nodeId?.[0] === 'node'
+          searchFor(router, split.id, 'markdown-detail')?.nodeId?.[0] === 'node'
       )!;
-    expect(router.search(owner.id, 'markdown-detail')).toMatchObject({
+    expect(searchFor(router, owner.id, 'markdown-detail')).toMatchObject({
       documentId: ['entity'],
       nodeId: ['node'],
       seek: [expect.any(String)],
     });
     if (newSplit)
-      expect(router.route(source.id)!.matches[0].id).toBe('view-search');
+      expect(routeFor(router, source.id)!.matches.at(-1)!.id).toBe(
+        'view-search'
+      );
     expect(getBlockHandle).not.toHaveBeenCalled();
   }
 );
@@ -378,7 +362,7 @@ it('routes only the latest location when requests race before settlement', async
   openDocument('md', 'entity', { node_id: 'first' });
   openDocument('md', 'entity', { node_id: 'second' });
   await router.settled();
-  expect(router.search(owner.id, 'markdown-detail')?.nodeId).toEqual([
+  expect(searchFor(router, owner.id, 'markdown-detail')?.nodeId).toEqual([
     'second',
   ]);
   expect(getBlockHandle).not.toHaveBeenCalled();
@@ -387,12 +371,9 @@ it('routes only the latest location when requests race before settlement', async
 it('orients users when an activity selection reuses a registry-only non-location preview', () => {
   const manager = createRoot((dispose) => {
     onTestFinished(dispose);
-    return createSplitLayout(
+    return createRoutedSplitLayout(
       { createBlockInstance: vi.fn() } as unknown as BlockOrchestrator,
-      [
-        { type: 'component', id: 'channels' },
-        { type: 'component', id: 'home' },
-      ]
+      '/channels/~/home'
     );
   });
   const [owner, source] = manager.splits();
@@ -425,7 +406,7 @@ it('orients users only after a routed activity selection reuses its owner', asyn
   await router.settled();
   expect(toast.alert).toHaveBeenCalledOnce();
   expect(manager.activeSplitId()).toBe(owner.id);
-  expect(router.route(source.id)!.matches[0].id).toBe('view-home');
+  expect(routeFor(router, source.id)!.matches.at(-1)!.id).toBe('view-home');
   expect(getBlockHandle).not.toHaveBeenCalled();
 });
 
@@ -446,27 +427,13 @@ function mountProbe(
   splitId: SplitHandle['id'],
   Probe: () => JSX.Element
 ) {
-  const view = render(() => {
-    const [revision, setRevision] = createSignal(0);
-    const unsubscribe = router.subscribe(() =>
-      setRevision((value) => value + 1)
-    );
-    onCleanup(unsubscribe);
-    const context: SplitRouterContextValue = {
-      router: router as unknown as SplitRouterContextValue['router'],
-      globalRevision: revision,
-      track: () => {
-        revision();
-      },
-    };
-    return (
-      <SplitRouterContext.Provider value={context}>
-        <SplitRouter.Scope splitId={splitId}>
-          <Probe />
-        </SplitRouter.Scope>
-      </SplitRouterContext.Provider>
-    );
-  });
+  const view = render(() => (
+    <SplitRouter.Root router={router}>
+      <SplitRouter.Scope pane={splitId as string as PaneId}>
+        <Probe />
+      </SplitRouter.Scope>
+    </SplitRouter.Root>
+  ));
   onTestFinished(view.unmount);
 }
 
@@ -491,13 +458,13 @@ it.each(['pdf', 'canvas'] as const)(
     await router.settled();
     expect(seen.filter(Boolean)).toHaveLength(2);
     const namespace = `${type}-detail`;
-    router.updateSearch(owner.id, namespace, (current) => ({
+    updateSearchFor(router, owner.id, namespace, (current) => ({
       ...current,
       unrelated: ['changed'],
     }));
     await router.settled();
     expect(seen.filter(Boolean)).toHaveLength(2);
-    router.updateSearch(owner.id, namespace, (current) => ({
+    updateSearchFor(router, owner.id, namespace, (current) => ({
       ...current,
       documentId: ['other'],
     }));
@@ -521,13 +488,13 @@ it('delivers newest Chat route requests without replaying unrelated search and c
   await router.settled();
   expect(seen.at(-1)).toEqual({ message_id: 'second' });
   const count = seen.length;
-  router.updateSearch(owner.id, 'drive', { filter: ['other'] });
+  updateSearchFor(router, owner.id, 'drive', { filter: ['other'] });
   await router.settled();
   expect(seen).toHaveLength(count);
   openDocument('chat', 'entity', { message_id: 'second' });
   await router.settled();
   expect(seen).toHaveLength(count + 1);
-  router.updateSearch(owner.id, 'chat-detail', {
+  updateSearchFor(router, owner.id, 'chat-detail', {
     chatId: ['foreign'],
     messageId: ['first'],
     seek: ['foreign'],
@@ -587,24 +554,24 @@ it.each(targets)(
         activate: () => manager.activateSplit(owner.id),
       },
     ]);
-    const ownerRoute = router.route(owner.id);
-    const sourceLocation = router.location(source.id);
-    const sourceHistory = router.history(source.id);
+    const ownerRoute = routeFor(router, owner.id);
+    const sourceLocation = locationFor(router, source.id);
+    const sourceHistory = historyFor(router, source.id);
     const mount = owner.mount;
     const applied = vi.fn();
     let previousSeek: string[] | undefined;
     for (let repeat = 0; repeat < 2; repeat++) {
       openDocument(type, 'entity', params, true, applied);
       await router.settled();
-      const target = router.search(owner.id, namespace);
+      const target = searchFor(router, owner.id, namespace);
       expect(target).toMatchObject({ ...fields, seek: [expect.any(String)] });
       expect(target?.seek).not.toEqual(previousSeek);
       previousSeek = target?.seek;
-      expect(router.route(owner.id)).toEqual(ownerRoute);
+      expect(routeFor(router, owner.id)).toEqual(ownerRoute);
       expect(manager.splits()[0].mount).toBe(mount);
-      expect(router.search(owner.id, 'home')).toEqual({ tab: ['noise'] });
-      expect(router.location(source.id)).toEqual(sourceLocation);
-      expect(router.history(source.id)).toEqual(sourceHistory);
+      expect(searchFor(router, owner.id, 'home')).toEqual({ tab: ['noise'] });
+      expect(locationFor(router, source.id)).toEqual(sourceLocation);
+      expect(historyFor(router, source.id)).toEqual(sourceHistory);
       expect(manager.activeSplitId()).toBe(owner.id);
       expect(manager.splits()).toHaveLength(2);
     }
@@ -652,15 +619,15 @@ it('reuses an Agents Chat owner and delivers repeated targets through its route'
     );
     return null;
   });
-  const ownerRoute = router.route(owner.id);
-  const sourceLocation = router.location(source.id);
+  const ownerRoute = routeFor(router, owner.id);
+  const sourceLocation = locationFor(router, source.id);
   for (let repeat = 0; repeat < 2; repeat++) {
     openDocument('chat', 'entity', { message_id: 'message' }, true);
     await router.settled();
     expect(seen.filter(Boolean)).toHaveLength(repeat + 1);
     expect(seen.at(-1)).toEqual({ message_id: 'message' });
-    expect(router.route(owner.id)).toEqual(ownerRoute);
-    expect(router.location(source.id)).toEqual(sourceLocation);
+    expect(routeFor(router, owner.id)).toEqual(ownerRoute);
+    expect(locationFor(router, source.id)).toEqual(sourceLocation);
     expect(manager.activeSplitId()).toBe(owner.id);
     expect(manager.splits()).toHaveLength(2);
   }

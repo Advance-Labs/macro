@@ -32,9 +32,8 @@ use graphql_favorite::{
     GraphqlFavorite, NoOpEntityFavoriteEdgeReader, NoOpFavoriteMutationService, resolve_favorites,
 };
 use graphql_initiative::{
-    GraphqlInitiativeTasksPage, GraphqlTaskInitiativeReference, InitiativeMutationRoot,
-    InitiativeTasksInput, resolve_initiative, resolve_initiative_tasks,
-    resolve_task_initiative_references,
+    GraphqlInitiativeTasksPage, InitiativeMutationRoot, InitiativeTasksInput, resolve_initiative,
+    resolve_initiative_tasks,
 };
 use graphql_notification::{
     NoOpNotificationMutationService, NoOpSoupNotificationEdgeReader, NotificationMutationRoot,
@@ -49,9 +48,10 @@ use graphql_properties::{
 };
 use graphql_scheduled_action::{GraphqlScheduledAction, resolve_scheduled_actions};
 use graphql_soup::{
-    GraphqlSoupEmailThread, GraphqlSoupInitiative, GroupedSoup, GroupedSoupInput,
-    SoupEmailThreadMutationOutput, SoupEntityEdges, SoupInput, SoupPage, SoupPatch,
-    resolve_grouped_soup, resolve_soup, resolve_soup_email_thread, resolve_soup_updates,
+    GraphqlSoupAgentSession, GraphqlSoupEmailThread, GraphqlSoupInitiative, GroupedSoup,
+    GroupedSoupInput, SoupEmailThreadMutationOutput, SoupEntityEdges, SoupInput, SoupPage,
+    SoupPatch, resolve_grouped_soup, resolve_soup, resolve_soup_agent_session,
+    resolve_soup_email_thread, resolve_soup_updates,
 };
 use macro_authorization::{
     InternalAuthConfig, MacroAuthorizationService, MacroAuthorizationServiceImpl,
@@ -658,17 +658,6 @@ where
         .await
     }
 
-    /// Initiative chips for tasks, without inaccessible project metadata.
-    async fn task_initiative_references(
-        &self,
-        ctx: &Context<'_>,
-        task_ids: Vec<ID>,
-    ) -> async_graphql::Result<
-        Vec<GraphqlTaskInitiativeReference<SoupEdges<NR, PR, ER, FR, AR, AcR>>>,
-    > {
-        resolve_task_initiative_references(ctx, self.user_id.clone(), task_ids).await
-    }
-
     /// AI routines the authenticated user can access.
     async fn scheduled_actions(
         &self,
@@ -760,6 +749,23 @@ where
             ctx,
             self.user_id.clone(),
             thread_id,
+        )
+        .await
+    }
+
+    /// Fetch one accessible agent session by id, with its protocol log
+    /// reachable through `log`.
+    async fn agent_session(
+        &self,
+        ctx: &Context<'_>,
+        session_id: ID,
+    ) -> async_graphql::Result<Option<GraphqlSoupAgentSession<SoupEdges<NR, PR, ER, FR, AR, AcR>>>>
+    {
+        let session_id = parse_id(session_id, "sessionId")?;
+        resolve_soup_agent_session::<SoupEdges<NR, PR, ER, FR, AR, AcR>>(
+            ctx,
+            self.user_id.clone(),
+            session_id,
         )
         .await
     }

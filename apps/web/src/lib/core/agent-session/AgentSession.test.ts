@@ -7,11 +7,8 @@
 
 import type { FoldInput } from '@core/agent-fold/client';
 import type { FoldedStreamEvent } from '@service-agent-fold/generated/types';
-import type {
-  AgentSessionLogEntryDto,
-  AgentSessionLogResponse,
-} from '@service-agent-harness/generated/schemas';
-import { err, ok, type Result } from 'neverthrow';
+import type { AgentSessionLogEntryDto } from '@service-agent-harness/generated/schemas';
+import { err, ok } from 'neverthrow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fold = vi.hoisted(() => ({
@@ -21,9 +18,32 @@ const fold = vi.hoisted(() => ({
 }));
 const harness = vi.hoisted(() => ({
   get: vi.fn(),
-  getLog: vi.fn(),
   control: vi.fn(),
 }));
+const logSource = vi.hoisted(() => {
+  class Unavailable extends Error {
+    constructor(
+      readonly sessionId: string,
+      readonly reason: 'inaccessible' | 'failed'
+    ) {
+      super(`agent session log is ${reason}: ${sessionId}`);
+    }
+  }
+  const source = {
+    Unavailable,
+    cached: vi.fn(),
+    fetched: vi.fn(),
+    append: vi.fn(),
+    forget: vi.fn(),
+    watch: vi.fn(),
+  };
+  source.watch.mockImplementation(() => ({
+    cached: source.cached(),
+    fetched: source.fetched(),
+    stop: () => {},
+  }));
+  return source;
+});
 const socket = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
   subscribeSocketSessionStarted: vi.fn((listener: () => void) => {
@@ -32,12 +52,33 @@ const socket = vi.hoisted(() => ({
   }),
 }));
 
+const updates = vi.hoisted(() => ({
+  listeners: new Set<(event: { agentSessionId: string }) => void>(),
+}));
+vi.mock('@queries/agent-session/session-metadata-sync', () => ({
+  subscribeAgentSessionUpdated: (
+    listener: (event: { agentSessionId: string }) => void
+  ) => {
+    updates.listeners.add(listener);
+    return () => updates.listeners.delete(listener);
+  },
+}));
+function invalidate(id = SESSION) {
+  for (const listener of updates.listeners) listener({ agentSessionId: id });
+}
+
 vi.mock('@core/agent-fold/client', () => fold);
 vi.mock('@service-agent-harness/client', () => ({
   agentHarnessServiceClient: harness,
 }));
 vi.mock('@queries/agent-session/queue-sync', () => ({
   subscribeSocketSessionStarted: socket.subscribeSocketSessionStarted,
+}));
+vi.mock('@queries/agent-session/log', () => ({
+  AgentSessionLogUnavailable: logSource.Unavailable,
+  watchAgentSessionLog: logSource.watch,
+  appendAgentSessionLogRows: logSource.append,
+  forgetAgentSessionLog: logSource.forget,
 }));
 
 import {
@@ -60,9 +101,11 @@ function row(n: number): AgentSessionLogEntryDto {
 
 const bot = { id: 'bot-id', name: 'Agent', handle: 'agent' };
 const session = { id: SESSION, name: 'A session', canEdit: true };
-type LogResult = Result<AgentSessionLogResponse, unknown>;
-const logOf = (entries: AgentSessionLogEntryDto[]): LogResult =>
-  ok({ bot, entries } as unknown as AgentSessionLogResponse);
+type LogSnapshot = { bot: typeof bot; rows: AgentSessionLogEntryDto[] };
+const logOf = (rows: AgentSessionLogEntryDto[]): LogSnapshot => ({
+  bot,
+  rows,
+});
 
 /** Every input the worker saw, flattened across pushes. */
 const inputs = (): FoldInput[] =>
@@ -74,16 +117,19 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A deferred the test resolves by hand. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   resetSessionTurns();
   socket.listeners.clear();
+  updates.listeners.clear();
   // Instances are shared and refcounted, so a test that fails before its
   // `release()` would hand the next one a session that is already loaded.
   for (
@@ -96,7 +142,10 @@ beforeEach(() => {
   fold.pushSession.mockResolvedValue([]);
   fold.readSession.mockResolvedValue({ messages: [], metadata: {} });
   harness.get.mockResolvedValue(ok(session));
-  harness.getLog.mockResolvedValue(ok({ bot, entries: [row(1)] }));
+  logSource.cached.mockResolvedValue(undefined);
+  logSource.fetched.mockResolvedValue(logOf([row(1)]));
+  logSource.append.mockResolvedValue(undefined);
+  logSource.forget.mockResolvedValue(undefined);
   harness.control.mockImplementation(
     async (_id: string, request: { actionId: string }) =>
       ok({ actionId: request.actionId, status: 'sent' })
@@ -105,8 +154,8 @@ beforeEach(() => {
 
 describe('AgentSession', () => {
   it('folds the snapshot first, then rows that arrived during the load', async () => {
-    const log = deferred<LogResult>();
-    harness.getLog.mockReturnValue(log.promise);
+    const log = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValue(log.promise);
 
     const live = AgentSession.acquire(SESSION);
     AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
@@ -124,8 +173,8 @@ describe('AgentSession', () => {
   });
 
   it('names a load abandoned by its last release, rather than failing it', async () => {
-    const log = deferred<LogResult>();
-    harness.getLog.mockReturnValue(log.promise);
+    const log = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValue(log.promise);
 
     const live = AgentSession.acquire(SESSION);
     const loading = live.load();
@@ -284,8 +333,8 @@ describe('AgentSession', () => {
   });
 
   it('buffers an action issued before the snapshot behind it', async () => {
-    const log = deferred<LogResult>();
-    harness.getLog.mockReturnValue(log.promise);
+    const log = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValue(log.promise);
     const live = AgentSession.acquire(SESSION);
 
     void live.issue({ type: 'prompt', prompt: 'early' });
@@ -306,7 +355,7 @@ describe('AgentSession', () => {
     const second = AgentSession.acquire(SESSION);
     expect(second).toBe(first);
     await first.load();
-    expect(harness.getLog).toHaveBeenCalledOnce();
+    expect(logSource.watch).toHaveBeenCalledOnce();
 
     first.release();
     expect(fold.closeSession).not.toHaveBeenCalled();
@@ -316,10 +365,214 @@ describe('AgentSession', () => {
     expect(AgentSession.get(SESSION)).toBeUndefined();
   });
 
+  it('reloads committed recovery state and preserves frames received during the read', async () => {
+    const live = AgentSession.acquire(SESSION);
+    await live.load();
+    const log = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValueOnce(log.promise);
+    invalidate('another-session');
+    expect(logSource.watch).toHaveBeenCalledTimes(1);
+    invalidate();
+    AgentSession.ingest({ agentSessionId: SESSION, entries: [row(3)] });
+    expect(inputs().filter((input) => input.kind === 'confirmed')).toEqual([]);
+    log.resolve(logOf([row(1), row(2)]));
+    await vi.waitFor(() =>
+      expect(inputs().at(-1)).toEqual({ kind: 'confirmed', row: row(3) })
+    );
+    expect(inputs().slice(-2)).toEqual([
+      { kind: 'snapshot', rows: [row(1), row(2)] },
+      { kind: 'confirmed', row: row(3) },
+    ]);
+    live.release();
+    expect(updates.listeners.size).toBe(0);
+  });
+
+  it('coalesces repeated invalidations and catches one received during initial loading', async () => {
+    const first = deferred<LogSnapshot>();
+    const refresh = deferred<LogSnapshot>();
+    logSource.fetched
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(refresh.promise)
+      .mockResolvedValueOnce(logOf([row(1), row(2), row(3)]));
+    const live = AgentSession.acquire(SESSION);
+    invalidate();
+    first.resolve(logOf([row(1)]));
+    await live.load();
+    expect(logSource.watch).toHaveBeenCalledTimes(2);
+    invalidate();
+    invalidate();
+    expect(logSource.watch).toHaveBeenCalledTimes(2);
+    refresh.resolve(logOf([row(1), row(2)]));
+    await vi.waitFor(() =>
+      expect(inputs().at(-1)).toEqual({
+        kind: 'snapshot',
+        rows: [row(1), row(2), row(3)],
+      })
+    );
+    expect(logSource.watch).toHaveBeenCalledTimes(3);
+    live.release();
+  });
+
+  it('releases buffered live frames after a failed refresh', async () => {
+    const live = AgentSession.acquire(SESSION);
+    await live.load();
+    const refresh = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValueOnce(refresh.promise);
+    invalidate();
+    AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
+    refresh.reject(new logSource.Unavailable(SESSION, 'failed'));
+    await vi.waitFor(() =>
+      expect(inputs().at(-1)).toEqual({ kind: 'confirmed', row: row(2) })
+    );
+    AgentSession.ingest({ agentSessionId: SESSION, entries: [row(3)] });
+    await live.snapshot();
+    expect(inputs().at(-1)).toEqual({ kind: 'confirmed', row: row(3) });
+    live.release();
+  });
+
+  it.each(['result', 'transport'])(
+    'retries a failed refresh without blocking live frames (%s)',
+    async (failure) => {
+      vi.useFakeTimers();
+      const live = AgentSession.acquire(SESSION);
+      try {
+        await live.load();
+        if (failure === 'result')
+          logSource.fetched.mockRejectedValueOnce(
+            new logSource.Unavailable(SESSION, 'failed')
+          );
+        else logSource.fetched.mockRejectedValueOnce(new Error('network down'));
+        logSource.fetched.mockResolvedValueOnce(
+          logOf([row(1), row(2), row(3)])
+        );
+        invalidate();
+        await vi.advanceTimersByTimeAsync(0);
+        AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
+        await live.snapshot();
+        expect(inputs().at(-1)).toEqual({ kind: 'confirmed', row: row(2) });
+        expect(logSource.watch).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(inputs().at(-1)).toEqual({
+          kind: 'snapshot',
+          rows: [row(1), row(2), row(3)],
+        });
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(logSource.watch).toHaveBeenCalledTimes(3);
+      } finally {
+        live.release();
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('bounds failed refresh retries and gives a new invalidation a fresh budget', async () => {
+    vi.useFakeTimers();
+    const live = AgentSession.acquire(SESSION);
+    try {
+      await live.load();
+      logSource.fetched.mockRejectedValue(
+        new logSource.Unavailable(SESSION, 'failed')
+      );
+      invalidate();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(logSource.watch).toHaveBeenCalledTimes(5);
+      invalidate();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(logSource.watch).toHaveBeenCalledTimes(9);
+    } finally {
+      live.release();
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a scheduled refresh retry when the last view releases it', async () => {
+    vi.useFakeTimers();
+    const live = AgentSession.acquire(SESSION);
+    try {
+      await live.load();
+      logSource.fetched.mockRejectedValue(
+        new logSource.Unavailable(SESSION, 'failed')
+      );
+      invalidate();
+      await vi.advanceTimersByTimeAsync(0);
+      live.release();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(logSource.watch).toHaveBeenCalledTimes(2);
+    } finally {
+      if (AgentSession.get(SESSION)) live.release();
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not retry an access-denied refresh', async () => {
+    vi.useFakeTimers();
+    const live = AgentSession.acquire(SESSION);
+    try {
+      await live.load();
+      logSource.fetched.mockRejectedValue(
+        new logSource.Unavailable(SESSION, 'inaccessible')
+      );
+      invalidate();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(logSource.watch).toHaveBeenCalledTimes(2);
+    } finally {
+      live.release();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([false, true])(
+    'retains optimistic actions during refresh (replacement ID=%s)',
+    async (replacement) => {
+      if (replacement)
+        harness.control.mockResolvedValue(
+          ok({ actionId: 'server-id', status: 'sent' })
+        );
+      const live = AgentSession.acquire(SESSION);
+      await live.load();
+      const refresh = deferred<LogSnapshot>();
+      logSource.fetched.mockReturnValueOnce(refresh.promise);
+      invalidate();
+      await live.issue({ type: 'prompt', prompt: 'Continue' });
+      expect(inputs().filter((input) => input.kind === 'speculated')).toEqual(
+        []
+      );
+      refresh.resolve(logOf([row(1)]));
+      await vi.waitFor(() =>
+        expect(inputs().at(-1)).toMatchObject({
+          kind: 'speculated',
+          action: { type: 'prompt', prompt: 'Continue' },
+        })
+      );
+      if (replacement) {
+        const issued = harness.control.mock.calls.at(-1)![1].actionId;
+        expect(inputs().slice(-2)).toMatchObject([
+          { kind: 'retracted', actionId: issued },
+          { kind: 'speculated', actionId: 'server-id' },
+        ]);
+      }
+      live.release();
+    }
+  );
+
+  it('does not recreate a released session when a refresh completes', async () => {
+    const live = AgentSession.acquire(SESSION);
+    await live.load();
+    const refresh = deferred<LogSnapshot>();
+    logSource.fetched.mockReturnValueOnce(refresh.promise);
+    invalidate();
+    live.release();
+    const before = inputs();
+    refresh.resolve(logOf([row(1), row(2)]));
+    await settle();
+    expect(inputs()).toEqual(before);
+    expect(updates.listeners.size).toBe(0);
+  });
+
   it('re-snapshots when the socket reopens', async () => {
     const live = AgentSession.acquire(SESSION);
     await live.load();
-    harness.getLog.mockResolvedValue(ok({ bot, entries: [row(1), row(2)] }));
+    logSource.fetched.mockResolvedValue(logOf([row(1), row(2)]));
 
     for (const listener of socket.listeners) listener();
     await settle();
@@ -487,21 +740,120 @@ describe('AgentSession', () => {
     const live = AgentSession.acquire(SESSION);
     await expect(live.load()).rejects.toBeInstanceOf(AgentSessionAccessDenied);
 
-    harness.getLog.mockResolvedValueOnce(err([{ code: 'FORBIDDEN' }]));
+    logSource.fetched.mockRejectedValueOnce(
+      new logSource.Unavailable(SESSION, 'inaccessible')
+    );
     await expect(live.load()).rejects.toBeInstanceOf(AgentSessionAccessDenied);
     live.release();
   });
 
+  describe('cached log', () => {
+    it('folds the cached log first and the fetched one over it', async () => {
+      logSource.cached.mockResolvedValue(logOf([row(1), row(2)]));
+      const log = deferred<LogSnapshot>();
+      logSource.fetched.mockReturnValue(log.promise);
+
+      const live = AgentSession.acquire(SESSION);
+      expect(await live.warm()).toEqual({ session, bot });
+      expect(inputs()).toEqual([{ kind: 'snapshot', rows: [row(1), row(2)] }]);
+
+      log.resolve(logOf([row(1), row(2), row(3)]));
+      expect(await live.load()).toEqual({ session, bot });
+      expect(inputs().at(-1)).toEqual({
+        kind: 'snapshot',
+        rows: [row(1), row(2), row(3)],
+      });
+      live.release();
+    });
+
+    it('holds live rows behind the fetched log while the cached one shows', async () => {
+      logSource.cached.mockResolvedValue(logOf([row(1)]));
+      const log = deferred<LogSnapshot>();
+      logSource.fetched.mockReturnValue(log.promise);
+
+      const live = AgentSession.acquire(SESSION);
+      await live.warm();
+      // Delivered while the fetch is on the wire. The cached transcript is
+      // on screen but frozen: folding this row onto it now could lose it to
+      // the fetched snapshot's replace, so it waits behind that snapshot.
+      AgentSession.ingest({ agentSessionId: SESSION, entries: [row(3)] });
+      await settle();
+      expect(inputs()).toEqual([{ kind: 'snapshot', rows: [row(1)] }]);
+
+      log.resolve(logOf([row(1), row(2)]));
+      await live.load();
+      expect(inputs().slice(1)).toEqual([
+        { kind: 'snapshot', rows: [row(1), row(2)] },
+        { kind: 'confirmed', row: row(3) },
+      ]);
+      live.release();
+    });
+
+    it('never lets a cached log replace a fetched one that landed first', async () => {
+      const read = deferred<unknown>();
+      logSource.cached.mockReturnValue(read.promise);
+
+      const live = AgentSession.acquire(SESSION);
+      await live.load();
+      read.resolve(logOf([row(9)]));
+
+      expect(await live.warm()).toBeUndefined();
+      expect(inputs()).toEqual([{ kind: 'snapshot', rows: [row(1)] }]);
+      live.release();
+    });
+
+    it('appends every row delivered after the fetched log to the cached copy, once', async () => {
+      const live = AgentSession.acquire(SESSION);
+      await live.load();
+      AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
+      AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
+      await settle();
+      // Debounced: nothing written yet.
+      expect(logSource.append).not.toHaveBeenCalled();
+
+      live.release();
+      // The exchange wrote the fetched log itself; only the new row goes.
+      expect(logSource.append).toHaveBeenCalledWith(SESSION, [row(2)]);
+    });
+
+    it('appends rows that waited behind the fetched log too', async () => {
+      const log = deferred<LogSnapshot>();
+      logSource.fetched.mockReturnValue(log.promise);
+      const live = AgentSession.acquire(SESSION);
+      AgentSession.ingest({ agentSessionId: SESSION, entries: [row(2)] });
+      log.resolve(logOf([row(1)]));
+      await live.load();
+      live.release();
+      // The buffered row is folded after the snapshot, and appended too.
+      expect(logSource.append).toHaveBeenCalledWith(SESSION, [row(2)]);
+    });
+
+    it('forgets the cached log when the viewer is refused', async () => {
+      logSource.fetched.mockRejectedValueOnce(
+        new logSource.Unavailable(SESSION, 'inaccessible')
+      );
+      const live = AgentSession.acquire(SESSION);
+      await expect(live.load()).rejects.toBeInstanceOf(
+        AgentSessionAccessDenied
+      );
+      expect(logSource.forget).toHaveBeenCalledWith(SESSION);
+      expect(logSource.append).not.toHaveBeenCalled();
+      live.release();
+    });
+  });
+
   it('re-runs a failed load on the next call only', async () => {
-    harness.getLog.mockResolvedValueOnce(err([{ code: 'NOT_FOUND' }]));
+    logSource.fetched.mockRejectedValueOnce(
+      new logSource.Unavailable(SESSION, 'failed')
+    );
     const live = AgentSession.acquire(SESSION);
     await expect(live.load()).rejects.toThrow('log could not be fetched');
 
     const record = await live.load();
     expect(record.bot).toEqual(bot);
-    expect(harness.getLog).toHaveBeenCalledTimes(2);
+    expect(logSource.watch).toHaveBeenCalledTimes(2);
     await live.load();
-    expect(harness.getLog).toHaveBeenCalledTimes(2);
+    expect(logSource.watch).toHaveBeenCalledTimes(2);
     live.release();
   });
 });

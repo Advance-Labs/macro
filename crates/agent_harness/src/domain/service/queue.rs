@@ -8,7 +8,7 @@ use agent_session::domain::events::{
     SessionSettledMetadata, SessionStoppedMetadata, TurnEndedMetadata, TurnStartedMetadata,
     WaitingForInputMetadata,
 };
-use agent_session::domain::model::StoredQueuedAction;
+use agent_session::domain::model::{StoredQueuedAction, TurnPrompter};
 
 use super::*;
 
@@ -317,7 +317,8 @@ where
             }
             HarnessCommand::Deliver(DeliverAction { actor, .. })
             | HarnessCommand::EditQueued { actor, .. }
-            | HarnessCommand::RemoveQueued { actor, .. } => {
+            | HarnessCommand::RemoveQueued { actor, .. }
+            | HarnessCommand::SteerQueued { actor, .. } => {
                 let session = self.sessions.get_session(session_id).await?;
                 if session.is_archived {
                     return Err(AgentSessionError::Archived(session_id).into());
@@ -382,6 +383,9 @@ where
                 self.persist_or_rollback(session_id).await?;
                 self.publish_queue(session_id).await;
                 Ok(CommandOutcome::Completed)
+            }
+            HarnessCommand::SteerQueued { action_id, actor } => {
+                self.steer_queued(session_id, action_id, actor).await
             }
             HarnessCommand::Turn(TurnSignal::TurnEnded {
                 stop,
@@ -707,6 +711,46 @@ where
         })
     }
 
+    /// Move a queued action to the front and cancel the running turn so it
+    /// flushes next. The same idea as a channel follow-up's steer, for an
+    /// entry that is already waiting: the session page queues without
+    /// interrupting, and this is the explicit interrupt.
+    ///
+    /// A failed cancel is best-effort. The entry is already at the front, so
+    /// it still drains when the current turn ends on its own.
+    async fn steer_queued(
+        &self,
+        session_id: AgentSessionId,
+        action_id: AgentActionId,
+        actor: Option<MacroUserIdStr<'static>>,
+    ) -> Result<CommandOutcome> {
+        self.revalidate_queue(session_id).await?;
+        queue_result(self.queues.move_to_front(session_id, action_id), session_id)?;
+        self.persist_or_rollback(session_id).await?;
+        if self.busy.turn(session_id).is_some()
+            && let Err(error) = self
+                .deliver(
+                    session_id,
+                    DeliverAction {
+                        id: AgentActionId::mint(),
+                        action: AgentAction::Stop,
+                        actor,
+                        announce: None,
+                    },
+                )
+                .await
+        {
+            tracing::warn!(
+                error = ?error,
+                %session_id,
+                %action_id,
+                "failed to stop the running turn for a steered queue entry"
+            );
+        }
+        self.publish_queue(session_id).await;
+        Ok(CommandOutcome::Completed)
+    }
+
     /// Cancel a running turn and post the chip on the channel follow-up that
     /// interrupted it. The follow-up is already at the front of the queue,
     /// so it flushes as the next prompt once the cancelled turn ends.
@@ -960,6 +1004,25 @@ where
                     }
                 }
             }
+        }
+
+        // Recorded before delivery, since the runtime may call a tool the
+        // moment the prompt lands: the egress proxy judges every call by who
+        // prompted the turn it belongs to, and it may be serving the call on
+        // another replica.
+        if let Err(error) = self
+            .sessions
+            .set_turn_prompter(
+                session_id,
+                &TurnPrompter {
+                    action_id: entry.action_id,
+                    user: entry.actor.clone(),
+                },
+            )
+            .await
+        {
+            self.requeue_claimed(session_id, entry).await?;
+            return Err(error.into());
         }
 
         let command = DeliverAction {

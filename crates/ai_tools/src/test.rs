@@ -22,11 +22,6 @@ fn subagent_toolset_passes_schema_validation() {
         "ListDatabases",
         "DescribeDatabase",
         "QueryDatabase",
-        "CreateDatabase",
-        "CreateTable",
-        "RenameTable",
-        "AddColumn",
-        "AddColumnOptions",
         "SaveDatabaseView",
     ] {
         assert!(
@@ -48,18 +43,6 @@ fn database_only_toolset_exposes_exactly_its_database_capabilities() {
         "ListDatabases",
         "DescribeDatabase",
         "QueryDatabase",
-        "CreateDatabase",
-        "CreateTable",
-        "RenameDatabase",
-        "RenameTable",
-        "ReorderTables",
-        "DeleteTable",
-        "AddColumn",
-        "AddColumnOptions",
-        "RenameColumn",
-        "ChangeColumnType",
-        "DeleteColumn",
-        "ReorderColumns",
         "SaveDatabaseView",
         "DeleteDatabaseView",
         "SaveDatabaseQuery",
@@ -90,6 +73,26 @@ fn every_host_toolset_passes_schema_validation() {
 }
 
 #[test]
+fn coding_dispatch_is_available_to_every_host_but_not_internal_subagents() {
+    for host in [
+        AiHost::Chat,
+        AiHost::AgentSession,
+        AiHost::ChannelBot,
+        AiHost::Mcp,
+    ] {
+        let tools = tools_for(host);
+        for name in ["ListCodingAgents", "DispatchCodingAgent"] {
+            assert!(tools.toolset.tools.contains_key(name), "{host:?}: {name}");
+            assert!(tools.prompt.to_string().contains(name), "{host:?}: {name}");
+        }
+    }
+    let subagent = subagent_toolset();
+    for name in ["ListCodingAgents", "DispatchCodingAgent"] {
+        assert!(!subagent.tools.contains_key(name));
+    }
+}
+
+#[test]
 fn project_workflows_are_available_in_every_host_alongside_folder_and_property_tools() {
     let names = [
         "ListInitiatives",
@@ -98,8 +101,6 @@ fn project_workflows_are_available_in_every_host_alongside_folder_and_property_t
         "UpdateInitiative",
         "DeleteInitiative",
         "UpdateInitiativeSharing",
-        "SetTaskInitiative",
-        "ReadTaskInitiatives",
         "ReadInitiativeActivity",
         "SetEntityProperty",
         "CommentOnDocument",
@@ -166,6 +167,15 @@ fn the_agent_session_host_keeps_chats_user_tools_with_the_review_prompt() {
             .contains_key("CreateCalendarEvent")
     );
     assert!(session.toolset.user_tools.contains_key("SendEmail"));
+    // The confirmed twins execute in the loop, beside the deferring tools,
+    // for the prompts a session reads out of a thread.
+    assert!(session.toolset.tools.contains_key("SendConfirmedEmail"));
+    assert!(
+        session
+            .toolset
+            .tools
+            .contains_key("CreateConfirmedCalendarEvent")
+    );
     let prompt = session.prompt.to_string();
     assert!(prompt.contains("review card"));
     assert!(!prompt.contains("PendingUserExecution"));
@@ -207,6 +217,14 @@ fn composerless_hosts_execute_calendar_create_directly_and_omit_send_email() {
             !tools.iter().any(|tool| tool["name"] == "SendEmail"),
             "{host:?} toolset must not expose SendEmail"
         );
+        // The confirmed twins are for the in-process agent's thread turns;
+        // these hosts already create directly and keep their own policy.
+        for name in ["SendConfirmedEmail", "CreateConfirmedCalendarEvent"] {
+            assert!(
+                !tools.iter().any(|tool| tool["name"] == name),
+                "{host:?} toolset must not expose {name}"
+            );
+        }
     }
 }
 
@@ -222,7 +240,33 @@ fn search_toolset_passes_schema_validation() {
 
 #[test]
 fn frontend_schemas_build() {
-    let _ = all_tool_frontend_schemas();
+    let json = all_tool_frontend_schemas().to_json_pretty().unwrap();
+    let schemas: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let mut names = std::collections::HashSet::new();
+    for tool in schemas["tools"].as_array().unwrap() {
+        let name = tool["name"].as_str().unwrap();
+        assert!(names.insert(name), "duplicate frontend tool: {name}");
+    }
+    assert!(names.contains("QueryDatabase"));
+    for name in [
+        "CreateDatabase",
+        "CreateTable",
+        "RenameDatabase",
+        "RenameTable",
+        "ReorderTables",
+        "DeleteTable",
+        "AddColumn",
+        "AddColumnOptions",
+        "RenameColumn",
+        "ChangeColumnType",
+        "DeleteColumn",
+        "ReorderColumns",
+    ] {
+        assert!(
+            !names.contains(name),
+            "removed tool {name} must not be generated"
+        );
+    }
 }
 
 #[test]

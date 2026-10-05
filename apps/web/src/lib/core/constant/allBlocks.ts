@@ -24,7 +24,7 @@ export {
 } from '../../constants/file-metadata';
 
 const discoveredBlockDefinitions = Object.values<AnyBlockDefinition>(
-  import.meta.glob('../../../features/block-*/definition.ts', {
+  import.meta.glob('../../../features/*/definition.ts', {
     eager: true,
     import: 'definition',
   })

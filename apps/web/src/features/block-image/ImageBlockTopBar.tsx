@@ -1,6 +1,11 @@
 import { DocumentTitleHoverCard } from '@app/components/entity-detail/DocumentTitleHoverCard';
 import { FileEntityDetail } from '@app/components/entity-detail/FileEntityDetail';
 import type { FileDetailContext } from '@app/components/entity-detail/file-detail-context';
+import {
+  ChatWithAgentButton,
+  ChatWithAgentIcon,
+  openChatWithAgent,
+} from '@app/features/chat/ChatWithAgentButton';
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { SidePanel } from '@components/app/side-panel';
 import {
@@ -50,7 +55,18 @@ export function ImageBlockTopBar(props: {
     documentId: props.documentId,
     blockAlias: 'image',
   }));
+  const chatEntity = () => ({
+    type: 'document' as const,
+    id: props.documentId,
+    name: name(),
+    fileType: 'image',
+  });
   const tools = [
+    {
+      label: 'Ask Macro',
+      icon: ChatWithAgentIcon,
+      action: () => openChatWithAgent(chatEntity()),
+    },
     {
       group: 'sharing' as const,
       label: 'Share',
@@ -109,6 +125,7 @@ export function ImageBlockTopBar(props: {
         </DocumentTitleHoverCard>
       </SplitHeaderLeft>
       <SplitHeaderRight>
+        <ChatWithAgentButton entity={chatEntity()} label="Ask Macro" />
         <Show when={!canEdit()}>
           <SplitHeaderBadge
             text={canComment() ? 'comment only' : 'viewer'}

@@ -11,6 +11,10 @@ export const BlockRegistry = [
   'image',
   'canvas',
   'spreadsheet',
+  // PowerPoint presentations, edited in the browser.
+  'pptx',
+  // Figma files, viewed in the browser.
+  'fig',
   'channel',
   'project',
   'unknown',
@@ -18,7 +22,7 @@ export const BlockRegistry = [
   'email',
   'contact',
   'company',
-  'automation',
+  'routine',
   'pr',
   'agent',
   // A task project (`project` is a folder).
@@ -33,8 +37,8 @@ export type BlockAlias = (typeof BlockAliasRegistry)[number];
 export type FileTypeString = string & {};
 export type MimeType = string & {};
 
-/** Compatibility names that resolve through another renderer. */
-export const VirtualBlockRegistry = ['write'] as const;
+/** Compatibility-only names without a concrete renderer. */
+export const VirtualBlockRegistry = [] as const;
 export type ConcreteBlockName = Exclude<
   BlockName,
   (typeof VirtualBlockRegistry)[number]

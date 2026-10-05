@@ -18,9 +18,9 @@ export const blockMetadata = {
     description: 'View an agent session',
     accepted: {},
   },
-  automation: {
-    description: 'view and edit a single automation',
-    defaultFilename: 'Untitled automation',
+  routine: {
+    description: 'view and edit a single routine',
+    defaultFilename: 'Untitled routine',
     accepted: {},
   },
   calendar: {
@@ -77,6 +77,10 @@ export const blockMetadata = {
     defaultFilename: '[No subject]',
     accepted: {},
   },
+  fig: {
+    description: 'view Figma design files',
+    accepted: { fig: 'application/x-figma' },
+  },
   image: {
     description: 'views images',
     accepted: {
@@ -120,6 +124,12 @@ export const blockMetadata = {
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     },
   },
+  pptx: {
+    description: 'view and edit PowerPoint presentations',
+    accepted: {
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    },
+  },
   pr: {
     description: 'View a GitHub pull request',
     accepted: {},
@@ -142,5 +152,11 @@ export const blockMetadata = {
   video: {
     description: 'block for video file types',
     accepted: VIDEO_MIMES,
+  },
+  write: {
+    description: 'Edit Word documents together',
+    accepted: {
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    },
   },
 } satisfies Record<ConcreteBlockName, BlockMetadata>;

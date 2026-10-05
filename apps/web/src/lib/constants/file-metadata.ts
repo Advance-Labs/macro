@@ -2,6 +2,11 @@ import type { SubType } from '@entity';
 import type { ItemType } from '@service-storage/client';
 import type { BasicDocumentSubTypeProperty } from '@service-storage/generated/schemas';
 import type { BasicDocumentFileType } from '@service-storage/generated/schemas/basicDocumentFileType';
+import {
+  ENABLE_DOCX_TO_PDF,
+  enableDocxEditor,
+  isFeatureEnabled,
+} from '../core/constant/featureFlags';
 import { DefaultFilename } from '../core/constant/filename';
 import { type BlockMetadata, blockMetadata } from './block-metadata';
 import {
@@ -104,11 +109,13 @@ export function fileTypeToBlockName(
   if (blockOrFiletype === 'channel_message') return 'channel';
   if (blockOrFiletype === 'agent_session') return 'agent';
   if (blockOrFiletype === 'calendar_event') return 'calendar';
+  if (blockOrFiletype === 'automation') return 'routine';
   if (blockOrFiletype === 'crm_company') return 'company';
   if (blockOrFiletype === 'crm_contact') return 'contact';
 
   if (blockOrFiletype === 'docx' || blockOrFiletype === 'write') {
-    return icon ? 'write' : 'pdf';
+    if (isFeatureEnabled(enableDocxEditor)) return 'write';
+    if (ENABLE_DOCX_TO_PDF) return icon ? 'write' : 'pdf';
   }
   if (isBlockAlias(blockOrFiletype)) return blockOrFiletype;
   if (blockNames.has(blockOrFiletype)) return blockOrFiletype as BlockName;
@@ -182,7 +189,11 @@ export function verifyBlockName(
   name: string | undefined
 ): BlockName | BlockAlias {
   if (!name) return 'unknown';
-  if (name === 'write') return 'pdf';
+  if (name === 'automation') return 'routine';
+  if (name === 'write') {
+    if (isFeatureEnabled(enableDocxEditor)) return 'write';
+    if (ENABLE_DOCX_TO_PDF) return 'pdf';
+  }
   if (isBlockAlias(name)) return name;
   if (name in blockMetadata) return name as ConcreteBlockName;
   return 'unknown';

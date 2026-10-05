@@ -11,6 +11,7 @@ mod test;
 
 mod pull_request;
 mod queue;
+mod recovery;
 mod sharing;
 mod turn_state;
 mod working_branch;
@@ -21,7 +22,7 @@ use crate::domain::model::{
     ClaimOutcome, CreateAgentSessionParams, ExternalSession, LeaseView, ManagerFence, Message,
     ReplicaAddress, ReplicaId, SandboxSize, SessionBot, SessionClaim, SessionManager,
     SessionPreviewCandidate, SessionStatus, StoredAgentSessionLog, StoredQueuedAction,
-    ThreadSession, cursor_run_checkpoint, session_owner_user,
+    ThreadSession, TurnPrompter, cursor_run_checkpoint, session_owner_user,
 };
 use crate::domain::ports::{
     AgentSessionLogRepo, AgentSessionRepo, ExternalSessionRepo, REPLICA_STALE_AFTER,
@@ -792,6 +793,41 @@ impl<B: BotFacts + 'static> AgentSessionRepo for PgAgentSessionRepo<B> {
         Ok(())
     }
 
+    async fn set_turn_prompter(&self, id: AgentSessionId, prompter: &TurnPrompter) -> Result<()> {
+        sqlx::query!(
+            "UPDATE agent_session SET turn_action_id = $2, turn_prompter = $3 WHERE id = $1",
+            id.as_uuid(),
+            prompter.action_id.as_uuid(),
+            prompter.user.as_ref().map(|user| user.as_ref()),
+        )
+        .execute(&self.pool)
+        .await
+        .context("failed to record the turn prompter")?;
+        Ok(())
+    }
+
+    async fn turn_prompter(&self, id: AgentSessionId) -> Result<Option<TurnPrompter>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT turn_action_id, turn_prompter AS "turn_prompter: MacroUserIdStr<'static>"
+            FROM agent_session
+            WHERE id = $1
+            "#,
+            id.as_uuid(),
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to read the turn prompter")?;
+        Ok(row.and_then(|row| {
+            row.turn_action_id.map(|action_id| TurnPrompter {
+                action_id: agent_runtime_protocol::domain::action::AgentActionId::from_uuid(
+                    action_id,
+                ),
+                user: row.turn_prompter,
+            })
+        }))
+    }
+
     async fn set_repo_url(&self, id: AgentSessionId, repo_url: Option<String>) -> Result<()> {
         let result = sqlx::query!(
             r#"
@@ -1251,17 +1287,24 @@ impl<B: BotFacts + 'static> AgentSessionLogRepo for PgAgentSessionRepo<B> {
             return Err(AgentSessionError::FencedOut(session));
         }
 
-        // One transaction means one `now()`, so the batch is spread over
-        // consecutive microseconds in append order: readers order by
-        // `(created_at, id)`, and the ids are v7 without a monotonic
-        // counter, so same-instant rows would otherwise interleave.
+        // Start after the durable tail while holding the session lock, then
+        // spread the batch over consecutive microseconds. Transaction start
+        // time can predate a lock wait or a previous batch's synthetic tail;
+        // readers must see append order rather than UUID tie-breaking.
         let stamped = sqlx::query!(
             r#"
             INSERT INTO agent_session_log (id, agent_session_id, user_id, direction, content, created_at)
             SELECT frame.id, $1, frame.user_id, frame.direction, frame.content,
-                   now() + (frame.ordinality - 1) * interval '1 microsecond'
+                   stamp.created_at + (frame.ordinality - 1) * interval '1 microsecond'
             FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::jsonb[])
                 WITH ORDINALITY AS frame(id, user_id, direction, content, ordinality)
+            CROSS JOIN (
+                SELECT GREATEST(statement_timestamp(), (
+                    SELECT created_at + interval '1 microsecond'
+                    FROM agent_session_log WHERE agent_session_id = $1
+                    ORDER BY created_at DESC, id DESC LIMIT 1
+                )) AS created_at
+            ) AS stamp
             RETURNING id, created_at
             "#,
             session.as_uuid(),
@@ -1357,8 +1400,12 @@ impl<B: BotFacts + 'static> AgentSessionLogRepo for PgAgentSessionRepo<B> {
         let id = macro_uuid::generate_uuid_v7();
         let created_at = sqlx::query_scalar!(
             r#"
-            INSERT INTO agent_session_log (id, agent_session_id, user_id, direction, content)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO agent_session_log (id, agent_session_id, user_id, direction, content, created_at)
+            VALUES ($1, $2, $3, $4, $5, GREATEST(statement_timestamp(), (
+                SELECT created_at + interval '1 microsecond'
+                FROM agent_session_log WHERE agent_session_id = $2
+                ORDER BY created_at DESC, id DESC LIMIT 1
+            )))
             RETURNING created_at
             "#,
             id,
@@ -1543,12 +1590,14 @@ impl<B: BotFacts + 'static> SessionOwnership for PgAgentSessionRepo<B> {
                 INSERT INTO harness_replica (id, last_heartbeat_at)
                 VALUES ($2, now())
                 ON CONFLICT (id) DO UPDATE SET last_heartbeat_at = now()
+                RETURNING id
             )
             UPDATE agent_session
             SET manager_replica_id = $2,
                 manager_fence = manager_fence + 1,
                 modified_at = now()
-            WHERE id = $1
+            FROM replica
+            WHERE agent_session.id = $1 AND replica.id = $2
               AND (
                 manager_replica_id IS NULL
                 OR manager_replica_id = $2

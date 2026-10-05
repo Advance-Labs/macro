@@ -30,7 +30,7 @@ import {
   scopeChannelNotificationsForEntity,
 } from '@app/features/soup/entity-notifications';
 import { fileTypeToBlockName } from '@app/lib/constants/file-metadata';
-import { replaceSplitSearchParams } from '@app/lib/split-router/search';
+import { replacePaneSearchParams } from '@app/lib/split-router';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
 import type {
@@ -325,8 +325,8 @@ export const openEntityInNewTab = ({
         getEntitySplitContent(entity).id,
         target
       );
-      replaceSplitSearchParams(entityUrl.searchParams, [
-        { location: { search: { [namespace]: params } } },
+      replacePaneSearchParams(entityUrl.searchParams, [
+        { [namespace]: params },
       ]);
     }
   }

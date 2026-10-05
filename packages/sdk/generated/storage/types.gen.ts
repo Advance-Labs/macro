@@ -772,6 +772,10 @@ export type ApiEntityFilterAst = {
      */
     fef?: unknown;
     /**
+     * the filters that should be applied to GitHub pull request records, on top of `fef`
+     */
+    ghprf?: unknown;
+    /**
      * the filters that should be applied to the project entity
      */
     pf?: unknown;
@@ -913,45 +917,6 @@ export type ApprovePairingRequest = {
 };
 
 /**
- * Status written onto one assign result.
- */
-export type AssignTaskStatus = 'assigned' | 'moved' | 'notATask' | 'notFound' | 'skippedNoPermission';
-
-/**
- * Assign-tasks HTTP body.
- */
-export type AssignTasksRequest = {
-    /**
-     * Task ids to assign, in request order.
-     */
-    taskIds: Array<string>;
-};
-
-/**
- * Assign-tasks HTTP response.
- */
-export type AssignTasksResponse = {
-    /**
-     * Outcomes in request order after dedupe.
-     */
-    results: Array<AssignTasksResult>;
-};
-
-/**
- * Per-task outcome of an assign call.
- */
-export type AssignTasksResult = {
-    /**
-     * What happened to the task.
-     */
-    status: AssignTaskStatus;
-    /**
-     * Task id this outcome describes.
-     */
-    taskId: string;
-};
-
-/**
  * Attachment changes interpreted by the common command boundary.
  */
 export type AttachmentChange = {
@@ -1011,6 +976,11 @@ export type Awareness = {
      * Whether the viewer left the database; other viewers drop their state.
      */
     left?: boolean;
+    /**
+     * This mounted client's random peer id, distinct from its authenticated user.
+     * Older clients omit it and remain visible as one peer per user.
+     */
+    peerId?: string;
     /**
      * The row of the focused cell, if any.
      */
@@ -2155,6 +2125,100 @@ export type CellWrite = {
      */
     value: CellValue;
 };
+
+/**
+ * One changed file.
+ *
+ * Clients deserialize this, so both derives are used.
+ */
+export type ChangedFileDto = {
+    /**
+     * Lines added.
+     */
+    additions: number;
+    /**
+     * The diff carries no text for this file.
+     */
+    binary: boolean;
+    /**
+     * Lines removed.
+     */
+    deletions: number;
+    /**
+     * What happened to the file.
+     */
+    kind: FileChangeKindDto;
+    /**
+     * The file's hunks were left out of the patch to fit the size budget.
+     */
+    patchOmitted: boolean;
+    /**
+     * The file's path after the change, or before it for a deletion.
+     */
+    path: string;
+    /**
+     * Where a renamed file came from.
+     */
+    previousPath?: string | null;
+};
+
+/**
+ * One changeset: the files a patch touches and what happened to each.
+ *
+ * Clients deserialize this, so both derives are used.
+ */
+export type ChangesetDto = {
+    /**
+     * Lines added across all files.
+     */
+    additions: number;
+    /**
+     * The side the work started from.
+     */
+    base: GitRefDto;
+    /**
+     * When the diff was taken.
+     */
+    capturedAt: string;
+    /**
+     * Lines removed across all files.
+     */
+    deletions: number;
+    /**
+     * Every changed file, in patch order.
+     */
+    files: Array<ChangedFileDto>;
+    /**
+     * The side carrying the work.
+     */
+    head: GitRefDto;
+    /**
+     * The changeset's id; a different id means different changes.
+     */
+    id: string;
+    /**
+     * Size of the patch the matching patch route serves; zero when nothing
+     * changed.
+     */
+    patchBytes: number;
+    /**
+     * `https://github.com/owner/name`, when known.
+     */
+    repository?: string | null;
+    /**
+     * Where the diff was read from.
+     */
+    source: ChangesetSourceDto;
+    /**
+     * Some files' hunks were left out of the patch.
+     */
+    truncated: boolean;
+};
+
+/**
+ * The source of a changeset's diff, on the wire.
+ */
+export type ChangesetSourceDto = 'github_pull_request';
 
 /**
  * Channel metadata in soup payloads.
@@ -3767,8 +3831,8 @@ export type CreateImport = {
  */
 export type CreateInitiativeRequest = {
     /**
-     * Initial markdown for the description document. Not stored on the initiative; later
-     * edits happen in the document editor.
+     * Initial markdown for the description surface. Not stored on the initiative; later
+     * edits happen in the collaborative description editor.
      */
     description?: string | null;
     /**
@@ -4663,11 +4727,6 @@ export type DeleteUnthreadedPdfAnchorRequest = {
 };
 
 /**
- * Id of the markdown document that holds an initiative's description.
- */
-export type DescriptionDocumentId = string;
-
-/**
  * Returns basic information of a document used for some db queries
  */
 export type DocumentBasic = {
@@ -4820,6 +4879,7 @@ export type DocumentDeletedMetadata = {
      * Project the document belonged to, when any.
      */
     project_id?: string | null;
+    sub_type?: null | DocumentSubType;
 };
 
 /**
@@ -5993,6 +6053,11 @@ export type FavoritesList = {
     favorites: Array<Favorite>;
 };
 
+/**
+ * What happened to a file, on the wire.
+ */
+export type FileChangeKindDto = 'added' | 'modified' | 'deleted' | 'renamed';
+
 export type FileSystemNodeWithIds = {
     document_id: string;
     item: FolderItem;
@@ -6021,7 +6086,7 @@ export type FileSystemNodeWithIds = {
  * - ContentType::mime_type() - Gets MIME type for ContentType
  *
  */
-export type FileType = 'docx' | 'pdf' | 'md' | 'spreadsheet' | 'canvas' | 'coffee' | 'cson' | 'iced' | 'c' | 'i' | 'cpp' | 'cppm' | 'cc' | 'ccm' | 'cxx' | 'cxxm' | 'cplusplus' | 'cplusplusm' | 'hpp' | 'hh' | 'hxx' | 'hplusplus' | 'h' | 'ii' | 'ino' | 'inl' | 'ipp' | 'ixx' | 'tpp' | 'txx' | 'hppin' | 'hin' | 'cu' | 'cuh' | 'cs' | 'csx' | 'cake' | 'css' | 'dart' | 'diff' | 'patch' | 'rej' | 'dockerfile' | 'containerfile' | 'go' | 'handlebars' | 'hbs' | 'hjs' | 'hlsl' | 'hlsli' | 'fx' | 'fxh' | 'vsh' | 'psh' | 'cginc' | 'compute' | 'html' | 'htm' | 'shtml' | 'xhtml' | 'xht' | 'mdoc' | 'jsp' | 'asp' | 'aspx' | 'jshtm' | 'volt' | 'ejs' | 'rhtml' | 'ini' | 'conf' | 'properties' | 'cfg' | 'directory' | 'gitattributes' | 'gitconfig' | 'gitmodules' | 'editorconfig' | 'repo' | 'java' | 'jav' | 'jsx' | 'js' | 'es6' | 'mjs' | 'cjs' | 'pac' | 'json' | 'bowerrc' | 'jscsrc' | 'webmanifest' | 'jsmap' | 'cssmap' | 'tsmap' | 'har' | 'jslintrc' | 'jsonld' | 'geojson' | 'ipynb' | 'vuerc' | 'jsonc' | 'eslintrc' | 'eslintrcjson' | 'jsfmtrc' | 'jshintrc' | 'swcrc' | 'hintrc' | 'babelrc' | 'jsonl' | 'ndjson' | 'codesnippets' | 'jl' | 'jmd' | 'sty' | 'cls' | 'bbx' | 'cbx' | 'tex' | 'ltx' | 'ctx' | 'bib' | 'less' | 'log' | 'lua' | 'mak' | 'mk' | 'mkd' | 'mdwn' | 'mdown' | 'markdown' | 'markdn' | 'mdtxt' | 'mdtext' | 'workbook' | 'm' | 'mm' | 'pl' | 'pm' | 'pod' | 't' | 'psgi' | 'raku' | 'rakumod' | 'rakutest' | 'rakudoc' | 'nqp' | 'p6' | 'pl6' | 'pm6' | 'php' | 'php4' | 'php5' | 'phtml' | 'ctp' | 'ps1' | 'psm1' | 'psd1' | 'pssc' | 'psrc' | 'py' | 'rpy' | 'pyw' | 'cpy' | 'gyp' | 'gypi' | 'pyi' | 'ipy' | 'pyt' | 'r' | 'rhistory' | 'rprofile' | 'rt' | 'cshtml' | 'razor' | 'rb' | 'rbx' | 'rjs' | 'gemspec' | 'rake' | 'ru' | 'erb' | 'podspec' | 'rbi' | 'rs' | 'scss' | 'sass' | 'shader' | 'sh' | 'bash' | 'bashrc' | 'bashaliases' | 'bashprofile' | 'bashlogin' | 'ebuild' | 'eclass' | 'profile' | 'bashlogout' | 'xprofile' | 'xsession' | 'xsessionrc' | 'zsh' | 'zshrc' | 'zprofile' | 'zlogin' | 'zlogout' | 'zshenv' | 'zshtheme' | 'fish' | 'ksh' | 'csh' | 'cshrc' | 'tcshrc' | 'yashrc' | 'yashprofile' | 'sql' | 'dsql' | 'swift' | 'ts' | 'cts' | 'mts' | 'tsx' | 'tsbuildinfo' | 'xml' | 'xsd' | 'ascx' | 'atom' | 'axml' | 'axaml' | 'bpmn' | 'cpt' | 'csl' | 'csproj' | 'csprojuser' | 'dita' | 'ditamap' | 'dtd' | 'ent' | 'mod' | 'dtml' | 'fsproj' | 'fxml' | 'iml' | 'isml' | 'jmx' | 'launch' | 'menu' | 'mxml' | 'nuspec' | 'opml' | 'owl' | 'proj' | 'props' | 'pt' | 'publishsettings' | 'pubxml' | 'pubxmluser' | 'rbxlx' | 'rbxmx' | 'rdf' | 'rng' | 'rss' | 'shproj' | 'storyboard' | 'targets' | 'tld' | 'tmx' | 'vbproj' | 'vbprojuser' | 'vcxproj' | 'vcxprojfilters' | 'wsdl' | 'wxi' | 'wxl' | 'wxs' | 'xaml' | 'xbl' | 'xib' | 'xlf' | 'xliff' | 'xpdl' | 'xul' | 'xoml' | 'xsl' | 'xslt' | 'yaml' | 'yml' | 'eyaml' | 'eyml' | 'cff' | 'yamltmlanguage' | 'yamltmpreferences' | 'yamltmtheme' | 'winget' | 'txt' | 'csv' | 'tsv' | 'jpeg' | 'jpg' | 'png' | 'gif' | 'svg' | 'webp' | 'avif' | 'bmp' | 'ico' | 'tiff' | 'tif' | 'heic' | 'heif' | 'tar' | 'targz' | 'tgz' | 'gz' | 'bz2' | 'tarbz2' | 'tbz2' | 'z' | 'tarz' | 'lz' | 'tarlz' | 'xz' | 'tarxz' | 'txz' | 'lzma' | 'tarlzma' | 'rar' | 'sevenz' | 'zst' | 'tarzst' | 'tzst' | 'zip' | 'exe' | 'msi' | 'dll' | 'bat' | 'cmd' | 'com' | 'appimage' | 'app' | 'bin' | 'deb' | 'rpm' | 'apk' | 'dmg' | 'pkg' | 'crx' | 'xpi' | 'mp3' | 'wav' | 'ogg' | 'flac' | 'aac' | 'm4a' | 'wma' | 'mid' | 'midi' | 'mp4' | 'mkv' | 'webm' | 'avi' | 'mov' | 'wmv' | 'mpg' | 'mpeg' | 'm4v' | 'flv' | 'f4v' | 'threegp' | 'ttf' | 'otf' | 'woff' | 'woff2' | 'eot' | 'rtf' | 'odt' | 'ods' | 'odp' | 'odg' | 'odf' | 'epub' | 'mobi' | 'azw' | 'azw3' | 'djvu' | 'xls' | 'ppt' | 'pptx' | 'xlsx' | 'db' | 'sqlite' | 'sqlite3' | 'mdb' | 'accdb' | 'dbf' | 'plist' | 'toml' | 'env' | 'dot' | 'gv' | 'torrent' | 'ics' | 'vcf' | 'ai' | 'eps' | 'ps' | 'dxf' | 'dwg' | 'stl' | 'obj' | 'fbx' | 'blend' | 'dae' | 'threeds' | 'gltf' | 'glb' | 'vhd' | 'vhdx' | 'vmdk' | 'ova' | 'ovf' | 'iso' | 'img' | 'swf';
+export type FileType = 'docx' | 'pdf' | 'md' | 'spreadsheet' | 'canvas' | 'coffee' | 'cson' | 'iced' | 'c' | 'i' | 'cpp' | 'cppm' | 'cc' | 'ccm' | 'cxx' | 'cxxm' | 'cplusplus' | 'cplusplusm' | 'hpp' | 'hh' | 'hxx' | 'hplusplus' | 'h' | 'ii' | 'ino' | 'inl' | 'ipp' | 'ixx' | 'tpp' | 'txx' | 'hppin' | 'hin' | 'cu' | 'cuh' | 'cs' | 'csx' | 'cake' | 'css' | 'dart' | 'diff' | 'patch' | 'rej' | 'dockerfile' | 'containerfile' | 'go' | 'handlebars' | 'hbs' | 'hjs' | 'hlsl' | 'hlsli' | 'fx' | 'fxh' | 'vsh' | 'psh' | 'cginc' | 'compute' | 'html' | 'htm' | 'shtml' | 'xhtml' | 'xht' | 'mdoc' | 'jsp' | 'asp' | 'aspx' | 'jshtm' | 'volt' | 'ejs' | 'rhtml' | 'ini' | 'conf' | 'properties' | 'cfg' | 'directory' | 'gitattributes' | 'gitconfig' | 'gitmodules' | 'editorconfig' | 'repo' | 'java' | 'jav' | 'jsx' | 'js' | 'es6' | 'mjs' | 'cjs' | 'pac' | 'json' | 'bowerrc' | 'jscsrc' | 'webmanifest' | 'jsmap' | 'cssmap' | 'tsmap' | 'har' | 'jslintrc' | 'jsonld' | 'geojson' | 'ipynb' | 'vuerc' | 'jsonc' | 'eslintrc' | 'eslintrcjson' | 'jsfmtrc' | 'jshintrc' | 'swcrc' | 'hintrc' | 'babelrc' | 'jsonl' | 'ndjson' | 'codesnippets' | 'jl' | 'jmd' | 'sty' | 'cls' | 'bbx' | 'cbx' | 'tex' | 'ltx' | 'ctx' | 'bib' | 'less' | 'log' | 'lua' | 'mak' | 'mk' | 'mkd' | 'mdwn' | 'mdown' | 'markdown' | 'markdn' | 'mdtxt' | 'mdtext' | 'workbook' | 'm' | 'mm' | 'pl' | 'pm' | 'pod' | 't' | 'psgi' | 'raku' | 'rakumod' | 'rakutest' | 'rakudoc' | 'nqp' | 'p6' | 'pl6' | 'pm6' | 'php' | 'php4' | 'php5' | 'phtml' | 'ctp' | 'ps1' | 'psm1' | 'psd1' | 'pssc' | 'psrc' | 'py' | 'rpy' | 'pyw' | 'cpy' | 'gyp' | 'gypi' | 'pyi' | 'ipy' | 'pyt' | 'r' | 'rhistory' | 'rprofile' | 'rt' | 'cshtml' | 'razor' | 'rb' | 'rbx' | 'rjs' | 'gemspec' | 'rake' | 'ru' | 'erb' | 'podspec' | 'rbi' | 'rs' | 'scss' | 'sass' | 'shader' | 'sh' | 'bash' | 'bashrc' | 'bashaliases' | 'bashprofile' | 'bashlogin' | 'ebuild' | 'eclass' | 'profile' | 'bashlogout' | 'xprofile' | 'xsession' | 'xsessionrc' | 'zsh' | 'zshrc' | 'zprofile' | 'zlogin' | 'zlogout' | 'zshenv' | 'zshtheme' | 'fish' | 'ksh' | 'csh' | 'cshrc' | 'tcshrc' | 'yashrc' | 'yashprofile' | 'sql' | 'dsql' | 'swift' | 'ts' | 'cts' | 'mts' | 'tsx' | 'tsbuildinfo' | 'xml' | 'xsd' | 'ascx' | 'atom' | 'axml' | 'axaml' | 'bpmn' | 'cpt' | 'csl' | 'csproj' | 'csprojuser' | 'dita' | 'ditamap' | 'dtd' | 'ent' | 'mod' | 'dtml' | 'fsproj' | 'fxml' | 'iml' | 'isml' | 'jmx' | 'launch' | 'menu' | 'mxml' | 'nuspec' | 'opml' | 'owl' | 'proj' | 'props' | 'pt' | 'publishsettings' | 'pubxml' | 'pubxmluser' | 'rbxlx' | 'rbxmx' | 'rdf' | 'rng' | 'rss' | 'shproj' | 'storyboard' | 'targets' | 'tld' | 'tmx' | 'vbproj' | 'vbprojuser' | 'vcxproj' | 'vcxprojfilters' | 'wsdl' | 'wxi' | 'wxl' | 'wxs' | 'xaml' | 'xbl' | 'xib' | 'xlf' | 'xliff' | 'xpdl' | 'xul' | 'xoml' | 'xsl' | 'xslt' | 'yaml' | 'yml' | 'eyaml' | 'eyml' | 'cff' | 'yamltmlanguage' | 'yamltmpreferences' | 'yamltmtheme' | 'winget' | 'txt' | 'csv' | 'tsv' | 'jpeg' | 'jpg' | 'png' | 'gif' | 'svg' | 'webp' | 'avif' | 'bmp' | 'ico' | 'tiff' | 'tif' | 'heic' | 'heif' | 'tar' | 'targz' | 'tgz' | 'gz' | 'bz2' | 'tarbz2' | 'tbz2' | 'z' | 'tarz' | 'lz' | 'tarlz' | 'xz' | 'tarxz' | 'txz' | 'lzma' | 'tarlzma' | 'rar' | 'sevenz' | 'zst' | 'tarzst' | 'tzst' | 'zip' | 'exe' | 'msi' | 'dll' | 'bat' | 'cmd' | 'com' | 'appimage' | 'app' | 'bin' | 'deb' | 'rpm' | 'apk' | 'dmg' | 'pkg' | 'crx' | 'xpi' | 'mp3' | 'wav' | 'ogg' | 'flac' | 'aac' | 'm4a' | 'wma' | 'mid' | 'midi' | 'mp4' | 'mkv' | 'webm' | 'avi' | 'mov' | 'wmv' | 'mpg' | 'mpeg' | 'm4v' | 'flv' | 'f4v' | 'threegp' | 'ttf' | 'otf' | 'woff' | 'woff2' | 'eot' | 'rtf' | 'odt' | 'ods' | 'odp' | 'odg' | 'odf' | 'epub' | 'mobi' | 'azw' | 'azw3' | 'djvu' | 'xls' | 'ppt' | 'pptx' | 'xlsx' | 'db' | 'sqlite' | 'sqlite3' | 'mdb' | 'accdb' | 'dbf' | 'plist' | 'toml' | 'env' | 'dot' | 'gv' | 'torrent' | 'ics' | 'vcf' | 'ai' | 'eps' | 'ps' | 'dxf' | 'dwg' | 'fig' | 'stl' | 'obj' | 'fbx' | 'blend' | 'dae' | 'threeds' | 'gltf' | 'glb' | 'vhd' | 'vhdx' | 'vmdk' | 'ova' | 'ovf' | 'iso' | 'img' | 'swf';
 
 /**
  * Represents a file type update: either set to a specific type or clear to null.
@@ -6589,6 +6654,39 @@ export type GetUserHistoryResponse = {
 };
 
 /**
+ * One end of the compared range.
+ */
+export type GitRefDto = {
+    /**
+     * The branch name, when known.
+     */
+    name?: string | null;
+    /**
+     * The commit, when known.
+     */
+    sha?: string | null;
+};
+
+/**
+ * A label among the visible GitHub pull requests. Labels with the same name in different
+ * repositories count together.
+ */
+export type GithubLabelFacet = {
+    /**
+     * The label's most recently synced color, as six hex digits without `#`.
+     */
+    color?: string | null;
+    /**
+     * Number of visible pull requests with the label.
+     */
+    count: number;
+    /**
+     * The label's name.
+     */
+    name: string;
+};
+
+/**
  * Display-ready data for a GitHub pull request associated with a task.
  */
 export type GithubPullRequest = {
@@ -6647,6 +6745,31 @@ export type GithubPullRequest = {
 };
 
 /**
+ * Response body for `GET /github_pull_requests/{id}/changes/patch`.
+ *
+ * Clients deserialize this, so both derives are used.
+ */
+export type GithubPullRequestChangesPatchResponse = {
+    /**
+     * The git-style unified diff of the changeset.
+     */
+    patch: string;
+};
+
+/**
+ * Response body for `GET /github_pull_requests/{id}/changes`.
+ *
+ * Clients deserialize this, so both derives are used.
+ */
+export type GithubPullRequestChangesResponse = {
+    changeset?: null | ChangesetDto;
+    /**
+     * Why there are no changes, in a sentence the user can act on.
+     */
+    error?: string | null;
+};
+
+/**
  * A check run associated with a GitHub pull request.
  */
 export type GithubPullRequestCheckRun = {
@@ -6688,6 +6811,10 @@ export type GithubPullRequestComment = {
      * GitHub's relationship label for the author, when available.
      */
     authorAssociation?: string | null;
+    /**
+     * The stable numeric GitHub user id for the comment author, when available.
+     */
+    authorId?: number | null;
     /**
      * The GitHub login for the comment author, when available.
      */
@@ -6744,6 +6871,89 @@ export type GithubPullRequestComment = {
 };
 
 /**
+ * Repositories, authors, assignees, and labels among the GitHub pull requests a caller can see,
+ * each with the number of pull requests it covers.
+ */
+export type GithubPullRequestFacets = {
+    /**
+     * Assignees, most pull requests first.
+     */
+    assignees: Array<GithubUserFacet>;
+    /**
+     * Authors, most pull requests first.
+     */
+    authors: Array<GithubUserFacet>;
+    /**
+     * Labels, most pull requests first.
+     */
+    labels: Array<GithubLabelFacet>;
+    /**
+     * Repositories, most pull requests first.
+     */
+    repositories: Array<GithubRepositoryFacet>;
+};
+
+/**
+ * A label on a GitHub pull request.
+ */
+export type GithubPullRequestLabel = {
+    /**
+     * The label color as six hex digits without a leading `#`, when known.
+     */
+    color?: string | null;
+    /**
+     * The label name, unique within its repository regardless of case.
+     */
+    name: string;
+};
+
+/**
+ * A reviewer's latest submitted review on a pull request.
+ */
+export type GithubPullRequestReview = {
+    /**
+     * The stable numeric GitHub user id of the reviewer, as a string.
+     */
+    reviewerGithubUserId: string;
+    /**
+     * The reviewer's GitHub login, when known.
+     */
+    reviewerLogin?: string | null;
+    /**
+     * What the review said.
+     */
+    state: GithubPullRequestReviewState;
+    /**
+     * When the review was submitted, when known.
+     */
+    submittedAt?: string | null;
+};
+
+/**
+ * Where a pull request's review stands, from its reviewers' latest reviews.
+ */
+export type GithubPullRequestReviewDecision = 'approved' | 'changes_requested' | 'review_required';
+
+/**
+ * What a reviewer's latest review on a pull request said.
+ */
+export type GithubPullRequestReviewState = 'approved' | 'changes_requested' | 'commented' | 'dismissed';
+
+/**
+ * A GitHub user named on a pull request, such as an assignee.
+ */
+export type GithubPullRequestUser = {
+    /**
+     * The stable numeric GitHub user id, as a string.
+     */
+    githubUserId: string;
+    /**
+     * The user's GitHub login, when known.
+     */
+    login?: string | null;
+};
+
+/**
  * Response containing all GitHub pull requests associated with a task.
  */
 export type GithubPullRequestsResponse = {
@@ -6751,6 +6961,42 @@ export type GithubPullRequestsResponse = {
      * Parsed pull requests, in repository query order.
      */
     pullRequests: Array<GithubPullRequest>;
+};
+
+/**
+ * A repository among the visible GitHub pull requests.
+ */
+export type GithubRepositoryFacet = {
+    /**
+     * Number of visible pull requests in the repository.
+     */
+    count: number;
+    /**
+     * The repository's most recently synced name, as `owner/repo`.
+     */
+    repository: string;
+    /**
+     * The numeric GitHub repository id, which survives renames and transfers.
+     */
+    repositoryId: string;
+};
+
+/**
+ * A GitHub user among the visible pull requests, as an author or an assignee.
+ */
+export type GithubUserFacet = {
+    /**
+     * Number of visible pull requests the user opened, or is assigned to.
+     */
+    count: number;
+    /**
+     * The user's numeric GitHub user id.
+     */
+    githubUserId: string;
+    /**
+     * The user's most recently synced GitHub login, when known.
+     */
+    login?: string | null;
 };
 
 /**
@@ -7254,10 +7500,6 @@ export type InitiativeDetail = {
      */
     createdAt: string;
     /**
-     * The markdown document holding the description; open it in the editor.
-     */
-    descriptionDocumentId: DescriptionDocumentId;
-    /**
      * Opaque identifier.
      */
     id: InitiativeId;
@@ -7344,10 +7586,6 @@ export type InitiativeList = {
  * List-row view of an initiative.
  */
 export type InitiativeSummary = {
-    /**
-     * The markdown document holding the description; open it in the editor.
-     */
-    descriptionDocumentId: DescriptionDocumentId;
     /**
      * Opaque identifier.
      */
@@ -8451,6 +8689,25 @@ export type NewThreadAnchor = {
      */
     sheetName: string;
     type: 'spreadsheet';
+} | {
+    /**
+     * Layer the pin follows; absent or null for a pin on the bare canvas.
+     */
+    nodeId?: string | null;
+    /**
+     * Page (canvas) the pin is on.
+     */
+    pageId: string;
+    type: 'fig';
+    /**
+     * Horizontal offset from the layer's origin, or the page's when
+     * the pin is on no layer, in design units.
+     */
+    x: number;
+    /**
+     * Vertical offset, measured like `x`.
+     */
+    y: number;
 };
 
 /**
@@ -11219,10 +11476,6 @@ export type SoupInitiativeSoupPropertiesField = {
      */
     createdAt: string;
     /**
-     * Document holding the initiative description.
-     */
-    descriptionDocumentId?: string | null;
-    /**
      * Initiative identifier.
      */
     id: string;
@@ -11746,6 +11999,101 @@ export type StarterDocumentsResponse = {
     how_to_guide_id: string;
 };
 
+/**
+ * A GitHub pull request as Macro stores it, read through one of the caller's records.
+ */
+export type StoredGithubPullRequest = {
+    /**
+     * Lines added across the pull request's changes.
+     */
+    additions?: number | null;
+    /**
+     * The users assigned to the pull request.
+     */
+    assignees: Array<GithubPullRequestUser>;
+    /**
+     * Stable numeric GitHub user id of the author.
+     */
+    authorGithubUserId?: string | null;
+    /**
+     * The author's GitHub login when the pull request was last synced.
+     */
+    authorLogin?: string | null;
+    base?: null | GitRefDto;
+    /**
+     * The latest check runs on the pull request's head commit.
+     */
+    checks: Array<GithubPullRequestCheckRun>;
+    /**
+     * Comments from the pull request's conversation, reviews, and review threads.
+     * Comment `authorId` intentionally retains the shared numeric GitHub comment contract;
+     * convert it to a decimal string before comparing it with `authorGithubUserId`.
+     */
+    comments: Array<GithubPullRequestComment>;
+    /**
+     * Lines deleted across the pull request's changes.
+     */
+    deletions?: number | null;
+    /**
+     * The pull request body, as GitHub markdown.
+     */
+    description?: string | null;
+    /**
+     * Whether the pull request is a draft.
+     */
+    draft: boolean;
+    /**
+     * The pull request's `owner/repo/pull/number` key.
+     */
+    githubKey: string;
+    /**
+     * When GitHub last updated the pull request.
+     */
+    githubUpdatedAt?: string | null;
+    head?: null | GitRefDto;
+    /**
+     * The caller's record for the pull request.
+     */
+    id: string;
+    /**
+     * The pull request's labels.
+     */
+    labels: Array<GithubPullRequestLabel>;
+    /**
+     * The pull request number within its repository.
+     */
+    number: number;
+    /**
+     * The repository owner the pull request was last synced under.
+     */
+    owner: string;
+    /**
+     * The repository name the pull request was last synced under.
+     */
+    repo: string;
+    /**
+     * Stable numeric GitHub user ids of the users asked to review.
+     */
+    requestedReviewerGithubUserIds: Array<string>;
+    reviewDecision?: null | GithubPullRequestReviewDecision;
+    /**
+     * Each reviewer's latest submitted review.
+     */
+    reviews: Array<GithubPullRequestReview>;
+    /**
+     * The normalized pull request status.
+     */
+    status?: null | 'open' | 'closed' | 'merged';
+    /**
+     * The pull request title.
+     */
+    title?: string | null;
+    /**
+     * The pull request's page on GitHub.
+     */
+    url: string;
+};
+
 export type String = string;
 
 export type SuccessResponse = {
@@ -12094,6 +12442,25 @@ export type ThreadAnchor = {
      */
     sheetName: string;
     type: 'spreadsheet';
+} | {
+    /**
+     * Layer the pin follows; absent for a pin on the bare canvas.
+     */
+    nodeId?: string | null;
+    /**
+     * Page (canvas) the pin is on.
+     */
+    pageId: string;
+    type: 'fig';
+    /**
+     * Horizontal offset from the layer's origin, or the page's when
+     * the pin is on no layer, in design units.
+     */
+    x: number;
+    /**
+     * Vertical offset, measured like `x`.
+     */
+    y: number;
 };
 
 /**
@@ -12547,7 +12914,7 @@ export type UpdateCrmTeamSettingsRequest = {
 
 /**
  * Update-initiative HTTP body. Absent fields are left unchanged. `member_ids`
- * present is a full replace. The description is edited in its document, not here.
+ * present is a full replace. The description is edited in its collab surface, not here.
  */
 export type UpdateInitiativeRequest = {
     /**
@@ -15217,6 +15584,10 @@ export type EnsureCollabSurfaceErrors = {
      */
     404: ErrorResponse;
     /**
+     * The surface id is already in use
+     */
+    409: ErrorResponse;
+    /**
      * The surface id was deleted and cannot be reused
      */
     410: ErrorResponse;
@@ -15254,6 +15625,10 @@ export type CreateCollabSurfaceTokenErrors = {
     401: ErrorResponse;
     403: ErrorResponse;
     404: ErrorResponse;
+    /**
+     * The surface is not initialized yet, or its id is in use
+     */
+    409: ErrorResponse;
     500: ErrorResponse;
 };
 
@@ -17545,6 +17920,112 @@ export type InstallSyncErrors = {
     401: unknown;
 };
 
+export type GetGithubPullRequestFacetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/github_pull_requests/facets';
+};
+
+export type GetGithubPullRequestFacetsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetGithubPullRequestFacetsError = GetGithubPullRequestFacetsErrors[keyof GetGithubPullRequestFacetsErrors];
+
+export type GetGithubPullRequestFacetsResponses = {
+    200: GithubPullRequestFacets;
+};
+
+export type GetGithubPullRequestFacetsResponse = GetGithubPullRequestFacetsResponses[keyof GetGithubPullRequestFacetsResponses];
+
+export type GetGithubPullRequestData = {
+    body?: never;
+    path: {
+        /**
+         * The caller's foreign entity record for the pull request
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/github_pull_requests/{id}';
+};
+
+export type GetGithubPullRequestErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetGithubPullRequestError = GetGithubPullRequestErrors[keyof GetGithubPullRequestErrors];
+
+export type GetGithubPullRequestResponses = {
+    200: StoredGithubPullRequest;
+};
+
+export type GetGithubPullRequestResponse = GetGithubPullRequestResponses[keyof GetGithubPullRequestResponses];
+
+export type GetGithubPullRequestChangesData = {
+    body?: never;
+    path: {
+        /**
+         * The caller's foreign entity record for the pull request
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/github_pull_requests/{id}/changes';
+};
+
+export type GetGithubPullRequestChangesErrors = {
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetGithubPullRequestChangesError = GetGithubPullRequestChangesErrors[keyof GetGithubPullRequestChangesErrors];
+
+export type GetGithubPullRequestChangesResponses = {
+    200: GithubPullRequestChangesResponse;
+};
+
+export type GetGithubPullRequestChangesResponse = GetGithubPullRequestChangesResponses[keyof GetGithubPullRequestChangesResponses];
+
+export type GetGithubPullRequestChangesPatchData = {
+    body?: never;
+    path: {
+        /**
+         * The caller's foreign entity record for the pull request
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * The changeset whose patch to read
+         */
+        changeset: string;
+    };
+    url: '/github_pull_requests/{id}/changes/patch';
+};
+
+export type GetGithubPullRequestChangesPatchErrors = {
+    401: ErrorResponse;
+    404: ErrorResponse;
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetGithubPullRequestChangesPatchError = GetGithubPullRequestChangesPatchErrors[keyof GetGithubPullRequestChangesPatchErrors];
+
+export type GetGithubPullRequestChangesPatchResponses = {
+    200: GithubPullRequestChangesPatchResponse;
+};
+
+export type GetGithubPullRequestChangesPatchResponse = GetGithubPullRequestChangesPatchResponses[keyof GetGithubPullRequestChangesPatchResponses];
+
 export type CreateHarnessPairingData = {
     body: CreatePairingRequest;
     path?: never;
@@ -18020,70 +18501,6 @@ export type UpdateInitiativeResponses = {
 };
 
 export type UpdateInitiativeResponse = UpdateInitiativeResponses[keyof UpdateInitiativeResponses];
-
-export type AssignInitiativeTasksData = {
-    body: AssignTasksRequest;
-    path: {
-        /**
-         * Initiative identifier.
-         */
-        initiative_id: string;
-    };
-    query?: never;
-    url: '/initiatives/{initiative_id}/tasks';
-};
-
-export type AssignInitiativeTasksErrors = {
-    400: ErrorResponse;
-    /**
-     * Missing or invalid credentials
-     */
-    401: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type AssignInitiativeTasksError = AssignInitiativeTasksErrors[keyof AssignInitiativeTasksErrors];
-
-export type AssignInitiativeTasksResponses = {
-    200: AssignTasksResponse;
-};
-
-export type AssignInitiativeTasksResponse = AssignInitiativeTasksResponses[keyof AssignInitiativeTasksResponses];
-
-export type UnassignInitiativeTaskData = {
-    body?: never;
-    path: {
-        /**
-         * Initiative identifier.
-         */
-        initiative_id: string;
-        /**
-         * Task identifier.
-         */
-        task_id: string;
-    };
-    query?: never;
-    url: '/initiatives/{initiative_id}/tasks/{task_id}';
-};
-
-export type UnassignInitiativeTaskErrors = {
-    400: ErrorResponse;
-    /**
-     * Missing or invalid credentials
-     */
-    401: ErrorResponse;
-    404: ErrorResponse;
-    500: ErrorResponse;
-};
-
-export type UnassignInitiativeTaskError = UnassignInitiativeTaskErrors[keyof UnassignInitiativeTaskErrors];
-
-export type UnassignInitiativeTaskResponses = {
-    200: GenericSuccessResponse;
-};
-
-export type UnassignInitiativeTaskResponse = UnassignInitiativeTaskResponses[keyof UnassignInitiativeTaskResponses];
 
 export type GetInstructionsHandlerData = {
     body?: never;

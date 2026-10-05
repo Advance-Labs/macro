@@ -1,3 +1,4 @@
+import { showAiUsageLimit } from '@app/features/paywall/ai-usage-limit-handling';
 import {
   createSearchParams,
   useOwnsSearchNamespace,
@@ -53,7 +54,6 @@ import {
 } from '@core/component/AI/util/storage';
 import { CustomScrollbar } from '@core/component/CustomScrollbar';
 import type { ShareHostProps } from '@core/component/TopBar/ShareButton';
-import { useAiUsageLimitState } from '@core/constant/AiUsageLimitState';
 import { usePaywallState } from '@core/constant/PaywallState';
 import { useHotkeyScope } from '@core/hotkey/HotkeyScope';
 import { TOKENS } from '@core/hotkey/tokens';
@@ -123,7 +123,6 @@ function ChatWithController(
   props: ChatProps & { loadedInputText: string | undefined }
 ) {
   const { showPaywall } = usePaywallState();
-  const { showUsageLimit } = useAiUsageLimitState();
   const input = useChatInputContext();
   const hasPaidAccess = useHasPaidAccess();
 
@@ -154,7 +153,7 @@ function ChatWithController(
       messages={props.data.chat.messages}
       controllerOptions={{
         onShowPaywall: showPaywall,
-        onShowUsageLimit: showUsageLimit,
+        onShowUsageLimit: showAiUsageLimit,
         onSwitchModel,
         hasAlternateModel: () => nextModel() !== undefined,
       }}

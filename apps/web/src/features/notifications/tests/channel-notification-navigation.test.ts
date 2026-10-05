@@ -1,13 +1,10 @@
-import {
-  createMemorySplitRouterLocation,
-  createRoutesManifest,
-  createSplitRouter,
-} from '@app/lib/split-router';
-import { createSplitLayout } from '@components/app/split-layout/layoutManager';
 import { createAppSplitRouterMiddleware } from '@components/app/split-layout/split-router/app-middleware';
-import { appSplitRoutes } from '@components/app/split-layout/split-router/app-routes';
-import { createContentNavigator } from '@components/app/split-layout/split-router/content-navigation';
-import { createAppSplitRouterLayout } from '@components/app/split-layout/splitRouterLayout';
+import {
+  createRoutedDetailLayout,
+  detailRoutes,
+  routeFor,
+  searchFor,
+} from '@components/app/split-layout/tests/fixtures';
 import { toast } from '@core/component/Toast/Toast';
 import type { BlockOrchestrator } from '@core/orchestrator';
 import { createRoot } from 'solid-js';
@@ -98,34 +95,26 @@ async function setup(location: 'preview' | 'split' | 'closed') {
     createBlockInstance,
     getBlockHandle: async () => ({ goToLocationFromParams: navigate }),
   } as unknown as BlockOrchestrator;
-  const { layout, router } = createRoot((dispose) => {
-    const layout = createSplitLayout(orchestrator, [
-      location === 'split'
-        ? { type: 'channel', id: 'channel' }
-        : { type: 'component', id: 'channels' },
-      { type: 'component', id: 'home' },
-    ]);
-    const routes = createRoutesManifest(appSplitRoutes);
+  const { manager: layout, router } = createRoot((dispose) => {
     const path =
       location === 'split'
         ? '/channel/channel'
         : location === 'preview'
           ? '/channels/channel'
           : '/channels';
-    const router = createSplitRouter({
-      routes,
-      layout: createAppSplitRouterLayout(layout, routes),
-      location: createMemorySplitRouterLocation(`${path}/~/home`),
-      middleware: createAppSplitRouterMiddleware({
+    const result = createRoutedDetailLayout(
+      orchestrator,
+      `${path}/~/home`,
+      detailRoutes,
+      createAppSplitRouterMiddleware({
         isTouchDevice: () => location === 'split',
-      }),
-    });
-    layout.setContentNavigator(createContentNavigator(layout, router, routes));
+      })
+    );
     onTestFinished(() => {
-      router.dispose();
+      result.router.dispose();
       dispose();
     });
-    return { layout, router };
+    return result;
   });
   await router.settled();
   const [first, other] = layout.splits();
@@ -163,7 +152,7 @@ it.each([
     const { layout, router, navigate, release, createBlockInstance, first } =
       await setup('preview');
     const mount = first.mount;
-    const ownerRoute = router.route(first.id);
+    const ownerRoute = routeFor(router, first.id);
     const notification = {
       entity_id: 'channel',
       notification_metadata: {
@@ -180,22 +169,24 @@ it.each([
     expect(createBlockInstance).not.toHaveBeenCalled();
     expect(toast.alert).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
-    expect(router.search(first.id, 'channels')).toMatchObject({
+    expect(searchFor(router, first.id, 'channels')).toMatchObject({
       messageId: ['message'],
       ...(tag === 'channel_message_send' ? {} : { threadId: ['thread'] }),
       seek: [expect.any(String)],
     });
-    expect(router.route(first.id)).toEqual(ownerRoute);
+    expect(routeFor(router, first.id)).toEqual(ownerRoute);
     expect(layout.splits().find((split) => split.id === first.id)?.mount).toBe(
       mount
     );
 
     release();
-    router.navigate(first.id, '/channels');
+    router.navigatePane(router.panes()[0]!, '/channels');
     await router.settled();
     await openNotification(notification, layout);
     await router.settled();
-    expect(router.search(first.id, 'channels')?.messageId).toEqual(['message']);
+    expect(searchFor(router, first.id, 'channels')?.messageId).toEqual([
+      'message',
+    ]);
     expect(createBlockInstance).not.toHaveBeenCalled();
   }
 );
@@ -263,7 +254,9 @@ it.each(['split', 'closed'] as const)(
     if (location === 'split') expect(layout.activeSplitId()).toBe(first.id);
     expect(toast.alert).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
-    expect(router.search(layout.activeSplitId()!, 'channels')).toMatchObject({
+    expect(
+      searchFor(router, layout.activeSplitId()!, 'channels')
+    ).toMatchObject({
       messageId: ['message'],
       seek: [expect.any(String)],
     });

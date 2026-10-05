@@ -4,7 +4,7 @@ import type { ConcreteBlockName } from '../../constants/block-registry';
 // do not derive this list from the application's supported names or metadata.
 export const LegacyBlockRegistry = [
   'agent',
-  'automation',
+  'routine',
   'calendar',
   'call',
   'canvas',
@@ -15,12 +15,15 @@ export const LegacyBlockRegistry = [
   'contact',
   'database',
   'email',
+  'fig',
   'initiative',
   'md',
   'pdf',
+  'pptx',
   'pr',
   'project',
   'spreadsheet',
   'unknown',
   'video',
+  'write',
 ] as const satisfies readonly ConcreteBlockName[];
