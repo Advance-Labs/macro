@@ -14,10 +14,11 @@ import { LoadingBlock } from '@core/component/LoadingBlock';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import { Navigate, useLocation } from '@solidjs/router';
 import { Button } from '@ui';
-import { onCleanup, onMount, Show } from 'solid-js';
+import { lazy, onCleanup, onMount, Show } from 'solid-js';
 import {
   bookingReceiptRoute,
   EMAIL_SIGNUP_CALLBACK_PATH,
+  formRespondRoute,
   INBOX_LINK_CALLBACK_PATH,
   publicBookingRoute,
   taskSlugRoute,
@@ -126,6 +127,17 @@ export function TaskSlugPage() {
 export function PublicBookingRoutePage() {
   const params = useRouteParams(publicBookingRoute);
   return <PublicBookingPage profile={params.profile} slug={params.slug} />;
+}
+
+/** Forms code loads only when someone opens a respond link. */
+const FormRespondPage = lazy(async () => ({
+  default: (await import('@app/features/block-form/form-respond-page'))
+    .FormRespondPage,
+}));
+
+export function FormRespondRoutePage() {
+  const params = useRouteParams(formRespondRoute);
+  return <FormRespondPage formId={params.formId} />;
 }
 
 export function BookingReceiptRoutePage() {

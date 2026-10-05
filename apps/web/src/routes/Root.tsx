@@ -1,4 +1,4 @@
-import { ROUTER_BASE, ROUTER_BASE_CONCAT } from '@app/constants/routerBase';
+import { ROUTER_BASE } from '@app/constants/routerBase';
 import { setCookie } from '@app/features/auth/Shared';
 import { usePendingInviteRedemption } from '@app/features/gtm-invite/usePendingInviteRedemption';
 import { HomePreferencesProvider } from '@app/features/home/home-prefs';
@@ -36,6 +36,7 @@ import { QuickAccessProvider } from '@core/context/quickAccess';
 import { TeamContextProvider } from '@core/context/team';
 import {
   UserContextProvider,
+  useIsAuthenticated,
   useUserId,
   useUserInfo,
 } from '@core/context/user';
@@ -109,6 +110,7 @@ import {
 } from 'solid-js';
 import { useReminderAlerts } from '../features/reminders/reminder-alerts';
 import { AppRouterView } from './app-router-view';
+import { usesFocusedShell } from './focused-shell';
 
 /** Syncs login cookie with auth state. Only updates on successful query (not errors/loading). */
 function useSyncLoginCookie() {
@@ -357,17 +359,13 @@ function InitialInteractiveOnboardingModal() {
   );
 }
 
-/** Meeting and booking links have a focused shell and skip app onboarding. */
+/** Meeting, booking and anonymous form respond links have a focused shell and skip app onboarding. */
 function AppRouteLayout(props: RouteSectionProps) {
   const location = useLocation();
+  const isAuthenticated = useIsAuthenticated();
   return (
     <Show
-      when={
-        !(
-          location.pathname.startsWith(`${ROUTER_BASE_CONCAT}book/`) ||
-          location.pathname.startsWith(`${ROUTER_BASE_CONCAT}booking/`)
-        )
-      }
+      when={!usesFocusedShell(location.pathname, isAuthenticated())}
       fallback={
         <div class="h-dvh overflow-y-auto bg-page text-ink">
           {props.children}

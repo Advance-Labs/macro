@@ -75,6 +75,7 @@ import {
   BookingReceiptRoutePage,
   EmailCallback,
   EmailLinkCallback,
+  FormRespondRoutePage,
   LoginPage,
   LoginPopupSuccess,
   OnboardingPage,
@@ -112,6 +113,7 @@ import {
   emailSplitRoute,
   emailThreadRoute,
   foldersRoute,
+  formRespondRoute,
   gettingStartedRoute,
   homeCalendarRoute,
   homeChannelRoute,
@@ -203,6 +205,7 @@ export function AppRouterView() {
         definition={bookingReceiptRoute}
         component={BookingReceiptRoutePage}
       />
+      <Route definition={formRespondRoute} component={FormRespondRoutePage} />
       <Route definition={meetRoute} component={MeetingRouter} />
       <Route definition={taskSlugRoute} component={TaskSlugPage} />
       <Route definition={signupRoute} component={SignupPage} />
