@@ -1,3 +1,4 @@
+import { isMobile } from '@core/mobile/isMobile';
 import { Telemetry } from '@macro-inc/observability';
 import type { FormattedExecutionResult } from 'graphql';
 import {
@@ -81,12 +82,17 @@ export function createGraphqlSoupConnection(options: {
   let disconnectedAt: number | undefined;
 
   const visible = () => typeof document === 'undefined' || !document.hidden;
+  const mobileBackgrounded = () => isMobile() && !visible();
   const current = (candidate: Attempt) =>
     candidate.active && attempt === candidate;
   const hasSubscribers = () =>
     [...subscriptions].some((subscription) => !subscription.blocked);
   const canConnect = () =>
-    !disposed && !paused && !blocked && visible() && hasSubscribers();
+    !disposed &&
+    !paused &&
+    !blocked &&
+    !mobileBackgrounded() &&
+    hasSubscribers();
 
   const report = (
     event: string,
@@ -310,7 +316,7 @@ export function createGraphqlSoupConnection(options: {
   }
 
   function wake(): void {
-    if (disposed || paused || blocked || !visible()) return;
+    if (disposed || paused || blocked || mobileBackgrounded()) return;
     if (attempt) return;
     if (retry !== undefined) clearTimeout(retry);
     retry = undefined;
@@ -319,8 +325,10 @@ export function createGraphqlSoupConnection(options: {
 
   function visibilityChanged(): void {
     if (!visible()) {
-      if (attempt?.connected) disconnectedAt ??= Date.now();
-      retireAttempt();
+      if (isMobile()) {
+        if (attempt?.connected) disconnectedAt ??= Date.now();
+        retireAttempt();
+      }
       return;
     }
     wake();

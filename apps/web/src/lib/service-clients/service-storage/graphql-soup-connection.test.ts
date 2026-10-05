@@ -1,3 +1,4 @@
+import { isMobile } from '@core/mobile/isMobile';
 import { ThrownResultError } from '@core/util/result';
 import type { ClientOptions } from 'graphql-ws';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ import {
 } from './graphql-soup-realtime-session';
 
 const telemetry = vi.hoisted(() => vi.fn());
+vi.mock('@core/mobile/isMobile', () => ({ isMobile: vi.fn(() => false) }));
 vi.mock('@macro-inc/observability', () => ({ Telemetry: { info: telemetry } }));
 vi.mock('graphql-ws', async (importOriginal) => {
   const actual = await importOriginal<typeof import('graphql-ws')>();
@@ -106,6 +108,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(Math, 'random').mockReturnValue(0);
   vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+  vi.mocked(isMobile).mockReturnValue(false);
   TestSocket.instances = [];
   telemetry.mockClear();
   restartGraphqlSoupRealtimeSession();
@@ -162,12 +165,14 @@ describe('silent GraphQL live connection recovery', () => {
     expect(onConnected.mock.calls).toEqual([[false], [true]]);
   });
 
-  it('pauses in the background and coalesces foreground and online recovery', async () => {
+  it('pauses mobile in the background and coalesces foreground and online recovery', async () => {
+    vi.mocked(isMobile).mockReturnValue(true);
     setup();
     const first = await socket();
     await first.acknowledge();
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
     await vi.advanceTimersByTimeAsync(120_000);
     expect(first.readyState).toBe(TestSocket.CLOSED);
     expect(TestSocket.instances).toHaveLength(1);
@@ -177,6 +182,54 @@ describe('silent GraphQL live connection recovery', () => {
     window.dispatchEvent(new Event('online'));
     expect(await socket()).not.toBe(first);
     expect(TestSocket.instances).toHaveLength(2);
+  });
+
+  it('keeps desktop notification patches live while hidden without reconnecting on foreground', async () => {
+    const { sink, onConnected } = setup();
+    const live = await socket();
+    await live.acknowledge();
+    const subscription = live.sent.find(({ type }) => type === 'subscribe');
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(live.readyState).toBe(TestSocket.OPEN);
+    live.receive({
+      type: 'next',
+      id: subscription?.id,
+      payload: { data: { updates: 'background patch' } },
+    });
+    expect(sink.next).toHaveBeenCalledWith({
+      data: { updates: 'background patch' },
+    });
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(TestSocket.instances).toHaveLength(1);
+    expect(onConnected.mock.calls).toEqual([[false]]);
+  });
+
+  it('retries transient desktop failures while hidden', async () => {
+    const { sink, onConnected } = setup();
+    await (await socket()).acknowledge();
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    (await socket()).close(1006);
+    await vi.advanceTimersByTimeAsync(800);
+    const recovered = await socket();
+    await recovered.acknowledge();
+    const subscription = recovered.sent.find(
+      ({ type }) => type === 'subscribe'
+    );
+    recovered.receive({
+      type: 'next',
+      id: subscription?.id,
+      payload: { data: { updates: 'recovered background patch' } },
+    });
+    expect(sink.next).toHaveBeenCalledWith({
+      data: { updates: 'recovered background patch' },
+    });
+    expect(TestSocket.instances).toHaveLength(2);
+    expect(onConnected.mock.calls).toEqual([[false], [true]]);
   });
 
   it('bypasses backoff when connectivity returns, even if navigator reports offline', async () => {
