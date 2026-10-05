@@ -15,6 +15,7 @@ note: |-
 files:
   - apps/web/src/features/agent-dms/components/**
   - apps/web/src/features/agent-interactions/components/**
+  - apps/web/src/features/routines/components/**
   - apps/web/src/features/scheduling/components/**
   - apps/web/src/features/crm/components/**
   - apps/web/src/features/slack-import/components/**

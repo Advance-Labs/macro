@@ -23,6 +23,10 @@ files:
   - apps/web/src/features/agent-interactions/primitives/**
   - apps/web/src/features/agent-interactions/components/**
   - apps/web/src/features/agent-interactions/views/**
+  - apps/web/src/features/routines/queries/**
+  - apps/web/src/features/routines/primitives/**
+  - apps/web/src/features/routines/components/**
+  - apps/web/src/features/routines/views/**
   - apps/web/src/features/scheduling/context/**
   - apps/web/src/features/scheduling/queries/**
   - apps/web/src/features/scheduling/primitives/**

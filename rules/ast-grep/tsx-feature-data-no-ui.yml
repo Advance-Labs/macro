@@ -15,6 +15,8 @@ files:
   - apps/web/src/features/agent-dms/primitives/**
   - apps/web/src/features/agent-interactions/queries/**
   - apps/web/src/features/agent-interactions/primitives/**
+  - apps/web/src/features/routines/queries/**
+  - apps/web/src/features/routines/primitives/**
   - apps/web/src/features/scheduling/core/**
   - apps/web/src/features/scheduling/context/**
   - apps/web/src/features/scheduling/queries/**
