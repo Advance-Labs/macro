@@ -8,3 +8,5 @@ Real local-stack recordings for the Forms PR stack #7471–#7478. All people and
 GIFs are compressed previews; MP4s retain full quality. Contact sheets and stills were inspected. Editing removes only idle automation waits; the app actions and results are real.
 
 Local demo: `http://localhost:35110/app/form/01a10a44-23d0-76a2-89d1-17493417797e`. Use local email login as `forms-owner@local.macro.test`. These links work on the development machine running the local stack.
+
+Additional final-build checks: sent-card Collapse/Expand, and mobile touch dragging with edge scrolling across sections and into an empty section. Exactly one successful layout write per touch drop; the original demo layout was restored.
