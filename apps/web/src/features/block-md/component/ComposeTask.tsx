@@ -32,6 +32,7 @@ import { mergeRegister } from '@lexical/utils';
 import ArrowSquareOutIcon from '@phosphor/arrow-square-out.svg';
 import ArrowsOutIcon from '@phosphor/arrows-out.svg';
 import PaperclipIcon from '@phosphor/paperclip.svg';
+import RepeatIcon from '@phosphor/repeat.svg';
 import SplitIcon from '@phosphor/square-half.svg';
 import XIcon from '@phosphor/x.svg';
 import { Modals } from '@property/component/modal';
@@ -1043,6 +1044,19 @@ export function ComposeTask(props: ComposeTaskProps) {
           size="icon-composer"
         >
           <PaperclipIcon />
+        </Button>
+        <Button
+          onMouseDown={() => {
+            popoverSplit({
+              type: 'component',
+              id: 'routine-compose',
+            });
+          }}
+          tabIndex={-1}
+          tooltip="Make recurring"
+          size="icon-composer"
+        >
+          <RepeatIcon />
         </Button>
         <div class="flex items-center gap-3">
           <ToggleSwitch
