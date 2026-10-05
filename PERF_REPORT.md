@@ -193,6 +193,8 @@ journal. Supported row writes continue through database operations.
 | `aeba0c1a0f` | Use property membership indexes without changing canonical filter semantics. |
 | `151003d902` | Start network reads while the cache is busy; retain offline fallback using the real client's stream semantics. |
 | `8bec61c252` | Regenerate dependency unification and closure metadata required by CI. |
+| `73a084633c` | Integrate current main and regenerate the closure after the upstream crate move. |
+| `0025b45ee9` | Preserve cancellation classification during engine opening; build and remove indexes concurrently with safe interrupted-build retries. |
 
 API traversal verified all 100,000 unique IDs in manual order, both endpoint
 numeric cohorts (Bucket 0 and Bucket 99, exactly 1,000 each), the 1,667-row indexed
@@ -220,6 +222,19 @@ and the `database_sql`, `databases_sql`, `databases`, `graphql_databases`,
 `complete_graph` and DSS suites passed again. These checks used a separate test
 database; the measured 100k fixture and running bundle were preserved.
 
+Review follow-up verified the index migrations against separate 100k-row fixtures.
+The original build blocked another insert until its 400 ms lock timeout; the
+concurrent build allowed the insert while waiting for an older transaction.
+Cancelling a build left an invalid index, and retry correctly failed instead of
+silently accepting it. Successful migration runs remain no-ops on rerun through
+the SQLx ledger. Each concurrent operation has its own nontransactional migration
+because PostgreSQL treats a multi-statement SQLx batch as an implicit transaction.
+Both final cursor indexes were valid. Evidence: `review-index-locks.json`.
+
+The engine-open cancellation regression failed before the fix and passed after
+it. All 12 driver tests, seven paged-reader tests, 222 database tests, two migration
+tests, TypeScript, `just check`, and five follow-up QC reviews passed.
+
 ## Remaining limits
 
 - This achieves the requested opening target on the local table fixture. Broader
@@ -231,6 +246,8 @@ database; the measured 100k fixture and running bundle were preserved.
   bounds mounted DOM, not the complete in-memory dataset.
 - Refreshing after a write currently re-reads the number of pages already loaded
   to preserve global membership/order. After loading all 100k, this is expensive.
+  Sustained concurrent writes can exhaust the automatic retry and show a refresh
+  error. Resetting to the first page after every edit would lose the user's place.
   A bounded page window and targeted invalidation with correct cursor/version
   handling are the next changes for sustained deep editing.
 - Boards retain the existing capped reader. They need pagination designed around
