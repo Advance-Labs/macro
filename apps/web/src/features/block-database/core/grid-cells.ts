@@ -55,11 +55,26 @@ function gridValue(
 }
 
 /** A row-shaped outcome's rows, with a cell for each of the table's columns. */
+export type GridRowsRead = {
+  outcome: Outcome;
+  catalog: Catalog;
+  columns: readonly ColumnDetail[];
+  rows: DatabaseRow[];
+};
+
+/** Convert new cells, reusing unchanged vectors only under the same schema. */
 export function gridRows(
   outcome: Outcome,
   catalog: Catalog,
-  columns: readonly ColumnDetail[]
+  columns: readonly ColumnDetail[],
+  previous?: GridRowsRead
 ): DatabaseRow[] {
+  const reusable =
+    previous?.catalog === catalog &&
+    previous.columns === columns &&
+    previous.outcome.columns === outcome.columns
+      ? previous
+      : undefined;
   const catalogColumns = new Map(
     catalog.tables.flatMap((table) =>
       table.columns.map((column) => [column.id, column] as const)
@@ -75,15 +90,20 @@ export function gridRows(
       kind: catalogColumns.get(definition)?.kind,
     };
   });
-  return outcome.rowIds.map((rowId, rowIndex) => ({
-    rowId,
-    cells: Object.fromEntries(
-      placed.map(({ id, index, kind }) => [
-        id,
-        gridValue(outcome.rows[rowIndex]?.[index] ?? null, kind),
-      ])
-    ),
-  }));
+  return outcome.rowIds.map((rowId, rowIndex) =>
+    reusable?.outcome.rowIds[rowIndex] === rowId &&
+    reusable.outcome.rows[rowIndex] === outcome.rows[rowIndex]
+      ? reusable.rows[rowIndex]
+      : {
+          rowId,
+          cells: Object.fromEntries(
+            placed.map(({ id, index, kind }) => [
+              id,
+              gridValue(outcome.rows[rowIndex]?.[index] ?? null, kind),
+            ])
+          ),
+        }
+  );
 }
 
 /** Reuse unchanged rows, and the array when their order also stays the same. */

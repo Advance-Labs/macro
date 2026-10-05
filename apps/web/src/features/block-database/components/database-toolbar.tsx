@@ -81,11 +81,6 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
   let viewRail: HTMLDivElement | undefined;
   /** Viewers change only what All records shows them; stored views are everyone's. */
   const canChangeView = () => !props.selectedViewId || props.canEdit;
-  const layout = () => props.view.layout;
-  const board = () => {
-    const current = layout();
-    return current.kind === 'board' ? current : undefined;
-  };
   const sort = () => props.view.query.sort ?? [];
   const viewRename = createInlineRename({
     name: (view: DatabaseView) => view.name,
@@ -231,7 +226,7 @@ export function DatabaseToolbar(props: DatabaseToolbarProps) {
           </Show>
           {props.search}
           <div class="ml-1 flex shrink-0 items-center">
-            <Show when={props.onCreateRecord && board()}>
+            <Show when={props.onCreateRecord}>
               <Button
                 size="sm"
                 variant="outline"

@@ -484,11 +484,21 @@ A slow or failed refresh is not a reason to resend a successful mutation.
 
 Use synthetic records on an isolated local stack and the
 [database profiling harness](../../apps/web/scripts/database-profile/README.md).
-Record both stored and displayed counts: a 100,000-record table currently reads
-at most 20,000 records into the engine. A numeric or text filter can be applied
-after that cap; check the incomplete-results notice. Include a selective option
-or relation filter that is pushed to Soup, so the audit also covers a complete
-result from a large table.
+Table views filter and sort all stored records on the server before fetching
+pages of 500. Scroll near the bottom or choose **Load more** for the next page.
+The footer reports loaded records while more pages remain. Only visible grid
+rows are mounted, so count loaded records separately from DOM rows. Test a
+filter whose matches occur beyond the first page, and a sort whose first record
+would otherwise occur near the end of the table.
+
+**New** opens the blank row even in a long table. A duplicated record outside
+the loaded rows opens its record panel. A saved-record notice can also open a
+record that is not loaded; this does not mean it fails the current filters.
+Arrow keys and Tab must reveal and focus cells beyond the visible window.
+
+Boards and arbitrary SQL still use the existing engine reader with its
+20,000-record cap. Board lane/card ordering is applied to that result; check
+the incomplete-results notice when auditing those surfaces.
 
 After loading, switch between tables and views several times, edit a cell,
 open a select picker, add and delete a temporary record, and scroll. Confirm

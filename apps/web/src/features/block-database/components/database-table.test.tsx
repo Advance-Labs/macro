@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GridCell } from '../component/GridCell';
 import type { DatabaseViewColumn } from '../core/database-view';
 import type { DatabaseRow } from '../core/table';
+import { GridResizeObserver } from '../tests/grid-resize-observer';
 import { DatabaseTableView as DatabaseTable } from '../views/database-table-view';
 import type { DatabaseTableControls } from './database-table';
 
@@ -51,7 +52,10 @@ const rows: DatabaseRow[] = [
   { rowId: 'one', cells: { name: 'First', notes: 'First note' } },
   { rowId: 'two', cells: { name: 'Second', notes: 'Second note' } },
 ];
-function setup(canEdit = true) {
+function setup(
+  canEdit = true,
+  ready?: (controls: DatabaseTableControls) => void
+) {
   const onOpen = vi.fn();
   const onClearCells = vi.fn(async () => true);
   const onCellFocus = vi.fn();
@@ -83,6 +87,7 @@ function setup(canEdit = true) {
       addColumn={<button>Add column</button>}
       controlsRef={(tableControls) => {
         controls = tableControls;
+        ready?.(tableControls);
       }}
       getRowTitle={(row) => String(row.cells.name)}
       onOpen={onOpen}
@@ -128,6 +133,12 @@ async function selectMenu(name: string) {
 
 let menuStyles: HTMLStyleElement;
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', GridResizeObserver);
+  vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockImplementation(
+    function (this: HTMLElement) {
+      return this.parentElement;
+    }
+  );
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   Element.prototype.scrollIntoView = vi.fn();
   // JSDOM reports an empty animation name; presence expects CSS's default none.
@@ -140,9 +151,39 @@ afterEach(() => {
   cleanup();
   menuStyles.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('spreadsheet interactions', () => {
+  it('opens an edit requested synchronously when the table becomes ready', async () => {
+    setup(true, (controls) => controls.editCell('one', 'name'));
+    await waitFor(() => expect(screen.getByDisplayValue('First')).toBeTruthy());
+  });
+
+  it('mounts a bounded window and opens an editor outside that window', async () => {
+    const { setRecords, controls } = setup();
+    setRecords(
+      Array.from({ length: 1000 }, (_, index) => ({
+        rowId: `record-${index}`,
+        cells: { name: `Record ${index}` },
+      }))
+    );
+    expect(screen.getByRole('grid').getAttribute('aria-rowcount')).toBe('1001');
+    expect(document.querySelectorAll('[data-grid-row-id]').length).toBeLessThan(
+      80
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Name: Record 999. Click to edit' })
+    ).toBeNull();
+    controls.editCell('record-999', 'name');
+    await waitFor(() =>
+      expect(screen.getByDisplayValue('Record 999')).toBeTruthy()
+    );
+    expect(document.querySelectorAll('[data-grid-row-id]').length).toBeLessThan(
+      80
+    );
+  });
+
   it('only reads changed rows while keeping column changes reactive', () => {
     const [records, setRecords] = createSignal(rows);
     const [columns, setColumns] = createSignal([name, notes]);

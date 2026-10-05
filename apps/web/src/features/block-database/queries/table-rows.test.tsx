@@ -8,7 +8,11 @@ import type {
 } from '@core/database-sql/generated/types';
 import type { CacheHost } from '@graphql-cache/host/types';
 import { queryClient } from '@queries/client';
-import type { DatabaseSqlQueryCapabilities } from '@queries/database-sql/create-database-sql-query';
+import {
+  createDatabaseSqlQuery,
+  type DatabaseSqlQueryCapabilities,
+  type DatabaseSqlStatement,
+} from '@queries/database-sql/create-database-sql-query';
 import {
   applyDatabaseOps,
   applyDatabaseTableVersions,
@@ -298,6 +302,7 @@ function setup(
     addOption?: DatabaseRowsSource['addOption'];
     onSource?: (source: DatabaseRowsSource) => void;
     view?: Accessor<DatabaseView>;
+    viewQuery?: Parameters<typeof createDatabaseRowsSource>[0]['viewQuery'];
     onTableChanged?: (listener: (version: number) => void) => void;
     changes?: Parameters<typeof createDatabaseRowsSource>[0]['changes'];
   } = {}
@@ -318,6 +323,10 @@ function setup(
       view: options.view ?? (() => allGuests),
       applyOps,
       read: options.read ?? engine().read,
+      viewQuery:
+        options.viewQuery ??
+        ((statement) =>
+          createDatabaseSqlQuery(statement, options.read ?? engine().read)),
       changes: options.changes,
       onTableChanged:
         options.onTableChanged ??
@@ -361,6 +370,40 @@ afterEach(() => {
 });
 
 describe('database view reads', () => {
+  it('keeps every board row available for manual lane ordering beyond page one', async () => {
+    const complete = {
+      ...guests(),
+      rowIds: Array.from({ length: 501 }, (_, index) => `row-${index}`),
+      rows: Array.from({ length: 501 }, (_, index) => [
+        { type: 'text' as const, value: `Guest ${index}` },
+      ]),
+    };
+    const reader = engine(() => complete);
+    let pagedStatement: Accessor<DatabaseSqlStatement | undefined> | undefined;
+    const { source } = setup(detail(), () => okAsync([]), {
+      read: reader.read,
+      view: () => ({
+        ...allGuests,
+        layout: {
+          kind: 'board',
+          groupBy: 'status',
+          lanes: [],
+          cardFields: [],
+          title: 'name',
+          hideEmptyLanes: false,
+        },
+      }),
+      viewQuery: (statement) => {
+        pagedStatement = statement;
+        return createDatabaseSqlQuery(statement, reader.read);
+      },
+    });
+    await waitFor(() => expect(source.snapshot()?.rows).toHaveLength(501));
+    expect(source.snapshot()?.rows.at(-1)?.rowId).toBe('row-500');
+    expect(pagedStatement?.()).toBeUndefined();
+    expect(source.pagination?.hasMore() ?? false).toBe(false);
+  });
+
   it('runs the view in the engine and keeps the previous rows while a changed one loads', async () => {
     const [view, setView] = createSignal(allGuests);
     let finishSearch!: (outcome: Outcome) => void;
@@ -713,39 +756,40 @@ describe('a column type change', () => {
         table,
         view: () => allGuests,
         applyOps: vi.fn<ApplyOps>(),
-        read: {
-          client: () => client,
-          cacheHost: () => undefined,
-          people: async () => [],
-          catalog: async (schema) => ({
-            tables: [
-              {
-                id: 'guests-table',
-                databaseId: 'db',
-                database: 'Personal',
-                name: 'Guests',
-                source: 'database',
-                columns: schema.databases[0].tables[0].columns.map(
-                  (column) => ({
-                    id: column.definition,
-                    placement: column.id,
-                    name: column.name,
-                    kind:
-                      column.definition === 'number-definition'
-                        ? { kind: 'number' }
-                        : { kind: 'text' },
-                  })
-                ),
-              },
-            ],
+        viewQuery: (statement) =>
+          createDatabaseSqlQuery(statement, {
+            client: () => client,
+            cacheHost: () => undefined,
+            people: async () => [],
+            catalog: async (schema) => ({
+              tables: [
+                {
+                  id: 'guests-table',
+                  databaseId: 'db',
+                  database: 'Personal',
+                  name: 'Guests',
+                  source: 'database',
+                  columns: schema.databases[0].tables[0].columns.map(
+                    (column) => ({
+                      id: column.definition,
+                      placement: column.id,
+                      name: column.name,
+                      kind:
+                        column.definition === 'number-definition'
+                          ? { kind: 'number' }
+                          : { kind: 'text' },
+                    })
+                  ),
+                },
+              ],
+            }),
+            openView: async (catalog) =>
+              answering(
+                catalog.tables[0].columns[0].id === 'number-definition'
+                  ? await numbers
+                  : guests()
+              ),
           }),
-          openView: async (catalog) =>
-            answering(
-              catalog.tables[0].columns[0].id === 'number-definition'
-                ? await numbers
-                : guests()
-            ),
-        },
         onTableChanged: () => {},
         onCommitted: () => {},
         applyVersions: () => {},

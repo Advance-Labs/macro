@@ -50,8 +50,8 @@ import type {
   DatabaseCellValue,
   DatabaseViewColumn,
 } from '../core/database-view';
-import { gridRows } from '../core/grid-cells';
-import type { DatabaseRow, DatabaseRowMutation } from '../core/table';
+import { type GridRowsRead, gridRows } from '../core/grid-cells';
+import type { DatabaseRowMutation } from '../core/table';
 import type {
   DatabaseCellFailure,
   DatabaseReadFailure,
@@ -63,6 +63,7 @@ import {
   refreshChangedRows,
   type TableChangesCapabilities,
 } from './table-changes';
+import { createDatabaseViewQuery, type DatabaseViewQuery } from './view-rows';
 
 export function toViewColumn(column: ColumnDetail): DatabaseViewColumn {
   const relation =
@@ -99,6 +100,7 @@ function isStaleSchema(
 ): boolean {
   return (
     failure.kind === 'engine' ||
+    ('staleSchema' in failure && failure.staleSchema === true) ||
     (failure.kind === 'ops' && failure.error.code === 'INVALID_OP')
   );
 }
@@ -146,6 +148,10 @@ export function createDatabaseRowsSource(props: {
   applyOps: (ops: DatabaseOp[]) => ResultAsync<OpResult[], DatabaseOpsError>;
   /** Where the engine reads rows from; the app's GraphQL client by default. */
   read?: DatabaseSqlQueryCapabilities;
+  /** The live view reader; production pages its global server order. */
+  viewQuery?: (
+    statement: Accessor<DatabaseSqlStatement | undefined>
+  ) => DatabaseViewQuery;
   /** Calls back with the version of each change the gateway reports for this table. */
   onTableChanged: (listener: (version: number) => void) => void;
   /** Calls back with the version each batch this viewer commits, such as an added or renamed column, moves this table to. */
@@ -235,7 +241,31 @@ export function createDatabaseRowsSource(props: {
       { equals: sameDatabaseSqlStatement }
     );
   const viewStatement = tableStatement(() => ({ view: props.view() }));
-  const rowsQuery = createDatabaseSqlQuery(viewStatement, props.read);
+  // Boards arrange complete lanes using card positions after reading their rows.
+  const board = () => props.view().layout.kind === 'board';
+  const pagedQuery = (props.viewQuery ?? createDatabaseViewQuery)(() =>
+    board() ? undefined : viewStatement()
+  );
+  const boardQuery = createDatabaseSqlQuery(
+    () => (board() ? viewStatement() : undefined),
+    props.read
+  );
+  const activeQuery = () => (board() ? boardQuery : pagedQuery);
+  const rowsQuery: DatabaseViewQuery = {
+    outcome: () => activeQuery().outcome(),
+    catalog: () => activeQuery().catalog(),
+    loading: () => activeQuery().loading(),
+    error: () => activeQuery().error(),
+    cached: () => activeQuery().cached(),
+    refresh: (reason) => activeQuery().refresh(reason),
+    answerFromCache: () => activeQuery().answerFromCache(),
+    pagination: pagedQuery.pagination && {
+      hasMore: () => !board() && pagedQuery.pagination!.hasMore(),
+      loading: () => !board() && pagedQuery.pagination!.loading(),
+      version: () => (board() ? undefined : pagedQuery.pagination!.version()),
+      loadMore: () => pagedQuery.pagination!.loadMore(),
+    },
+  };
   // A type change gives a column a new definition. Until the read of it
   // lands, the column keeps the definition its shown cells were read with.
   const shownDetails = createMemo<ColumnDetail[]>((held) => {
@@ -282,24 +312,40 @@ export function createDatabaseRowsSource(props: {
   // The newest version this writer's row writes made; it reads them back itself.
   let writtenVersion = 0;
 
-  function rowsOf(query: DatabaseSqlQuery): DatabaseRow[] | undefined {
-    const outcome = query.outcome();
-    const catalog = query.catalog();
-    if (!outcome || !catalog) return undefined;
-    return gridRows(outcome, catalog, shownDetails());
+  function convertedRows(query: DatabaseSqlQuery) {
+    let previous: GridRowsRead | undefined;
+    return () => {
+      const outcome = query.outcome();
+      const catalog = query.catalog();
+      if (!outcome || !catalog) return undefined;
+      const columns = shownDetails();
+      if (
+        previous?.outcome === outcome &&
+        previous.catalog === catalog &&
+        previous.columns === columns
+      )
+        return previous.rows;
+      previous = {
+        outcome,
+        catalog,
+        columns,
+        rows: gridRows(outcome, catalog, columns, previous),
+      };
+      return previous.rows;
+    };
   }
+  const viewRows = convertedRows(rowsQuery);
+  const heldRows = convertedRows(retainedQuery);
   const retainedRows = () => {
     const ids = retainedRowIds();
     if (!ids.length) return [];
-    return (rowsOf(retainedQuery) ?? []).filter((row) =>
-      ids.includes(row.rowId)
-    );
+    return (heldRows() ?? []).filter((row) => ids.includes(row.rowId));
   };
   const snapshot = () => {
-    const rows = rowsOf(rowsQuery);
+    const rows = viewRows();
     if (!rows) return undefined;
     return {
-      version: readVersion(),
+      version: rowsQuery.pagination?.version() ?? readVersion(),
       rows,
       retained: retainedRows(),
     };
@@ -682,6 +728,7 @@ export function createDatabaseRowsSource(props: {
   }
 
   return {
+    pagination: rowsQuery.pagination,
     columns,
     snapshot,
     read: () => {
