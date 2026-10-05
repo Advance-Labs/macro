@@ -3,6 +3,8 @@ import { enableUserInfoQuery } from '@core/context/user-info-gate';
 import { hasLoginCookie } from '@core/util/cookies';
 import { catchToResult, type ResultType, throwOnErr } from '@core/util/result';
 import { authServiceClient } from '@service-auth/client';
+import { resetMacroApiToken } from '@service-auth/fetch';
+import { restartGraphqlSoupRealtimeSession } from '@service-storage/graphql-soup-realtime-session';
 import { useQuery } from '@tanstack/solid-query';
 import { queryClient, queryPersistence } from '../client';
 import { resetGraphqlSoupDoneSession } from '../soup/graphql/done-session';
@@ -56,6 +58,8 @@ export function invalidateUserInfo() {
 
 /** Invalidate all queries after a successful login. */
 export function invalidateAllAfterLogin() {
+  resetMacroApiToken();
+  restartGraphqlSoupRealtimeSession();
   // Login may replace a session without visiting logout (including native auth).
   // Invalidate old display-intent handles before refetching the new identity.
   resetGraphqlSoupDoneSession();

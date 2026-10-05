@@ -18,6 +18,7 @@ vi.mock('@core/context/user-info-gate', () => ({
 }));
 vi.mock('@core/util/cookies', () => ({ hasLoginCookie: () => true }));
 vi.mock('@service-auth/client', () => ({ authServiceClient: {} }));
+vi.mock('@service-auth/fetch', () => ({ resetMacroApiToken: vi.fn() }));
 
 import { graphqlSoupKeys } from '../soup/graphql/keys';
 import { authKeys } from './keys';

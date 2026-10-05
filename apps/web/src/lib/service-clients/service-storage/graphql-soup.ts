@@ -5,10 +5,11 @@ import {
   isFeatureEnabled,
 } from '@core/constant/featureFlags';
 import { SERVER_HOSTS } from '@core/constant/servers';
-import { fetchToken } from '@core/util/fetchWithToken';
+import { fetchToken, unsetTokenPromise } from '@core/util/fetchWithToken';
 import { isTauri } from '@core/util/platform';
 import { platformFetch } from '@core/util/platformFetch';
 import { reloadForNewerBuild } from '@core/util/reloadForNewerBuild';
+import { throwOnErr } from '@core/util/result';
 import {
   HYDRATE_ONLY_CONTEXT_KEY,
   normalizedCacheExchange,
@@ -27,7 +28,7 @@ import { getBrowserTursoCacheRolloutDecision } from '@graphql-cache/rollout';
 import { getOrCreateCacheScope } from '@graphql-cache/scope';
 import { Telemetry } from '@macro-inc/observability';
 import { notificationStateFromGraphql } from '@notifications/notification-state';
-import { getMacroApiToken } from '@service-auth/fetch';
+import { getMacroApiToken, resetMacroApiToken } from '@service-auth/fetch';
 import type { ApiUserNotification } from '@service-notification/generated/schemas/apiUserNotification';
 import type { ChannelType } from '@service-notification/generated/schemas/channelType';
 import type { GithubPrCheckRunState } from '@service-notification/generated/schemas/githubPrCheckRunState';
@@ -49,10 +50,6 @@ import {
   subscriptionExchange,
 } from '@urql/core';
 import { type DocumentNode, parse, print, visit } from 'graphql';
-import {
-  createClient as createGraphqlWsClient,
-  type Client as GraphqlWsClient,
-} from 'graphql-ws';
 import { createSignal } from 'solid-js';
 import { match } from 'ts-pattern';
 import { delegateChannelNotificationRefresh } from '../../queries/channel/notification-refresh';
@@ -82,10 +79,12 @@ import {
 } from './graphql/generated/graphql';
 import { shouldRetryGraphqlMutation } from './graphql-mutation-retry';
 import {
+  createGraphqlSoupConnection,
+  type GraphqlSoupConnection,
+} from './graphql-soup-connection';
+import {
   createGraphqlSoupSubscriptionsLifecycle,
   createGraphqlSoupWebSocketUrlResolver,
-  SOUP_GRAPHQL_WEBSOCKET_RETRY_ATTEMPTS,
-  shouldRetryGraphqlSoupWebSocket,
 } from './graphql-soup-websocket';
 
 const dssHost = SERVER_HOSTS['document-storage-service'];
@@ -295,28 +294,27 @@ const graphqlSoupClient = createClient({
 });
 
 function createGraphqlSoupWebSocketClient(
-  onConnected: () => void
-): GraphqlWsClient {
+  onConnected: (recovered: boolean) => void
+): GraphqlSoupConnection {
   const resolveWebSocketUrl = createGraphqlSoupWebSocketUrlResolver({
     dssHost,
     bearerTokenAuth: ENABLE_BEARER_TOKEN_AUTH,
     getApiToken: getMacroApiToken,
-    refreshCookieAuth: async () => {
-      const result = await fetchToken();
-      if (result.isErr()) {
-        throw new Error('Unable to refresh GraphQL websocket cookie');
-      }
-    },
+    refreshCookieAuth: () => throwOnErr(fetchToken),
   });
-  return createGraphqlWsClient({
-    url: resolveWebSocketUrl,
-    retryAttempts: SOUP_GRAPHQL_WEBSOCKET_RETRY_ATTEMPTS,
-    on: { connected: onConnected },
-    shouldRetry: shouldRetryGraphqlSoupWebSocket,
+  return createGraphqlSoupConnection({
+    resolveUrl: resolveWebSocketUrl,
+    onConnected,
+    onAuthTimeout: () => {
+      resetMacroApiToken();
+      unsetTokenPromise();
+    },
   });
 }
 
-function graphqlSoupSubscriptionExchange(websocketClient: GraphqlWsClient) {
+function graphqlSoupSubscriptionExchange(
+  websocketClient: GraphqlSoupConnection
+) {
   return subscriptionExchange({
     forwardSubscription(payload, request) {
       const graphqlWsPayload = {
@@ -467,7 +465,7 @@ export function getGraphqlSoupClient(): Client {
       }
     };
     let host: CacheHost | undefined;
-    let websocketClient: GraphqlWsClient | undefined;
+    let websocketClient: GraphqlSoupConnection | undefined;
     let unregisterHost: () => void = () => undefined;
     const subscriptionsLifecycle = createGraphqlSoupSubscriptionsLifecycle({
       suspendOnPagehide: !native,
