@@ -2443,6 +2443,10 @@ async fn graphql_team_sharing_still_rejects_active_calls() {
     repo.expect_resolve_channel_name()
         .times(1)
         .returning(|_, _| Box::pin(async { Ok(None) }));
+    // Loading an active call record resolves the viewer's decline state.
+    repo.expect_has_declined()
+        .times(1)
+        .returning(|_, _| Box::pin(async { Ok(false) }));
     let event_broker = RecordingEventBroker::default();
     let service = build_mutation_service(repo, event_broker.clone());
 
