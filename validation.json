@@ -1,0 +1,116 @@
+{
+  "verified_at": "2026-10-05T09:18:01.667873+00:00",
+  "head": "764e8eba013addfaa205f0e5f11d0fc325d87f2c",
+  "pull_requests": [
+    {
+      "number": 7471,
+      "url": "https://github.com/macro-inc/macro/pull/7471",
+      "headRefName": "wolf/forms-models",
+      "headRefOid": "dc9f1cc6f678bb63604c075265af6c40fa69644c",
+      "baseRefName": "main",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7472,
+      "url": "https://github.com/macro-inc/macro/pull/7472",
+      "headRefName": "wolf/forms-entity",
+      "headRefOid": "f340853e99d6414b41feb080701ce6279c1d4541",
+      "baseRefName": "wolf/forms-models",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7473,
+      "url": "https://github.com/macro-inc/macro/pull/7473",
+      "headRefName": "wolf/forms-domain",
+      "headRefOid": "546c5d8291442627b7843196befee1a819c49df7",
+      "baseRefName": "wolf/forms-entity",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7474,
+      "url": "https://github.com/macro-inc/macro/pull/7474",
+      "headRefName": "wolf/forms-http",
+      "headRefOid": "ba97c1a563705bbded4a078f19458a7734c7c22b",
+      "baseRefName": "wolf/forms-domain",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7475,
+      "url": "https://github.com/macro-inc/macro/pull/7475",
+      "headRefName": "wolf/forms-web-entity",
+      "headRefOid": "73ab711407d6dc11778d69af39df09c9e7a683bd",
+      "baseRefName": "wolf/forms-http",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7476,
+      "url": "https://github.com/macro-inc/macro/pull/7476",
+      "headRefName": "wolf/forms-web-builder",
+      "headRefOid": "e205d48ae4171fefd2b275ac6639413a8cca6a92",
+      "baseRefName": "wolf/forms-web-entity",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7477,
+      "url": "https://github.com/macro-inc/macro/pull/7477",
+      "headRefName": "wolf/forms-web-respond",
+      "headRefOid": "860591da1d4937be578616a3fc52a74d1054e0ba",
+      "baseRefName": "wolf/forms-web-builder",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    },
+    {
+      "number": 7478,
+      "url": "https://github.com/macro-inc/macro/pull/7478",
+      "headRefName": "wolf/forms-channels",
+      "headRefOid": "764e8eba013addfaa205f0e5f11d0fc325d87f2c",
+      "baseRefName": "wolf/forms-web-respond",
+      "green": true,
+      "mergeable": "MERGEABLE"
+    }
+  ],
+  "local_checks": {
+    "affected_web_tests": 5575,
+    "lexical_core_tests": 350,
+    "messages_all_features_tests": 112,
+    "sdk_tests": 99,
+    "typescript": "passed",
+    "just_check": "passed",
+    "cargo_fmt": "passed",
+    "kafka_topics": "passed",
+    "local_zigbuild": "passed"
+  },
+  "reviews": {
+    "rounds": 2,
+    "categories": [
+      "code",
+      "robustness",
+      "consistency",
+      "simplification",
+      "scope and UI"
+    ],
+    "final_followups": "all five pass with zero required fixes"
+  },
+  "browser": [
+    "mouse, keyboard, and touch reordering",
+    "edge scrolling, cross-section and empty-section drops",
+    "required fields and gate outcomes",
+    "owner, shared respondent, and anonymous flows",
+    "all question types and file upload/download",
+    "submit and edit preserving row/response identity",
+    "live ledger tiles, grid, CSV precision",
+    "view-only sharing and activity privacy",
+    "public and authoring-disabled routes",
+    "channel form creation, inline mentions, polls, keyboard voting, live tallies",
+    "card collapse and expand",
+    "private form reference rejected before persistence"
+  ],
+  "local_demo": "http://localhost:35110/app/form/01a10a44-23d0-76a2-89d1-17493417797e",
+  "local_demo_user": "forms-owner@local.macro.test"
+}
