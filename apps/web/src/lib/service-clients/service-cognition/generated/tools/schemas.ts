@@ -7834,6 +7834,13 @@ export const ReadContentResponse = z.object({
             type: z.literal('pdfHighlight'),
           }),
           z.object({ anchorId: z.string().uuid(), type: z.literal('pdfPin') }),
+          z.object({
+            pageId: z.string(),
+            nodeId: z.union([z.string(), z.null()]).optional(),
+            x: z.number(),
+            y: z.number(),
+            type: z.literal('fig'),
+          }),
         ];
         const errors = schemas.reduce<z.ZodError[]>(
           (errors, schema) =>
@@ -7866,6 +7873,13 @@ export const ReadContentResponse = z.object({
     })
   ),
 });
+
+export const ReadDesign = z.object({
+  documentId: z.string(),
+  pages: z.union([z.array(z.number().int().gte(0)), z.null()]).optional(),
+});
+
+export const ReadDesignResponse = z.object({ content: z.string() });
 
 export const ReadInitiative = z.object({
   initiativeId: z.string().uuid(),
