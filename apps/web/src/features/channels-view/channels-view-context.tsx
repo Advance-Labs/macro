@@ -16,10 +16,15 @@ import { enableChannelThreadsPreview } from '@core/constant/featureFlags';
 import { createAssertedContextProvider } from '@core/context/createContext';
 import { useUserId } from '@core/context/user';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
+import type { ChannelClickTarget } from '@entity';
 import type { ContextProviderProps } from '@solid-primitives/context';
 import { type Accessor, createEffect, createMemo, on } from 'solid-js';
 import { createStore, type Store } from 'solid-js/store';
-import { channelsSearch, channelsSearchCodec } from './channels-route';
+import {
+  channelLocationUpdates,
+  channelsSearch,
+  channelsSearchCodec,
+} from './channels-route';
 import {
   CHANNELS_DEFAULT_RAIL_WIDTH,
   CHANNELS_DEFAULT_SORT_BY,
@@ -60,7 +65,11 @@ export type ChannelsViewContext = {
   setThreadsChannelId: (channelId: string | undefined) => void;
   setTab: (tab: ChannelsTab) => void;
   setMobileTab: (tab: ChannelsQueryScope) => void;
-  setSelectedChannel: (channel: ChannelPreviewSelection | undefined) => boolean;
+  /** An explicit target re-aims the detail, including repeated latest requests. */
+  setSelectedChannel: (
+    channel: ChannelPreviewSelection | undefined,
+    target?: ChannelClickTarget
+  ) => boolean;
   setGroupOpen: (group: ChannelsRailSection, open: boolean) => void;
   /** Per-user collapse state of a team channel label. */
   setLabelOpen: (labelId: string, open: boolean) => void;
@@ -151,20 +160,34 @@ export const [ChannelsViewProvider, useChannelsView] =
           };
         }
       );
-      const routeSearch = (channel?: ChannelPreviewSelection) => {
-        const target = channel && getChannelEntityTarget(channel);
-        return channelsSearchCodec.serialize({
+      const routeSearch = () =>
+        channelsSearchCodec.serialize({
           ...channelsSearch.defaults,
           tab: state.tab,
           mobileTab: state.mobileTab,
-          messageId: target?.kind === 'message' ? target.messageId : '',
-          threadId: target?.kind === 'message' ? (target.threadId ?? '') : '',
         });
-      };
       const navigateToChannel = (
         channel: ChannelPreviewSelection,
-        replace = false
+        replace = false,
+        target?: ChannelClickTarget
       ) => {
+        const selectionTarget = target ?? getChannelEntityTarget(channel);
+        // A plain selection is an ordinary open; do not turn its latest fallback
+        // into an explicit request that hides an active Call.
+        const navigationTarget =
+          target ??
+          (selectionTarget?.kind === 'message' ? selectionTarget : undefined);
+        const viewSearch = routeSearch();
+        const searchUpdates = navigationTarget
+          ? channelLocationUpdates(navigationTarget)
+          : { [channelsSearch.namespace]: viewSearch };
+        const targetUpdate = searchUpdates[channelsSearch.namespace];
+        if (typeof targetUpdate === 'function') {
+          // New detail routes can have no search to merge. Seed the view tabs;
+          // existing-owner fields win so its list filters remain untouched.
+          searchUpdates[channelsSearch.namespace] = (current) =>
+            targetUpdate({ ...viewSearch, ...current });
+        }
         navigate(
           {
             route: channelDetailRoute,
@@ -172,12 +195,13 @@ export const [ChannelsViewProvider, useChannelsView] =
           },
           {
             replace,
-            search: { [channelsSearch.namespace]: routeSearch(channel) },
+            search: searchUpdates,
           }
         );
       };
       const setSelectedChannel = (
-        channel: ChannelPreviewSelection | undefined
+        channel: ChannelPreviewSelection | undefined,
+        target?: ChannelClickTarget
       ) => {
         if (!channel) {
           navigate(
@@ -187,7 +211,7 @@ export const [ChannelsViewProvider, useChannelsView] =
           return true;
         }
         if (mobileLayout() || !selectPreview.canSelect(channel)) return false;
-        navigateToChannel(channel);
+        navigateToChannel(channel, false, target);
         return true;
       };
 

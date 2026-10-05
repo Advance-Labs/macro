@@ -1,5 +1,5 @@
 import type { ChannelPreviewSelection } from '@app/features/next-soup/utils';
-import type { ChannelEntity } from '@entity/types/entity';
+import type { ChannelClickTarget, ChannelEntity } from '@entity/types/entity';
 import type { WithNotification } from '@entity/types/notification';
 import {
   cleanup,
@@ -24,9 +24,11 @@ const mocks = vi.hoisted(() => ({
         | Promise<WithNotification<ChannelEntity>>
     >(),
   markRead: vi.fn(),
-  navigate: vi.fn(async () => {}),
+  orchestrator: vi.fn(() => ({})),
   openSplit: vi.fn(async () => {}),
-  select: vi.fn((_channel: ChannelPreviewSelection) => true),
+  select: vi.fn(
+    (_channel: ChannelPreviewSelection, _target?: ChannelClickTarget) => true
+  ),
   selected: undefined as ChannelPreviewSelection | undefined,
   source: {},
   activate: (_event: MouseEvent) => {},
@@ -90,9 +92,11 @@ vi.mock('@app/features/next-soup/utils', () => ({
         }
       : {}),
   }),
-  getChannelEntityTarget: () => ({ kind: 'latest' }),
+  getChannelEntityTarget: (channel: ChannelEntity) =>
+    channel.target
+      ? { kind: 'message', ...channel.target }
+      : { kind: 'latest' },
   markChannelNotificationsSeenOnOpen: mocks.markRead,
-  navigateChannelEntityToTarget: mocks.navigate,
   openEntityInSplitFromUnifiedList: mocks.openSplit,
 }));
 vi.mock('@app/features/soup/entity-notifications', () => ({
@@ -104,7 +108,7 @@ vi.mock('@app/lib/analytics/posthog', () => ({
 vi.mock('@app/util/favorites', () => ({ favoriteSplitContent: vi.fn() }));
 vi.mock('@components/app/GlobalAppState', () => ({
   useGlobalNotificationSource: () => mocks.source,
-  useGlobalBlockOrchestrator: () => ({}),
+  useGlobalBlockOrchestrator: mocks.orchestrator,
 }));
 vi.mock('@components/app/split-layout/layout', () => ({
   useSplitLayout: () => ({ openWithSplit: mocks.openSplit }),
@@ -382,7 +386,10 @@ describe('explicit channel activation read marking', () => {
         { channelReadScope: 'top-level' }
       )
     );
-    expect(mocks.navigate).toHaveBeenCalledOnce();
+    expect(mocks.select).toHaveBeenCalledExactlyOnceWith(
+      { type: 'channel', id: channel.id },
+      { kind: 'latest' }
+    );
     const refreshed = { ...hydrated, notifications: () => [] };
     mocks.hydrate.mockReturnValue(refreshed);
     fireEvent.click(screen.getByRole('button'));
@@ -390,7 +397,30 @@ describe('explicit channel activation read marking', () => {
     expect(mocks.markRead).toHaveBeenLastCalledWith(refreshed, mocks.source, {
       channelReadScope: 'top-level',
     });
-    expect(mocks.navigate).toHaveBeenCalledTimes(2);
+    expect(mocks.select).toHaveBeenCalledTimes(2);
+    expect(mocks.select).toHaveBeenLastCalledWith(
+      { type: 'channel', id: channel.id },
+      { kind: 'latest' }
+    );
+    expect(mocks.orchestrator).not.toHaveBeenCalled();
+  });
+
+  it('passes a repeated message target through the context without a block handle', async () => {
+    const target = { messageId: 'reply', threadId: 'thread' };
+    mocks.selected = { type: 'channel', id: channel.id, target };
+    mocks.hydrate.mockReturnValue({ ...hydrated, target });
+    mount();
+    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => expect(mocks.select).toHaveBeenCalledTimes(2));
+    for (const args of mocks.select.mock.calls) {
+      expect(args).toEqual([
+        { type: 'channel', id: channel.id, target },
+        { kind: 'message', ...target },
+      ]);
+    }
+    expect(mocks.markRead).toHaveBeenCalledTimes(2);
+    expect(mocks.orchestrator).not.toHaveBeenCalled();
   });
 
   it('awaits native async hydration when telemetry replaces the global Promise constructor', async () => {

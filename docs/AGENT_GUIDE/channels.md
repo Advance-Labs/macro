@@ -373,6 +373,9 @@ or composer draft. Verify cold opening, clicking the same message twice, and
 opening at latest after a message jump. Each explicit target should return to
 Messages even when the Call tab is selected; ordinary opening should still
 preserve an active call.
+Re-click the selected conversation in the Channels rail to return to latest.
+Re-click a search result to reapply its message/thread target, even after clearing the highlight.
+Both actions preserve the list filters and composer draft.
 
 The **Unread notification** chip points to the most recent unread notification.
 There is only one chip: above the list for a target above the viewport, or below

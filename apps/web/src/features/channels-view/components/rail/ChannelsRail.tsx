@@ -13,16 +13,12 @@ import {
   channelPreviewSelection,
   getChannelEntityTarget,
   markChannelNotificationsSeenOnOpen,
-  navigateChannelEntityToTarget,
   openEntityInSplitFromUnifiedList,
 } from '@app/features/next-soup/utils';
 import { withEntityNotifications } from '@app/features/soup/entity-notifications';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { favoriteSplitContent } from '@app/util/favorites';
-import {
-  useGlobalBlockOrchestrator,
-  useGlobalNotificationSource,
-} from '@components/app/GlobalAppState';
+import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import {
   useSplitPanelOrThrow,
@@ -151,7 +147,6 @@ export function ChannelsRail(props: ChannelsRailProps) {
   const panel = useSplitPanelOrThrow();
   const layout = useSplitLayout();
   const notificationSource = useGlobalNotificationSource();
-  const orchestrator = useGlobalBlockOrchestrator();
   let activation = 0;
   onCleanup(() => activation++);
 
@@ -177,27 +172,18 @@ export function ChannelsRail(props: ChannelsRailProps) {
         });
         return;
       }
-      const selection = channelPreviewSelection(channelId, {
-        target: getChannelEntityTarget(entity, {
-          channelNavigation: 'latest',
-        }),
+      const target = getChannelEntityTarget(entity, {
+        channelNavigation: 'latest',
       });
+      const selection = channelPreviewSelection(channelId, { target });
       const previous = selectedChannel();
-      if (!setSelectedChannel(selection)) return;
+      if (!setSelectedChannel(selection, target)) return;
       // The detail owns read marking on route opens. Re-clicks refresh and
       // mark again even though the mounted route does not change.
       if (previous?.id === selection.id && channel.isParticipant !== false) {
         markChannelNotificationsSeenOnOpen(entity, notificationSource, {
           channelReadScope: 'top-level',
         });
-      }
-      // Repeated clicks must navigate even when the route stays the same.
-      if (
-        previous?.id === selection.id &&
-        previous.target?.messageId === selection.target?.messageId &&
-        previous.target?.threadId === selection.target?.threadId
-      ) {
-        await navigateChannelEntityToTarget(selection, orchestrator);
       }
     } catch (error) {
       reportActivationError(error);

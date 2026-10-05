@@ -36,10 +36,6 @@ import {
 import { replaceSplitSearchParams } from '@app/lib/split-router/search';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { CALENDAR_BLOCK_ID } from '@block-calendar/types';
-import {
-  goToChannelLatest,
-  goToChannelMessage,
-} from '@block-channel/utils/link';
 import { URL_PARAMS as MARKDOWN_URL_PARAMS } from '@block-md/constants';
 import { markdownLocationUpdates } from '@block-md/markdown-route';
 import type {
@@ -568,37 +564,6 @@ export function getDocumentCommentTarget(entity: {
 
   const notification = getDocumentCommentNotification(entity);
   return notification && getDocumentCommentLocation(notification, document);
-}
-
-/**
- * Activate a channel row's target message in its (already-open) channel block.
- *
- * Callable imperatively per click: re-selecting the same row leaves the preview
- * entity unchanged, so a reactive derivation would never re-run — but a click
- * should always re-activate the target (e.g. after the user cleared the
- * highlight by clicking a message), matching the old inbox's per-click
- * behaviour.
- */
-export async function navigateChannelEntityToTarget(
-  entity: ChannelPreviewSelection,
-  blockOrchestrator: BlockOrchestrator
-): Promise<void> {
-  const target = getChannelEntityTarget(entity);
-  if (!target) return;
-
-  const channelId = entity.type === 'channel' ? entity.id : entity.channelId;
-
-  if (target.kind === 'latest') {
-    await goToChannelLatest(blockOrchestrator, channelId);
-    return;
-  }
-
-  await goToChannelMessage(
-    blockOrchestrator,
-    channelId,
-    target.messageId,
-    target.threadId
-  );
 }
 
 /** Scrolls an already-open document block to the row's comment target. */
