@@ -3550,6 +3550,7 @@ export const getCollabSurfaceResponse = zod
         'initiative',
         'database',
         'database_row',
+        'form',
       ])
       .describe('The type of an entity in Macro')
       .describe('Type of the parent entity.'),
@@ -3604,6 +3605,7 @@ export const ensureCollabSurfaceBody = zod
         'initiative',
         'database',
         'database_row',
+        'form',
       ])
       .describe('The type of an entity in Macro')
       .describe('Type of the parent entity access derives from.'),
@@ -3639,6 +3641,7 @@ export const ensureCollabSurfaceResponse = zod
         'initiative',
         'database',
         'database_row',
+        'form',
       ])
       .describe('The type of an entity in Macro')
       .describe('Type of the parent entity.'),
@@ -13005,6 +13008,7 @@ export const listFavoritesQueryParams = zod.object({
           'initiative',
           'database',
           'database_row',
+          'form',
         ])
         .describe('The type of an entity in Macro')
     )
@@ -13067,6 +13071,7 @@ export const listFavoritesResponse = zod
                 'initiative',
                 'database',
                 'database_row',
+                'form',
               ])
               .describe('The type of an entity in Macro')
               .describe('The type of the favorited entity.'),
@@ -13117,6 +13122,7 @@ export const addFavoriteBody = zod
         'initiative',
         'database',
         'database_row',
+        'form',
       ])
       .describe('The type of an entity in Macro')
       .describe('The type of the entity to favorite.'),
@@ -13168,6 +13174,7 @@ export const addFavoriteResponse = zod
         'initiative',
         'database',
         'database_row',
+        'form',
       ])
       .describe('The type of an entity in Macro')
       .describe('The type of the favorited entity.'),
@@ -13216,6 +13223,7 @@ export const reorderFavoritesBody = zod
                 'initiative',
                 'database',
                 'database_row',
+                'form',
               ])
               .describe('The type of an entity in Macro')
               .describe('The type of the favorited entity.'),
@@ -13257,6 +13265,7 @@ export const removeFavoriteByEntityParams = zod.object({
       'initiative',
       'database',
       'database_row',
+      'form',
     ])
     .describe('The type of the favorited entity.'),
   entity_id: zod.string().describe('The id of the favorited entity.'),
@@ -18334,6 +18343,7 @@ export const getItemsSoupResponse = zod
                                 'initiative',
                                 'database',
                                 'database_row',
+                                'form',
                               ])
                               .describe('The type of an entity in Macro')
                               .describe("The referenced entity's type."),
@@ -23091,6 +23101,7 @@ export const postItemsSoupResponse = zod
                                 'initiative',
                                 'database',
                                 'database_row',
+                                'form',
                               ])
                               .describe('The type of an entity in Macro')
                               .describe("The referenced entity's type."),
@@ -27262,6 +27273,7 @@ export const postItemsSoupAstResponse = zod
                                 'initiative',
                                 'database',
                                 'database_row',
+                                'form',
                               ])
                               .describe('The type of an entity in Macro')
                               .describe("The referenced entity's type."),
@@ -31811,6 +31823,7 @@ export const postItemsSoupAstGroupedResponse = zod
                                       'initiative',
                                       'database',
                                       'database_row',
+                                      'form',
                                     ])
                                     .describe('The type of an entity in Macro')
                                     .describe("The referenced entity's type."),
@@ -35978,6 +35991,7 @@ export const postItemsSoupAstGroupedResponse = zod
                                       'initiative',
                                       'database',
                                       'database_row',
+                                      'form',
                                     ])
                                     .describe('The type of an entity in Macro')
                                     .describe("The referenced entity's type."),
@@ -41123,6 +41137,7 @@ export const listRemindersQueryParams = zod.object({
           'initiative',
           'database',
           'database_row',
+          'form',
         ])
         .describe('The type of an entity in Macro')
     )
@@ -41208,6 +41223,7 @@ export const listRemindersResponse = zod
                     'initiative',
                     'database',
                     'database_row',
+                    'form',
                   ])
                   .describe('The type of an entity in Macro'),
               ])
@@ -41298,6 +41314,7 @@ export const createReminderBody = zod
             'initiative',
             'database',
             'database_row',
+            'form',
           ])
           .describe('The type of an entity in Macro'),
       ])
@@ -41475,6 +41492,7 @@ export const listReminderCollectionResponse = zod
                         'initiative',
                         'database',
                         'database_row',
+                        'form',
                       ])
                       .describe('The type of an entity in Macro'),
                   ])
@@ -41712,6 +41730,7 @@ export const listEmailRemindersResponse = zod
                             'initiative',
                             'database',
                             'database_row',
+                            'form',
                           ])
                           .describe('The type of an entity in Macro'),
                       ])
@@ -41976,6 +41995,7 @@ export const getReminderResponse = zod
             'initiative',
             'database',
             'database_row',
+            'form',
           ])
           .describe('The type of an entity in Macro'),
       ])
@@ -42123,6 +42143,7 @@ export const updateReminderResponse = zod
             'initiative',
             'database',
             'database_row',
+            'form',
           ])
           .describe('The type of an entity in Macro'),
       ])
