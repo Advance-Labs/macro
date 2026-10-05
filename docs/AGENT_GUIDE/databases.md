@@ -1,8 +1,30 @@
 # Databases
 
-Choose **Create → Database** to create a database and its first table with a Name
-column. **C → L** opens a new database with its title selected and ready to type.
-Enter saves the title and focuses A1, ready to type without another click.
+Choose **Create → Database** (or press **C → L**) to open the **New database**
+gallery. **No template** is selected and focused by default. Each card shows a
+small visual preview, its icon, name and description. A blue ring marks the
+selected card, with no visible radio control. Left/Right move within the current
+row; Up/Down move to the same column in the adjacent row, matching the responsive
+grid. Navigation stops at the edges. Home/End select the first/last card, and the
+selected card scrolls into view. Clicking a card or using
+the arrow keys only changes the selection; nothing is created until **Create
+database** / **Use template**, or Enter, confirms it. Escape or **Cancel** closes
+the gallery without creating anything, and reopening always starts with **No
+template** again. The grid adapts to the available width and scrolls as more
+templates are added, with the create action kept below it.
+On mobile, open it from **New → More → Database**.
+**No template** creates an empty database and its first table with a Name column,
+and opens it with its title selected and ready to type. Enter saves the title
+and focuses A1, ready to type without another click. Available templates are
+**Project tracker**, **Event planner**, **Content calendar**, **Reading
+list**, **Trip planner**, **Habit tracker**, **Recipe collection** and **Getting
+started**. Trip planner includes an itinerary with dates, places and budgets;
+Habit tracker includes routines with goals, frequency and completion dates;
+Recipe collection includes meal categories, ingredients and cooking notes.
+Each has table and board views. Confirming one creates a database under the
+template's name with its tables, columns, views and a few sample records (person
+cells are left empty), all in one request, and opens it. While the templates
+load, or if they fail to, **Create database** still works without a template.
 Opening **Ctrl-K** refreshes database discovery so a database created by AI or
 another client appears without reloading. **All** and **Documents** categories
 match its name, including databases with no view history.
@@ -44,8 +66,8 @@ PostHog unless the variable was set when it was built. With the flag off:
 - `/app/database/<uuid>` and a `~/database/<uuid>` split show the 404 view. The
   database block's code is never fetched and no database request is made.
 - **Create → Database**, its **C → L** shortcut, the command palette entry and
-  the slash menu's **Database** action are absent, and no starter database is
-  created.
+  the slash menu's **Database** action are absent, no templates are requested,
+  and no starter database is created.
 - The sidebar, mentions, search and Quick Access list no databases; Activity
   and the ReadActivity tool leave out database rows.
 - A document's database answer shows its title (or "Database answer") as a
@@ -358,7 +380,8 @@ record's changes, newest first, also after it was deleted.
 ## First database
 
 When Databases is enabled and an authenticated user has no accessible databases,
-the app creates one small **Getting started** example in the background. Its
+the app creates one small **Getting started** example in the background, from
+the Getting started template. Its
 **Ideas** table has Name and Stage columns and three cards spread across To do,
 Doing, and Done. Its Table and Board views show the same records; the first
 open selects Board. This example is created at most once per user. Retrying or
@@ -376,7 +399,8 @@ Any chat, not only one opened from a database, can build databases: the assistan
 has six database tools: `ListDatabases`, `DescribeDatabase`, `QueryDatabase`,
 `SaveDatabaseQuery`, `SaveDatabaseView`, and `DeleteDatabaseView`.
 `QueryDatabase` reads and changes rows and handles schema changes through SQL
-(`CREATE`, `ALTER`, and `DROP`). The assistant reads the current schema before
+(`CREATE`, `ALTER`, and `DROP`), including `CREATE DATABASE "Name" TEMPLATE
+project_tracker` to start from a template. The assistant reads the current schema before
 editing and checks actual results before reporting success.
 
 Query tool rows say what the query did in words (**Read Invites**, **Updated 3
