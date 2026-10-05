@@ -45,6 +45,10 @@ type ToolParserMap = {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
   };
+  CreateConfirmedCalendarEvent: {
+    call: types.CreateConfirmedCalendarEvent;
+    response: types.ToolCalendarEvent;
+  };
   CreateDocument: {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
@@ -371,6 +375,10 @@ const toolParserMap = {
   CreateChannel: {
     call: schemas.CreateChannel,
     response: schemas.CreateChannelResponse,
+  },
+  CreateConfirmedCalendarEvent: {
+    call: schemas.CreateConfirmedCalendarEvent,
+    response: schemas.ToolCalendarEvent,
   },
   CreateDocument: {
     call: schemas.CreateDocument,
@@ -745,6 +753,10 @@ type ToolDataMap = {
   CreateChannel: {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
+  };
+  CreateConfirmedCalendarEvent: {
+    call: types.CreateConfirmedCalendarEvent;
+    response: types.ToolCalendarEvent;
   };
   CreateDocument: {
     call: types.CreateDocument;
