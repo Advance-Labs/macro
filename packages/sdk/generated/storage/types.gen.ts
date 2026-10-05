@@ -6385,7 +6385,8 @@ export type Form = {
      */
     id: string;
     /**
-     * Its name, independent of its database's.
+     * Its display name. A standalone form follows the database it created;
+     * a form attached to an existing table has its own name.
      */
     name: string;
     /**
@@ -6437,7 +6438,7 @@ export type FormCollaboration = {
      * Why the current draft cannot yet replace the respondent layout.
      * Only editors can request this result.
      */
-    publicationError?: string;
+    publicationError?: FormPublicationProblem;
 };
 
 /**
@@ -6495,6 +6496,29 @@ export type FormLayout = {
      * The sections, first first.
      */
     sections: Array<FormSection>;
+};
+
+/**
+ * An editor's saved draft is not yet the version respondents can use.
+ */
+export type FormPublicationProblem = {
+    kind: 'invalidDraft';
+} | {
+    kind: 'layout';
+    /**
+     * The invariant the editor needs to repair.
+     */
+    problem: LayoutProblem;
+} | {
+    kind: 'widgetMismatch';
+    /**
+     * The question to repair.
+     */
+    question: string;
+} | {
+    kind: 'fileUploadNeedsSignIn';
+} | {
+    kind: 'pending';
 };
 
 /**
@@ -18894,7 +18918,7 @@ export type PutFormLayoutErrors = {
 export type PutFormLayoutError = PutFormLayoutErrors[keyof PutFormLayoutErrors];
 
 export type PutFormLayoutResponses = {
-    200: FormDetail;
+    200: FormCollaboration;
 };
 
 export type PutFormLayoutResponse = PutFormLayoutResponses[keyof PutFormLayoutResponses];

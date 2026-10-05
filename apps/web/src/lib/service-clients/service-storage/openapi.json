@@ -11092,7 +11092,7 @@
     "/forms/{id}/layout": {
       "put": {
         "tags": ["forms"],
-        "summary": "Replace a form's layout as a whole, validated against its table.",
+        "summary": "Save a validated replacement in the shared layout and report publication.\nA 200 response with `publicationError` means the draft is saved, while\nrespondents still see `detail`. Retrying collaboration retries publication.",
         "operationId": "put_form_layout",
         "parameters": [
           {
@@ -11122,7 +11122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FormDetail"
+                  "$ref": "#/components/schemas/FormCollaboration"
                 }
               }
             }
@@ -27368,7 +27368,7 @@
           },
           "name": {
             "type": "string",
-            "description": "Its name, independent of its database's."
+            "description": "Its display name. A standalone form follows the database it created;\na form attached to an existing table has its own name."
           },
           "ownerId": {
             "type": "string",
@@ -27419,7 +27419,7 @@
             "description": "The latest validated form. The form id also identifies its surface."
           },
           "publicationError": {
-            "type": "string",
+            "$ref": "#/components/schemas/FormPublicationProblem",
             "description": "Why the current draft cannot yet replace the respondent layout.\nOnly editors can request this result."
           }
         }
@@ -27520,6 +27520,75 @@
             "description": "The sections, first first."
           }
         }
+      },
+      "FormPublicationProblem": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The draft contains unsupported or malformed layout records. An explicit\nlayout replacement can repair it without replacing its document history.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["invalidDraft"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The layout violates a form invariant.",
+            "required": ["problem", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["layout"]
+              },
+              "problem": {
+                "$ref": "#/components/schemas/LayoutProblem",
+                "description": "The invariant the editor needs to repair."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A question's widget no longer fits its column.",
+            "required": ["question", "kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["widgetMismatch"]
+              },
+              "question": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The question to repair."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "File questions require a signed-in audience.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["fileUploadNeedsSignIn"]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The draft was saved, but publication could not finish. Reading the\ncollaboration endpoint retries publication; do not repeat the write.",
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["pending"]
+              }
+            }
+          }
+        ],
+        "description": "An editor's saved draft is not yet the version respondents can use."
       },
       "FormQuestionDetail": {
         "type": "object",

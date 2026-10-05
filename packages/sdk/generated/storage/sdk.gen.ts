@@ -1851,7 +1851,9 @@ export class Sdk extends HeyApiClient {
     }
     
     /**
-     * Replace a form's layout as a whole, validated against its table.
+     * Save a validated replacement in the shared layout and report publication.
+     * A 200 response with `publicationError` means the draft is saved, while
+     * respondents still see `detail`. Retrying collaboration retries publication.
      */
     public putFormLayout<ThrowOnError extends boolean = false>(options: Options<PutFormLayoutData, ThrowOnError>): RequestResult<PutFormLayoutResponses, PutFormLayoutErrors, ThrowOnError> {
         return (options.client ?? this.client).put<PutFormLayoutResponses, PutFormLayoutErrors, ThrowOnError>({
