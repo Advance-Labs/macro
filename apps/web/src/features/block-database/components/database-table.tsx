@@ -20,6 +20,7 @@ import { DragDropProvider, DragOverlay } from '@thisbeyond/solid-dnd';
 import { getHashedPaletteColor } from '@ui/utils/palette';
 import {
   type Accessor,
+  children,
   createEffect,
   createMemo,
   createSignal,
@@ -101,7 +102,7 @@ export type DatabaseTableProps = {
   resizable?: boolean;
   canEdit: boolean;
   pending: boolean;
-  addColumn: JSX.Element;
+  addColumn?: JSX.Element;
   emptyState?: JSX.Element;
   controlsRef?: (controls: DatabaseTableControls) => void;
   renderCell: (
@@ -142,6 +143,13 @@ export type DatabaseTableProps = {
 export function DatabaseTable(props: DatabaseTableProps) {
   const columns = () => props.model.visibleColumns();
   const rows = () => props.model.rows();
+  const addColumn = children(() =>
+    props.canEdit ? props.addColumn : undefined
+  );
+  const hasAddColumn = () =>
+    addColumn
+      .toArray()
+      .some((child) => child != null && typeof child !== 'boolean');
   let scrollContainer!: HTMLDivElement;
   let gridElement!: HTMLDivElement;
   let virtualizer: VirtualizerHandle | undefined;
@@ -373,7 +381,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
             ? 'min(var(--database-title-column-width, 18rem), max(9rem, calc(100cqw - 11.5rem)))'
             : '12rem';
         })
-        .join(' ')} ${props.canEdit ? '8.75rem' : ''}`
+        .join(' ')} ${hasAddColumn() ? '8.75rem' : ''}`
   );
   function moveFocus(event: KeyboardEvent) {
     if (
@@ -552,7 +560,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
           aria-multiselectable="true"
           aria-label={props.name}
           aria-rowcount={props.hasMoreRows ? -1 : rows().length + 1}
-          aria-colcount={columns().length + 1 + Number(props.canEdit)}
+          aria-colcount={columns().length + 1 + Number(hasAddColumn())}
           data-grid
           data-grid-saved-rows={
             rows().filter((row) => !props.isUnsavedRow?.(row.rowId)).length
@@ -656,12 +664,12 @@ export function DatabaseTable(props: DatabaseTableProps) {
                 );
               }}
             </Key>
-            <Show when={props.canEdit}>
+            <Show when={hasAddColumn()}>
               <div
                 role="columnheader"
                 class="flex items-center justify-start px-2"
               >
-                {props.addColumn}
+                {addColumn()}
               </div>
             </Show>
           </div>
@@ -843,7 +851,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
                             );
                           }}
                         </Key>
-                        <Show when={props.canEdit}>
+                        <Show when={hasAddColumn()}>
                           <div role="gridcell" />
                         </Show>
                       </div>
@@ -970,7 +978,7 @@ export function DatabaseTable(props: DatabaseTableProps) {
             <For each={columns()}>
               {() => <div class="border-r border-edge-muted/40" />}
             </For>
-            <Show when={props.canEdit}>
+            <Show when={hasAddColumn()}>
               <div />
             </Show>
           </div>
