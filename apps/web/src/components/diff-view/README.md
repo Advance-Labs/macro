@@ -38,6 +38,10 @@ The host composes the rest:
 - Toolbar parts, `DiffView.CollapseAll` and `DiffView.StyleToggle`, anywhere
   inside `Root`.
 - Collapse state that persists, by passing `collapse`; the default lives in memory.
+- `DiffCounts` for compact numeric totals, or `DiffStats` for those same totals
+  beside five green/red squares showing the addition/deletion proportion. A static
+  diagonal hatch and inset edge give the squares texture without changing their size.
+  Exact totals remain accessible without relying on color. Zero totals show neutral squares.
 
 ```tsx
 <DiffView.Root files={files()} patch={patch()} diffStyle={style()} active={active()}>
