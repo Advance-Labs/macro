@@ -1404,17 +1404,24 @@ keeps the same pane mounted.
 The pane shell opens before the diff bodies render. Reduced-motion preferences
 disable both animations.
 The PR breadcrumb and side-panel toggle remain above the left pane. The
-**Changes** toggle stays visible in split view, ghost while closed and active
-while open; clicking it again closes the pane. There is no standalone **Open on
+**Changes** toggle stays visible in split view, ghost while closed and accent text
+on a tinted background while open; clicking it again closes the pane. There is no standalone **Open on
 GitHub** button: the pane header has no visible Changes title, and its
-`head → base · #N` is one fully rounded GitHub link. At full width, a smaller PR title appears before
-the link and GitHub diff counts after the PR number. Both come from the existing
-PR query; unavailable titles and totals stay hidden, without placeholder titles
-or captured-count fallbacks. File headers highlight on hover.
+`head → base · #N` is one plain-text GitHub link, underlined on hover without a
+pill background or icon. GitHub diff totals and five green/red squares appear
+beside the PR number in both split and full-width layouts. The squares summarize
+the addition/deletion mix; the numbers retain exact totals. At full width, a smaller
+PR title appears before the link. Both title and totals come from the existing PR
+query; unavailable values stay hidden, without placeholders or captured-count
+fallbacks. File headers highlight on hover. When space is tight, the smaller
+branch/PR/count metadata wraps below the title, while pane actions stay separate.
+The Changes toggle has no diff totals and becomes icon-only below 28rem of header
+width, retaining its name, tooltip, and active state. Breadcrumbs keep their existing layout.
 The full-height file tree has a fixed header with its file count on the left and
 **Hide file tree** on the right. Borderless diff controls float above the diff stack
-rather than spanning the pane in a second toolbar. Unified/Split stays on the left,
-with diff collapse/expand and refresh on the right. Hiding the tree moves its count
+rather than spanning the pane in a second toolbar. Unified/Split retains text labels
+at narrow non-touch widths on the left, with diff collapse/expand and refresh on
+the right. Hiding the tree moves its count
 and **Show file tree** above the diffs, as described in
 [AI Chat](ai-chat.md#reviewing-a-linked-github-pull-request).
 Spotlighting changes hides the left pane and its top bar; **Back to the split**
@@ -1430,7 +1437,7 @@ width locally. Tree visibility uses the sidebar's shared width transition while
 retaining directory state and diff owners. Reduced motion skips this transition.
 The divider remains visible but inert through the tree's exit. Resizing the outer
 split or viewport settles active tree motion before applying the new geometry.
-**Copy path** briefly shows a success checkmark without collapsing
+**Copy path** briefly shows a non-pulsing success checkmark without collapsing
 the file. The PR viewer stays read-only and does not offer agent review notes.
 Copy Link from a PR in Quick Access copies `/app/reviews/pr/<foreignEntityId>`.
 Old `/app/pr/<foreignEntityId>` links redirect to Reviews. Check a copied link,

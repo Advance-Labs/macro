@@ -55,7 +55,9 @@ vi.mock('@app/components/view-shell', () => ({
     ),
   },
   ViewBreadcrumbs: {
-    Outlet: () => <span>Pull request location</span>,
+    Outlet: (props: { class?: string }) => (
+      <span class={props.class}>Pull request location</span>
+    ),
     Item: (props: {
       children: (item: {
         isActive: () => boolean;
@@ -66,8 +68,8 @@ vi.mock('@app/components/view-shell', () => ({
         {props.children({ isActive: () => true, onSelect: () => {} })}
       </div>
     ),
-    Button: (props: { children: JSX.Element }) => (
-      <button>{props.children}</button>
+    Button: (props: { children: JSX.Element; class?: string }) => (
+      <button class={props.class}>{props.children}</button>
     ),
   },
 }));
@@ -87,7 +89,7 @@ vi.mock('@components/app/split-panel', () => ({
   SplitPanel: { CloseButton: () => null },
 }));
 vi.mock('@components/app/split-layout/components/SplitFileMenu', () => ({
-  SplitFileMenu: () => null,
+  SplitFileMenu: () => <button aria-label="PR menu">Menu</button>,
 }));
 vi.mock('@core/component/SharePermissions', () => ({
   Permissions: { CAN_VIEW: 1 },
@@ -201,6 +203,23 @@ describe('PR changes layout', () => {
     );
     expect(panel.querySelector('header')?.textContent).toContain('Changes');
     expect(panel.textContent).toContain('PR detail skeleton');
+    const breadcrumb = screen.getByText('Pull request location');
+    expect(breadcrumb.classList.contains('flex-1')).toBe(false);
+    expect(breadcrumb.classList.contains('overflow-hidden')).toBe(false);
+    const menu = screen.getByRole('button', { name: 'PR menu' });
+    const row = menu.parentElement?.parentElement;
+    expect(row?.classList.contains('min-w-0')).toBe(true);
+    expect(row?.classList.contains('min-w-16')).toBe(false);
+    expect(row?.classList.contains('touch:min-w-8')).toBe(false);
+    expect(row?.querySelector('button')?.classList.contains('min-w-8')).toBe(
+      false
+    );
+    expect(row?.classList.contains('overflow-hidden')).toBe(false);
+    menu.focus();
+    expect(document.activeElement).toBe(menu);
+    expect(
+      screen.getByText('Changes').parentElement?.classList.contains('shrink-0')
+    ).toBe(true);
   });
 
   it.each([

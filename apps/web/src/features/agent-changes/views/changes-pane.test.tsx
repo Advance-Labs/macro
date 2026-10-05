@@ -299,29 +299,37 @@ describe('ChangesPane', () => {
     ).toBeNull();
   });
 
-  it('switches diff layout from the floating compact control', async () => {
-    const { controller } = mount(readyContext(), () => <ChangesPane />);
-    controller().layout.open();
-    await waitFor(() => expect(screen.getAllByTestId('diff')).toHaveLength(2));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Switch to split diff' })
-    );
-    expect(controller().diffStyle()).toBe('split');
-    expect(
-      screen
-        .getAllByTestId('diff')
-        .every((diff) => diff.dataset.style === 'split')
-    ).toBe(true);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Switch to unified diff' })
-    );
-    expect(controller().diffStyle()).toBe('unified');
-    expect(
-      screen
-        .getAllByTestId('diff')
-        .every((diff) => diff.dataset.style === 'unified')
-    ).toBe(true);
-  });
+  it.each([1200, 500])(
+    'keeps textual diff layout controls at %ipx',
+    async (width) => {
+      device.width = width;
+      const { controller } = mount(readyContext(), () => <ChangesPane />);
+      controller().layout.open();
+      await waitFor(() =>
+        expect(screen.getAllByTestId('diff')).toHaveLength(2)
+      );
+      const toggle = screen.getByLabelText('Diff layout');
+      expect(toggle.classList.contains('hidden')).toBe(false);
+      expect(toggle.className).not.toContain('changes-diff:');
+      expect(
+        screen.queryByRole('button', { name: /Switch to .* diff/ })
+      ).toBeNull();
+      fireEvent.click(within(toggle).getByRole('radio', { name: 'Split' }));
+      expect(controller().diffStyle()).toBe('split');
+      expect(
+        screen
+          .getAllByTestId('diff')
+          .every((diff) => diff.dataset.style === 'split')
+      ).toBe(true);
+      fireEvent.click(within(toggle).getByRole('radio', { name: 'Unified' }));
+      expect(controller().diffStyle()).toBe('unified');
+      expect(
+        screen
+          .getAllByTestId('diff')
+          .every((diff) => diff.dataset.style === 'unified')
+      ).toBe(true);
+    }
+  );
 
   it('lists files and collapses individual or all diffs without viewed controls', async () => {
     const context = readyContext();
@@ -499,7 +507,7 @@ describe('ChangesPane', () => {
     await waitFor(() => expect(tree()).toBeTruthy());
   });
 
-  it('shows the PR title and authoritative counts around the GitHub link only at full width', () => {
+  it('keeps authoritative square diff stats beside the GitHub link in split and full width', () => {
     const context = readyContext();
     context.setPullRequestUrl('https://github.com/macro-inc/macro/pull/1482');
     const [title, setTitle] = createSignal<string | undefined>(
@@ -515,7 +523,14 @@ describe('ChangesPane', () => {
     const header = screen.getByLabelText('Changes controls');
     const controls = within(header);
     expect(controls.queryByText('Pull request title')).toBeNull();
-    expect(controls.queryByLabelText('Pull request diff counts')).toBeNull();
+    const initialCounts = controls.getByLabelText('Pull request diff counts');
+    expect(initialCounts.textContent).toBe('+8−2');
+    const statsImage = within(initialCounts).getByRole('img', {
+      name: '8 additions, 2 deletions',
+    });
+    expect(
+      statsImage.querySelectorAll('.bg-success, .bg-failure')
+    ).toHaveLength(5);
 
     fireEvent.click(
       controls.getByRole('button', { name: 'Expand changes to the full width' })
@@ -525,11 +540,25 @@ describe('ChangesPane', () => {
       name: 'View pull request #1482',
     });
     const countElement = controls.getByLabelText('Pull request diff counts');
-    expect(titleElement.nextElementSibling).toBe(link);
+    const metadata = link.parentElement;
+    expect(titleElement.parentElement?.classList.contains('flex-wrap')).toBe(
+      true
+    );
+    expect(titleElement.classList.contains('max-w-full')).toBe(true);
+    expect(titleElement.nextElementSibling).toBe(metadata);
+    expect(metadata?.classList.contains('flex-nowrap')).toBe(true);
+    expect(metadata?.classList.contains('text-xs')).toBe(true);
+    expect(countElement.parentElement).toBe(metadata);
     expect(titleElement.getAttribute('title')).toBe('Pull request title');
     expect(titleElement.classList.contains('truncate')).toBe(true);
-    expect(titleElement.classList.contains('text-xs')).toBe(true);
-    expect(link.classList.contains('rounded-full')).toBe(true);
+    expect(titleElement.classList.contains('text-sm')).toBe(true);
+    expect(titleElement.classList.contains('pt-1')).toBe(true);
+    expect(link.classList.contains('hover:underline')).toBe(true);
+    expect(link.classList.contains('rounded-full')).toBe(false);
+    expect(link.classList.contains('hover:bg-hover')).toBe(false);
+    expect(link.classList.contains('px-2')).toBe(false);
+    expect(link.classList.contains('py-1')).toBe(false);
+    expect(link.querySelector('svg')).toBeNull();
     expect(link.textContent).toBe(
       'agent/unread-archived-sessions → main·#1482'
     );
@@ -556,7 +585,44 @@ describe('ChangesPane', () => {
       controls.getByRole('button', { name: 'Back to the split' })
     );
     expect(controls.queryByText('Restored title')).toBeNull();
-    expect(controls.queryByLabelText('Pull request diff counts')).toBeNull();
+    expect(
+      controls.getByLabelText('Pull request diff counts').textContent
+    ).toBe('+8−2');
+  });
+  it('keeps touch navigation outside the wrapping title and metadata', async () => {
+    device.touch = true;
+    const context = readyContext();
+    context.setPullRequestUrl('https://github.com/macro-inc/macro/pull/1482');
+    context.host.pullRequestTitle = () => 'A long pull request title';
+    context.host.pullRequestChangeCounts = () => ({
+      additions: 128,
+      deletions: 64,
+    });
+    const { controller } = mount(context, () => <ChangesPane fullWidth />);
+    controller().layout.open();
+    await waitFor(() => expect(screen.getAllByTestId('diff')).toHaveLength(2));
+    const controls = within(screen.getByLabelText('Changes controls'));
+    const title = controls.getByText('A long pull request title');
+    const link = controls.getByRole('link', {
+      name: 'View pull request #1482',
+    });
+    const counts = controls.getByLabelText('Pull request diff counts');
+    const navigation = controls.getByRole('button', {
+      name: 'Back to conversation',
+    });
+    const wrappingGroup = title.parentElement;
+    expect(wrappingGroup?.classList.contains('flex-wrap')).toBe(true);
+    expect(link.parentElement?.parentElement).toBe(wrappingGroup);
+    expect(counts.parentElement).toBe(link.parentElement);
+    expect(link.nextElementSibling).toBe(counts);
+    expect(wrappingGroup?.contains(navigation)).toBe(false);
+    expect(navigation.closest('[aria-label="Changes controls"]')).toBe(
+      wrappingGroup?.parentElement
+    );
+    fireEvent.click(link);
+    expect(context.opened).toEqual([
+      'https://github.com/macro-inc/macro/pull/1482',
+    ]);
   });
   it('closes and spotlights from its header', () => {
     const context = readyContext();
@@ -589,21 +655,24 @@ describe('session controls', () => {
       </AgentChangesSplit>
     ));
     const toggle = screen.getByRole('button', { name: /^Changes/ });
-    expect(toggle.textContent).toContain('Changes+3−1');
+    expect(toggle.textContent).toBe('Changes');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(toggle.getAttribute('data-variant')).toBe('ghost');
-    expect(toggle.classList.contains('bg-active')).toBe(false);
+    expect(toggle.classList.contains('bg-accent-bg')).toBe(false);
     fireEvent.click(toggle);
     expect(controller().layout.layout()).toBe('split');
     expect(screen.getByRole('button', { name: /^Changes/ })).toBe(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    expect(toggle.getAttribute('data-variant')).toBe('outline');
-    expect(toggle.classList.contains('bg-active')).toBe(true);
+    expect(toggle.getAttribute('data-variant')).toBe('accent');
+    expect(toggle.classList.contains('bg-accent-bg')).toBe(true);
+    expect(toggle.classList.contains('text-accent')).toBe(true);
+    const stats = screen.getByLabelText('Pull request diff counts');
+    expect(stats.textContent).toBe('+3−1');
     fireEvent.click(toggle);
     expect(controller().layout.layout()).toBe('closed');
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
     expect(toggle.getAttribute('data-variant')).toBe('ghost');
-    expect(toggle.classList.contains('bg-active')).toBe(false);
+    expect(toggle.classList.contains('bg-accent-bg')).toBe(false);
     expect(screen.queryByLabelText('Changes controls')).toBeNull();
     fireEvent.click(toggle);
     expect(screen.getByRole('button', { name: 'Share session' })).toBeTruthy();
@@ -629,14 +698,14 @@ describe('session controls', () => {
       screen
         .getByRole('button', { name: /^Changes/ })
         .getAttribute('data-variant')
-    ).toBe('outline');
+    ).toBe('accent');
     fireEvent.click(
       screen.getByRole('button', { name: 'Close the changes pane' })
     );
     expect(controller().layout.layout()).toBe('closed');
-    expect(
-      screen.getByRole('button', { name: /^Changes/ }).textContent
-    ).toContain('Changes+3−1');
+    expect(screen.getByRole('button', { name: /^Changes/ }).textContent).toBe(
+      'Changes'
+    );
     expect(screen.queryByLabelText('Changes controls')).toBeNull();
     expect(screen.getByRole('button', { name: 'Share session' })).toBeTruthy();
     expect(
@@ -652,27 +721,36 @@ describe('session controls', () => {
       { additions: number; deletions: number } | undefined
     >({ additions: 8, deletions: 2 });
     context.host.pullRequestChangeCounts = counts;
-    const { controller } = mount(context, () => <ChangesToggle />);
+    const { controller } = mount(context, () => (
+      <>
+        <ChangesToggle />
+        <ChangesPane />
+      </>
+    ));
     const toggle = screen.getByRole('button', { name: /Changes/ });
-    expect(toggle.textContent).toBe('Changes+8−2');
+    const stats = () => screen.queryByLabelText('Pull request diff counts');
+    expect(toggle.textContent).toBe('Changes');
+    expect(stats()?.textContent).toBe('+8−2');
 
     // A missing or stale PR capture must not replace GitHub totals.
     context.setSummary(undefined);
-    expect(toggle.textContent).toBe('Changes+8−2');
+    expect(stats()?.textContent).toBe('+8−2');
     context.setSummary({ capturing: true, changeset: mockChangeset() });
-    expect(toggle.textContent).toBe('Changes+8−2');
+    expect(stats()?.textContent).toBe('+8−2');
     expect(toggle.querySelector('.animate-pulse')).toBeNull();
     expect(controller().changeCounts()).toEqual({ additions: 8, deletions: 2 });
     // Missing GitHub data must not expose the snapshot's +3 / −1 estimates.
     setCounts(undefined);
     expect(toggle.textContent).toBe('Changes');
+    expect(stats()).toBeNull();
     expect(controller().changeCounts()).toBeUndefined();
 
     setCounts({ additions: 12, deletions: 0 });
-    expect(toggle.textContent).toBe('Changes+12');
+    expect(stats()?.textContent).toBe('+12');
     setCounts({ additions: 0, deletions: 4 });
-    expect(toggle.textContent).toBe('Changes−4');
+    expect(stats()?.textContent).toBe('−4');
     setCounts({ additions: 0, deletions: 0 });
+    expect(stats()?.textContent).toBe('');
     expect(toggle.textContent).toBe('Changes');
     fireEvent.click(toggle);
     expect(controller().layout.changesVisible()).toBe(true);
@@ -1160,7 +1238,7 @@ describe('session controls', () => {
     }
   );
 
-  it('does not display fake zero counts before a snapshot loads or for empty snapshots', () => {
+  it('keeps counts out of the toggle before and after snapshots load', () => {
     const context = createMockAgentChangesContext();
     mount(context, () => <ChangesToggle />);
     const toggle = screen.getByRole('button', { name: /Changes/ });
@@ -1171,7 +1249,7 @@ describe('session controls', () => {
     });
     expect(toggle.textContent).toBe('Changes');
     context.setSummary({ capturing: false, changeset: mockChangeset() });
-    expect(toggle.textContent).toBe('Changes+3−1');
+    expect(toggle.textContent).toBe('Changes');
   });
 
   it('hands off to the pane while it is closed, and can be dismissed', () => {

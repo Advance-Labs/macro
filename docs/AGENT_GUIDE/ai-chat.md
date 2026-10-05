@@ -936,11 +936,17 @@ stays aligned when earlier diffs finish rendering. Wheel, pointer, or keyboard
 interaction releases the anchor for manual scrolling; refreshing files does not
 jump back to an unchanged selection. Its header row
 (`[role="group"][aria-label="Changes controls"]`) has no visible Changes title.
-It shows `head → base · #N` as one fully rounded GitHub link (**View pull request #N**).
-At full width, a smaller PR title appears before the branch link and `+N −M` GitHub totals
-after the PR number, using existing query data. Missing titles and totals stay
-hidden instead of showing placeholders or captured estimates. Hovering a file
-header highlights its row.
+It shows `head → base · #N` as one plain-text GitHub link (**View pull request #N**),
+with an underline on hover and no icon or pill background. The header Changes toggle
+has no diff totals and becomes icon-only below 28rem of header width, retaining
+its accessible name, tooltip, and pressed state. When open, accent text and a tinted
+background match the side-panel emphasis. Beside the branch link and PR number,
+exact `+N −M` totals and five green/red squares summarize the addition/deletion mix
+in both split and full-width layouts. At full width, a smaller PR title appears
+before the branch link. If the header lacks room, the smaller
+branch/PR/count metadata wraps below the title; pane actions remain separate.
+Missing titles and totals stay hidden instead of showing placeholders or captured
+estimates. Hovering a file header highlights its row.
 Narrow panes truncate the branch range but keep the PR number visible. Wide hosts offer
 **Expand changes to the full width** (pressed while spotlit; its label becomes
 **Back to the split**) and **Close the changes pane** on the right. At 720px or narrower,
@@ -953,10 +959,9 @@ The tree rows scroll below that header. Borderless controls float above the diff
 stack (`[role="group"][aria-label="Diff controls"]`): **Unified / Split**
 (`aria-label="Diff layout"`) on the left, and **Collapse all / Expand all** and
 **Refresh pull request changes** on the right.
-There is no second toolbar spanning the pane. A narrow diff column replaces the
-segmented control with **Switch to split diff / Switch to unified diff**, based on
-column width rather than window width. Hiding the tree moves the file count and
-**Show file tree** into the diff controls, while **Collapse all / Expand all**
+There is no second toolbar spanning the pane. On non-touch devices, Unified/Split
+retains its text labels even in a narrow diff column. Hiding the tree moves the file
+count and **Show file tree** into the diff controls, while **Collapse all / Expand all**
 stays above the diffs. At 720px or narrower, and on touch devices, the tree starts
 closed and **Show file tree** opens an animated drawer over the diffs without
 resizing them. File selection, Escape, the backdrop, or **Hide file tree** dismisses
@@ -980,7 +985,7 @@ letter A/M/D/R; the arrow keys move between rows and Left/Right close and open a
 directory) next to a scrollable stack of file cards. Expanded cards keep their full height;
 **Collapse all / Expand all** hides or restores their bodies. Each card's header has a disclosure
 caret, the path, `+adds −dels`, and **Copy path**. A successful copy briefly shows a
-checkmark and announces **Path copied** without collapsing the file. Repeated
+non-pulsing checkmark and announces **Path copied** without collapsing the file. Repeated
 copies show feedback for the latest click, not an older result. Diffs render
 with Pierre; hover a line and click the accent **+** in the gutter (drag for a range) to leave a
 review note for the agent (`aria-label="Review note"`; `Cmd/Ctrl+Enter` adds,

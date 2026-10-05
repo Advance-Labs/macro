@@ -16,9 +16,7 @@ import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import * as Dialog from '@kobalte/core/dialog';
 import ArrowsClockwiseIcon from '@phosphor/arrows-clockwise.svg';
 import CircleNotchIcon from '@phosphor/circle-notch.svg';
-import ColumnsIcon from '@phosphor/columns.svg';
 import FileIcon from '@phosphor/file.svg';
-import RowsIcon from '@phosphor/rows.svg';
 import SidebarIcon from '@phosphor/sidebar-simple.svg';
 import WarningCircleIcon from '@phosphor/warning-circle.svg';
 import { Button, cn, Panel } from '@ui';
@@ -131,7 +129,6 @@ function ChangesControls(props: { narrow: boolean; drawerOpen: boolean }) {
   const refreshing = () =>
     model.refreshing() || model.state().kind === 'capturing';
   const treeVisible = () => !props.narrow && layout.treeOpen();
-  const nextStyle = () => (diffStyle() === 'unified' ? 'split' : 'unified');
   return (
     <div
       class="flex min-w-0 shrink-0 items-center gap-1 px-3 pt-2"
@@ -157,17 +154,8 @@ function ChangesControls(props: { narrow: boolean; drawerOpen: boolean }) {
         <DiffView.StyleToggle
           value={diffStyle()}
           onChange={setDiffStyle}
-          class="hidden shrink-0 @min-[640px]/changes-diff:inline-flex"
+          class="shrink-0"
         />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          label={`Switch to ${nextStyle()} diff`}
-          class="@min-[640px]/changes-diff:hidden"
-          onClick={() => setDiffStyle(nextStyle())}
-        >
-          {nextStyle() === 'split' ? <ColumnsIcon /> : <RowsIcon />}
-        </Button>
       </Show>
       <span class="flex-1" />
       <DiffView.CollapseAll iconOnly />
@@ -629,7 +617,7 @@ export function ChangesPane(props: { fullWidth?: boolean }) {
         role="region"
         aria-label="Changes"
       >
-        <Panel.Header class="gap-1">
+        <Panel.Header class="gap-1 py-1">
           <div
             class="flex min-w-0 flex-1 items-center gap-1"
             role="group"

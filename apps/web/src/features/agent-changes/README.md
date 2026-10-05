@@ -18,10 +18,10 @@ and notifications are host callbacks.
 `views/ChangesPane.tsx` composes the generic `FileTree`
 (`@ui/components/FileTree`) and `DiffView` (`src/components/diff-view`) from the
 controller: tree rows show status letters and counts, file headers add **Copy
-path** with a brief success checkmark for the latest copy request, and review notes
-hang under their lines through `DiffView.Stack`'s annotation slot. The file tree
-fills the body height, with its count on the left and the tree visibility toggle
-on the right of a fixed header. Tree rows scroll independently below it.
+path** with a brief, non-pulsing success checkmark for the latest copy request,
+and review notes hang under their lines through `DiffView.Stack`'s annotation slot.
+The file tree fills the body height, with its count on the left and the tree
+visibility toggle on the right of a fixed header. Tree rows scroll independently below it.
 The tree divider supports dragging and Left/Right keyboard resizing; its preferred
 pixel width persists per host scope. Tree visibility uses the sidebar's shared
 `CollapseTransition` on the width axis, with matching diff-column motion and
@@ -42,12 +42,17 @@ Another host composes the same components its own way.
 Native PR and Agents workspace hosts put their title row and content together
 inside `AgentChangesSplit`, so changes occupy the full height beside that row.
 Host title, sharing, and sidebar actions remain available on the left. The Changes
-button stays visible in split view: ghost while closed, active while open; clicking
-it again closes the pane. On a PR detail, the diff count pill also opens the pane
-when a controller is available; otherwise it remains a passive count. The pane slides in
-from the right edge on open and slides completely off that edge on close, without
-fading in either direction. In split view, the session shrinks alongside entry and
-expands alongside exit, rather than changing width ahead of or after the slide.
+button stays visible in split view: ghost while closed, accent text on a tinted
+background while open, without the shared foreground pressed overlay; clicking
+it again closes the pane. Below 28rem of the
+header's named `split-header` container, only Changes becomes icon-only, retaining
+its accessible name, tooltip, pressed state, and touch target. Breadcrumbs keep
+their existing layout. The button has no diff totals; those appear beside the
+pane's branch range and PR number in both split and full-width layouts. On a PR
+detail, the diff count pill also opens the pane when a controller is available;
+otherwise it remains a passive count. The pane slides in from the right edge on
+open and completely off that edge on close, without fading in either direction.
+In split view, the session shrinks alongside entry and expands alongside exit.
 Reduced-motion preferences disable both animations.
 Its resize panel stays registered until the exit animation completes; reopening
 cancels exit without remounting the pane. Patch parsing and diff bodies are queued
@@ -65,11 +70,15 @@ in its header, without a visible Changes title. Diff controls float above the
 stack inside the diff column, with Unified/Split on the left and collapse/refresh
 on the right, without a full-pane toolbar or bottom border. The pane has no outer
 top, right, or bottom border; the resize divider separates it from the host.
-The metadata opens GitHub; narrow panes truncate the branch range, and the diff
-column's width determines when the diff-style switch uses its compact control.
-At full width, the header adds a compact `text-xs` PR title before the fully rounded
-branch link and the diff counts after the PR number. Native PR and session hosts
-supply titles and GitHub totals from existing queries; no extra PR fetch is needed.
+The metadata opens GitHub; narrow panes truncate the branch range. Unified/Split
+retains its text labels at every non-touch width. The shared `DiffStats` shows
+exact totals beside five subtly hatched green/red squares with inset edges,
+summarizing the addition/deletion mix without animation.
+At full width, the header adds a `text-sm` PR title with extra top padding before
+the plain-text `text-xs` branch link, which underlines on hover.
+When title and metadata do not fit together, the smaller branch/number/count group
+wraps below the title; pane actions stay outside that wrapping group. Native PR
+and session hosts supply titles and GitHub totals from existing queries; no extra PR fetch is needed.
 Missing titles stay hidden, and unavailable GitHub totals never fall back to
 captured estimates.
 Legacy embedded agent hosts still render their frame-owned chrome above both
