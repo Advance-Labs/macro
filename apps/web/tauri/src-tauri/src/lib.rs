@@ -230,6 +230,26 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_haptics::init());
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                // Cached/rolled-back frontends may not support the overlay. Each
+                // document starts with native insets and explicitly opts in.
+                // Transparent restores insets in our pinned Tauri runtime;
+                // its runtime Visible style retains full-size content.
+                if let Err(error) = webview
+                    .window()
+                    .set_title_bar_style(tauri::TitleBarStyle::Transparent)
+                {
+                    tracing::warn!(%error, "failed to restore native title bar insets");
+                }
+            }
+        });
+    }
+
     // Window origin differs by platform:
     // macOS/iOS/Linux: tauri://localhost
     // Windows/Android: https://tauri.localhost (or http://)

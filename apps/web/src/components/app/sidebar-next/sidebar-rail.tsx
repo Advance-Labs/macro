@@ -2,8 +2,10 @@ import { useHasActiveChannelsCall } from '@app/features/channels-view/use-has-ac
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { navigateToSidebarView } from '@components/app/app-sidebar/sidebar';
+import { DesktopRecordingIndicator } from '@components/app/DesktopWindowChrome';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { hotkeyScopeNeutralAttribute } from '@core/dom-selectors';
+import { useTauri } from '@macro/tauri';
 import { cn } from '@ui';
 import { For, Show, Suspense } from 'solid-js';
 import { SidebarRailCreateButton } from './create-button';
@@ -34,6 +36,8 @@ export const SidebarRail = () => {
   const analytics = useAnalytics();
   const layout = useSplitLayout();
   const hasUnread = useSidebarUnread();
+  const tauri = useTauri();
+  const desktopWindowChrome = () => tauri?.desktopWindowChrome().enabled;
 
   const _openHome = (event: MouseEvent) => {
     if (event.button !== 0) return;
@@ -52,15 +56,29 @@ export const SidebarRail = () => {
     <div
       {...hotkeyScopeNeutralAttribute}
       data-ui="sidebar-rail"
+      data-tauri-drag-region={desktopWindowChrome() ? true : undefined}
       class={cn(
         'relative flex h-full w-14 shrink-0 flex-col items-center gap-1 overflow-hidden border-edge-frame bg-panel px-2 pb-3 pt-2',
+        desktopWindowChrome() && 'w-[80px] pt-0',
         (globalSplitManager()?.splits().length ?? 1) <= 1 && 'border-r'
       )}
     >
+      <Show when={desktopWindowChrome()}>
+        <div
+          data-tauri-drag-region
+          class="h-[44px] w-[80px] shrink-0 select-none"
+        />
+        <DesktopRecordingIndicator />
+      </Show>
       <SidebarRailCreateButton />
       <SearchRailButton />
 
-      <nav class="shrink-0 pt-4">
+      <nav
+        class={cn(
+          'shrink-0 pt-4',
+          desktopWindowChrome() && 'min-h-0 w-full shrink overflow-y-auto'
+        )}
+      >
         <ul class="flex flex-col items-center gap-1">
           <For each={visibleNavItems(gates())}>
             {(item) => (
@@ -83,7 +101,10 @@ export const SidebarRail = () => {
         </ul>
       </nav>
 
-      <div class="min-h-0 flex-1" />
+      <div
+        data-tauri-drag-region={desktopWindowChrome() ? true : undefined}
+        class="min-h-0 w-full flex-1"
+      />
 
       <FooterActions />
     </div>

@@ -133,6 +133,18 @@ extra routes, or mount native-only UI. Pair those checks with the
 localized while rendering everything through the shared `src` entry
 point.
 
+## Desktop window layout (macOS)
+
+The frontend opts into an overlay title bar after its Tauri window permission
+check succeeds. It reserves space for native window controls in the navigation
+rail, or a draggable header on screens without the rail. Older native builds
+that cannot enable the overlay keep their existing frontend layout.
+
+Every native page load restores the title-bar content inset before the next
+frontend opts in. This also protects cached or rolled-back frontend bundles that
+do not support the overlay. The pinned Tauri runtime's `Transparent` style
+restores that inset; its runtime `Visible` style retains full-size content.
+
 ## Desktop memory recording (macOS)
 
 The frontend tags traces and logs with `app.runtime=tauri`, `app.platform`,
@@ -157,8 +169,10 @@ Recording explicitly enables the frontend OTel SDK regardless of the normal
 PostHog/build-time enablement gate and uses an always-on sampler for emitted
 frontend spans. This does not override sampling/drop policies in a downstream
 collector or backend, or add traces to operations that have no instrumentation.
-The title bar shows `Recording <short ID>`; the full `macro.recording.id` and
-`service.instance.id` appear in the startup telemetry log. Quit to stop recording.
+The desktop shell shows a `REC` indicator with `Recording <short ID>` in its
+tooltip; the native window title also retains that label for window selectors.
+The full `macro.recording.id` and `service.instance.id` appear in the startup
+telemetry log. Quit to stop recording.
 Launching again creates new IDs. A second launch while Macro is already running
 is handled by the existing single-instance plugin and does **not** enable recording
 in the running instance. Automatic bundle updates are disabled for a recording

@@ -1,5 +1,18 @@
 # Navigation and App Structure
 
+## macOS desktop window
+
+The native macOS app integrates the close, minimize, and fullscreen controls at
+the top of its left navigation rail. Drag empty rail space to move the window;
+double-click it to zoom. The navigation buttons remain ordinary click targets.
+Screens without the rail, including login, onboarding, meetings, and bookings,
+retain a clear area at the top for the window controls and dragging.
+
+Memory-recording launches show a `REC` indicator; its tooltip includes the
+recording ID. Check window dragging, navigation clicks, fullscreen entry/exit,
+and the recording indicator when changing the desktop shell. Browser and mobile
+layouts retain their existing navigation.
+
 ## Returning from another page
 
 A browser back/forward-cache restore reconnects the GraphQL cache worker and

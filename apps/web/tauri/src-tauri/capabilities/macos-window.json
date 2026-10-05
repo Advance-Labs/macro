@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "macos-window",
+  "description": "Let the macOS frontend integrate native window controls into its layout.",
+  "platforms": ["macOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:window:allow-set-title-bar-style",
+    "core:window:allow-start-dragging"
+  ]
+}

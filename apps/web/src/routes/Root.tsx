@@ -24,6 +24,7 @@ import { CallProvider } from '@channel/Call/CallContext';
 import { CallStartedNotifier } from '@channel/Call/CallStartedNotifier';
 import { isMeetingPath } from '@channel/Call/call-link';
 import { CallKitSync } from '@channel/Call/use-callkit';
+import { DesktopWindowFrame } from '@components/app/DesktopWindowChrome';
 import { GlobalAppStateProvider } from '@components/app/GlobalAppState';
 import { Layout } from '@components/app/Layout';
 import { ReactiveFavicon } from '@components/app/ReactiveFavicon';
@@ -369,15 +370,17 @@ function AppRouteLayout(props: RouteSectionProps) {
         )
       }
       fallback={
-        <div class="h-dvh overflow-y-auto bg-page text-ink">
-          {props.children}
-        </div>
+        <DesktopWindowFrame>
+          <div class="h-dvh overflow-y-auto bg-page text-ink">
+            {props.children}
+          </div>
+        </DesktopWindowFrame>
       }
     >
       <IncomingMeetingInvitationsProvider>
         <Show
           when={!isMeetingPath(location.pathname)}
-          fallback={props.children}
+          fallback={<DesktopWindowFrame>{props.children}</DesktopWindowFrame>}
         >
           <Layout {...props} />
           <InitialInteractiveOnboardingModal />

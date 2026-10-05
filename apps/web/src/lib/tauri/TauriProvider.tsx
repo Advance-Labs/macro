@@ -19,6 +19,10 @@ import {
   onMount,
   useContext,
 } from 'solid-js';
+import {
+  type DesktopWindowChrome,
+  enableDesktopWindowChrome,
+} from './desktopWindowChrome';
 import { useTauriNavigationEffect } from './navigation';
 import { MaybePushNotificationRegistration } from './PushNotification';
 import { ShareTargetProvider } from './ShareTargetProvider';
@@ -42,6 +46,7 @@ export type BundleUpdateStatus =
 interface TauriContextValue {
   os: OsType;
   bundleUpdateStatus: Accessor<BundleUpdateStatus>;
+  desktopWindowChrome: Accessor<DesktopWindowChrome>;
 }
 
 const TauriContext = createContext<TauriContextValue | undefined>(undefined);
@@ -70,6 +75,8 @@ function TauriProvider(props: { children: JSX.Element }) {
   useAndroidBack();
   const [bundleUpdateStatus, setBundleUpdateStatus] =
     createSignal<BundleUpdateStatus>({ status: 'Idle' });
+  const [desktopWindowChrome, setDesktopWindowChrome] =
+    createSignal<DesktopWindowChrome>({ enabled: false });
   const [
     nativeAppUpdateRequiredDialogOpen,
     setNativeAppUpdateRequiredDialogOpen,
@@ -99,9 +106,20 @@ function TauriProvider(props: { children: JSX.Element }) {
   const value: TauriContextValue = {
     os: osType(),
     bundleUpdateStatus,
+    desktopWindowChrome,
   };
 
   onMount(() => {
+    let disposed = false;
+    const configureDesktopWindow = async () => {
+      const chrome = await enableDesktopWindowChrome(value.os);
+      if (!disposed) setDesktopWindowChrome(chrome);
+    };
+    void configureDesktopWindow();
+    onCleanup(() => {
+      disposed = true;
+    });
+
     const unlistenPromise = listen<BundleUpdateStatus>(
       'bundle-update-status',
       (ev) => {

@@ -19,6 +19,8 @@
     "windows": [
       {
         "title": "Macro",
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true,
         "width": 800,
         "height": 600,
         "resizable": true,

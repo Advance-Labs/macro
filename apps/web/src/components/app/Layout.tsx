@@ -56,6 +56,7 @@ import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { virtualKeyboardVisible } from '@core/mobile/virtualKeyboard';
 import { updateCookie } from '@core/util/cookies';
+import { useTauri } from '@macro/tauri';
 import { useUserInfoQuery } from '@queries/auth/user-info';
 import {
   type RouteSectionProps,
@@ -74,6 +75,7 @@ import {
 } from 'solid-js';
 import { BundleUpdateProgressBar } from './BundleUpdateProgressBar';
 import { ContentLoading } from './ContentLoading';
+import { DesktopWindowHeader } from './DesktopWindowChrome';
 import GlobalShortcuts from './GlobalHotkeys';
 import { ItemDndProvider } from './ItemDragAndDrop';
 import { FloatRegion } from './mobile/float-regions/FloatRegion';
@@ -171,6 +173,7 @@ function NewOnboardingRedirect() {
 }
 
 function LayoutInner(props: RouteSectionProps) {
+  const tauri = useTauri();
   const isAuthenticated = useIsAuthenticated();
   const { paywallOpen, showPaywall } = usePaywallState();
   const { usageLimitOpen } = useAiUsageLimitState();
@@ -216,6 +219,9 @@ function LayoutInner(props: RouteSectionProps) {
       )}
     >
       <ImperativeDialogHost />
+      <Show when={!isSidebarVisible()}>
+        <DesktopWindowHeader />
+      </Show>
       <BundleUpdateProgressBar />
       <Suspense>
         <Show when={isAuthenticated()}>
@@ -275,7 +281,14 @@ function LayoutInner(props: RouteSectionProps) {
           <AiUsageLimitDialog />
         </Show>
       </ShowFeatureFlag>
-      <div class="max-h-full grow flex">
+      <div
+        class={cn(
+          'max-h-full grow flex',
+          tauri?.desktopWindowChrome().enabled &&
+            !isSidebarVisible() &&
+            'min-h-0'
+        )}
+      >
         <ItemDndProvider>
           <Show when={isSidebarVisible()}>
             <SidebarRail />
