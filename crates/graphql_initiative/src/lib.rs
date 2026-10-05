@@ -1,4 +1,4 @@
-//! Typed GraphQL inbound adapter for initiatives and their task membership.
+//! Typed GraphQL inbound adapter for initiatives.
 #![deny(missing_docs)]
 
 mod context;
@@ -18,10 +18,8 @@ pub use loaders::{
     initiative_summary_loader, load_initiative_detail, load_initiative_summary,
 };
 pub use mutation::{InitiativeEntityLoader, InitiativeMutationRoot};
-pub use objects::{
-    GraphqlInitiativeSharePermission, GraphqlInitiativeTasksPage, GraphqlTaskInitiativeReference,
-};
-pub use query::{resolve_initiative, resolve_initiative_tasks, resolve_task_initiative_references};
+pub use objects::{GraphqlInitiativeSharePermission, GraphqlInitiativeTasksPage};
+pub use query::{resolve_initiative, resolve_initiative_tasks};
 
 use async_graphql::ErrorExtensions;
 use initiative::domain::models::InitiativeError;

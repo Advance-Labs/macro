@@ -13,11 +13,7 @@ async fn create_defaults_to_team_sharing_and_preserves_explicit_opt_out() {
         repo.expect_create()
             .withf(move |_, _, intent| *intent == expected)
             .return_once(|_, _, _| Box::pin(async { Ok(detail(Vec::new())) }));
-        let mut documents = MockInitiativeDescriptionDocuments::new();
-        documents
-            .expect_create()
-            .return_once(|_| Box::pin(async { Ok(description_document_id()) }));
-        let created = service_with_documents(repo, documents)
+        let created = service(repo)
             .create(
                 &user(OWNER),
                 CreateInitiativeRequest {
@@ -103,65 +99,6 @@ async fn editors_cannot_replace_or_clear_collaborators_but_can_rename() {
         )
         .await
         .expect("editors may rename the project");
-}
-
-#[tokio::test]
-async fn assignment_rejects_task_capability_for_another_principal() {
-    let result = service(MockInitiativeRepo::new())
-        .assign_tasks(
-            edit_receipt(),
-            vec![TaskAssignment::Authorized {
-                receipt: task_receipt(OTHER, "task-1"),
-            }],
-        )
-        .await;
-    assert!(matches!(result, Err(InitiativeError::Unauthorized)));
-}
-
-#[tokio::test]
-async fn assignment_rejects_non_document_task_capability() {
-    let result = service(MockInitiativeRepo::new())
-        .assign_tasks(
-            edit_receipt(),
-            vec![TaskAssignment::Authorized {
-                receipt: edit_receipt(),
-            }],
-        )
-        .await;
-    assert!(matches!(result, Err(InitiativeError::BadRequest(_))));
-}
-
-#[tokio::test]
-async fn removal_rejects_task_capability_for_another_principal() {
-    let result = service(MockInitiativeRepo::new())
-        .unassign_task(edit_receipt(), task_receipt(OTHER, "task-1"))
-        .await;
-    assert!(matches!(result, Err(InitiativeError::Unauthorized)));
-}
-
-#[tokio::test]
-async fn removal_requires_a_task_document_capability() {
-    let result = service(MockInitiativeRepo::new())
-        .unassign_task(edit_receipt(), edit_receipt())
-        .await;
-    assert!(matches!(result, Err(InitiativeError::BadRequest(_))));
-    let clear = service(MockInitiativeRepo::new())
-        .clear_task(edit_receipt())
-        .await;
-    assert!(matches!(clear, Err(InitiativeError::BadRequest(_))));
-}
-
-#[tokio::test]
-async fn task_side_clear_needs_no_source_initiative_receipt() {
-    let mut repo = MockInitiativeRepo::new();
-    repo.expect_clear_task()
-        .withf(|id| id == "task-1")
-        .times(1)
-        .return_once(|_| Box::pin(async { Ok(()) }));
-    service(repo)
-        .clear_task(task_receipt(OWNER, "task-1"))
-        .await
-        .expect("cleared");
 }
 
 #[tokio::test]

@@ -12,7 +12,7 @@
 //! | --- | --- | --- |
 //! | `settled` | [`AgentSessionSettledMetadata`] | the session's audience: owner plus everyone who has driven it - unless the turn was a chat agent's announced reply, whose patched message already notifies the thread |
 //! | `waiting_for_input` | [`AgentSessionWaitingForInputMetadata`] | the same audience - anyone with edit access may answer, and these are the people already driving it - with the same exception for a chat agent's announced turn, whose reply is patched to say it is waiting |
-//! | `mentioned` | [`AgentSessionMentionedMetadata`] | the users the prompt named, who can now open the session |
+//! | `mentioned` | [`AgentSessionMentionedMetadata`] | the users the prompt named, who can now open the session - unless the prompt was posted as a channel or document message, whose own mention notification already reached them |
 //!
 //! Everything else is nobody's news.
 //!
@@ -26,7 +26,18 @@
 //! is patched when the turn stops to ask a question, so `waiting_for_input`
 //! is suppressed for it likewise. A coding agent's chip notifies nobody,
 //! and a chat turn nobody announced - one driven from the session view -
-//! has no message to speak through, so both keep every notification.
+//! has no message to speak through, so both keep every notification. Assignment
+//! announcements also keep notifications: they reuse the originating message as
+//! a session link and never patch it into a discussion answer.
+//!
+//! A mention has the same shape of exception, and the fact does carry it: a
+//! prompt that arrived as a channel or document message names its users in
+//! that message, and the message service notifies each of them of the
+//! mention when the message is posted. Notifying them again for the session
+//! would tell the same people the same thing twice, so a mention with an
+//! origin message plans nothing; the users are still shared into the
+//! session. A prompt typed into the session view has no message to have
+//! spoken for it, so it keeps its notification.
 //!
 //! Retracting a notification once it is stale (the question answered, the
 //! next turn started) is deliberately not done yet: the notification ingress
@@ -141,11 +152,23 @@ pub fn plan(event: &AgentSessionLifecycleEvent, is_coding: bool) -> Vec<PlannedN
         AgentSessionLifecycleEvent::Opened(_)
         | AgentSessionLifecycleEvent::TurnStarted(_)
         | AgentSessionLifecycleEvent::TurnEnded(_)
+        | AgentSessionLifecycleEvent::CommandRejected(_)
         | AgentSessionLifecycleEvent::InputReceived(_)
         | AgentSessionLifecycleEvent::Stopped(_)
         | AgentSessionLifecycleEvent::Renamed(_)
         | AgentSessionLifecycleEvent::Deleted(_) => Vec::new(),
     }
+}
+
+fn has_discussion_reply(identity: &SessionIdentity, announcement: Option<Uuid>) -> bool {
+    announcement.is_some_and(|message_id| {
+        // Assignment announcements reuse the originating root. A mention or
+        // later discussion prompt creates a separate reply message instead.
+        identity
+            .origin
+            .as_ref()
+            .is_none_or(|origin| origin.originating_message_id != message_id)
+    })
 }
 
 fn plan_settled(settled: &SessionSettledMetadata, is_coding: bool) -> Vec<PlannedNotification> {
@@ -156,7 +179,7 @@ fn plan_settled(settled: &SessionSettledMetadata, is_coding: bool) -> Vec<Planne
     };
     // A chat agent's announced turn already told the thread: its pending
     // reply was patched into the answer, and that patch notifies as a post.
-    if !is_coding && turn.announcement_message_id.is_some() {
+    if !is_coding && has_discussion_reply(&settled.identity, turn.announcement_message_id) {
         return Vec::new();
     }
     let (entity, secondary_entity) = entities(&settled.identity);
@@ -179,7 +202,7 @@ fn plan_waiting(waiting: &WaitingForInputMetadata, is_coding: bool) -> Vec<Plann
     // A chat agent's announced turn tells its thread it is waiting the same
     // way it tells it the answer: by patching its pending reply, which
     // notifies as a post.
-    if !is_coding && waiting.announcement_message_id.is_some() {
+    if !is_coding && has_discussion_reply(&waiting.identity, waiting.announcement_message_id) {
         return Vec::new();
     }
     let (entity, secondary_entity) = entities(&waiting.identity);
@@ -203,6 +226,11 @@ fn plan_waiting(waiting: &WaitingForInputMetadata, is_coding: bool) -> Vec<Plann
 
 fn plan_mentioned(mentioned: &SessionMentionedMetadata) -> Vec<PlannedNotification> {
     if mentioned.mentioned.is_empty() {
+        return Vec::new();
+    }
+    // The message the prompt was posted as already notified the people it
+    // named, on the post itself.
+    if mentioned.origin_message_id.is_some() {
         return Vec::new();
     }
     let (entity, secondary_entity) = entities(&mentioned.identity);
