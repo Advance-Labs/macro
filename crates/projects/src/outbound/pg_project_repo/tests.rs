@@ -189,7 +189,7 @@ async fn history_listing_differs_from_owner_pending_listing(
 async fn accessible_listing_uses_entity_access_not_history(
     pool: Pool<Postgres>,
 ) -> anyhow::Result<()> {
-    let repo = PgProjectRepo::new(pool);
+    let repo = test_repo(pool);
 
     let owner = repo
         .get_accessible_projects_for_user("macro|owner@test.com")
