@@ -158,6 +158,8 @@ function initials(author: string): string {
 export class WordCommentWriter {
   private readonly added: string[] = [];
   private nextId: number;
+  /** Comment ids already in use. */
+  private readonly taken: Set<string>;
   /** The comments part's name and current text, when it exists. */
   private readonly name: string;
   private readonly related: boolean;
@@ -166,10 +168,11 @@ export class WordCommentWriter {
   private readonly w: string;
 
   constructor(private readonly doc: LoroDoc) {
-    const ids = [...readWordComments(doc).keys()]
-      .map(Number)
-      .filter(Number.isInteger);
-    this.nextId = ids.length ? Math.max(...ids) + 1 : 0;
+    this.taken = new Set(readWordComments(doc).keys());
+    // Ids start at a random point rather than after the highest one: two
+    // edits made from the same state at once then pick different ids, so
+    // neither's markers name the other's comment.
+    this.nextId = 1 + Math.floor(Math.random() * 0x3fff_0000);
     const main = mainPart(doc);
     const related = relatedComments(doc, main);
     this.related = related !== null;
@@ -180,7 +183,9 @@ export class WordCommentWriter {
 
   /** Records a comment; returns its id for the markers in the text. */
   add(author: string, date: string, text: string): string {
+    while (this.taken.has(String(this.nextId))) this.nextId++;
     const id = String(this.nextId++);
+    this.taken.add(id);
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     const q = (local: string) => `${this.w}:${local}`;
     const paragraphs = lines

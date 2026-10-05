@@ -167,7 +167,8 @@ impl<D: WordDocumentLookup, W: EditingWorkerService> WordDocumentService<D, W> {
 
 fn email_name(user: &MacroUserIdStr<'_>) -> String {
     let email = user.email_str();
-    email.split('@').next().unwrap_or(email).to_owned()
+    let local = email.split('@').next().unwrap_or(email);
+    local.chars().take(MAX_AUTHOR_LENGTH).collect()
 }
 
 #[cfg(test)]

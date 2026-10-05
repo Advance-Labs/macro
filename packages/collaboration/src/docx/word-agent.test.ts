@@ -1,5 +1,5 @@
 import { LoroDoc, LoroMap, LoroText } from 'loro-crdt';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DocxAgentError } from './agent-types';
 import {
   describeWord,
@@ -377,7 +377,11 @@ describe('Tracked changes', () => {
 });
 
 describe('Word comments', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('writes comments into the file, attributed to the author', () => {
+    // Comment ids start at a random point; pin it to the lowest.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const doc = sample();
     const result = editWord(
       doc,
@@ -392,12 +396,12 @@ describe('Word comments', () => {
       ],
       AS_JACOB
     );
-    expect(result).toContain('Added Word comments 0, 1 by Jacob Beckerman');
+    expect(result).toContain('Added Word comments 1, 2 by Jacob Beckerman');
     const parts = doc.getMap('wordParts');
     expect(parts.get('/word/comments.xml')).toBe(
       `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:comments xmlns:w="${W}">` +
-        '<w:comment w:id="0" w:author="Jacob Beckerman" w:date="2026-10-05T12:08:31Z" w:initials="JB"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t xml:space="preserve">We need three.</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">See the term sheet.</w:t></w:r></w:p></w:comment>' +
-        '<w:comment w:id="1" w:author="Jacob Beckerman" w:date="2026-10-05T12:08:31Z" w:initials="JB"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t xml:space="preserve">R&amp;D &lt;first&gt;</w:t></w:r></w:p></w:comment>' +
+        '<w:comment w:id="1" w:author="Jacob Beckerman" w:date="2026-10-05T12:08:31Z" w:initials="JB"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t xml:space="preserve">We need three.</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">See the term sheet.</w:t></w:r></w:p></w:comment>' +
+        '<w:comment w:id="2" w:author="Jacob Beckerman" w:date="2026-10-05T12:08:31Z" w:initials="JB"><w:p><w:r><w:annotationRef/></w:r><w:r><w:t xml:space="preserve">R&amp;D &lt;first&gt;</w:t></w:r></w:p></w:comment>' +
         '</w:comments>'
     );
     expect(doc.getMap('wordTypes').get('override|/word/comments.xml')).toBe(
@@ -414,35 +418,53 @@ describe('Word comments', () => {
     const spans = word.spans(word.blocks.get('p1')!);
     const at = spans.findIndex((s) => s.insert === 'two (2) years');
     expect(spans[at - 1].attributes).toEqual({
-      mark: '<w:commentRangeStart w:id="0"/>',
+      mark: '<w:commentRangeStart w:id="1"/>',
     });
     expect(spans[at + 1].attributes).toEqual({
-      mark: '<w:commentRangeEnd w:id="0"/>',
+      mark: '<w:commentRangeEnd w:id="1"/>',
     });
     expect(spans[at + 2].attributes).toEqual({
-      obj: '<w:commentReference w:id="0"/>',
+      obj: '<w:commentReference w:id="1"/>',
     });
     expect(texts(doc)[1]).toBe('The term is two (2) years.');
     const read = describeWord(doc);
     expect(read).toContain(
-      'comment 0 by Jacob Beckerman on "two (2) years": We need three. See the term sheet.'
+      'comment 1 by Jacob Beckerman on "two (2) years": We need three. See the term sheet.'
     );
     expect(read).toContain(
-      'comment 1 by Jacob Beckerman on "Phase one": R&D <first>'
+      'comment 2 by Jacob Beckerman on "Phase one": R&D <first>'
     );
 
-    // A later comment joins the existing part with the next id.
+    // A later comment joins the existing part, skipping the ids in use.
     editWord(doc, [{ type: 'addComment', paragraph: 'h1', text: 'Agreed' }], {
       author: 'Opposing Counsel',
       now: NOW,
     });
     expect(String(parts.get('/word/comments.xml'))).toContain(
-      '<w:comment w:id="2" w:author="Opposing Counsel" w:date="2026-10-05T12:08:31Z" w:initials="OC">'
+      '<w:comment w:id="3" w:author="Opposing Counsel" w:date="2026-10-05T12:08:31Z" w:initials="OC">'
     );
     expect([...rels.keys()]).toHaveLength(1);
     expect(describeWord(doc)).toContain(
-      'comment 2 by Opposing Counsel on "1. Term": Agreed'
+      'comment 3 by Opposing Counsel on "1. Term": Agreed'
     );
+  });
+
+  it('gives comments made at once from the same state different ids', () => {
+    const base = sample();
+    const fork = () => {
+      const doc = new LoroDoc();
+      doc.import(base.export({ mode: 'snapshot' }));
+      return doc;
+    };
+    const [a, b] = [fork(), fork()];
+    editWord(a, [{ type: 'addComment', paragraph: 'p1', text: 'A' }], AS_JACOB);
+    editWord(b, [{ type: 'addComment', paragraph: 'h1', text: 'B' }], AS_JACOB);
+    const idOf = (doc: LoroDoc) =>
+      /w:comment w:id="(\d+)"/.exec(
+        String(doc.getMap('wordParts').get('/word/comments.xml'))
+      )?.[1];
+    expect(idOf(a)).toBeDefined();
+    expect(idOf(a)).not.toBe(idOf(b));
   });
 
   it('refuses empty comments without changing anything', () => {
