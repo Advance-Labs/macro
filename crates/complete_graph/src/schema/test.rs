@@ -46,6 +46,7 @@ use super::*;
 
 mod database_activity;
 mod database_row;
+mod database_view_rows;
 mod email_archive;
 mod initiative;
 mod scheduled_actions;

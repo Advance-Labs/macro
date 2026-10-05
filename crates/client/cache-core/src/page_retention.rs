@@ -6,7 +6,7 @@ use crate::normalize::RecordUpdates;
 use crate::value::{CacheValue, Record};
 use std::collections::BTreeSet;
 
-/// Maximum combined flat/grouped Soup snapshots retained on one viewer.
+/// Maximum combined Soup and database view snapshots retained on one viewer.
 pub const MAX_SOUP_PAGES: usize = 64;
 /// Encoded budget for page fields and their write-recency metadata. Fits a
 /// 20,000-row database read, including 500-row pages and filter-bearing cursors.
@@ -17,7 +17,10 @@ pub(crate) const PAGE_ORDER_FIELD: &str = "__cache_soup_page_order_v1";
 const ORDER_OVERHEAD_BYTES: usize = PAGE_ORDER_FIELD.len() + 32;
 
 fn is_page_field(key: &str) -> bool {
-    matches!(key.split('(').next(), Some("soup" | "groupSoup"))
+    matches!(
+        key.split('(').next(),
+        Some("soup" | "groupSoup" | "databaseViewRows")
+    )
 }
 
 /// Remove only the viewer's page wrappers from hydration updates. Normalized
@@ -70,7 +73,11 @@ pub(crate) fn retain_soup_pages(record: &mut Record, updated: &[String]) -> bool
         }))
         .chain(
             legacy()
-                .filter(|key| key.contains("\"initial\":"))
+                .filter(|key| {
+                    key.contains("\"initial\":")
+                        || (key.starts_with("databaseViewRows(")
+                            && (!key.contains("\"cursor\":") || key.contains("\"cursor\":null")))
+                })
                 .map(String::as_str),
         )
         .chain(legacy().map(String::as_str));

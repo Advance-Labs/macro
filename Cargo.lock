@@ -1494,6 +1494,7 @@ dependencies = [
  "asynk-strim",
  "base64 0.22.1",
  "bytes",
+ "chrono",
  "fast_chemail",
  "fnv",
  "futures-channel",
@@ -3385,7 +3386,7 @@ dependencies = [
 
 [[package]]
 name = "cache-wasm"
-version = "0.6.39"
+version = "0.6.40"
 dependencies = [
  "async-lock",
  "cache-core",
@@ -4366,6 +4367,7 @@ dependencies = [
  "axum",
  "bots",
  "chrono",
+ "databases_sql",
  "email",
  "entity_access",
  "entity_mutation",
@@ -4373,6 +4375,7 @@ dependencies = [
  "graphql_activity",
  "graphql_channel",
  "graphql_common",
+ "graphql_databases",
  "graphql_email",
  "graphql_entity_mutation",
  "graphql_favorite",
@@ -4388,6 +4391,7 @@ dependencies = [
  "model_notifications",
  "model_owner",
  "model_user",
+ "models_databases",
  "models_pagination",
  "models_properties",
  "models_soup",
@@ -5463,6 +5467,7 @@ dependencies = [
  "bot_id",
  "chrono",
  "connection_gateway_client",
+ "database_sql",
  "entity_access",
  "entity_access_db_utils",
  "entity_mutation",
@@ -5502,6 +5507,7 @@ dependencies = [
  "ai_toolset",
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "bot_id",
  "chrono",
  "contacts",
@@ -5522,6 +5528,7 @@ dependencies = [
  "schemars 1.2.1",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "soup",
  "thiserror 2.0.18",
  "tokio",
@@ -6123,6 +6130,7 @@ dependencies = [
  "cowlike",
  "crm",
  "databases",
+ "databases_sql",
  "dictation",
  "document_sub_type",
  "documents",
@@ -6141,6 +6149,7 @@ dependencies = [
  "futures",
  "github",
  "github_pull_requests",
+ "graphql_databases",
  "graphql_initiative",
  "graphql_scheduled_action",
  "graphql_soup",
@@ -8393,6 +8402,27 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "workspace-hack",
+]
+
+[[package]]
+name = "graphql_databases"
+version = "0.1.0"
+dependencies = [
+ "async-graphql",
+ "chrono",
+ "databases",
+ "databases_sql",
+ "entity_access",
+ "futures",
+ "graphql_common",
+ "graphql_soup",
+ "macro_user_id",
+ "model-entity",
+ "models_databases",
+ "rootcause",
+ "tokio",
+ "tracing",
  "workspace-hack",
 ]
 

@@ -1826,6 +1826,17 @@ async fn run() -> anyhow::Result<()> {
             authorization_state.clone(),
         ),
         graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader(
+            graphql_soup::soup_item_loader(
+                initiative_entity_soup.clone(),
+                Arc::new(email_service.clone()),
+            ),
+        ),
+        graphql_database_rows_context: graphql_databases::DatabaseRowsGraphqlContext::new(
+            databases_sql::view_rows::DatabaseViewRows::new(
+                databases_service.clone(),
+                databases::outbound::pg_view_rows::PgViewRows::new(db.clone()),
+            ),
+            entity_access_service.clone(),
             graphql_soup::soup_item_loader(initiative_entity_soup, Arc::new(email_service.clone())),
         ),
         graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext::new(

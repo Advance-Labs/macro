@@ -138,6 +138,8 @@ github_pull_requests = { path = "../../crates/github_pull_requests", default-fea
 ] }
 graphql_soup = { path = "../../crates/graphql_soup" }
 graphql_initiative = { path = "../../crates/graphql_initiative" }
+graphql_databases = { path = "../../crates/graphql_databases" }
+databases_sql = { path = "../../crates/databases_sql" }
 graphql_scheduled_action = { path = "../../crates/graphql_scheduled_action" }
 harnesses = { path = "../../crates/harnesses" }
 hex = { workspace = true }

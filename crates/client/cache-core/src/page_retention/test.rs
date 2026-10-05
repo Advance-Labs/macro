@@ -150,3 +150,30 @@ fn hydration_drops_only_viewer_pages_not_children_or_other_relations() {
         child
     );
 }
+
+#[test]
+fn database_view_pages_share_retention_and_hydration_policy() {
+    let initial = r#"databaseViewRows({"databaseId":"db","input":{"tableId":"table","query":{"sort":[]},"limit":500}})"#;
+    let mut record = viewer();
+    for cursor in 0..MAX_SOUP_PAGES * 2 {
+        let mut update = viewer();
+        update.fields.insert(format!(r#"databaseViewRows({{"databaseId":"db","input":{{"tableId":"table","query":{{"sort":[]}},"cursor":"{cursor:04}","limit":500}}}})"#), page());
+        record.merge(update);
+    }
+    let mut update = viewer();
+    update.fields.insert(initial.into(), page());
+    record.merge(update);
+    assert_eq!(
+        record
+            .fields
+            .keys()
+            .filter(|key| key.starts_with("databaseViewRows("))
+            .count(),
+        64
+    );
+    assert!(record.fields.contains_key(initial));
+    let viewer_key = EntityKey("GraphqlUser:viewer".into());
+    let mut updates = [(viewer_key.clone(), record)].into();
+    omit_hydration_pages(&mut updates);
+    assert_eq!(updates[&viewer_key], viewer());
+}

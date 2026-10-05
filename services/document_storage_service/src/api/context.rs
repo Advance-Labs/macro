@@ -769,6 +769,7 @@ pub(crate) struct ApiContext {
     pub slack_state: DssSlackState,
     pub initiative_state: DssInitiativeState,
     pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,
+    pub graphql_database_rows_context: graphql_databases::DatabaseRowsGraphqlContext,
     pub graphql_scheduled_action_context: graphql_scheduled_action::ScheduledActionGraphqlContext,
     pub graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader,
     pub databases_state: DssDatabasesState,

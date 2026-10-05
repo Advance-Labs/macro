@@ -2,8 +2,8 @@
 edition = "2024"
 name = "cache-wasm"
 publish = false
-# Rebuild with room for a complete capped database read in the page cache.
-version = "0.6.39"
+# Rebuild schema metadata for server-paginated database views.
+version = "0.6.40"
 
 [features]
 default = []
