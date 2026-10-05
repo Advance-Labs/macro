@@ -1,12 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentChangesContext } from '../context/agent-changes-context';
 import { AgentChangesControllerProvider } from '../context/agent-changes-controller';
+import { createLocalPaneViewState } from '../pane-view-state';
 import {
   type AgentChangesController,
   createAgentChanges,
-  type DiffStyle,
 } from '../primitives/create-agent-changes';
 import { createMemoryStorage } from '../tests/memory-storage';
 import {
@@ -22,18 +22,30 @@ import {
   ReviewNotesDock,
 } from './SessionChangesControls';
 
+const device = vi.hoisted(() => ({ touch: false }));
+vi.mock('@core/mobile/isTouchDevice', () => ({
+  isTouchDevice: () => device.touch,
+}));
+afterEach(() => {
+  device.touch = false;
+});
+
 // Pierre mounts a custom element and highlights with shiki; the pane test
 // covers everything around it and leaves the diff body to the browser.
-vi.mock('../components/PierreFileDiff', () => ({
-  PierreFileDiff: (props: { path: string }) => (
-    <div data-testid="diff" data-path={props.path} />
+vi.mock('@app/components/diff-view/pierre/PierreFileDiff', () => ({
+  PierreFileDiff: (props: { path: string; diffStyle: string }) => (
+    <div
+      data-testid="diff"
+      data-path={props.path}
+      data-style={props.diffStyle}
+    />
   ),
 }));
 
-// The split picks its layout from the device; tests flip it directly.
-const device = vi.hoisted(() => ({ mobile: false }));
-vi.mock('@core/mobile/isMobile', () => ({
-  isMobile: () => device.mobile,
+// jsdom has no ResizeObserver; the file tree's collapse animation measures with one.
+vi.mock('@solid-primitives/resize-observer', () => ({
+  createResizeObserver: () => {},
+  createElementSize: () => ({ width: 0, height: 0 }),
 }));
 
 // Module-load quarantine, not a dependency substitute: the connection-gateway
@@ -63,14 +75,13 @@ function mount(
   context: AgentChangesContext,
   ui: () => ReturnType<typeof ChangesPane>
 ) {
-  const [diffStyle, setDiffStyle] = createSignal<DiffStyle>('unified');
   const [dismissed, setDismissed] = createSignal<string>();
   let controller!: AgentChangesController;
   const result = render(() => {
     controller = createAgentChanges({
       context,
       storage: createMemoryStorage(),
-      diffStyle: [diffStyle, setDiffStyle],
+      view: createLocalPaneViewState(),
       dismissed: [dismissed, setDismissed],
     });
     return (
@@ -90,6 +101,27 @@ function readyContext() {
 }
 
 describe('ChangesPane', () => {
+  it('returns to the touch conversation and uses unified diffs without a side tree', async () => {
+    device.touch = true;
+    const { controller } = mount(readyContext(), () => <ChangesPane />);
+    controller().layout.open();
+    controller().setDiffStyle('split');
+    await waitFor(() => expect(screen.getAllByTestId('diff')).toHaveLength(2));
+    expect(
+      screen
+        .getAllByTestId('diff')
+        .every((diff) => diff.dataset.style === 'unified')
+    ).toBe(true);
+    expect(
+      screen.queryByRole('button', { name: 'Expand changes to the full width' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: /file tree/ })).toBeNull();
+    expect(screen.queryByLabelText('Diff layout')).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Back to conversation' })
+    );
+    expect(controller().layout.changesVisible()).toBe(false);
+  });
   it('lists files and collapses individual or all diffs without viewed controls', async () => {
     const context = readyContext();
     const { controller } = mount(context, () => <ChangesPane />);
@@ -105,9 +137,9 @@ describe('ChangesPane', () => {
       screen.queryByRole('button', { name: 'Mark all viewed' })
     ).toBeNull();
 
-    fireEvent.click(screen.getAllByRole('button', { name: /^Hide / })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide a.ts' }));
     expect(screen.getAllByTestId('diff')).toHaveLength(1);
-    expect(screen.getByText('Show diff')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Show a.ts' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Collapse all' }));
     expect(screen.queryAllByTestId('diff')).toHaveLength(0);
@@ -205,9 +237,24 @@ describe('ChangesPane', () => {
     expect(
       screen.queryByRole('button', { name: 'Create pull request' })
     ).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'View pull request' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View pull request #1482' })
+    );
     expect(context.opened).toEqual([url]);
     expect(context.sent).toEqual([]);
+  });
+
+  it('hides and shows the file tree from the toolbar', async () => {
+    const context = readyContext();
+    const { controller } = mount(context, () => <ChangesPane />);
+    controller().layout.open();
+    const tree = () => screen.queryByRole('group', { name: 'Changed files' });
+    expect(tree()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide file tree' }));
+    await waitFor(() => expect(tree()).toBeNull());
+    expect(controller().layout.treeOpen()).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Show file tree' }));
+    await waitFor(() => expect(tree()).toBeTruthy());
   });
 
   it('closes and spotlights from its header', () => {
@@ -217,85 +264,47 @@ describe('ChangesPane', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand changes to the full width' })
     );
-    expect(controller().layout.layout()).toBe('changes-only');
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Bring the session back' })
-    );
+    expect(controller().layout.layout()).toBe('full');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the split' }));
     expect(controller().layout.layout()).toBe('split');
     fireEvent.click(
       screen.getByRole('button', { name: 'Close the changes pane' })
     );
-    expect(controller().layout.layout()).toBe('agent-only');
-  });
-
-  it('takes over on a phone: back leaves, and the split controls stay off', async () => {
-    const context = readyContext();
-    context.setPullRequestUrl('https://github.com/macro-inc/macro/pull/1482');
-    const { controller } = mount(context, () => <ChangesPane takeover />);
-    controller().layout.open();
-    await waitFor(() => expect(screen.getAllByTestId('diff')).toHaveLength(2));
-
-    expect(
-      screen.queryByRole('button', {
-        name: 'Expand changes to the full width',
-      })
-    ).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: 'Close the changes pane' })
-    ).toBeNull();
-    // The tree has no room beside a phone-wide diff; the bar keeps the count.
-    expect(
-      screen.queryByRole('navigation', { name: 'Changed files' })
-    ).toBeNull();
-    expect(screen.getByText('2 files')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'View pull request' }));
-    expect(context.opened).toEqual([
-      'https://github.com/macro-inc/macro/pull/1482',
-    ]);
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Back to the session' })
-    );
-    expect(controller().layout.layout()).toBe('agent-only');
+    expect(controller().layout.layout()).toBe('closed');
   });
 });
 
 describe('AgentChangesSplit', () => {
-  it('covers the session on a phone instead of splitting the width', async () => {
-    device.mobile = true;
-    try {
-      const context = readyContext();
-      const { controller } = mount(context, () => (
-        <AgentChangesSplit>
-          <p data-testid="session">transcript</p>
-        </AgentChangesSplit>
-      ));
-      // Solid writes `inert` through the DOM property; a browser reflects
-      // it to the attribute, jsdom only keeps the property.
-      const session = () => screen.getByTestId('session').parentElement!;
-      expect(screen.queryByRole('region', { name: 'Changes' })).toBeNull();
-      expect(session().inert).toBeFalsy();
+  it('covers the session on a touch device instead of splitting the width', async () => {
+    device.touch = true;
+    const context = readyContext();
+    const { controller } = mount(context, () => (
+      <AgentChangesSplit>
+        <p data-testid="session">transcript</p>
+      </AgentChangesSplit>
+    ));
+    // Solid writes `inert` through the DOM property; a browser reflects
+    // it to the attribute, jsdom only keeps the property.
+    const session = () => screen.getByTestId('session').parentElement!;
+    expect(screen.queryByRole('region', { name: 'Changes' })).toBeNull();
+    expect(session().inert).toBeFalsy();
 
-      controller().layout.open();
-      await waitFor(() =>
-        expect(screen.getByRole('region', { name: 'Changes' })).toBeTruthy()
-      );
-      // The transcript stays mounted underneath, out of reach.
-      expect(screen.getByTestId('session')).toBeTruthy();
-      expect(session().inert).toBe(true);
-      expect(session().getAttribute('aria-hidden')).toBe('true');
+    controller().layout.open();
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Changes' })).toBeTruthy()
+    );
+    // The transcript stays mounted underneath, out of reach.
+    expect(screen.getByTestId('session')).toBeTruthy();
+    expect(session().inert).toBe(true);
+    expect(session().classList.contains('hidden')).toBe(true);
 
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Back to the session' })
-      );
-      expect(controller().layout.layout()).toBe('agent-only');
-      expect(screen.queryByRole('region', { name: 'Changes' })).toBeNull();
-      expect(session().inert).toBe(false);
-      expect(session().getAttribute('aria-hidden')).toBeNull();
-    } finally {
-      device.mobile = false;
-    }
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Back to conversation' })
+    );
+    expect(controller().layout.changesVisible()).toBe(false);
+    expect(screen.queryByRole('region', { name: 'Changes' })).toBeNull();
+    expect(session().inert).toBe(false);
+    expect(session().classList.contains('hidden')).toBe(false);
   });
 });
 

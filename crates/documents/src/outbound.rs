@@ -19,9 +19,14 @@ pub mod mention_tracker;
 pub mod pg_document_repo;
 #[cfg(feature = "outbound")]
 pub mod s3_markdown_source;
+#[cfg(feature = "ai_tools")]
+pub mod s3_presentation_files;
 #[cfg(feature = "outbound")]
 pub mod s3_upload_url;
 #[cfg(feature = "outbound")]
 pub mod s3_utf8_object_reader;
 #[cfg(feature = "outbound")]
 pub mod sync_service_probe;
+
+#[cfg(feature = "purge")]
+pub mod document_purge;
