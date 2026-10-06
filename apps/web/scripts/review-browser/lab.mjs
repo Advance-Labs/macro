@@ -14,20 +14,6 @@ export async function lab(port, options = {}) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  // Proxy local requests through the driver. This also isolates the test from
-  // network emulation in other contexts of the shared CDP browser.
-  await page.route(`${origin}/**`, async (route) => {
-    if (!/^\/(src|@fs|@id|@vite|node_modules)\//.test(new URL(route.request().url()).pathname)) {
-      await route.continue();
-      return;
-    }
-    const response = await fetch(route.request().url());
-    await route.fulfill({
-      status: response.status,
-      contentType: response.headers.get('content-type') || 'text/plain',
-      body: Buffer.from(await response.arrayBuffer()),
-    });
-  });
   let failCommentAfterSave = false;
   const writes = [];
   await page.route('**/agent-sessions/*/review**', async (route) => {

@@ -120,9 +120,11 @@ vi.mock('@app/features/agent-review/agent-review', () => ({
 vi.mock('@app/features/agent-review/context/review-context', () => ({
   useOptionalReviewHost: () => undefined,
 }));
-vi.mock('@app/features/agent-changes/agent-changes', () => ({
+vi.mock('@app/features/changes/agent-session-changes', () => ({
   AgentChangesProvider: (props: { children: JSX.Element }) => props.children,
-  AgentChangesSplit: (props: { children: JSX.Element }) => props.children,
+}));
+vi.mock('@app/features/changes/changes', () => ({
+  ChangesSplit: (props: { children: JSX.Element }) => props.children,
   ChangesHandoff: () => null,
   ChangesToggle: () => null,
   ReviewNotesDock: () => null,

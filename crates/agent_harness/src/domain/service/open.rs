@@ -155,6 +155,7 @@ where
     /// originating mention and no thread to answer back into. The runtime is
     /// spawned before the session is attached because there is nothing to
     /// attach to until it exists.
+    #[tracing::instrument(skip_all, err, fields(agent.session.id = tracing::field::Empty, agent.harness = tracing::field::Empty))]
     async fn open_managed_session(
         &self,
         request: agent_session::domain::ports::OpenManagedSession,
@@ -199,12 +200,15 @@ where
         let model = request.model.unwrap_or(model);
         let kind = AgentKind::for_session(bot_id, &harness);
         let harness = kind.harness_slug().map_or(harness, str::to_owned);
+        tracing::Span::current().record("agent.harness", &harness);
         if kind == AgentKind::CodexCloud {
             mcp_servers = AgentMcpServers::Selected {
                 servers: Vec::new(),
             };
         }
         let owner_user = session_owner_user(&request.owner)?;
+        let session_id = request.id.unwrap_or_else(AgentSessionId::new);
+        tracing::Span::current().record("agent.session.id", tracing::field::display(session_id));
         // Explicit source choices are a domain decision, before any session or egress grant exists.
         let selected_repo = if let Some(url) = request.repo_url.as_deref() {
             if kind != AgentKind::Cursor {
@@ -249,11 +253,18 @@ where
         };
         self.inner
             .admit_open(bot_id, &harness, &owner_user)
+            .instrument(tracing::info_span!("agent.init.admission", agent.session.id = %session_id))
             .await
             .map_err(into_session_error)?;
         let defaults = self.inner.defaults.for_bot(bot_id);
-        let sandbox_size = self.inner.sessions.user_sandbox_size(&owner_user).await?;
-        let session_id = request.id.unwrap_or_else(AgentSessionId::new);
+        let sandbox_size = self
+            .inner
+            .sessions
+            .user_sandbox_size(&owner_user)
+            .instrument(
+                tracing::info_span!("agent.init.preferences", agent.session.id = %session_id),
+            )
+            .await?;
         // Same ordering as the trigger path's open: the token has to be minted
         // before the row, because the row is what carries the hash that makes
         // it mean anything.
@@ -261,6 +272,7 @@ where
             .inner
             .egress
             .provision(session_id, &owner_user, &mcp_servers)
+            .instrument(tracing::info_span!("agent.init.egress", agent.session.id = %session_id))
             .await
             .map_err(into_session_error)?;
         let session = self
@@ -290,8 +302,12 @@ where
                 mcp_servers,
                 egress_token_hash: Some(egress.session_token_hash),
             })
+            .instrument(tracing::info_span!("agent.init.persist", agent.session.id = %session_id))
             .await?;
-        self.inner.publish_opened(&session).await;
+        self.inner
+            .publish_opened(&session)
+            .instrument(tracing::info_span!("agent.init.publish", agent.session.id = %session_id))
+            .await;
 
         let mcp_servers = if kind == AgentKind::CodexCloud {
             Vec::new()
@@ -307,6 +323,7 @@ where
                 size: sandbox_size,
                 egress: egress.sandbox,
             })
+            .instrument(tracing::info_span!("agent.init.runtime", agent.session.id = %session_id))
             .await
         {
             Ok(container) => container,
@@ -329,7 +346,13 @@ where
                 return Err(into_session_error(error));
             }
         };
-        let permission_policy = self.inner.permission_policy_for(session.bot_id).await;
+        let permission_policy = self
+            .inner
+            .permission_policy_for(session.bot_id)
+            .instrument(
+                tracing::info_span!("agent.init.permissions", agent.session.id = %session_id),
+            )
+            .await;
         self.inner
             .sessions
             .attach_session(
@@ -338,6 +361,7 @@ where
                     .mcp_servers(mcp_servers)
                     .permission_policy(permission_policy),
             )
+            .instrument(tracing::info_span!("agent.init.attach", agent.session.id = %session_id))
             .await?;
 
         // Raw, through the session's own command worker: dispatch is where a
@@ -481,12 +505,9 @@ where
 
         let defaults = self.defaults.for_bot(bot_id);
         let sandbox_size = self.sessions.user_sandbox_size(&actor).await?;
-        // The same profile the create menu snapshots: a mention states nothing
-        // about how the runtime should work, so the bot's configured
-        // instructions are what it opens with, exactly as a dedicated session
-        // would. Blank instructions are "none" stated clumsily.
-        let instructions =
-            Some(runtime.instructions.clone()).filter(|text| !text.trim().is_empty());
+        // Assignments retain the original task and update policy alongside the
+        // profile instructions, including across later turns and reattachments.
+        let instructions = origin.session_instructions(&runtime.instructions);
 
         // Provisioned before the session exists, because the row is what makes
         // the token mean anything: it carries the hash the proxy recognises.

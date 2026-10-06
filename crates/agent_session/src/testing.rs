@@ -11,7 +11,7 @@ use crate::domain::model::{
     ClaimOutcome, CreateAgentSessionParams, DEFAULT_AGENT_SESSION_NAME, LeaseView, LogAppended,
     ManagerFence, ReplicaAddress, ReplicaId, SandboxSize, SessionBot, SessionClaim, SessionManager,
     SessionPreviewCandidate, SessionStatus, StoredAgentSessionLog, StoredQueuedAction,
-    ThreadSession,
+    ThreadSession, TurnPrompter,
 };
 use crate::domain::ports::{
     AgentSessionLifecyclePublisher, AgentSessionLogRepo, AgentSessionRealtime, AgentSessionRepo,
@@ -91,6 +91,8 @@ pub struct InMemoryAgentSessionRepo {
             )>,
         >,
     >,
+    /// Session -> who prompted its turn, mirroring the `turn_*` columns.
+    turn_prompters: Arc<Mutex<HashMap<AgentSessionId, TurnPrompter>>>,
 }
 
 impl InMemoryAgentSessionRepo {
@@ -367,6 +369,24 @@ impl AgentSessionRepo for InMemoryAgentSessionRepo {
         hashes.retain(|_, session| *session != id);
         hashes.insert(hash.to_owned(), id);
         Ok(())
+    }
+
+    async fn set_turn_prompter(&self, id: AgentSessionId, prompter: &TurnPrompter) -> Result<()> {
+        self.get(id).await?;
+        self.turn_prompters
+            .lock()
+            .expect("turn prompters poisoned")
+            .insert(id, prompter.clone());
+        Ok(())
+    }
+
+    async fn turn_prompter(&self, id: AgentSessionId) -> Result<Option<TurnPrompter>> {
+        Ok(self
+            .turn_prompters
+            .lock()
+            .expect("turn prompters poisoned")
+            .get(&id)
+            .cloned())
     }
 
     async fn set_repo_url(&self, id: AgentSessionId, repo_url: Option<String>) -> Result<()> {
