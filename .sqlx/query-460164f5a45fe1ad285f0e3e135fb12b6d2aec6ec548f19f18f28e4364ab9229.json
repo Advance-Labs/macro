@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO phone_addon_seat (user_id, payer_id)\n            VALUES ($1, $2)\n            ON CONFLICT (user_id) DO UPDATE\n            SET payer_id = EXCLUDED.payer_id,\n                ends_at = NULL,\n                created_at = CASE\n                    WHEN phone_addon_seat.payer_id = EXCLUDED.payer_id\n                        THEN phone_addon_seat.created_at\n                    ELSE NOW()\n                END\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "460164f5a45fe1ad285f0e3e135fb12b6d2aec6ec548f19f18f28e4364ab9229"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM phone_addon_seat WHERE payer_id = $1 AND user_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c452dc2c151ea6cc17042afec9add5eaa83ba131f87ae3025702fbfd72bfe9c"
+}

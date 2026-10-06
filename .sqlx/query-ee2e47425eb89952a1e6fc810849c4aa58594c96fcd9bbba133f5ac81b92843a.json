@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO ai_billing_account (user_id, phone_addon_quantity)\n            VALUES ($1, $2)\n            ON CONFLICT (user_id) DO UPDATE\n            SET phone_addon_quantity = EXCLUDED.phone_addon_quantity,\n                updated_at = NOW()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ee2e47425eb89952a1e6fc810849c4aa58594c96fcd9bbba133f5ac81b92843a"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE phone_addon_seat SET ends_at = $3\n            WHERE user_id = $1 AND payer_id = $2 AND ends_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd75cb35aec0a2a9509f526fd258b4d0f720fe477d3cab4877bc63d3ec502318"
+}

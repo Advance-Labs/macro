@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO call_record_phone_legs (\n            call_record_id, direction, remote_number, local_number, participant_identity,\n            status, crm_contact_id, contact_name, sip_call_id, answered_at, ended_at, created_at\n        )\n        SELECT call_id, direction, remote_number, local_number, participant_identity,\n               $2, crm_contact_id, contact_name, sip_call_id, answered_at,\n               COALESCE(ended_at, $3), created_at\n        FROM call_phone_legs\n        WHERE call_id = $1\n        RETURNING answered_at, ended_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "answered_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "ended_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "8de27206b8eb3e2686a0b5633b951c04eefe43075c596658e197d412cdf14814"
+}

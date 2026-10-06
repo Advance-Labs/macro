@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO phone_addon_seat (user_id, payer_id) VALUES ($1, $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0b43e67acf39f6cb15ca284ce8c44c33ed03fd0c214533a3c177e42d8d22ed6"
+}
