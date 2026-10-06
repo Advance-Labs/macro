@@ -296,6 +296,8 @@ it('retires an obsolete restoration only after an earlier queue slot acknowledge
         workingCopy: copy,
         draft: args,
         input: {
+          attachmentIds: [],
+          forwardedAttachmentIds: [],
           attempt: { attemptId: 'send-attempt', linkId: args.senderLinkId },
           message: {
             draftId: args.draftId,
@@ -325,7 +327,9 @@ it('retires an obsolete restoration only after an earlier queue slot acknowledge
     {
       operation: makeOperation(
         'mutation',
-        createRequest(SaveEmailDraftDocument, queue[0].variables),
+        createRequest(SaveEmailDraftDocument, {
+          input: { draftId: original.draftId, subject: newer.content.subject },
+        }),
         { url: 'http://email-send.test/graphql', requestPolicy: 'network-only' }
       ),
       data: {
