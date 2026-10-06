@@ -52,6 +52,10 @@ import {
   tilesFor,
   tileTouches,
 } from '../core/tiles';
+import {
+  createRotationPreview,
+  type RotationPreview,
+} from './create-rotation-preview';
 
 interface Entry {
   key: TileKey;
@@ -155,6 +159,8 @@ export function createTileCompositor(options: TileCompositorOptions) {
   /** Dropped lifts, oldest first, drawn until the page shows their moves. */
   const landing: Lift[] = [];
   let landTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Rotation snapshots stay above page tiles until the whole drop is ready. */
+  const rotations = new Map<RotationPreview, boolean>();
   /** Render timings, for diagnostics. */
   const stats = { rendered: 0, millis: 0 };
 
@@ -439,9 +445,13 @@ export function createTileCompositor(options: TileCompositorOptions) {
     const done = l.landing;
     if (!done) return false;
     if (performance.now() - done.since > LAND_TIMEOUT_MS) return true;
+    return currentInView(done.dirty, view);
+  };
+
+  const currentInView = (dirty: Rect, view: ViewState): boolean => {
     const target = quantizeScale(view.camera.zoom * view.dpr);
     return tilesFor(view.camera, view.viewport, target, 0).every((key) => {
-      if (!tileTouches(key, done.dirty)) return true;
+      if (!tileTouches(key, dirty)) return true;
       if (page?.content && !tileTouches(key, page.content)) return true;
       const e = cache.get(tileId(key));
       return !!e?.bitmap && !e.stale && !e.pending;
@@ -557,6 +567,8 @@ export function createTileCompositor(options: TileCompositorOptions) {
     /** Starts over for a page (or after switching outline view). */
     setPage(next: PageState) {
       unlift();
+      for (const r of rotations.keys()) r.dispose();
+      rotations.clear();
       for (const l of landing.splice(0)) discard(l);
       for (const e of cache.values()) {
         e.bitmap?.close();
@@ -683,6 +695,48 @@ export function createTileCompositor(options: TileCompositorOptions) {
       }
       for (const l of landing) drawLift(ctx, view, l);
       if (lift) drawLift(ctx, view, lift);
+      for (const [r, dropped] of rotations) {
+        if (dropped && currentInView(r.bounds, view)) {
+          r.dispose();
+          rotations.delete(r);
+        } else r.draw(ctx, view);
+      }
+    },
+
+    /** Capture the whole layer before any gesture edits reach the engine. */
+    async liftRotation(plan: LiftPlan, center: Point) {
+      if (!page || !lastView || disposed) return undefined;
+      const version = edits;
+      const forGeneration = generation;
+      const preview = createRotationPreview({
+        engine,
+        plan,
+        center,
+        page: page.page,
+        outline: page.outline,
+        scale: quantizeScale(lastView.camera.zoom * lastView.dpr),
+      });
+      if (!preview) return undefined;
+      rotations.set(preview, false);
+      if (
+        !(await preview.ready) ||
+        disposed ||
+        generation !== forGeneration ||
+        version !== edits
+      ) {
+        preview.dispose();
+        rotations.delete(preview);
+        return undefined;
+      }
+      return preview;
+    },
+
+    /** Replace the preview atomically after every affected visible tile lands. */
+    landRotation(preview: RotationPreview) {
+      if (!rotations.has(preview)) return;
+      rotations.set(preview, true);
+      invalidate(preview.bounds);
+      options.onTile();
     },
 
     /**
@@ -797,6 +851,8 @@ export function createTileCompositor(options: TileCompositorOptions) {
 
     dispose() {
       disposed = true;
+      for (const r of rotations.keys()) r.dispose();
+      rotations.clear();
       unlift();
       for (const l of landing.splice(0)) discard(l);
       clearTimeout(landTimer);

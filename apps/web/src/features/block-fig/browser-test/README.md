@@ -47,7 +47,12 @@ frame and page navigation, zoom shortcuts, export, the shortcuts dialog,
 and editing: drawing, moving (lifted off the page while dragged, one edit at the drop, also when let go before the drag starts), and saving shapes, lines and arrows, fills
 and shadows from the design panel with undo and redo, typing and styling
 text, auto layout (adding it, gap and padding, sizing, drag to reorder),
-constraints, resizing several layers and rotating one, components
+constraints, resizing several layers and rotating one. `rotation-rendering`
+checks the whole rectangle across tile boundaries during rotation, no
+per-move raster requests, the preview staying intact while only some drop
+tiles arrive, and release before the preview is ready. Collaboration tests
+also check rotation reaching peers before release and undoing as one step.
+The suite covers components
 (creating, placing instances from Assets, overriding their layers,
 detaching), adding pages, and read-only access. `fig-shapes` covers
 boolean operations and flattening, drawing with the pen and editing

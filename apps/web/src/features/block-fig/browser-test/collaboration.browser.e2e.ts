@@ -248,3 +248,39 @@ test('an unreachable sync service opens the design read-only, with retry', async
   await expect(bob.getByTestId('fig-tool-rectangle')).toBeVisible();
   await expect(bob.getByTestId('fig-session-notice')).toHaveCount(0);
 });
+
+test('the other person sees a rotation before release, and undo restores it', async ({
+  page,
+}) => {
+  await open(page);
+  const alice = person(page, 'Alice').getByTestId('fig-canvas');
+  await drawRectangle(page, alice, [0.1, 0.72], [0.4, 0.8]);
+  await expect.poll(() => layersNamed(page, 1, 'Rectangle 1')).toBe(1);
+  const rotation = (who: number) =>
+    page.evaluate(async (index) => {
+      const engine = window.figFixture.collab?.people()[index]?.engine();
+      if (!engine) return undefined;
+      const row = (await engine.layers(0)).find(
+        (r) => r.name === 'Rectangle 1'
+      );
+      return row ? (await engine.nodeInfo(0, row.id)).rotation : undefined;
+    }, who);
+  const box = (await alice.boundingBox())!;
+  const center = { x: box.x + box.width * 0.25, y: box.y + box.height * 0.76 };
+  const dx = box.width * 0.15 + 10;
+  const dy = -box.height * 0.04 - 10;
+  await page.mouse.move(center.x + dx, center.y + dy);
+  await page.mouse.down();
+  await page.mouse.move(center.x - dy, center.y + dx, { steps: 8 });
+  await expect.poll(() => rotation(1)).toBeCloseTo(-90, 0);
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const [a, b] = await Promise.all([rotation(0), rotation(1)]);
+      return a !== undefined && b !== undefined && Math.abs(a - b) < 0.01;
+    })
+    .toBe(true);
+  await alice.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => rotation(1)).toBeCloseTo(0, 1);
+});

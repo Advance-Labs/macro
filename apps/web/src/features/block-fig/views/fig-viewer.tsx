@@ -279,9 +279,25 @@ export function FigViewer() {
     };
   };
 
+  const [rotation, setRotation] = createSignal<{
+    id: string;
+    angle: number;
+    until?: NodeInfo;
+  }>();
+  const onRotate = (angle: number | undefined) => {
+    const i = info();
+    if (angle !== undefined && i) setRotation({ id: i.id, angle });
+    else setRotation((r) => r && { ...r, until: i });
+  };
+
   /** The design panel's layer, showing the text editor's selection. */
   const panel = () => {
-    const i = movedInfo();
+    const base = movedInfo();
+    const r = rotation();
+    const i =
+      base && r && r.id === base.id && (!r.until || r.until === info())
+        ? { ...base, rotation: r.angle }
+        : base;
     const range = editor.textSelection();
     if (!i?.text || !range || range.id !== i.id || range.start === range.end)
       return { info: i, mixed: undefined };
@@ -971,6 +987,7 @@ export function FigViewer() {
           peers={peerOverlays}
           onPointer={collab ? setPointer : undefined}
           onMove={onMove}
+          onRotate={onRotate}
           aids={aids}
           devMode={devMode}
           drop={

@@ -1168,6 +1168,52 @@ export function createFigEditor(options: FigEditorOptions) {
     };
   };
 
+  /** The canvas previews rotation; the document follows quietly for peers. */
+  const startLiftedRotate = (id: string, initial: number) => {
+    const key = `rotate-${++dragKey}`;
+    let wanted = initial;
+    let applied = initial;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let running: Promise<void> | undefined;
+    let ended = false;
+    const step = async (last: boolean) => {
+      const rotation = wanted;
+      if (rotation === applied && !last) return;
+      const result = await apply(
+        [{ op: 'set', ids: [id], props: { rotation } }],
+        key,
+        !last
+      );
+      if (result) applied = rotation;
+    };
+    const schedule = () => {
+      if (ended || !sharing || timer || running) return;
+      timer = setTimeout(async () => {
+        timer = undefined;
+        const requested = wanted;
+        running = step(false);
+        await running;
+        running = undefined;
+        if (wanted !== requested) schedule();
+      }, GESTURE_PUSH_MS);
+    };
+    return {
+      to(rotation: number) {
+        wanted = rotation;
+        if (!ended) schedule();
+      },
+      async end() {
+        ended = true;
+        clearTimeout(timer);
+        timer = undefined;
+        await running;
+        clearTimeout(timer);
+        if (wanted !== initial || applied !== initial) await step(true);
+        return applied;
+      },
+    };
+  };
+
   // ---- images --------------------------------------------------------------
 
   /**
@@ -1342,6 +1388,7 @@ export function createFigEditor(options: FigEditorOptions) {
     startLiftedMove,
     startResize,
     startRotate,
+    startLiftedRotate,
     create,
     importImages,
     saveNow,

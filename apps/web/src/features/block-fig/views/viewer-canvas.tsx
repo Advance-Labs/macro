@@ -40,7 +40,12 @@ import { type SnapLines, snapResize } from '../core/layout-grid';
 import { offsetRect } from '../core/lift';
 import { measure } from '../core/measure';
 import type { PeerOverlay } from '../core/presence';
-import { isAxisAligned, rotationFor } from '../core/rotation';
+import {
+  isAxisAligned,
+  pointBounds,
+  rotatePoint,
+  rotationFor,
+} from '../core/rotation';
 import { type Guide, snapMove } from '../core/snap';
 import {
   closesPath,
@@ -59,6 +64,7 @@ import type {
   GuideDrag,
   LayoutAidsController,
 } from '../primitives/create-layout-aids';
+import type { RotationPreview } from '../primitives/create-rotation-preview';
 import { createTileCompositor } from '../primitives/create-tile-compositor';
 
 /** Pointer travel (CSS px) that turns a click into a drag. */
@@ -160,7 +166,7 @@ type Drag =
       center: Point;
       startAngle: number;
       startRotation: number;
-      rotator: ReturnType<FigEditor['startRotate']>;
+      rotator: { to(degrees: number): void; end(): Promise<void> };
     }
   | {
       kind: 'pinch';
@@ -265,6 +271,8 @@ export function ViewerCanvas(props: {
    * only at the drop.
    */
   onMove?: (offset: Point | undefined) => void;
+  /** Rotation displayed by the canvas while the document follows quietly. */
+  onRotate?: (rotation: number | undefined) => void;
   /** Layout grids and ruler guides. */
   aids?: LayoutAidsController;
   /** Dev Mode: hovering measures from the selection without ⌥. */
@@ -309,11 +317,13 @@ export function ViewerCanvas(props: {
     engine: props.engine,
     onTile: requestDraw,
   });
+  let disposed = false;
   props.onInvalidator?.((rect) => {
     compositor.invalidate(rect);
     requestDraw();
   });
   onCleanup(() => {
+    disposed = true;
     compositor.dispose();
     if (frame !== undefined) cancelAnimationFrame(frame);
   });
@@ -390,8 +400,20 @@ export function ViewerCanvas(props: {
   let lifted:
     | { offset: Point; geometry: NodeGeometry[]; bounds: Rect | undefined }
     | undefined;
+  let rotating:
+    | { geometry: NodeGeometry[]; center: Point; degrees: number }
+    | undefined;
 
   const shownGeometry = (): NodeGeometry[] => {
+    if (rotating) {
+      const { geometry, center, degrees } = rotating;
+      return geometry.map((g) => {
+        const corners = g.corners.map((p) =>
+          rotatePoint(p, center, degrees)
+        ) as NodeGeometry['corners'];
+        return { ...g, corners, bounds: pointBounds(corners) };
+      });
+    }
     if (!lifted) return viewer.selectionGeometry();
     const d = lifted.offset;
     return lifted.geometry.map((g) => ({
@@ -405,6 +427,7 @@ export function ViewerCanvas(props: {
   };
 
   const shownBounds = (): Rect | undefined => {
+    if (rotating) return pointBounds(shownGeometry().flatMap((g) => g.corners));
     if (!lifted) return viewer.selectionBounds();
     return lifted.bounds && offsetRect(lifted.bounds, lifted.offset);
   };
@@ -772,7 +795,7 @@ export function ViewerCanvas(props: {
         center,
         startAngle: Math.atan2(at.y - center.y, at.x - center.x),
         startRotation: info.rotation,
-        rotator: props.editor.startRotate(info.id),
+        rotator: startRotation(info, center),
       };
       return;
     }
@@ -816,6 +839,71 @@ export function ViewerCanvas(props: {
     } catch {
       return undefined;
     }
+  };
+
+  /** Turn one complete layer image per frame, keeping tile work off the drag. */
+  const startRotation = (info: NodeInfo, center: Point) => {
+    const editor = props.editor!;
+    const page = viewer.page();
+    const geometry = viewer.selectionGeometry();
+    let angle = info.rotation;
+    let preview: RotationPreview | undefined;
+    let follower: ReturnType<FigEditor['startLiftedRotate']> | undefined;
+    let stepwise: ReturnType<FigEditor['startRotate']> | undefined;
+    const show = () => {
+      if (!preview) return;
+      const degrees = angle - info.rotation;
+      preview.rotate(degrees);
+      rotating = { geometry, center, degrees };
+      props.onRotate?.(angle);
+      requestDraw();
+    };
+    const decided = (async () => {
+      const plan = await planLift([info.id]);
+      if (disposed || viewer.page() !== page) return;
+      preview = plan ? await compositor.liftRotation(plan, center) : undefined;
+      if (disposed || viewer.page() !== page) return;
+      if (preview) {
+        follower = editor.startLiftedRotate(info.id, info.rotation);
+        show();
+        if (angle !== info.rotation) follower.to(angle);
+      } else {
+        stepwise = editor.startRotate(info.id);
+        if (angle !== info.rotation) stepwise.to(angle);
+      }
+    })();
+    return {
+      to(degrees: number) {
+        angle = degrees;
+        show();
+        follower?.to(angle);
+        stepwise?.to(angle);
+      },
+      end() {
+        const done = (async () => {
+          await decided;
+          if (stepwise) return stepwise.end();
+          if (!follower || !preview) return;
+          try {
+            const applied = await follower.end();
+            preview.rotate(applied - info.rotation);
+          } finally {
+            compositor.landRotation(preview);
+            rotating = undefined;
+            props.onRotate?.(undefined);
+            requestDraw();
+          }
+        })();
+        drop = (async () => {
+          try {
+            await done;
+          } catch {
+            /* The editor reports failed edits. */
+          }
+        })();
+        return done;
+      },
+    };
   };
 
   /**

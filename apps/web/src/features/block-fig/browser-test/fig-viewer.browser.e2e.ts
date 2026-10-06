@@ -543,12 +543,13 @@ test('resizes several layers and rotates one', async ({ page }) => {
   await canvas.focus();
   await page.keyboard.press('r');
   await dragOnCanvas(page, [100, 100], [140, 140]);
+  await expect(page.getByTestId('fig-name')).toHaveValue('Rectangle 1');
   await canvas.focus();
   await page.keyboard.press('r');
   await dragOnCanvas(page, [200, 100], [260, 160]);
   await expect(page.getByTestId('fig-name')).toHaveValue('Rectangle 2');
   await canvas.focus();
-  await page.keyboard.press('Control+a');
+  await page.keyboard.press('ControlOrMeta+a');
   await expect(page.getByText('2 layers selected')).toBeVisible();
   // The selection box spans 100–260 × 100–160; its corner doubles it.
   await dragOnCanvas(page, [260, 160], [420, 220]);

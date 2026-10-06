@@ -1,5 +1,31 @@
 /** Rotating a layer by dragging beyond a corner of its selection box. */
 
+import type { Rect } from '@core/fig-engine/types';
+import type { Point } from './camera';
+
+/** Rotate a page point by a change in the inspector's counter-clockwise degrees. */
+export function rotatePoint(p: Point, center: Point, degrees: number): Point {
+  const angle = (-degrees * Math.PI) / 180;
+  const x = p.x - center.x;
+  const y = p.y - center.y;
+  return {
+    x: center.x + x * Math.cos(angle) - y * Math.sin(angle),
+    y: center.y + x * Math.sin(angle) + y * Math.cos(angle),
+  };
+}
+
+/** Bounds of points in page coordinates. */
+export function pointBounds(points: Point[]): Rect {
+  const x = Math.min(...points.map((p) => p.x));
+  const y = Math.min(...points.map((p) => p.y));
+  return {
+    x,
+    y,
+    w: Math.max(...points.map((p) => p.x)) - x,
+    h: Math.max(...points.map((p) => p.y)) - y,
+  };
+}
+
 /** Degrees as Figma shows them (counter-clockwise), snapped with ⇧. */
 export function rotationFor(
   startRotation: number,

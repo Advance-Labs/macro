@@ -1101,7 +1101,11 @@ Layout and test hooks:
   the move is one undo step, which the others in a live design see as it
   goes), drag the selection's corners or edges to
   resize (⇧ keeps proportions; several selected layers scale together), drag
-  just beyond a corner of one layer to rotate it (⇧ snaps to 15°), draw with the frame, rectangle, ellipse, and
+  just beyond a corner of one layer to rotate it (⇧ snaps to 15°). For layers
+  that can be drawn separately, rotation turns one complete rendered image
+  at pointer pace; the preview stays until every affected page tile is ready
+  after release. The angle follows in the panel, peers see live updates, and
+  the whole gesture undoes as one step. Draw with the frame, rectangle, ellipse, and
   text tools (a click places a default size; new layers go into the frame
   under the pointer), double-click or Enter on a text layer to type into it
   (see **Text editing** below), and drop or
