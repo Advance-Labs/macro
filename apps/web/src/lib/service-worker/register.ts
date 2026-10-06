@@ -9,6 +9,8 @@ import { reloadForNewerBuild } from '@core/util/reloadForNewerBuild';
 const OPT_OUT_KEY = 'macro:sw';
 /** How long after load an untouched tab may silently reload into a newer build. */
 const SILENT_RELOAD_WINDOW_MS = 10_000;
+/** public/sw.js keeps the cached app shell here. */
+const SHELL_CACHE = 'macro-shell-v1';
 
 let newerBuildAvailable = false;
 let interacted = false;
@@ -19,6 +21,17 @@ function runningBuild(): number {
     .querySelector<HTMLMetaElement>('meta[name="macro-bundle-build"]')
     ?.getAttribute('content');
   return Number(content);
+}
+
+/** The bundle build the server serves now, from a fresh index.html. */
+async function deployedBuild(): Promise<number> {
+  // Not a navigation, so the worker passes this through to the network.
+  const response = await fetch(ROUTER_BASE_CONCAT, { cache: 'no-store' });
+  if (!response.ok) return NaN;
+  const html = await response.text();
+  return Number(
+    /<meta name="macro-bundle-build" content="(\d+)"/.exec(html)?.[1]
+  );
 }
 
 function optedOut(): boolean {
@@ -66,6 +79,24 @@ function onWorkerMessage(event: MessageEvent<unknown>): void {
  */
 export function isNewerBuildAvailable(): boolean {
   return newerBuildAvailable;
+}
+
+/**
+ * A lazy chunk failed to load and the worker has not reported a newer build:
+ * it only revalidates on navigations, so a tab open across a deploy never
+ * hears of one, and the deploy removed this build's chunks. Asks the server
+ * which build it serves and reloads into it when it is newer.
+ */
+export async function reloadIfNewerBuildDeployed(): Promise<void> {
+  if (!import.meta.env.PROD || isTauri()) return;
+  const running = runningBuild();
+  const deployed = await deployedBuild().catch(() => NaN);
+  if (!Number.isFinite(running) || !(deployed > running)) return;
+  newerBuildAvailable = true;
+  // Drop the cached shell, which may still be this build, so the reload waits
+  // for the network instead of booting the build whose chunks are gone.
+  if ('caches' in window) await caches.delete(SHELL_CACHE).catch(() => {});
+  window.location.reload();
 }
 
 /**

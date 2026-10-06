@@ -16,6 +16,7 @@ import { FatalError } from './components/app/FatalError';
 import {
   isNewerBuildAvailable,
   registerServiceWorker,
+  reloadIfNewerBuildDeployed,
 } from './lib/service-worker/register';
 import { Root } from './routes/Root';
 
@@ -107,7 +108,9 @@ async function main() {
         window.location.reload();
         return;
       }
-      window.alert('Please refresh page to update app to new version');
+      // The error still reaches the error boundary; this reloads past it
+      // once the server confirms a newer build replaced this one.
+      void reloadIfNewerBuildDeployed();
     });
   }
 
