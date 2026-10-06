@@ -7,7 +7,7 @@
 
 import type { AgentAction } from '@service-agent-harness/generated/schemas';
 import { createRoot } from 'solid-js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const takeWarm = vi.hoisted(() => vi.fn<() => string | undefined>());
 const replenishWarm = vi.hoisted(() => vi.fn<(userId: string) => void>());
@@ -120,7 +120,9 @@ vi.mock('@core/agent-session/AgentSession', () => ({
   },
 }));
 
-const { startPendingSession } = await import('./pending-session');
+const { forgetPendingSession, startPendingSession } = await import(
+  './pending-session'
+);
 const { PromptTrace } = await import('@core/agent-session/prompt-telemetry');
 const { agentHarnessServiceClient } = await import(
   '@service-agent-harness/client'
@@ -139,6 +141,13 @@ beforeEach(() => {
   create.autoConfirm = true;
   create.confirm = undefined;
   create.confirmedModel = undefined;
+});
+
+afterEach(() => {
+  for (const [request] of vi.mocked(agentHarnessServiceClient.create).mock
+    .calls) {
+    if (request.id) forgetPendingSession(request.id);
+  }
 });
 
 describe('a block id that is already a session', () => {
