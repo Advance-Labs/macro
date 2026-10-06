@@ -2,10 +2,12 @@ import { useHasActiveChannelsCall } from '@app/features/channels-view/use-has-ac
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { navigateToSidebarView } from '@components/app/app-sidebar/sidebar';
+import { rememberBootShell } from '@components/app/boot-shell';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import { hotkeyScopeNeutralAttribute } from '@core/dom-selectors';
+import { isPlatform } from '@core/util/platform';
 import { cn } from '@ui';
-import { For, Show, Suspense } from 'solid-js';
+import { createEffect, For, Show, Suspense } from 'solid-js';
 import { SidebarRailCreateButton } from './create-button';
 import { FooterActions } from './footer-actions';
 import { ListNav, type ListNavProps } from './list-nav';
@@ -43,6 +45,11 @@ const SidebarRailContent = () => {
   const layout = useSplitLayout();
   const hasUnread = useSidebarUnread();
 
+  // The next load's boot shell draws this rail before any JS runs.
+  createEffect(() =>
+    rememberBootShell({ rail: visibleNavItems(gates()).map((item) => item.id) })
+  );
+
   const _openHome = (event: MouseEvent) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -62,7 +69,9 @@ const SidebarRailContent = () => {
       data-ui="sidebar-rail"
       class={cn(
         'relative flex h-full w-14 shrink-0 flex-col items-center gap-1 overflow-hidden border-edge-frame bg-panel px-2 pb-3 pt-2',
-        (globalSplitManager()?.splits().length ?? 1) <= 1 && 'border-r'
+        !isPlatform('desktop') &&
+          (globalSplitManager()?.splits().length ?? 1) <= 1 &&
+          'border-r'
       )}
     >
       <SidebarRailCreateButton />
