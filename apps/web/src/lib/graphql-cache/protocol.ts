@@ -430,6 +430,8 @@ export type ClaimedMutation = {
   /** Identity witness captured at enqueue time. */
   identity?: string;
   attemptCount: number;
+  /** Retryable server failures; transport failures do not consume this budget. */
+  serverFailureCount: number;
 };
 
 /** Outcome of the strict-head claim attempted immediately after enqueue. */
@@ -569,6 +571,7 @@ export type CacheRequest = { id: number } & (
       leaseGeneration: string;
       nextAttemptAtMs: number;
       error: string;
+      serverFailure?: boolean;
     }
   /** Atomically replace a claimed layer with the real network response. */
   | {

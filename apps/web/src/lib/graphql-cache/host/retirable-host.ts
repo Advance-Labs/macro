@@ -33,17 +33,24 @@ export function createRetirableCacheHost(inner: CacheHost): CacheHost {
       Promise.reject(new Error('Queue inspection is unavailable')),
     claimNextMutation: (owner, nowMs, leaseExpiresAtMs) =>
       current.claimNextMutation(owner, nowMs, leaseExpiresAtMs),
-    deferOptimisticWrite: (transactionId, claim, nextAttemptAtMs, error) =>
+    deferOptimisticWrite: (
+      transactionId,
+      claim,
+      nextAttemptAtMs,
+      error,
+      serverFailure
+    ) =>
       current.deferOptimisticWrite(
         transactionId,
         claim,
         nextAttemptAtMs,
-        error
+        error,
+        serverFailure
       ),
     commitOptimisticWrite: (transactionId, claim, args) =>
       current.commitOptimisticWrite(transactionId, claim, args),
-    rollbackOptimisticWrite: (transactionId, claim, error) =>
-      current.rollbackOptimisticWrite(transactionId, claim, error),
+    rollbackOptimisticWrite: (transactionId, claim, error, errorCode) =>
+      current.rollbackOptimisticWrite(transactionId, claim, error, errorCode),
     invalidate: (keys) => current.invalidate(keys),
     deleteRecords: (keys) => current.deleteRecords(keys),
     teardown: (opKey) => current.teardown(opKey),

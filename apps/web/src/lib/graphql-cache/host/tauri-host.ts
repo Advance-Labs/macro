@@ -465,7 +465,8 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
       transactionId: string,
       claim: MutationClaim,
       nextAttemptAtMs: number,
-      error: string
+      error: string,
+      serverFailure = false
     ): Promise<DeferOptimisticWriteResult> {
       await ready;
       return await request<DeferOptimisticWriteResult>(
@@ -476,6 +477,7 @@ export function createTauriCacheHost(options: TauriHostOptions): CacheHost {
           leaseGeneration: claim.generation,
           nextAttemptAtMs,
           error,
+          serverFailure,
         }
       );
     },

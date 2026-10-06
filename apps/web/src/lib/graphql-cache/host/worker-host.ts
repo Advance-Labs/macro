@@ -1322,7 +1322,8 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
       transactionId: string,
       claim: MutationClaim,
       nextAttemptAtMs: number,
-      error: string
+      error: string,
+      serverFailure = false
     ) {
       return (await initializedRequest({
         kind: 'defer-optimistic-write',
@@ -1331,6 +1332,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
         leaseGeneration: claim.generation,
         nextAttemptAtMs,
         error,
+        serverFailure,
       })) as DeferOptimisticWriteResult;
     },
 

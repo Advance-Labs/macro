@@ -721,10 +721,11 @@ Desktop composer and conversation body text use 15px type. Mobile keeps its
 existing text sizing.
 
 - Contenteditable composer (placeholder `Ask AI, @mention anything` / `Describe the edit…`).
-- Model picker button showing the current model (e.g. `Haiku 4.5`). Paid plans list
-  `Sonnet 5.5`, `Opus 5.5`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`;
+- Model picker button showing the current model (e.g. `Gemini 3.8 Flash`). Paid plans list
+  `Sonnet 5.5`, `Opus 5.5`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`,
+  and `Gemini 3.8 Flash`;
   in dev, heavy models carry a `2.5× usage` / `5× usage` hint.
-  On the free plan everything but `Haiku 4.5` is
+  On the free plan everything but `Gemini 3.8 Flash` is
   dimmed with a lock and opens the `Smart models are premium` paywall when clicked.
 - `Send` button (disabled when empty). While streaming it becomes `Stop generating`.
 
@@ -1465,3 +1466,19 @@ navigation, so mounting the next surface joins that request instead of warming
 another server session.
 Empty or failed warm responses do not trigger a refill loop, and mismatched
 agent settings leave a usable reservation available for the default agent.
+
+
+### Free-plan models in the new Macro agent
+
+The in-memory Macro runtime uses the session owner's current permissions.
+Free users see only Gemini 3.8 Flash in model discovery and the live session
+picker. New and resumed sessions replace an inaccessible saved model with Gemini.
+A direct request to select a paid model is rejected, and each prompt rechecks
+permissions before inference, including after a plan downgrade. Permission
+lookup failures prevent inference. Paid users retain the full supported catalog.
+Cursor, Claude Cloud, and paired external runtimes keep their own model rules.
+
+To verify, start a Macro conversation as a free user with a previously saved
+paid-model preference: the composer should show Gemini and send that model.
+In a live session, confirm the model options contain only Gemini. Backend tests
+also exercise direct ACP model-change requests, downgrade, and resume.
