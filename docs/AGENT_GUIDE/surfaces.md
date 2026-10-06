@@ -13,7 +13,7 @@ Low-emphasis right-aligned split-header actions (including Calendar's touch/prev
 New event and Channel's idle Call and Ask Macro) are borderless with a rounded-xl
 background on hover. Emphasized variants retain their treatment, including an
 active call's green ink and outline frame. Channel, company, contact, and project
-content tabs use bubble tabs in a separate row below the header. Button sizes do not change variant colors or framing; individual
+content tabs use inset controls in the top bar. Button sizes do not change variant colors or framing; individual
 framed controls default to glass on touch and flat on desktop. Use `glass={true}`
 to enable glass on all devices, or `glass={false}` to disable it everywhere.
 Embedded and low-emphasis actions use `ghost`; inline calendar-invitation text
@@ -151,36 +151,11 @@ that entity's last operation in the batch. Emitted `SoupUpdated` items are non-n
 If viewer-scoped hydration finds no item, the backend logs and omits that update;
 it does not imply deletion. Only explicit `GraphqlCacheDeletion` events remove records.
 
-## In-app reminder alerts
+## Email reminder delivery
 
-With reminders enabled, an unseen reminder notification produces a persistent
-alert while the Macro tab is visible, including when DevTools, the address bar,
-or another window has keyboard focus. Browser notification permission is not
-required. Returning to a hidden tab also surfaces unseen reminders from the
-loaded notification feed. Alerts do not activate the full notification history
-query: live arrivals are buffered independently while the tab is hidden.
-Multiple occurrences share one alert, with up to three descriptions and a count
-of the rest; normal save/copy toasts do not replace it.
-
-**Open reminder** opens the reminder details, including standalone reminders.
-For a group, **View reminders** opens the reminders list. Opening acknowledges
-the alert only after navigation applies; a rejected or superseded navigation
-leaves the card actionable. Opening or closing acknowledges it only in this
-browser account; it does not complete, delete, or snooze a reminder.
-Acknowledgements survive reloads and synchronize between tabs on the same origin.
-A later occurrence of a recurring reminder alerts again.
-Seeing or completing its notification elsewhere also removes it from the alert.
-
-Existing item-level notification mutes and snoozes also hide matching reminder
-alerts. Snoozing does not acknowledge the occurrence: an unseen alert can return
-when the snooze expires, without requiring another network event. The alert does
-not add a new per-occurrence Snooze control.
-
-When verifying, intercept notification responses in an owned browser tab and
-inject unseen reminder fixtures instead of scheduling real hosted reminders.
-Check permission denied, a burst of reminders before history loads, hide/show,
-reload after dismissal, mute/unmute, snooze expiry, and desktop/mobile widths. This foreground path does not deliver browser
-push when Macro is closed.
+An email snooze returns its original conversation to the inbox and adds a
+notification to that email row in Home. It has no separate reminder toast or
+detail view. See [Email reminders](reminders.md#delivery-and-undo).
 
 ## Home (desktop) / Notifications (mobile) — `/app/home`
 
@@ -284,13 +259,7 @@ are restored, including before a chat-limit paywall opens. With agents disabled,
 the input stays 32px above the vertical center as suggestions load. With agents
 enabled, the composer uses the same topbar offset and 24/64 padding as the
 Agents new-conversation page so the two inputs share a baseline; suggestions
-still load below it without moving the input. Eligible newer accounts (all
-accounts in development) see “New to Macro? See the **Getting Started** page.” directly
-below the composer, above suggestions. The link opens
-`/app/component/getting-started`; **Dismiss Getting Started link** hides it and
-remembers the dismissal per user in this browser across reloads. Dismissals update
-all open Home panes immediately and stay isolated when switching accounts. This
-dismissal is independent of the Getting Started sidebar link. Up to three cached AI
+still load below it without moving the input. Up to three cached AI
 suggestions appear below the
 composer, using the existing fast/smart recommendation projections. Compact rows
 use one line: reason — Phosphor icon and item name, followed by Open, all at the same font size. Clicking a
@@ -407,7 +376,7 @@ Carets and folder-only parents expand branches; actual tags select their exact I
 and switch the mailbox to All. Parent selection does not include descendant tags.
 
 Full email client. Tabs: `Signal` / `Noise` / `Favorites` / `Sent` / `Scheduled` / `Calendar` / `Drafts` / `Shared` /
-`All`. Compose via the `Email` button (or `Create` → `Email E`). On a fresh local user it
+`Archived` / `All`. Compose via the `Email` button (or `Create` → `Email E`). On a fresh local user it
 shows `Connect your email` (Gmail/Google Workspace OAuth) — most functionality needs a
 connected account. Search is `Ctrl+F` within the surface.
 
@@ -419,6 +388,14 @@ the paginated GraphQL Soup query uses `favoritesOnly: true`. With the flag off,
 REST Soup uses `favorites_only: true`. Starring changes membership without
 changing the list query. Text search still resolves favorite IDs for the search
 service. An empty favorites list shows `No favorite emails`.
+
+`Archived`, directly before All, lists your own archived (Mail Done) threads: the
+All mailbox with Done applied, excluding threads teammates shared with you. It
+respects the selected inboxes and filters. The search service cannot filter
+archive state, so search within the tab keeps only archived hits on the client.
+Rows offer **Unarchive email**;
+unarchiving removes the row at once. The tab persists across reloads. An empty
+list shows `No archived email`.
 
 On desktop, a favorited email keeps a filled, muted star just before its
 timestamp. Other rows reserve only that small star slot. Hovering reveals
@@ -551,7 +528,7 @@ All, Signal, Noise, Drafts, Sent, Calendar, and Shared support tab changes and n
 filter combinations while offline: account selection
 (including delegated inboxes), read/unread, and archive-based Done/Not Done. Mail Done
 means `inboxVisible = false`; it is **not** notification lifecycle state. Signal/Noise
-retain their Inbox scope, so archived mail is found using All + Done.
+retain their Inbox scope, so archived mail is found in Archived (All + Done).
 
 A `Showing cached mail` notice identifies results over synchronized metadata, not a
 claim of complete mailbox coverage. These lists paginate locally beyond the first
@@ -682,7 +659,13 @@ a slow background refresh must not keep the restored editor disabled. A rejected
 send reports failure and restores its original reply editor if it is still mounted.
 A failure from an older, unmounted editor must not overwrite a newer edited reply.
 A presentation or refresh error after successful delivery is not a reason to send
-again.
+again. After the undo window and provider acceptance, send finalization supplies
+any missing delivery timestamp before publishing the realtime update. The cached
+Sent list must therefore admit the message without waiting for Gmail inbox sync
+or an online visit to Sent. Verify by sending from another Mail tab, receiving the
+final sent update, then switching offline and opening Sent. Existing provider
+timestamps and timestamps from repeated finalization remain unchanged; an unsent
+or cancelled draft must not acquire Sent membership.
 
 Send and schedule are refused with a notice while the device is offline, while a
 draft is still syncing (its save was accepted locally but not yet confirmed by the
@@ -1035,7 +1018,12 @@ combine to narrow the results. Created by is hidden while My Files
 is restricted to your own files. Recent offers only file-scope filtering.
 `Sort files` offers modified, created, and viewed dates.
 Recent uses the viewer's own interaction order and does not offer a sort override.
-The New menu and drag/drop uploads target the selected folder. File rows retain
+The New menu and drag/drop uploads target the selected folder. In a folder
+opened in its own split or an inline preview, drop files from the computer onto
+the empty state or file list, then reopen the folder to verify membership.
+Check both one file and multiple files; the nested list drop target must retain
+the open folder as the upload destination.
+File rows retain
 selection and context menus; ordinary folder clicks and Enter browse inside Drive,
 while Markdown, code/CSV, image, video, PDF/DOCX, canvas, and unrecognized file
 clicks and Enter replace the list with a breadcrumbed detail. Those detail
@@ -1651,7 +1639,13 @@ joining a standalone call never makes its content available to the wider team.
 
 On desktop, the local sidebar uses the same navigation primitives as Email and Tasks.
 Board and List share a horizontal segmented toggle at the top of the sidebar; the
-main header has no layout toggle. People is not available. Views include All companies, My companies
+main header has no layout toggle. People lists contacts across every CRM-enabled
+team the viewer belongs to. Duplicate full email addresses (case-insensitive)
+collapse to the visible contact with the most recent interaction; ties use the
+contact ID. Each team's record and existing contact links remain separate. Hidden
+contacts and contacts under hidden companies are excluded. The directory supports
+name/email search and sorting, and its navigation remains available on touch devices.
+Company views include All companies, My companies
 (Owner = current user), Needs follow-up (has a stage other than Churned and last
 interaction at least 14 days ago),
 Recently active (team email activity within 7 days), and Unassigned (no Owner). Existing personal/team
@@ -1692,9 +1686,9 @@ the toggle to dismiss it; the open state is not restored on a later visit.
 It copies the record's direct URL and shows a confirmation toast; this is also
 available in the embedded company and contact breadcrumb header.
 
-A company is laid out like a project. Below its split header or embedded
-breadcrumb header, a separate bubble-tab row shows `Overview`, `Team`, `Emails`,
-`Files`, `Tasks`, and `Calls`. Narrow rows scroll horizontally with text labels. Overview shows the name, pills
+A company is laid out like a project. Its split header or embedded breadcrumb
+header shows inset `Overview`, `Team`, `Emails`, `Files`, `Tasks`, and `Calls`
+tabs, collapsing to icons when narrow. Overview shows the name, pills
 for each domain and `Last interacted`, the generated description and the
 Discussion. Team lists the contacts with `Add contact`. Emails keeps the
 `Signal`/`All` and `Team`/`Me` toggles. Files lists non-task documents whose
@@ -1818,22 +1812,12 @@ the mention opens the database. Databases also appear in the Ctrl+K command menu
 **All** and **Files**, ordered by creation time. Home's merged feed and the Recent view read Soup, which
 does not list databases.
 
-## Getting Started — `/app/component/getting-started`
-
-The buttons under **Put Macro's agent to work** create a chat and send their
-example prompt on first use. Later clicks reopen that button's saved chat without
-sending the prompt again, including after leaving the page or refreshing. Each
-button has its own chat, saved per account in this browser's local storage.
-Repeated clicks while the same button is creating its chat are ignored; a failed
-creation can be retried.
-
 ## Home — `/app/component/home`
 
-Greeting, getting-started checklist, example prompt buttons (`Draft a document`,
-`Draft an email`, `Search & research`), and the ubiquitous `Ask AI` composer.
-Eligible newer accounts (all accounts in development) also see the same
-dismissible **Getting Started** link below
-the composer, with its dismissal shared with the desktop Home starting pane.
+Greeting, example prompt buttons (`Draft a document`, `Draft an email`,
+`Search & research`), and the ubiquitous `Ask AI` composer. Finishing onboarding
+without a deep link lands here. The retired Getting Started page's old
+`/app/getting-started` and `/app/component/getting-started` links also open Home.
 
 On phones, shared confirmations (including Remove Member and Cancel Invitation)
 use a glass sheet with a title, description, Close confirmation button, and
@@ -2052,14 +2036,22 @@ those controls, with purchases disabled.
 The **Automatic reload** switch opens **Auto-Reload** without toggling directly.
 It contains Minimum balance (default `$10`), Target balance (default `$100`),
 optional Maximum monthly spend (`No limit`), a payment-method management link,
-and the automatic-charge warning. Balance-triggered reload is not implemented
-by the backend yet, so saving is disabled outside its explicit developer preview.
-Existing postpaid usage billing is shown separately and can be turned off by the
-payer. Local **Developer tools** offer `Preview Free plan` and `Preview paid plan`
-to display either Usage page with sample usage, regardless of the signed-in
-account's tier. `Open Free usage-limit dialog` and `Open paid usage-limit dialog`
-open the corresponding exhausted-usage prompt directly. The previews also work
-before the usage summary loads or when it fails. The paid-plan preview allows
+and the automatic-charge warning. The dialog saves for paid payers:
+`Turn on auto-reload` enables usage billing with those thresholds (the monthly
+limit also caps usage billing per period), `Save` updates them while on, and
+`Turn off` disables usage billing. The **Automatic reload** switch reflects the
+saved state. Paid team members who are not the payer see
+`Only the account that pays for this plan can change automatic reload.` and
+cannot save. After a failed automatic reload the dialog shows `Your last
+automatic reload could not be charged. Update your payment method, then save to
+try again.`; saving retries. Existing postpaid usage billing is shown separately
+and can be turned off by the payer; while it is on, credits reload automatically
+when the balance drops below the minimum. Local **Developer tools** offer
+`Preview Free plan` and `Preview paid plan` to display either Usage page with
+sample usage, regardless of the signed-in account's tier.
+`Open Free usage-limit dialog` and `Open paid usage-limit dialog` open the
+corresponding exhausted-usage prompt directly. The previews also work before
+the usage summary loads or when it fails. The paid-plan preview allows
 testing Auto-Reload settings. Purchases and payment management are disabled during any
 preview; `Reset preview` restores server data and closes the usage-limit dialog.
 `Preview production before Oct 8` shows the October 8 announcement and disables
@@ -2327,15 +2319,13 @@ and contact views (both inside the CRM workspace and in standalone blocks).
 
 ### Email reminders
 
-The global Reminders workspace uses one continuous collection with completion
-and schedule shown independently on the existing entity rows. Its persistent
-clock exposes the full schedule on hover/focus and opens the existing editor;
-see [collection verification](reminders.md#one-collection-independent-completion-and-schedule).
+Email's **Reminders** tab contains original conversations with active snoozes,
+ordered by return time. Each row's clock opens the shared reminder command menu;
+see [collection verification](reminders.md#email--reminders).
 
 Use **H** on one selected email or its open conversation, **Remind me** in the
-menu, or the header bell. These share the email-specific, time-first workflow
-in [Reminders](reminders.md#email-follow-ups-h). A successful new reminder moves
-out of the inbox and advances within that surface's filtered list. Cancel and
-failed saves keep the current email. H on a pending follow-up edits it; Remove
-returns it to the inbox. The bell's label identifies pending time or returned
-status. Bare H in a reply or search field must remain ordinary typing.
+menu, or the header bell. These share the [email reminder menu](reminders.md#snooze-or-change-a-conversation).
+A confirmed save archives the thread and advances within the invoking list.
+Cancel and failed saves keep the current email. H on a pending snooze edits it;
+**Remove reminder** returns it to the inbox. Bare H in a reply or search field
+remains ordinary typing.

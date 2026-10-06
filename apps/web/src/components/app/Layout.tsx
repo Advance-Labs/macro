@@ -25,11 +25,7 @@ import {
 import { MacroMcpSetupModal } from '@app/features/integrations/mcp-setup/MacroMcpSetupModal';
 import { AiUsageLimitDialog } from '@app/features/paywall/AiUsageLimitDialog';
 import { observeAiUsageLimitMutations } from '@app/features/paywall/ai-usage-limit-handling';
-import { Paywall } from '@app/features/paywall/Paywall';
-import { PropertyEditorModal } from '@app/features/property/editor/PropertyEditorModal';
-import { ReminderComposerModal } from '@app/features/reminders/ReminderComposerModal';
 import { MobileSettingsProvider } from '@app/features/settings/context/mobile-settings';
-import { MobileSettings } from '@app/features/settings/MobileSettings';
 import { NativeShareSheet } from '@app/features/sharing/native-share-sheet/NativeShareSheet';
 import { ShowFeatureFlag } from '@app/lib/analytics/posthog';
 import { mountGlobalFocusListener } from '@app/signal/focus';
@@ -44,7 +40,7 @@ import {
 import { useIsAuthenticated } from '@core/auth';
 import { UserCardDrawer } from '@core/component/UserCardDrawer';
 import { useAiUsageLimitState } from '@core/constant/AiUsageLimitState';
-import { enableDatabases, enableReminders } from '@core/constant/featureFlags';
+import { enableDatabases } from '@core/constant/featureFlags';
 import { usePaywallState } from '@core/constant/PaywallState';
 import { attachGlobalDOMScope } from '@core/hotkey/hotkeys';
 import { isMobile } from '@core/mobile/isMobile';
@@ -52,6 +48,7 @@ import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { virtualKeyboardVisible } from '@core/mobile/virtualKeyboard';
 import { updateCookie } from '@core/util/cookies';
+import { lazyNamed } from '@core/util/lazyNamed';
 import { useUserInfoQuery } from '@queries/auth/user-info';
 import { queryClient } from '@queries/client';
 import {
@@ -87,6 +84,21 @@ const StarterDatabase = lazy(async () => {
   );
   return { default: module.StarterDatabase };
 });
+
+// Modals and mobile-only surfaces stay out of the entry chunk; each one
+// renders inside a Suspense boundary and loads when it first mounts.
+const Paywall = lazyNamed(
+  () => import('@app/features/paywall/Paywall'),
+  'Paywall'
+);
+const PropertyEditorModal = lazyNamed(
+  () => import('@app/features/property/editor/PropertyEditorModal'),
+  'PropertyEditorModal'
+);
+const MobileSettings = lazyNamed(
+  () => import('@app/features/settings/MobileSettings'),
+  'MobileSettings'
+);
 
 const AUTH_URLS = [
   `${ROUTER_BASE_CONCAT}login`,
@@ -237,12 +249,6 @@ function LayoutInner(props: RouteSectionProps) {
           <CreateChannelModal />
           <CreateCompanyModal />
           <CreateContactModal />
-          {/* Reactive, unlike the imperative isFeatureEnabled(enableReminders) gate on the
-              action: this decides whether the composer is mounted at all, so it
-              has to pick up a late PostHog answer. */}
-          <ShowFeatureFlag flag={enableReminders}>
-            <ReminderComposerModal />
-          </ShowFeatureFlag>
           <Show when={isAddInboxDialogOpen()}>
             <AddInboxDialog />
           </Show>
@@ -292,7 +298,9 @@ function LayoutInner(props: RouteSectionProps) {
           <UserCardDrawer />
         </Suspense>
         <Show when={isMobile()}>
-          <MobileSettings />
+          <Suspense>
+            <MobileSettings />
+          </Suspense>
         </Show>
         <MobileViewsRow />
         <FloatRegion

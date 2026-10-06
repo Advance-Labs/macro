@@ -49,6 +49,10 @@ import {
 } from './DatabaseToolHandlers';
 import { deleteTagHandler } from './DeleteTag';
 import { readDesignHandler } from './Design';
+import {
+  readIllustratorDocumentHandler,
+  readPhotoshopDocumentHandler,
+} from './DesignDocument';
 import { displayResultsHandler } from './DisplayResults';
 import {
   commentOnDocumentHandler,
@@ -100,12 +104,6 @@ import { readMetadataHandler } from './ReadMetadata';
 import { readProjectHandler } from './ReadProject';
 import { readSkillHandler } from './ReadSkill';
 import { readThreadHandler } from './ReadThread';
-import {
-  createReminderHandler,
-  deleteReminderHandler,
-  listRemindersHandler,
-  updateReminderHandler,
-} from './Reminders';
 import { renameDocumentHandler } from './RenameDocument';
 import {
   createRoutineHandler,
@@ -154,6 +152,8 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ReadPresentation: readPresentationHandler,
   EditPresentation: editPresentationHandler,
   ReadDesign: readDesignHandler,
+  ReadPhotoshopDocument: readPhotoshopDocumentHandler,
+  ReadIllustratorDocument: readIllustratorDocumentHandler,
   ReadWordDocument: readWordDocumentHandler,
   EditWordDocument: editWordDocumentHandler,
   ConfigureAgent: configureAgentHandler,
@@ -186,7 +186,6 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ListSkills: listSkillsHandler,
   ManageChannelParticipants: manageChannelParticipantsHandler,
   ListNotifications: listNotificationsHandler,
-  ListReminders: listRemindersHandler,
   CreateRoutine: createRoutineHandler,
   ListRoutines: listRoutinesHandler,
   ReadRoutine: readRoutineHandler,
@@ -204,9 +203,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   UploadFile: uploadFileHandler,
   GenerateImage: generateImageHandler,
   CreateProject: createProjectHandler,
-  CreateReminder: createReminderHandler,
   CreateTag: createTagHandler,
-  DeleteReminder: deleteReminderHandler,
   DeleteTag: deleteTagHandler,
   EditDocument: editDocumentHandler,
   EditTag: editTagHandler,
@@ -238,7 +235,6 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   BulkSetEntityPropertyOptions: bulkSetEntityPropertyOptionsHandler,
   Subagent: subagentHandler,
   TextEditorCodeExecution: textEditorCodeExecutionHandler,
-  UpdateReminder: updateReminderHandler,
   UpdateThreadLabels: updateThreadLabelsHandler,
   WebFetch: webFetchHandler,
   WebSearch: webSearchHandler,
