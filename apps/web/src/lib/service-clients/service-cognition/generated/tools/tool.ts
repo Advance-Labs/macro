@@ -45,6 +45,10 @@ type ToolParserMap = {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
   };
+  CreateConfirmedCalendarEvent: {
+    call: types.CreateConfirmedCalendarEvent;
+    response: types.ToolCalendarEvent;
+  };
   CreateDocument: {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
@@ -61,7 +65,6 @@ type ToolParserMap = {
     call: types.CreateProject;
     response: types.CreateProjectResponse;
   };
-  CreateReminder: { call: types.CreateReminder; response: types.ToolReminder };
   CreateRoutine: { call: types.CreateRoutine; response: types.RoutineInfo };
   CreateTag: { call: types.CreateTag; response: types.CreateTagResponse };
   DeleteBot: { call: types.DeleteBot; response: types.DeleteBotResponse };
@@ -81,14 +84,14 @@ type ToolParserMap = {
     call: types.DeleteInitiative;
     response: types.ProjectOperationComplete;
   };
-  DeleteReminder: {
-    call: types.DeleteReminder;
-    response: types.DeleteReminderResponse;
-  };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
   DescribeDatabase: {
     call: types.DescribeDatabase;
     response: types.ToolDatabaseSchema;
+  };
+  DispatchCodingAgent: {
+    call: types.DispatchCodingAgent;
+    response: types.DispatchedCodingAgent;
   };
   DisplayResults: {
     call: types.DisplayResults;
@@ -143,6 +146,10 @@ type ToolParserMap = {
     call: types.ListCalendars;
     response: types.ListCalendarsToolResponse;
   };
+  ListCodingAgents: {
+    call: types.ListCodingAgents;
+    response: types.ListCodingAgentsResponse;
+  };
   ListCompanies: {
     call: types.ListCompanies;
     response: types.ListCompaniesResponse;
@@ -168,10 +175,6 @@ type ToolParserMap = {
   ListNotifications: {
     call: types.ListNotifications;
     response: types.ListNotificationsResponse;
-  };
-  ListReminders: {
-    call: types.ListReminders;
-    response: types.ListRemindersResponse;
   };
   ListRoutines: { call: types.ListRoutines; response: types.RoutineList };
   ListSkills: { call: types.ListSkills; response: types.ListSkillsResponse };
@@ -228,6 +231,11 @@ type ToolParserMap = {
   };
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
+  ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadIllustratorDocument: {
+    call: types.ReadIllustratorDocument;
+    response: types.ReadIllustratorDocumentResponse;
+  };
   ReadInitiative: {
     call: types.ReadInitiative;
     response: types.ProjectReadResult;
@@ -239,6 +247,10 @@ type ToolParserMap = {
   ReadMetadata: {
     call: types.ReadMetadata;
     response: types.ReadMetadataResponse;
+  };
+  ReadPhotoshopDocument: {
+    call: types.ReadPhotoshopDocument;
+    response: types.ReadPhotoshopDocumentResponse;
   };
   ReadPresentation: {
     call: types.ReadPresentation;
@@ -322,7 +334,6 @@ type ToolParserMap = {
     call: types.UpdateInitiativeSharing;
     response: types.ProjectDetails;
   };
-  UpdateReminder: { call: types.UpdateReminder; response: types.ToolReminder };
   UpdateRoutine: { call: types.UpdateRoutine; response: types.RoutineInfo };
   UpdateThreadLabels: {
     call: types.UpdateThreadLabels;
@@ -371,6 +382,10 @@ const toolParserMap = {
     call: schemas.CreateChannel,
     response: schemas.CreateChannelResponse,
   },
+  CreateConfirmedCalendarEvent: {
+    call: schemas.CreateConfirmedCalendarEvent,
+    response: schemas.ToolCalendarEvent,
+  },
   CreateDocument: {
     call: schemas.CreateDocument,
     response: schemas.CreateDocumentResponse,
@@ -386,10 +401,6 @@ const toolParserMap = {
   CreateProject: {
     call: schemas.CreateProject,
     response: schemas.CreateProjectResponse,
-  },
-  CreateReminder: {
-    call: schemas.CreateReminder,
-    response: schemas.ToolReminder,
   },
   CreateRoutine: { call: schemas.CreateRoutine, response: schemas.RoutineInfo },
   CreateTag: { call: schemas.CreateTag, response: schemas.CreateTagResponse },
@@ -410,14 +421,14 @@ const toolParserMap = {
     call: schemas.DeleteInitiative,
     response: schemas.ProjectOperationComplete,
   },
-  DeleteReminder: {
-    call: schemas.DeleteReminder,
-    response: schemas.DeleteReminderResponse,
-  },
   DeleteTag: { call: schemas.DeleteTag, response: schemas.DeleteTagResponse },
   DescribeDatabase: {
     call: schemas.DescribeDatabase,
     response: schemas.ToolDatabaseSchema,
+  },
+  DispatchCodingAgent: {
+    call: schemas.DispatchCodingAgent,
+    response: schemas.DispatchedCodingAgent,
   },
   DisplayResults: {
     call: schemas.DisplayResults,
@@ -478,6 +489,10 @@ const toolParserMap = {
     call: schemas.ListCalendars,
     response: schemas.ListCalendarsToolResponse,
   },
+  ListCodingAgents: {
+    call: schemas.ListCodingAgents,
+    response: schemas.ListCodingAgentsResponse,
+  },
   ListCompanies: {
     call: schemas.ListCompanies,
     response: schemas.ListCompaniesResponse,
@@ -509,10 +524,6 @@ const toolParserMap = {
   ListNotifications: {
     call: schemas.ListNotifications,
     response: schemas.ListNotificationsResponse,
-  },
-  ListReminders: {
-    call: schemas.ListReminders,
-    response: schemas.ListRemindersResponse,
   },
   ListRoutines: { call: schemas.ListRoutines, response: schemas.RoutineList },
   ListSkills: {
@@ -578,6 +589,14 @@ const toolParserMap = {
     call: schemas.ReadContent,
     response: schemas.ReadContentResponse,
   },
+  ReadDesign: {
+    call: schemas.ReadDesign,
+    response: schemas.ReadDesignResponse,
+  },
+  ReadIllustratorDocument: {
+    call: schemas.ReadIllustratorDocument,
+    response: schemas.ReadIllustratorDocumentResponse,
+  },
   ReadInitiative: {
     call: schemas.ReadInitiative,
     response: schemas.ProjectReadResult,
@@ -589,6 +608,10 @@ const toolParserMap = {
   ReadMetadata: {
     call: schemas.ReadMetadata,
     response: schemas.ReadMetadataResponse,
+  },
+  ReadPhotoshopDocument: {
+    call: schemas.ReadPhotoshopDocument,
+    response: schemas.ReadPhotoshopDocumentResponse,
   },
   ReadPresentation: {
     call: schemas.ReadPresentation,
@@ -678,10 +701,6 @@ const toolParserMap = {
     call: schemas.UpdateInitiativeSharing,
     response: schemas.ProjectDetails,
   },
-  UpdateReminder: {
-    call: schemas.UpdateReminder,
-    response: schemas.ToolReminder,
-  },
   UpdateRoutine: { call: schemas.UpdateRoutine, response: schemas.RoutineInfo },
   UpdateThreadLabels: {
     call: schemas.UpdateThreadLabels,
@@ -741,6 +760,10 @@ type ToolDataMap = {
     call: types.CreateChannel;
     response: types.CreateChannelResponse;
   };
+  CreateConfirmedCalendarEvent: {
+    call: types.CreateConfirmedCalendarEvent;
+    response: types.ToolCalendarEvent;
+  };
   CreateDocument: {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
@@ -757,7 +780,6 @@ type ToolDataMap = {
     call: types.CreateProject;
     response: types.CreateProjectResponse;
   };
-  CreateReminder: { call: types.CreateReminder; response: types.ToolReminder };
   CreateRoutine: { call: types.CreateRoutine; response: types.RoutineInfo };
   CreateTag: { call: types.CreateTag; response: types.CreateTagResponse };
   DeleteBot: { call: types.DeleteBot; response: types.DeleteBotResponse };
@@ -777,14 +799,14 @@ type ToolDataMap = {
     call: types.DeleteInitiative;
     response: types.ProjectOperationComplete;
   };
-  DeleteReminder: {
-    call: types.DeleteReminder;
-    response: types.DeleteReminderResponse;
-  };
   DeleteTag: { call: types.DeleteTag; response: types.DeleteTagResponse };
   DescribeDatabase: {
     call: types.DescribeDatabase;
     response: types.ToolDatabaseSchema;
+  };
+  DispatchCodingAgent: {
+    call: types.DispatchCodingAgent;
+    response: types.DispatchedCodingAgent;
   };
   DisplayResults: {
     call: types.DisplayResults;
@@ -839,6 +861,10 @@ type ToolDataMap = {
     call: types.ListCalendars;
     response: types.ListCalendarsToolResponse;
   };
+  ListCodingAgents: {
+    call: types.ListCodingAgents;
+    response: types.ListCodingAgentsResponse;
+  };
   ListCompanies: {
     call: types.ListCompanies;
     response: types.ListCompaniesResponse;
@@ -864,10 +890,6 @@ type ToolDataMap = {
   ListNotifications: {
     call: types.ListNotifications;
     response: types.ListNotificationsResponse;
-  };
-  ListReminders: {
-    call: types.ListReminders;
-    response: types.ListRemindersResponse;
   };
   ListRoutines: { call: types.ListRoutines; response: types.RoutineList };
   ListSkills: { call: types.ListSkills; response: types.ListSkillsResponse };
@@ -924,6 +946,11 @@ type ToolDataMap = {
   };
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
+  ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadIllustratorDocument: {
+    call: types.ReadIllustratorDocument;
+    response: types.ReadIllustratorDocumentResponse;
+  };
   ReadInitiative: {
     call: types.ReadInitiative;
     response: types.ProjectReadResult;
@@ -935,6 +962,10 @@ type ToolDataMap = {
   ReadMetadata: {
     call: types.ReadMetadata;
     response: types.ReadMetadataResponse;
+  };
+  ReadPhotoshopDocument: {
+    call: types.ReadPhotoshopDocument;
+    response: types.ReadPhotoshopDocumentResponse;
   };
   ReadPresentation: {
     call: types.ReadPresentation;
@@ -1018,7 +1049,6 @@ type ToolDataMap = {
     call: types.UpdateInitiativeSharing;
     response: types.ProjectDetails;
   };
-  UpdateReminder: { call: types.UpdateReminder; response: types.ToolReminder };
   UpdateRoutine: { call: types.UpdateRoutine; response: types.RoutineInfo };
   UpdateThreadLabels: {
     call: types.UpdateThreadLabels;

@@ -11,12 +11,17 @@ import {
 } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildAgentRoster, type PersistedAgentLike } from '../core/roster';
+import {
+  buildAgentRoster,
+  type PersistedAgentLike,
+  type RuntimeLike,
+} from '../core/roster';
 import { AgentPicker } from './AgentPicker';
 import { NewChatPage } from './NewChatPage';
 
 const mocks = vi.hoisted(() => ({
   touch: false,
+  freePlan: false,
   openSettings: vi.fn(),
   capabilitiesPending: false,
   attachments: [] as InputAttachmentData[],
@@ -122,6 +127,13 @@ vi.mock('@queries/agents/models', () => ({
     get data() {
       if (!enabled()) throw new Error('Pending resource must not be read');
       const harness = target().harness;
+      if (harness === 'in-memory' && mocks.freePlan) {
+        return {
+          status: 'available',
+          currentModel: 'google/gemini-3.8-flash',
+          models: [{ id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash' }],
+        };
+      }
       return {
         status: 'available',
         currentModel: harness === 'cursor' ? 'cursor-default' : 'chat-default',
@@ -198,7 +210,8 @@ beforeEach(() => {
 function page(
   connected = true,
   agents: PersistedAgentLike[] = [],
-  availabilityLoading = false
+  availabilityLoading = false,
+  runtimes: RuntimeLike[] = []
 ) {
   const onStart = vi.fn();
   render(() => (
@@ -206,7 +219,7 @@ function page(
       compact={mocks.touch}
       roster={buildAgentRoster({
         agents,
-        runtimes: [],
+        runtimes,
         cursorConnected: connected,
         cursorNeedsConnection: !connected,
         macroDefaultModel: 'chat-default',
@@ -257,6 +270,7 @@ describe('agent-led new conversation', () => {
   let motionStyles: HTMLStyleElement;
   beforeEach(() => {
     mocks.capabilitiesPending = false;
+    mocks.freePlan = false;
     mocks.touch = false;
     mocks.attachments = [];
     mocks.recentIds = [MACRO_CODER_BOT_ID];
@@ -351,6 +365,7 @@ describe('agent-led new conversation', () => {
       prompt: 'Prompt',
       botId: undefined,
       repoUrl: undefined,
+      modelOverride: 'chat-default',
     });
   });
   it('selects a coding agent, keeps the draft, and only sends the repository to coding agents', async () => {
@@ -456,7 +471,8 @@ describe('agent-led new conversation', () => {
       repoBranch: 'feature/other',
     });
   });
-  it('uses a saved agent without sending a per-session model override', async () => {
+  it('uses Gemini for a free user starting a saved in-memory agent', async () => {
+    mocks.freePlan = true;
     const send = page(true, [
       {
         bot: { id: 'saved-agent', name: 'Reviewer', handle: 'reviewer' },
@@ -470,8 +486,8 @@ describe('agent-led new conversation', () => {
       prompt: 'Prompt',
       botId: 'saved-agent',
       repoUrl: undefined,
+      modelOverride: 'google/gemini-3.8-flash',
     });
-    expect(send.mock.calls[0][0]).not.toHaveProperty('modelOverride');
   });
   it.each(['claude-cloud', 'codex-cloud', 'future-runtime'])(
     'shows the drawer for a saved %s coding agent without forwarding unsupported repository overrides',
@@ -502,6 +518,39 @@ describe('agent-led new conversation', () => {
       });
     }
   );
+
+  it('dispatches the chosen repository from main to a paired local runtime', async () => {
+    const send = page(
+      true,
+      [
+        {
+          bot: { id: 'local-agent', name: 'Laptop agent', handle: 'laptop' },
+          harness: 'macrod',
+          harness_id: 'laptop',
+          default_model: 'default',
+        },
+      ],
+      false,
+      [{ id: 'laptop', name: 'Laptop', connected: true }]
+    );
+    await selectAgent(/Cursor/);
+    fireEvent.click(screen.getByRole('button', { name: 'Repository' }));
+    fireEvent.click(screen.getByRole('option', { name: 'macro-inc/macro' }));
+    expect(
+      screen.getByRole('button', { name: 'Branch' }).textContent
+    ).toContain('develop');
+    await selectAgent(/Laptop agent/);
+    const branch = screen.getByRole('button', { name: 'Branch' });
+    expect(branch.textContent).toContain('main');
+    expect(branch.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(send).toHaveBeenCalledWith({
+      prompt: 'Prompt',
+      botId: 'local-agent',
+      repoUrl: 'https://github.com/macro-inc/macro',
+      repoBranch: 'main',
+    });
+  });
 
   it('keeps a disconnected paired agent visible with its availability reason', () => {
     page(true, [
@@ -723,6 +772,27 @@ describe('agent-led new conversation', () => {
     page();
     expect(screen.getByRole('button', { name: 'Agent' }).textContent).toBe(
       'Sonnet 5.5'
+    );
+  });
+  it('uses the free catalog default instead of a persisted paid model', async () => {
+    mocks.freePlan = true;
+    mocks.preferredInmemModel = 'anthropic/claude-sonnet-5-5';
+    const send = page();
+    expect(screen.getByRole('button', { name: 'Agent' }).textContent).toBe(
+      'Gemini 3.8 Flash'
+    );
+    openAgents();
+    await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
+    expect(screen.queryByTitle('Sonnet 5.5')).toBeNull();
+    expect(
+      within(screen.getByRole('menu')).getByTitle('Gemini 3.8 Flash')
+    ).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelOverride: 'google/gemini-3.8-flash',
+      })
     );
   });
   it('restores the most recently used supported agent', async () => {
