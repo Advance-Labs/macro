@@ -438,6 +438,9 @@ instead of the engine's message. For development, start the web app with
 back the SQL toggle and editor, **View SQL**, the raw error under **Technical
 details**, and the server's summary on query tool rows.
 
+SQL conditions may nest parentheses up to 64 levels. Deeper input returns a
+parse error asking the assistant to simplify the condition.
+
 ## Sharing and files
 
 **Share** opens Macro's standard sharing dialog. The owner can share with people
