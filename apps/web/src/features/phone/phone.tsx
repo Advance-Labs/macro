@@ -1,7 +1,7 @@
 import { useCallContext } from '@channel/Call/CallContext';
 import { startCallRinger } from '@channel/Call/CallStartedNotifier';
 import { LK_ROOM_EVENT } from '@channel/Call/livekit-loader';
-import { useUserId } from '@core/context/user';
+import { useIsAuthenticated, useUserId } from '@core/context/user';
 import { usePlatformNotificationState } from '@notifications';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
 import { useNavigate } from '@solidjs/router';
@@ -23,10 +23,14 @@ import { PhoneCallsView } from './views/phone-calls';
  */
 export function PhoneCallsProvider(props: ParentProps) {
   const flag = usePhoneCallsFlag();
+  // Meeting guests share this layout; only signed-in users have numbers.
+  const authenticated = useIsAuthenticated();
   return (
     <>
       {props.children}
-      <Show when={!flag().loading && flag().enabled}>
+      <Show
+        when={authenticated() === true && !flag().loading && flag().enabled}
+      >
         <PhoneCalls />
       </Show>
     </>
