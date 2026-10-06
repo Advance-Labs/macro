@@ -85,7 +85,7 @@ pub struct CallServiceImpl<
 > {
     repo: R,
     rtc_client: Arc<C>,
-    connection_service: Cn,
+    connection_service: Arc<Cn>,
     entity_access_service: E,
     notification_ingress: N,
     recording_storage: S,
@@ -125,7 +125,7 @@ impl<
         Self {
             repo,
             rtc_client: Arc::new(rtc_client),
-            connection_service,
+            connection_service: Arc::new(connection_service),
             entity_access_service,
             notification_ingress,
             recording_storage,

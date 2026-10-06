@@ -15,7 +15,8 @@ use crate::domain::phone::{
     AssignPhoneNumberRequest, DialFailure, DialPhoneRequest, DialablePhoneNumber,
     IncomingPhoneCall, IncomingPhoneCallsResponse, MAX_PHONE_CALL_DURATION, NewPhoneCall,
     NewPhoneLeg, OUTBOUND_RINGING_TIMEOUT, PhoneCallDirection, PhoneCallJoinResponse,
-    PhoneCallStatus, PhoneContact, PhoneLeg, PhoneLegUpdate, PhoneNumber, PhoneSettingsResponse,
+    PhoneCallStatus, PhoneCallUpdated, PhoneContact, PhoneLeg, PhoneLegUpdate, PhoneNumber,
+    PhoneSettingsResponse,
     SipDialAnswered, SipDialRequest, SipParticipant, extension_dtmf,
     outbound_participant_identity,
 };
@@ -146,6 +147,7 @@ where
 
         self.spawn_outbound_phone_leg(
             call_id,
+            actor.copied().into_owned(),
             SipDialRequest {
                 room_name: room_name.clone(),
                 trunk_id: dialing.outbound_trunk_id.clone(),
@@ -175,10 +177,16 @@ where
 
     /// Start recording and transcription, then place the SIP leg and record
     /// how it went. The caller is already in the room, so they hear it ring.
-    fn spawn_outbound_phone_leg(&self, call_id: Uuid, dial: SipDialRequest) {
+    fn spawn_outbound_phone_leg(
+        &self,
+        call_id: Uuid,
+        owner: MacroUserIdStr<'static>,
+        dial: SipDialRequest,
+    ) {
         let rtc = self.rtc_client.clone();
         let repo = self.repo.clone();
         let phone_repo = self.phone_repo.clone();
+        let connection_service = self.connection_service.clone();
         let egress = self.egress_s3_config.clone();
         tokio::spawn(
             async move {
@@ -195,7 +203,19 @@ where
                     start_meeting_recording(&repo, rtc.as_ref(), call_id, &room_name, egress.as_ref());
                 tokio::join!(transcription, recording);
                 let outcome = rtc.dial_sip_participant(dial).await;
-                record_dial_outcome(&phone_repo, rtc.as_ref(), call_id, &room_name, outcome).await;
+                let leg = record_dial_outcome(&phone_repo, call_id, outcome).await;
+                if let Some(leg) = &leg {
+                    send_phone_call_updated(connection_service.as_ref(), owner, call_id, leg).await;
+                    // A call that never connected is ended so the caller is
+                    // not left alone in the room; the archive then keeps the
+                    // outcome (busy, declined, …) on the call record.
+                    if !leg.status.is_live() {
+                        rtc.delete_room(&room_name)
+                            .await
+                            .inspect_err(|e| tracing::error!(error=?e, "failed to end unconnected phone call"))
+                            .ok();
+                    }
+                }
             }
             .instrument(tracing::info_span!("dial_phone_leg", %call_id)),
         );
@@ -549,19 +569,32 @@ where
         }
     }
 
-    /// Tell every device of `user_id` that a phone leg changed, so a ringing
-    /// call stops ringing once it is answered elsewhere or ends.
     async fn send_phone_call_updated(&self, user_id: MacroUserIdStr<'_>, call_id: Uuid, leg: &PhoneLeg) {
-        self.connection_service
-            .send_channel_message(
-                &[user_id],
-                PHONE_CALL_UPDATED_EVENT,
-                serde_json::json!({ "call_id": call_id, "phone": leg }),
-            )
-            .await
-            .inspect_err(|e| tracing::error!(error=?e, "failed to send phone call update"))
-            .ok();
+        send_phone_call_updated(self.connection_service.as_ref(), user_id, call_id, leg).await;
     }
+}
+
+/// Tell every device of `user_id` that a phone leg changed, so a ringing
+/// call stops ringing once it is answered elsewhere or ends, and a caller
+/// learns why a call did not connect.
+async fn send_phone_call_updated<Cn: ConnectionService>(
+    connection_service: &Cn,
+    user_id: MacroUserIdStr<'_>,
+    call_id: Uuid,
+    leg: &PhoneLeg,
+) {
+    connection_service
+        .send_channel_message(
+            &[user_id],
+            PHONE_CALL_UPDATED_EVENT,
+            serde_json::json!(PhoneCallUpdated {
+                call_id,
+                phone: leg
+            }),
+        )
+        .await
+        .inspect_err(|e| tracing::error!(error=?e, "failed to send phone call update"))
+        .ok();
 }
 
 /// The call id and acting user of a receipt addressing a call.
@@ -584,47 +617,25 @@ fn phone_call_receipt(
     Ok((call_id, actor))
 }
 
-/// Record how an outbound SIP leg went. A call that never connected is ended
-/// so the caller is not left alone in the room; the archive then keeps the
-/// outcome (busy, declined, …) on the call record.
-async fn record_dial_outcome<Ph: PhoneCallRepository, C: CallRtcClient>(
+/// Record how an outbound SIP leg went, returning the updated leg. `None`
+/// means the leg had already ended — the caller hung up first and the call
+/// is being archived without the dial's help.
+async fn record_dial_outcome<Ph: PhoneCallRepository>(
     phone_repo: &Ph,
-    rtc: &C,
     call_id: Uuid,
-    room_name: &str,
     outcome: Result<SipDialAnswered, DialFailure>,
-) {
-    match outcome {
-        Ok(answered) => {
-            phone_repo
-                .update_phone_leg(
-                    &call_id,
-                    PhoneLegUpdate::answered(Utc::now(), answered.sip_call_id),
-                )
-                .await
-                .inspect_err(|e| tracing::error!(error=?e, "failed to record answered phone call"))
-                .ok();
-        }
+) -> Option<PhoneLeg> {
+    let update = match outcome {
+        Ok(answered) => PhoneLegUpdate::answered(Utc::now(), answered.sip_call_id),
         Err(failure) => {
-            let still_live = phone_repo
-                .update_phone_leg(
-                    &call_id,
-                    PhoneLegUpdate::ended(failure.status(), Utc::now()),
-                )
-                .await
-                .inspect_err(|e| tracing::error!(error=?e, "failed to record failed phone call"))
-                .ok()
-                .flatten()
-                .is_some();
-            // A leg that already ended means the caller hung up first and
-            // the call is being archived without our help.
-            if still_live {
-                tracing::info!(?failure, "phone call did not connect; ending call");
-                rtc.delete_room(room_name)
-                    .await
-                    .inspect_err(|e| tracing::error!(error=?e, "failed to end unconnected phone call"))
-                    .ok();
-            }
+            tracing::info!(?failure, "phone call did not connect");
+            PhoneLegUpdate::ended(failure.status(), Utc::now())
         }
-    }
+    };
+    phone_repo
+        .update_phone_leg(&call_id, update)
+        .await
+        .inspect_err(|e| tracing::error!(error=?e, "failed to record phone call outcome"))
+        .ok()
+        .flatten()
 }

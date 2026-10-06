@@ -478,6 +478,17 @@ pub struct IncomingPhoneCall {
     pub started_at: DateTime<Utc>,
 }
 
+/// Websocket payload telling a phone call's owner its phone leg changed: it
+/// was answered, or it ended and how.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhoneCallUpdated<'a> {
+    /// The call.
+    pub call_id: Uuid,
+    /// The phone leg as it is now.
+    pub phone: &'a PhoneLeg,
+}
+
 /// Inbound phone calls ringing for the caller, newest first.
 #[derive(Debug, serde::Serialize)]
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]

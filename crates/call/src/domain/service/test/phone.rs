@@ -398,10 +398,11 @@ async fn dialing_creates_an_owned_call_rings_the_callee_and_records_the_answer()
             })
         });
     let phone_repo = FakePhoneRepo::default().with_number(OWNER_NUMBER, owner());
+    let connection = RecordingConnectionService::default();
     let service = phone_service(
         repo,
         rtc,
-        RecordingConnectionService::default(),
+        connection.clone(),
         phone_repo.clone(),
         FakeContacts::knowing(CALLEE, "Ada Lovelace"),
         Some(dialing()),
@@ -444,6 +445,11 @@ async fn dialing_creates_an_owned_call_rings_the_callee_and_records_the_answer()
     })
     .await;
     assert!(phone_repo.leg(&call_id).unwrap().answered_at.is_some());
+    eventually(|| !connection.messages().is_empty()).await;
+    let messages = connection.messages();
+    assert_eq!(messages[0].message_type, "phone_call_updated");
+    assert_eq!(messages[0].message["callId"], json!(call_id));
+    assert_eq!(messages[0].message["phone"]["status"], json!("active"));
     let dialed = dialed.lock().unwrap().clone().expect("dialed");
     assert_eq!(dialed.room_name, call_id.to_string());
     assert_eq!(dialed.trunk_id, TRUNK_ID);
@@ -507,10 +513,11 @@ async fn unconnected_dials_record_why_and_end_the_call() {
             Box::pin(async { Ok(()) })
         });
         let phone_repo = FakePhoneRepo::default();
+        let connection = RecordingConnectionService::default();
         let service = phone_service(
             repo,
             rtc,
-            RecordingConnectionService::default(),
+            connection.clone(),
             phone_repo.clone(),
             FakeContacts::default(),
             Some(dialing()),
@@ -525,6 +532,15 @@ async fn unconnected_dials_record_why_and_end_the_call() {
         let leg = phone_repo.leg(&call_id).unwrap();
         assert_eq!(leg.status, outcome, "{failure:?}");
         assert!(leg.ended_at.is_some());
+        // The caller learns why before the room goes away.
+        let messages = connection.messages();
+        assert_eq!(messages.len(), 1, "{failure:?}");
+        assert_eq!(messages[0].message_type, "phone_call_updated");
+        assert_eq!(
+            messages[0].message["phone"]["status"],
+            json!(outcome.as_str()),
+            "{failure:?}"
+        );
     }
 }
 
@@ -745,6 +761,7 @@ async fn answering_joins_the_owner_and_stops_ringing_on_their_other_devices() {
     let messages = connection.messages();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].message_type, "phone_call_updated");
+    assert_eq!(messages[0].message["callId"], json!(call_id));
     assert_eq!(messages[0].message["phone"]["status"], json!("active"));
 }
 
