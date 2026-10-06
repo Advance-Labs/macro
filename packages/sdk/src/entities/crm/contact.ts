@@ -23,7 +23,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
     return unwrap(
       await this.client.storage.getContact({
         path: { contact_id: this.id },
-      }),
+      })
     );
   }
 
@@ -45,7 +45,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
 
   /** The CRM company this contact belongs to. */
   readonly company = this.mappedField('companyId', (id) =>
-    Company.byId(this.client, id),
+    Company.byId(this.client, id)
   );
 
   /** Whether the contact is hidden from CRM listings. */
@@ -78,7 +78,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
       c.storage.setContactHidden({
         path: { contact_id: this.id },
         body: { hidden },
-      }),
+      })
     );
   }
 
@@ -87,7 +87,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
     const { phoneNumbers } = unwrap(
       await this.client.storage.getCrmContactPhoneNumbers({
         path: { contact_id: this.id },
-      }),
+      })
     );
     return phoneNumbers;
   }
@@ -102,7 +102,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
       await this.client.storage.setCrmContactPhoneNumbers({
         path: { contact_id: this.id },
         body: { phoneNumbers },
-      }),
+      })
     );
     return response.phoneNumbers;
   }
@@ -113,7 +113,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
       c.storage.setCrmContactName({
         path: { contact_id: this.id },
         body: { name },
-      }),
+      })
     );
   }
 
@@ -135,7 +135,7 @@ export class Contact extends FavoritableEntity<ContactDetail> {
    */
   async comment(
     body: string | RichMessage,
-    opts?: { threadId?: string },
+    opts?: { threadId?: string }
   ): Promise<CrmComment> {
     return postCrmComment(this.client, this.commentParent, body, opts);
   }
