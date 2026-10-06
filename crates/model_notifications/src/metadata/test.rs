@@ -821,6 +821,60 @@ fn reminder_notif_event_round_trips_and_renders_without_a_sender() {
 }
 
 #[test]
+fn starter_document_notif_event_round_trips_and_renders_without_a_sender() {
+    let value = serde_json::json!({
+        "tag": "starter_document",
+        "content": {
+            "documentId": "032e55d9-8f1a-5e8f-919c-849de7f1490e",
+            "documentName": "Macro how to guide",
+        },
+    });
+
+    let event: NotifEvent = serde_json::from_value(value.clone()).unwrap();
+
+    // Macro seeds these for the account owner, so the dispatcher passes no
+    // sender — naming the recipient would filter them out of their own
+    // notification. Formatting must not depend on one.
+    assert_eq!(
+        event.format_title(None).unwrap(),
+        "Getting started with Macro"
+    );
+    assert_eq!(event.format_body(None).unwrap(), "Macro how to guide");
+
+    let NotifEvent::StarterDocument(actual) = event.clone() else {
+        panic!("expected starter document variant");
+    };
+    assert_eq!(actual.document_id, "032e55d9-8f1a-5e8f-919c-849de7f1490e");
+    assert_eq!(actual.document_name, "Macro how to guide");
+    assert!(actual.sub_type.is_none());
+
+    assert_eq!(serde_json::to_value(&event).unwrap(), value);
+}
+
+#[test]
+fn starter_document_keeps_the_task_subtype() {
+    let value = serde_json::json!({
+        "tag": "starter_document",
+        "content": {
+            "documentId": "2807115b-7b9d-5fc4-b003-4f52761c3a6e",
+            "documentName": "Intro to tasks",
+            "subType": { "type": "task" },
+        },
+    });
+
+    let event: NotifEvent = serde_json::from_value(value.clone()).unwrap();
+
+    let NotifEvent::StarterDocument(actual) = event.clone() else {
+        panic!("expected starter document variant");
+    };
+    assert!(matches!(
+        actual.sub_type,
+        Some(NotificationDocumentSubType::Task)
+    ));
+    assert_eq!(serde_json::to_value(&event).unwrap(), value);
+}
+
+#[test]
 fn reminder_body_is_bounded_for_the_push_payload() {
     // Descriptions are allowed up to 2000 chars. Four-byte chars would make an
     // 8 KB body, over Apple's 4 KB payload limit, so the body is cut on a char

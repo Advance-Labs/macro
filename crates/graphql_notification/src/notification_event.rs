@@ -20,7 +20,7 @@ use model_notifications::{
     GithubPrReviewState, GithubPrStatusChanged, GithubReviewRequested, InboxReauthRequiredMetadata,
     InviteToTeamMetadata, MentionedInDocumentCommentMetadata, NewEmailMetadata, NotifEvent,
     NotificationDocumentSubType, ReminderMetadata, RepliedToDocumentCommentThreadMetadata,
-    TaskAssignedMetadata,
+    StarterDocumentMetadata, TaskAssignedMetadata,
 };
 
 /// GraphQL channel type used by notification metadata.
@@ -810,6 +810,28 @@ impl GraphqlTaskAssignedMetadata {
     }
 }
 
+/// GraphQL wrapper for starter-document metadata.
+pub struct GraphqlStarterDocumentMetadata(StarterDocumentMetadata);
+
+/// Metadata for a starter document seeded into a new account.
+#[Object]
+impl GraphqlStarterDocumentMetadata {
+    /// Seeded document identifier.
+    async fn document_id(&self) -> &str {
+        &self.0.document_id
+    }
+
+    /// Seeded document name.
+    async fn document_name(&self) -> &str {
+        &self.0.document_name
+    }
+
+    /// Seeded document subtype.
+    async fn sub_type(&self) -> Option<GraphqlNotificationDocumentSubType> {
+        self.0.sub_type.clone().map(Into::into)
+    }
+}
+
 /// GraphQL wrapper for reminder metadata.
 pub struct GraphqlReminderMetadata(ReminderMetadata);
 
@@ -1266,6 +1288,8 @@ pub enum GraphqlNotifEvent {
     InviteToTeam(GraphqlInviteToTeamMetadata),
     /// Task assignment metadata.
     TaskAssigned(GraphqlTaskAssignedMetadata),
+    /// Starter-document metadata.
+    StarterDocument(GraphqlStarterDocumentMetadata),
     /// Reminder metadata.
     Reminder(GraphqlReminderMetadata),
     /// Calendar event reminder metadata.
@@ -1340,6 +1364,9 @@ impl From<NotifEvent> for GraphqlNotifEvent {
             }
             NotifEvent::TaskAssigned(metadata) => {
                 Self::TaskAssigned(GraphqlTaskAssignedMetadata(metadata))
+            }
+            NotifEvent::StarterDocument(metadata) => {
+                Self::StarterDocument(GraphqlStarterDocumentMetadata(metadata))
             }
             NotifEvent::Reminder(metadata) => Self::Reminder(GraphqlReminderMetadata(metadata)),
             NotifEvent::CalendarEventReminder(metadata) => {

@@ -1059,6 +1059,12 @@ export type NotifEvent = {
     tag: 'task_assigned';
 } | {
     /**
+     * Macro seeded a starter document into the user's new account.
+     */
+    content: StarterDocumentMetadata;
+    tag: 'starter_document';
+} | {
+    /**
      * A reminder the user set for themselves came due.
      */
     content: ReminderMetadata;
@@ -1304,6 +1310,33 @@ export type RepliedToDocumentCommentThreadMetadata = {
      * the thread id
      */
     threadId: CommentRef;
+};
+
+/**
+ * Metadata for one of the documents Macro seeds into a brand-new account —
+ * the "Macro how to guide" and the starter tasks it links to.
+ *
+ * Signup seeding is what makes these notifications exist at all: Home's
+ * Signal feed admits a document on the strength of the viewer's open
+ * notifications, and starter content arrives with none, so it would only
+ * ever reach Home through the viewer's own activity — which a bot seeded on
+ * their behalf, asynchronously, after Home had already loaded.
+ *
+ * There is no sender: Macro seeds these for the account owner, so the
+ * dispatcher sends them with `sender_id: None` (a recipient who is also the
+ * sender is filtered out of their own notification). Every formatter here
+ * must therefore work without one.
+ */
+export type StarterDocumentMetadata = {
+    /**
+     * The seeded document.
+     */
+    documentId: string;
+    /**
+     * Display name at seeding time.
+     */
+    documentName: string;
+    subType?: null | NotificationDocumentSubType;
 };
 
 /**

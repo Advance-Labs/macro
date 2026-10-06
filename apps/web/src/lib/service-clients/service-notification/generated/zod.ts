@@ -964,6 +964,48 @@ export const listTypedNotificationsResponse = zod
                     .object({
                       content: zod
                         .object({
+                          documentId: zod
+                            .string()
+                            .describe('The seeded document.'),
+                          documentName: zod
+                            .string()
+                            .describe('Display name at seeding time.'),
+                          subType: zod
+                            .union([
+                              zod.null(),
+                              zod
+                                .union([
+                                  zod.object({
+                                    type: zod.enum(['task']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['snippet']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['skill']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['initiative_description']),
+                                  }),
+                                ])
+                                .describe(
+                                  'The sub type of a document in a notification.\nSerializes as `{ \"type\": \"task\" }` matching the storage service pattern.'
+                                ),
+                            ])
+                            .optional(),
+                        })
+                        .describe(
+                          "Metadata for one of the documents Macro seeds into a brand-new account —\nthe \"Macro how to guide\" and the starter tasks it links to.\n\nSignup seeding is what makes these notifications exist at all: Home's\nSignal feed admits a document on the strength of the viewer's open\nnotifications, and starter content arrives with none, so it would only\never reach Home through the viewer's own activity — which a bot seeded on\ntheir behalf, asynchronously, after Home had already loaded.\n\nThere is no sender: Macro seeds these for the account owner, so the\ndispatcher sends them with `sender_id: None` (a recipient who is also the\nsender is filtered out of their own notification). Every formatter here\nmust therefore work without one."
+                        ),
+                      tag: zod.enum(['starter_document']),
+                    })
+                    .describe(
+                      "Macro seeded a starter document into the user's new account."
+                    ),
+                  zod
+                    .object({
+                      content: zod
+                        .object({
                           description: zod
                             .string()
                             .describe(
@@ -2858,6 +2900,48 @@ export const bulkGetTypedNotificationsByEventItemIdsResponse = zod
                     .object({
                       content: zod
                         .object({
+                          documentId: zod
+                            .string()
+                            .describe('The seeded document.'),
+                          documentName: zod
+                            .string()
+                            .describe('Display name at seeding time.'),
+                          subType: zod
+                            .union([
+                              zod.null(),
+                              zod
+                                .union([
+                                  zod.object({
+                                    type: zod.enum(['task']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['snippet']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['skill']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['initiative_description']),
+                                  }),
+                                ])
+                                .describe(
+                                  'The sub type of a document in a notification.\nSerializes as `{ \"type\": \"task\" }` matching the storage service pattern.'
+                                ),
+                            ])
+                            .optional(),
+                        })
+                        .describe(
+                          "Metadata for one of the documents Macro seeds into a brand-new account —\nthe \"Macro how to guide\" and the starter tasks it links to.\n\nSignup seeding is what makes these notifications exist at all: Home's\nSignal feed admits a document on the strength of the viewer's open\nnotifications, and starter content arrives with none, so it would only\never reach Home through the viewer's own activity — which a bot seeded on\ntheir behalf, asynchronously, after Home had already loaded.\n\nThere is no sender: Macro seeds these for the account owner, so the\ndispatcher sends them with `sender_id: None` (a recipient who is also the\nsender is filtered out of their own notification). Every formatter here\nmust therefore work without one."
+                        ),
+                      tag: zod.enum(['starter_document']),
+                    })
+                    .describe(
+                      "Macro seeded a starter document into the user's new account."
+                    ),
+                  zod
+                    .object({
+                      content: zod
+                        .object({
                           description: zod
                             .string()
                             .describe(
@@ -4746,6 +4830,48 @@ export const getTypedNotificationsByEventItemIdResponse = zod
                     .object({
                       content: zod
                         .object({
+                          documentId: zod
+                            .string()
+                            .describe('The seeded document.'),
+                          documentName: zod
+                            .string()
+                            .describe('Display name at seeding time.'),
+                          subType: zod
+                            .union([
+                              zod.null(),
+                              zod
+                                .union([
+                                  zod.object({
+                                    type: zod.enum(['task']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['snippet']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['skill']),
+                                  }),
+                                  zod.object({
+                                    type: zod.enum(['initiative_description']),
+                                  }),
+                                ])
+                                .describe(
+                                  'The sub type of a document in a notification.\nSerializes as `{ \"type\": \"task\" }` matching the storage service pattern.'
+                                ),
+                            ])
+                            .optional(),
+                        })
+                        .describe(
+                          "Metadata for one of the documents Macro seeds into a brand-new account —\nthe \"Macro how to guide\" and the starter tasks it links to.\n\nSignup seeding is what makes these notifications exist at all: Home's\nSignal feed admits a document on the strength of the viewer's open\nnotifications, and starter content arrives with none, so it would only\never reach Home through the viewer's own activity — which a bot seeded on\ntheir behalf, asynchronously, after Home had already loaded.\n\nThere is no sender: Macro seeds these for the account owner, so the\ndispatcher sends them with `sender_id: None` (a recipient who is also the\nsender is filtered out of their own notification). Every formatter here\nmust therefore work without one."
+                        ),
+                      tag: zod.enum(['starter_document']),
+                    })
+                    .describe(
+                      "Macro seeded a starter document into the user's new account."
+                    ),
+                  zod
+                    .object({
+                      content: zod
+                        .object({
                           description: zod
                             .string()
                             .describe(
@@ -6581,6 +6707,46 @@ export const getTypedNotificationByIdResponse = zod
               tag: zod.enum(['task_assigned']),
             })
             .describe('A user was assigned to a task.'),
+          zod
+            .object({
+              content: zod
+                .object({
+                  documentId: zod.string().describe('The seeded document.'),
+                  documentName: zod
+                    .string()
+                    .describe('Display name at seeding time.'),
+                  subType: zod
+                    .union([
+                      zod.null(),
+                      zod
+                        .union([
+                          zod.object({
+                            type: zod.enum(['task']),
+                          }),
+                          zod.object({
+                            type: zod.enum(['snippet']),
+                          }),
+                          zod.object({
+                            type: zod.enum(['skill']),
+                          }),
+                          zod.object({
+                            type: zod.enum(['initiative_description']),
+                          }),
+                        ])
+                        .describe(
+                          'The sub type of a document in a notification.\nSerializes as `{ \"type\": \"task\" }` matching the storage service pattern.'
+                        ),
+                    ])
+                    .optional(),
+                })
+                .describe(
+                  "Metadata for one of the documents Macro seeds into a brand-new account —\nthe \"Macro how to guide\" and the starter tasks it links to.\n\nSignup seeding is what makes these notifications exist at all: Home's\nSignal feed admits a document on the strength of the viewer's open\nnotifications, and starter content arrives with none, so it would only\never reach Home through the viewer's own activity — which a bot seeded on\ntheir behalf, asynchronously, after Home had already loaded.\n\nThere is no sender: Macro seeds these for the account owner, so the\ndispatcher sends them with `sender_id: None` (a recipient who is also the\nsender is filtered out of their own notification). Every formatter here\nmust therefore work without one."
+                ),
+              tag: zod.enum(['starter_document']),
+            })
+            .describe(
+              "Macro seeded a starter document into the user's new account."
+            ),
           zod
             .object({
               content: zod

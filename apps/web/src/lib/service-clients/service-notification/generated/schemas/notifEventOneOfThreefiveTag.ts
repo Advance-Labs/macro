@@ -10,5 +10,5 @@ export type NotifEventOneOfThreefiveTag =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const NotifEventOneOfThreefiveTag = {
-  ai_response: 'ai_response',
+  calendar_event_reminder: 'calendar_event_reminder',
 } as const;

@@ -2568,6 +2568,21 @@
           },
           {
             "type": "object",
+            "description": "Macro seeded a starter document into the user's new account.",
+            "required": ["content", "tag"],
+            "properties": {
+              "content": {
+                "$ref": "#/components/schemas/StarterDocumentMetadata",
+                "description": "Macro seeded a starter document into the user's new account."
+              },
+              "tag": {
+                "type": "string",
+                "enum": ["starter_document"]
+              }
+            }
+          },
+          {
+            "type": "object",
             "description": "A reminder the user set for themselves came due.",
             "required": ["content", "tag"],
             "properties": {
@@ -3001,6 +3016,32 @@
           "threadId": {
             "$ref": "#/components/schemas/CommentRef",
             "description": "the thread id"
+          }
+        }
+      },
+      "StarterDocumentMetadata": {
+        "type": "object",
+        "description": "Metadata for one of the documents Macro seeds into a brand-new account —\nthe \"Macro how to guide\" and the starter tasks it links to.\n\nSignup seeding is what makes these notifications exist at all: Home's\nSignal feed admits a document on the strength of the viewer's open\nnotifications, and starter content arrives with none, so it would only\never reach Home through the viewer's own activity — which a bot seeded on\ntheir behalf, asynchronously, after Home had already loaded.\n\nThere is no sender: Macro seeds these for the account owner, so the\ndispatcher sends them with `sender_id: None` (a recipient who is also the\nsender is filtered out of their own notification). Every formatter here\nmust therefore work without one.",
+        "required": ["documentId", "documentName"],
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "description": "The seeded document."
+          },
+          "documentName": {
+            "type": "string",
+            "description": "Display name at seeding time."
+          },
+          "subType": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NotificationDocumentSubType",
+                "description": "The sub type of the seeded document, so clients can tell the starter\ntasks from the guide without resolving the document."
+              }
+            ]
           }
         }
       },

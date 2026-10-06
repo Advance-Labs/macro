@@ -15,17 +15,22 @@ use entity_access::domain::{
 };
 use favorites::domain::ports::FavoritesService;
 use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
+use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
 use model::document_storage_service_internal::{
     InitializeStarterDocsResponse, StarterDocHowToGuide,
 };
 use model::response::GenericResponse;
 use model_entity::EntityType;
+use model_notifications::{NotificationDocumentSubType, StarterDocumentMetadata};
 use model_owner::CreationPrincipal;
 use models_properties::api::{AddPropertyOptionRequest, AddStringOptionRequest, SetPropertyValue};
 use models_properties::service::property_option::PropertyOptionValue;
+use notification::domain::models::SendNotificationRequestBuilder;
+use notification::domain::service::NotificationIngress;
 use properties::{PropertiesService as _, domain::model::TagScope};
 use reqwest::StatusCode;
+use std::collections::HashSet;
 use system_properties::{PriorityOption, StatusOption, SystemPropertyKey};
 
 /// Also the name `get_starter_docs` resolves the guide by, so the two stay in
@@ -80,6 +85,12 @@ const STARTER_TASKS: [StarterTask; 3] = [
 /// web client invalidates those lists and provisioned properties on this
 /// message.
 const STARTER_DOCS_INITIALIZED_MESSAGE_TYPE: &str = "starter_docs_initialized";
+
+/// Fixed namespace for deriving a starter document's notification id. Creating
+/// a notification is idempotent on its id, so a retried seeding attempt
+/// re-sends the same notification instead of stacking a second one.
+const STARTER_DOC_NOTIFICATION_ID_NAMESPACE: uuid::Uuid =
+    uuid::Uuid::from_u128(0x7b41_2ca8_0d63_4f71_9c58_1ae7_35d0_82b6);
 
 /// Label of the personal tag applied to every starter doc.
 const DOCS_TAG_LABEL: &str = "docs";
@@ -149,6 +160,56 @@ async fn resolve_docs_tag(
         .inspect_err(|e| tracing::error!(error=?e, "failed to create personal docs tag"))
         .ok()
         .map(|option| (definition_id, option.id))
+}
+
+/// Tells the new user about one seeded starter document.
+///
+/// Home's Signal feed admits a document on the strength of the viewer's open
+/// notifications. Starter content is created *for* the user by the system bot,
+/// so without this it has none, and the only thing that ever put it on Home
+/// was the viewer's own activity log — written by an asynchronous consumer,
+/// after Home had already loaded, and never re-read. A notification makes the
+/// starter docs members of the feed in their own right, on every device.
+///
+/// In-app only: no APNS builder (`StarterDocumentMetadata` deliberately does
+/// not implement `NotificationExtIos`) and no email, so signing up does not
+/// fire four pushes. The gateway leg is what makes the rows appear without a
+/// reload on an app that is already open.
+async fn notify_starter_document(
+    state: &ApiContext,
+    user_id: &MacroUserIdStr<'_>,
+    document_id: uuid::Uuid,
+    document_name: &str,
+    sub_type: Option<NotificationDocumentSubType>,
+) -> Result<(), ()> {
+    let request = SendNotificationRequestBuilder {
+        notification_entity: EntityType::Document.with_entity_string(document_id.to_string()),
+        secondary_notification_entity: None,
+        notification: StarterDocumentMetadata {
+            document_id: document_id.to_string(),
+            document_name: document_name.to_string(),
+            sub_type,
+        },
+        // Must stay None. A recipient who is also the sender is filtered out
+        // of their own notification, and the only recipient here is the
+        // account owner Macro seeded the document for.
+        sender_id: None,
+        recipient_ids: HashSet::from([user_id.copied()]),
+    }
+    .into_request_with_id(uuid::Uuid::new_v5(
+        &STARTER_DOC_NOTIFICATION_ID_NAMESPACE,
+        document_id.as_bytes(),
+    ))
+    .with_conn_gateway();
+
+    state
+        .notification_ingress_service
+        .send_notification(request)
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            tracing::error!(error=?e, %document_id, "failed to notify starter document");
+        })
 }
 
 fn internal_error(message: &str) -> Response {
@@ -402,6 +463,32 @@ pub async fn handler(
         }
         .await;
         if favorite_result.is_err() {
+            incomplete = true;
+        }
+    }
+
+    // Also runs on every call, for the same reason as the favorite: creating a
+    // notification is idempotent on the id derived from the document, so a
+    // retry that finds the documents already seeded still reconciles a
+    // notification a previous attempt failed to send.
+    for (id, name, sub_type) in STARTER_TASKS
+        .iter()
+        .map(|task| {
+            (
+                starter_doc_id(user_id, task.name),
+                task.name,
+                Some(NotificationDocumentSubType::Task),
+            )
+        })
+        .chain(std::iter::once((guide_uuid, HOW_TO_GUIDE_NAME, None)))
+    {
+        if !seeded.available.contains(&id) {
+            continue;
+        }
+        if notify_starter_document(&state, user_id, id, name, sub_type)
+            .await
+            .is_err()
+        {
             incomplete = true;
         }
     }

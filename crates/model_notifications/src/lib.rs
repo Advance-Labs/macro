@@ -23,7 +23,7 @@ pub use metadata::{
     InitiativeDiscussionReason, InviteToTeamMetadata, ItemSharedMetadata,
     MentionedInDocumentCommentMetadata, NewEmailMetadata, NotificationDocumentSubType,
     NotificationTitle, ReminderMetadata, RepliedToDocumentCommentThreadMetadata,
-    TaskAssignedMetadata,
+    StarterDocumentMetadata, TaskAssignedMetadata,
 };
 pub use unsubscribe::UserUnsubscribe;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -223,6 +223,9 @@ define_notif_event!(
         /// A user was assigned to a task.
         TaskAssigned(TaskAssignedMetadata),
 
+        /// Macro seeded a starter document into the user's new account.
+        StarterDocument(StarterDocumentMetadata),
+
         /// A reminder the user set for themselves came due.
         Reminder(ReminderMetadata),
 
@@ -304,6 +307,7 @@ impl NotificationTitle for NotifEvent {
             NotifEvent::TaskAssigned(task_assigned_metadata) => {
                 task_assigned_metadata.format_title(sender_id)
             }
+            NotifEvent::StarterDocument(m) => m.format_title(sender_id),
             NotifEvent::Reminder(reminder_metadata) => reminder_metadata.format_title(sender_id),
             NotifEvent::CalendarEventReminder(calendar_event_reminder_metadata) => {
                 calendar_event_reminder_metadata.format_title(sender_id)
@@ -370,6 +374,7 @@ impl NotificationTitle for NotifEvent {
             NotifEvent::TaskAssigned(task_assigned_metadata) => {
                 task_assigned_metadata.format_body(sender_id)
             }
+            NotifEvent::StarterDocument(m) => m.format_body(sender_id),
             NotifEvent::Reminder(reminder_metadata) => reminder_metadata.format_body(sender_id),
             NotifEvent::CalendarEventReminder(calendar_event_reminder_metadata) => {
                 calendar_event_reminder_metadata.format_body(sender_id)

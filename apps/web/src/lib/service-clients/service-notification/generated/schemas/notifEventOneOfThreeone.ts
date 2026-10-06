@@ -6,13 +6,13 @@
  */
 
 import type { NotifEventOneOfThreeoneTag } from './notifEventOneOfThreeoneTag';
-import type { ReminderMetadata } from './reminderMetadata';
+import type { StarterDocumentMetadata } from './starterDocumentMetadata';
 
 /**
- * A reminder the user set for themselves came due.
+ * Macro seeded a starter document into the user's new account.
  */
 export type NotifEventOneOfThreeone = {
-  /** A reminder the user set for themselves came due. */
-  content: ReminderMetadata;
+  /** Macro seeded a starter document into the user's new account. */
+  content: StarterDocumentMetadata;
   tag: NotifEventOneOfThreeoneTag;
 };

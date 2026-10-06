@@ -996,6 +996,52 @@ pub struct TaskAssignedMetadata {
     pub sender_profile_picture_url: Option<String>,
 }
 
+/// Metadata for one of the documents Macro seeds into a brand-new account —
+/// the "Macro how to guide" and the starter tasks it links to.
+///
+/// Signup seeding is what makes these notifications exist at all: Home's
+/// Signal feed admits a document on the strength of the viewer's open
+/// notifications, and starter content arrives with none, so it would only
+/// ever reach Home through the viewer's own activity — which a bot seeded on
+/// their behalf, asynchronously, after Home had already loaded.
+///
+/// There is no sender: Macro seeds these for the account owner, so the
+/// dispatcher sends them with `sender_id: None` (a recipient who is also the
+/// sender is filtered out of their own notification). Every formatter here
+/// must therefore work without one.
+#[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StarterDocumentMetadata {
+    /// The seeded document.
+    pub document_id: String,
+    /// Display name at seeding time.
+    pub document_name: String,
+    /// The sub type of the seeded document, so clients can tell the starter
+    /// tasks from the guide without resolving the document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_type: Option<NotificationDocumentSubType>,
+}
+
+impl Notification for StarterDocumentMetadata {
+    const TYPE_NAME: &'static str = "starter_document";
+}
+
+impl NotificationTitle for StarterDocumentMetadata {
+    fn format_title(
+        &self,
+        _sender_id: Option<MacroUserIdStr<'_>>,
+    ) -> Result<String, rootcause::Report> {
+        Ok("Getting started with Macro".to_string())
+    }
+
+    fn format_body(
+        &self,
+        _sender_id: Option<MacroUserIdStr<'_>>,
+    ) -> Result<String, rootcause::Report> {
+        Ok(self.document_name.clone())
+    }
+}
+
 /// Helper to parse XML message content to plain text, returning None on failure.
 fn parse_message_plain_text(content: &str) -> Result<String, Report> {
     let parsed = ParsedXmlText::parse(content)?;
