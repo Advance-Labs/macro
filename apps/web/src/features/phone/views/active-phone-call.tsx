@@ -66,6 +66,7 @@ function PhoneCallCard(props: { call: ShownCall; session: PhoneCallSession }) {
       title={remotePartyLabel(leg())}
       number={contactName() ? formatPhoneNumber(leg().remoteNumber) : undefined}
       status={status()}
+      connected={elapsed() !== null}
       ended={props.call.t === 'ended'}
       muted={context.media.isMuted()}
       keypadOpen={keypadOpen()}

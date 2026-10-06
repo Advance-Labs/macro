@@ -17,6 +17,8 @@ export function ActivePhoneCallCard(props: {
   number?: string;
   /** Where the call is: `Calling…`, an elapsed time, or how it ended. */
   status: string;
+  /** Both sides are talking; the status shows the call's length. */
+  connected: boolean;
   ended: boolean;
   muted: boolean;
   keypadOpen: boolean;
@@ -64,7 +66,7 @@ export function ActivePhoneCallCard(props: {
           role="status"
           class={cn(
             'shrink-0 text-sm tabular-nums',
-            props.ended ? 'text-ink-muted' : 'text-success'
+            props.connected && !props.ended ? 'text-success' : 'text-ink-muted'
           )}
         >
           {props.status}

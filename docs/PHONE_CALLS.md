@@ -19,6 +19,10 @@ and named, it appears under **Calls**, and it is linked to the CRM.
 | HTTP API (`/call/phone/...`) | `crates/call/src/inbound/axum_router/phone.rs` |
 | CRM contact numbers, caller lookup, call record linking | `crates/crm` (`contact_phones`, `inbound/phone_contacts.rs`, `outbound/call_link.rs`) |
 | Composition and configuration | `services/document_storage_service` |
+| Web: dialer, in-call card, ringing, Phone settings | `apps/web/src/features/phone` (`phone.tsx` mounts it app-wide) |
+| Web: phone calls in Calls and call details | `features/entity` (call rows), `features/block-call` (detail, transcript, Call Again) |
+| Web: contact numbers and click-to-call | `features/crm` (`views/contact-phone-numbers.tsx`) |
+| SDK: `Contact.phoneNumbers()`, `crm.contactByPhone()` | `packages/sdk/src/entities/crm` |
 
 Tables (`crates/macro_db_client/migrations`):
 
@@ -124,7 +128,10 @@ cannot place them, so outbound calling always needs a provider trunk.
    ```
 
    `DELETE` the same path to release a number; calls to it are then rejected.
-6. **Web app.** The phone UI is behind the `enable-phone-calls` feature flag.
+6. **Web app.** The phone UI is behind the `enable-phone-calls` PostHog flag
+   (on by default in development). The client listens for two websocket
+   events: `phone_call_incoming` (an `IncomingPhoneCall`) and
+   `phone_call_updated` (`{ callId, phone }`).
 
 ## Operating notes
 
