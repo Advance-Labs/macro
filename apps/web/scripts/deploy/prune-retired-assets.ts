@@ -31,7 +31,9 @@ function aws(args: string[], input?: string): string {
   return execFileSync('aws', args, {
     encoding: 'utf8',
     input,
-    maxBuffer: 32 * 1024 * 1024,
+    // A week of chunks and retirement timestamps can exceed Node's default
+    // buffer by orders of magnitude on our frequently deployed dev build.
+    maxBuffer: 256 * 1024 * 1024,
   });
 }
 
