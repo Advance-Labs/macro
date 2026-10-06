@@ -80,6 +80,7 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { createCallCommand } from './create-call-command';
+import { CarouselLauncher } from './create-menu-variants/CarouselLauncher';
 import { GalleryLauncher } from './create-menu-variants/GalleryLauncher';
 import { ShelvesLauncher } from './create-menu-variants/ShelvesLauncher';
 import { SpotlightLauncher } from './create-menu-variants/SpotlightLauncher';
@@ -1256,6 +1257,9 @@ function VariantOrClassicLauncher(props: {
 
   return (
     <Switch fallback={<LauncherInner onClose={props.onClose} />}>
+      <Match when={createMenuVariant() === 'carousel'}>
+        <CarouselLauncher {...variantProps} />
+      </Match>
       <Match when={createMenuVariant() === 'gallery'}>
         <GalleryLauncher {...variantProps} />
       </Match>

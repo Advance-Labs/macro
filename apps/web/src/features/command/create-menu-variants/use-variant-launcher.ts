@@ -58,8 +58,17 @@ function searchRank(item: CreatableBlock, query: string) {
  */
 export function useVariantLauncher(
   props: VariantLauncherProps,
-  options: { autoFocusSearch?: boolean } = {}
+  options: {
+    autoFocusSearch?: boolean;
+    /**
+     * `carousel`: one horizontal strip the layout positions itself. Left and
+     * right step one entry, up and down jump between groups, and nothing is
+     * scrolled into view (the layout centers the selection).
+     */
+    navigation?: 'spatial' | 'carousel';
+  } = {}
 ) {
+  const carousel = options.navigation === 'carousel';
   const hkGroup = createHotkeyGroup();
   const [attachHotkeys, launcherScope] = useHotkeyDOMScope('create-menu', true);
 
@@ -113,8 +122,36 @@ export function useVariantLauncher(
 
   const selectIndex = (index: number) => {
     setSelectedIndex(index);
-    elementFor(index)?.scrollIntoView({ block: 'nearest' });
+    if (!carousel) elementFor(index)?.scrollIntoView({ block: 'nearest' });
     return true;
+  };
+
+  const currentIndex = () => items().indexOf(selected() as CreatableBlock);
+
+  /** Carousel step: wraps around, like the strip itself. */
+  const step = (delta: number) => {
+    const count = items().length;
+    if (count === 0) return false;
+    return selectIndex((((currentIndex() + delta) % count) + count) % count);
+  };
+
+  /** First entry of the group before or after the selected one. */
+  const stepGroup = (delta: -1 | 1) => {
+    const list = sections();
+    if (list.length <= 1) return step(delta);
+    const at = list.findIndex((s) => s.items.includes(selected()!));
+    const target = list[Math.max(0, Math.min(list.length - 1, at + delta))];
+    const first = target?.items[0];
+    return first ? selectIndex(items().indexOf(first)) : false;
+  };
+
+  const move = (direction: Direction) => {
+    if (!carousel) return selectSpatial(direction);
+    if (direction === 'left') return step(-1);
+    if (direction === 'right') return step(1);
+    // While searching the strip is one flat result list.
+    if (searching()) return step(direction === 'up' ? -1 : 1);
+    return stepGroup(direction === 'up' ? -1 : 1);
   };
 
   const selectLinear = (delta: number) => {
@@ -250,7 +287,7 @@ export function useVariantLauncher(
     description: 'Navigate up',
     keyDownHandler: (event) => {
       event?.preventDefault();
-      return selectSpatial('up');
+      return move('up');
     },
     runWithInputFocused: true,
   }).withGroup(hkGroup);
@@ -261,7 +298,7 @@ export function useVariantLauncher(
     description: 'Navigate down',
     keyDownHandler: (event) => {
       event?.preventDefault();
-      return selectSpatial('down');
+      return move('down');
     },
     runWithInputFocused: true,
   }).withGroup(hkGroup);
@@ -273,7 +310,7 @@ export function useVariantLauncher(
     description: 'Navigate left',
     keyDownHandler: (event) => {
       event?.preventDefault();
-      return selectSpatial('left');
+      return move('left');
     },
   }).withGroup(hkGroup);
 
@@ -283,7 +320,7 @@ export function useVariantLauncher(
     description: 'Navigate right',
     keyDownHandler: (event) => {
       event?.preventDefault();
-      return selectSpatial('right');
+      return move('right');
     },
   }).withGroup(hkGroup);
 
@@ -374,6 +411,8 @@ export function useVariantLauncher(
     indexOf,
     /** Pointer hover: select without scrolling. */
     hover: (item: CreatableBlock) => setSelectedIndex(indexOf(item)),
+    select: (item: CreatableBlock) => selectIndex(indexOf(item)),
+    step,
     run,
     shiftHeld: () => pressedKeys().has('shift'),
     hotkeys: {

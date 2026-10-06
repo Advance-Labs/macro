@@ -255,3 +255,29 @@ export function groupCreateMenuItems(
 
   return sections.filter((section) => section.items.length > 0);
 }
+
+/** Two-to-four word captions for compact cards. */
+const SHORT_TAGLINES: Record<string, string> = {
+  Document: 'Rich text, edited together',
+  Snippet: 'Reusable template',
+  Code: 'Syntax-highlighted file',
+  Folder: 'Keep files together',
+  Canvas: 'Diagrams & whiteboard',
+  Design: 'Figma-compatible editor',
+  Spreadsheet: 'Formulas & sheets',
+  Database: 'Tables & boards',
+  Email: 'Compose from inbox',
+  Message: 'Quick DM',
+  Channel: 'Team discussion',
+  Call: 'Audio or video',
+  Task: 'Track work',
+  Project: 'Group tasks to a goal',
+  Reminder: 'Nudge yourself later',
+  Agent: 'Dedicated agent session',
+  Routine: 'Scheduled agent runs',
+  Skill: 'Reusable agent know-how',
+};
+
+export function createMenuShortTagline(item: CreatableBlock): string {
+  return SHORT_TAGLINES[item.label] ?? createMenuTagline(item);
+}

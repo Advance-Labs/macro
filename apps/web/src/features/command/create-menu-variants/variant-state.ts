@@ -6,7 +6,12 @@ import { createSignal } from 'solid-js';
  * ("Create menu variant") so they can be compared side by side. `list` is the
  * shipped launcher; the others are trial designs.
  */
-export type CreateMenuVariant = 'list' | 'gallery' | 'shelves' | 'spotlight';
+export type CreateMenuVariant =
+  | 'list'
+  | 'carousel'
+  | 'gallery'
+  | 'shelves'
+  | 'spotlight';
 
 export const CREATE_MENU_VARIANTS: readonly {
   id: CreateMenuVariant;
@@ -17,6 +22,11 @@ export const CREATE_MENU_VARIANTS: readonly {
     id: 'list',
     label: 'Classic list',
     description: 'The current one-line list',
+  },
+  {
+    id: 'carousel',
+    label: 'Carousel',
+    description: 'One strip of cards with the selection spotlighted',
   },
   {
     id: 'gallery',
