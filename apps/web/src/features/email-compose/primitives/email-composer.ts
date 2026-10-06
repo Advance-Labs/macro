@@ -58,6 +58,7 @@ import {
   createDraftPersistence,
   deleteDraftForDiscard,
 } from './draft-persistence';
+import { createDraftSaveNotice } from './draft-save-notice';
 import { createDraftSession } from './draft-session';
 import { createEmailSendSchedule } from './email-send-schedule';
 import {
@@ -411,6 +412,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     schedule?.state().type === 'scheduled';
 
   const autosave = createDraftAutosave({
+    ...createDraftSaveNotice(props.notices.feedback),
     capture: () => ({
       draft: collectDraft(),
       inboxId: activeInboxId(),
@@ -427,11 +429,6 @@ export function createEmailComposer(props: EmailComposerOptions) {
         attachments: snapshot.attachments,
       });
     },
-    onLocalError: (error) =>
-      props.notices.feedback.failure(
-        'Draft could not be saved on this device',
-        { subtext: String(error), persistent: true }
-      ),
     paused: persistencePaused,
   });
 

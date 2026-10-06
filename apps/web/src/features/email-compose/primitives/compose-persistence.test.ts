@@ -1132,6 +1132,53 @@ function localSnapshot(
 }
 
 it.each(['standalone', 'reply'] as const)(
+  'keeps one %s local-save warning until recovery or disposal',
+  async (surface) => {
+    const context = createComposeContext();
+    let diskFailed = true;
+    context.drafts.saveLocalDraft = vi.fn(async (input) => {
+      if (diskFailed) throw new Error('Disk full');
+      return localSnapshot(input);
+    });
+    vi.mocked(context.notices.feedback.failure)
+      .mockReturnValueOnce(7)
+      .mockReturnValueOnce(8);
+    const root =
+      surface === 'standalone'
+        ? mountEmailComposer(context)
+        : mountReplyComposer(context);
+    try {
+      for (const text of ['First edit', 'Second edit', 'Third edit']) {
+        root.edit(text);
+        await vi.advanceTimersByTimeAsync(600);
+      }
+      expect(context.notices.feedback.failure).toHaveBeenCalledExactlyOnceWith(
+        'Draft could not be saved on this device',
+        { subtext: 'Error: Disk full', persistent: true }
+      );
+      expect(context.notices.feedback.dismiss).not.toHaveBeenCalled();
+      expect(context.drafts.saveDraft).not.toHaveBeenCalled();
+
+      diskFailed = false;
+      root.edit('Recovered edit');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(context.notices.feedback.dismiss).toHaveBeenCalledExactlyOnceWith(
+        7
+      );
+      expect(context.drafts.saveDraft).toHaveBeenCalledOnce();
+
+      diskFailed = true;
+      root.edit('Another failure');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(context.notices.feedback.failure).toHaveBeenCalledTimes(2);
+    } finally {
+      root.dispose();
+    }
+    expect(context.notices.feedback.dismiss).toHaveBeenLastCalledWith(8);
+  }
+);
+
+it.each(['standalone', 'reply'] as const)(
   'keeps the %s editor revision after adopting its server ID',
   async (surface) => {
     const context = createComposeContext();

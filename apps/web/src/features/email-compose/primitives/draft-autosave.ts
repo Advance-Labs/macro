@@ -10,6 +10,7 @@ export function createDraftAutosave<Snapshot, Result>(options: {
   paused(): boolean;
   onError?(error: unknown): void;
   onLocalError?(error: unknown): void;
+  onLocalSaved?(): void;
 }) {
   let pending: { snapshot: Snapshot } | undefined;
   let queue: Promise<Result | undefined> = Promise.resolve(undefined);
@@ -34,7 +35,10 @@ export function createDraftAutosave<Snapshot, Result>(options: {
       if (revision !== newestSnapshot) return;
       try {
         await options.saveLocalSnapshot?.(snapshot);
-        if (revision === newestSnapshot) setLocalSaveState('saved');
+        if (revision === newestSnapshot) {
+          setLocalSaveState('saved');
+          options.onLocalSaved?.();
+        }
       } catch (error) {
         if (revision === newestSnapshot) setLocalSaveState('failed');
         options.onLocalError?.(error);

@@ -52,6 +52,7 @@ import {
   createDraftPersistence,
   deleteDraftForDiscard,
 } from './draft-persistence';
+import { createDraftSaveNotice } from './draft-save-notice';
 import { createDraftSession } from './draft-session';
 import type { DraftFormAttachment } from './email-form-state';
 import type { EmailFormContextValue, FormAccessKey } from './email-form-types';
@@ -635,6 +636,7 @@ export function createReplyComposer(
   }
 
   const autosave = createDraftAutosave({
+    ...createDraftSaveNotice(props.notices.feedback),
     capture: captureSave,
     persist: persistDraft,
     saveLocalSnapshot: async (snapshot) => {
@@ -651,11 +653,6 @@ export function createReplyComposer(
         attachments: snapshot.attachments,
       });
     },
-    onLocalError: (error) =>
-      props.notices.feedback.failure(
-        'Draft could not be saved on this device',
-        { subtext: String(error), persistent: true }
-      ),
     paused: () =>
       submitting() ||
       pendingDeletion() ||
