@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO phone_numbers (phone_number, user_id)\n            VALUES ($1, $2)\n            ON CONFLICT (phone_number) DO UPDATE\n            SET user_id = EXCLUDED.user_id, created_at = now()\n            WHERE phone_numbers.user_id IS DISTINCT FROM EXCLUDED.user_id\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "286d6b4af2cc8f1f794665b72a1805d77e9aaf44db55525eac9f23b61563d28f"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT phone_number\n            FROM crm_contact_phone_numbers\n            WHERE contact_id = $1\n            ORDER BY position, phone_number\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "phone_number",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aa2bdf3cf81b5a5613eaf08f848fdbe8218a1519a84aa0ed0fe9dda9e43e849d"
+}

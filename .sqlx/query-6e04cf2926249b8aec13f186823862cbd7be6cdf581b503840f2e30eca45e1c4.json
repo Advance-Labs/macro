@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT ct.id\n            FROM crm_contacts ct\n            JOIN crm_companies co ON co.id = ct.company_id\n            WHERE ct.id = $1\n              AND co.team_id = $2\n              AND ($3 OR (ct.hidden = FALSE AND co.hidden = FALSE))\n            FOR SHARE OF ct\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6e04cf2926249b8aec13f186823862cbd7be6cdf581b503840f2e30eca45e1c4"
+}

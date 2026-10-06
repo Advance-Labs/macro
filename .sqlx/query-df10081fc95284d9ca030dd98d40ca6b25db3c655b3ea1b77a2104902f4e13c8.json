@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO call_phone_legs (\n            call_id, direction, remote_number, local_number, participant_identity, status,\n            crm_contact_id, contact_name, sip_call_id\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df10081fc95284d9ca030dd98d40ca6b25db3c655b3ea1b77a2104902f4e13c8"
+}

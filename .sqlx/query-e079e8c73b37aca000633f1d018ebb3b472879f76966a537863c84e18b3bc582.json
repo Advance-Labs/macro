@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT phone_number FROM phone_numbers\n            WHERE user_id = $1\n            ORDER BY created_at, phone_number\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "phone_number",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e079e8c73b37aca000633f1d018ebb3b472879f76966a537863c84e18b3bc582"
+}

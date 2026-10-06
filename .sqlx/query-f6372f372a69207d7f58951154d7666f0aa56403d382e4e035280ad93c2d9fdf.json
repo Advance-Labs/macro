@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT call_record_id AS call_id, direction, remote_number, local_number,\n               participant_identity, status, crm_contact_id, contact_name, answered_at,\n               ended_at AS \"ended_at?\"\n        FROM call_record_phone_legs\n        WHERE call_record_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "call_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "direction",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "remote_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "participant_identity",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "crm_contact_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "contact_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "answered_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "ended_at?",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "f6372f372a69207d7f58951154d7666f0aa56403d382e4e035280ad93c2d9fdf"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO crm_contact_phone_numbers (contact_id, phone_number, position)\n            SELECT $1, number, (ordinality - 1)::smallint\n            FROM UNNEST($2::text[]) WITH ORDINALITY AS entered(number, ordinality)\n            ON CONFLICT (contact_id, phone_number) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8fed0628ab1e31b7fd87d51e8c2dda01817fc753d362d33b353455fd370c6a2c"
+}

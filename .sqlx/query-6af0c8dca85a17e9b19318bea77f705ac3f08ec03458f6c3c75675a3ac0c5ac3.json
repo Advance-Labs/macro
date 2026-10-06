@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO call_record_phone_legs (\n            call_record_id, direction, remote_number, local_number, participant_identity,\n            status, crm_contact_id, contact_name, sip_call_id, answered_at, ended_at, created_at\n        )\n        SELECT call_id, direction, remote_number, local_number, participant_identity,\n               $2, crm_contact_id, contact_name, sip_call_id, answered_at,\n               COALESCE(ended_at, $3), created_at\n        FROM call_phone_legs\n        WHERE call_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6af0c8dca85a17e9b19318bea77f705ac3f08ec03458f6c3c75675a3ac0c5ac3"
+}

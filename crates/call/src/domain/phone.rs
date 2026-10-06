@@ -5,7 +5,7 @@
 //! recording, transcription, summaries, naming, sharing, the Calls list — is
 //! the ordinary call pipeline. This module holds the vocabulary for the phone
 //! leg itself: who is on the other end, which way the call went, and how it
-//! ended.
+//! ended. `docs/PHONE_CALLS.md` covers the flows and deployment setup.
 
 use std::fmt;
 use std::str::FromStr;

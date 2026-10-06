@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT l.call_id, l.remote_number, l.local_number, l.crm_contact_id, l.contact_name,\n                   c.created_at\n            FROM call_phone_legs l\n            JOIN calls c ON c.id = l.call_id\n            WHERE c.created_by = $1 AND l.direction = 'inbound' AND l.status = 'ringing'\n            ORDER BY c.created_at DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "call_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "remote_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "local_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "crm_contact_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "contact_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "1369056e2dd0d21d72b56551052be504b1f611dfaad0071fa0be44068cf117fa"
+}

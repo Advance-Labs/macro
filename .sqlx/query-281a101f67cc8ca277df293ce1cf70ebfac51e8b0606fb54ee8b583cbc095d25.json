@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT call_id AS \"call_id!\", direction AS \"direction!\", remote_number AS \"remote_number!\",\n               local_number, participant_identity AS \"participant_identity!\", status AS \"status!\",\n               crm_contact_id, contact_name, answered_at, ended_at\n        FROM call_phone_legs\n        WHERE call_id = ANY($1)\n        UNION ALL\n        SELECT call_record_id, direction, remote_number, local_number, participant_identity,\n               status, crm_contact_id, contact_name, answered_at, ended_at\n        FROM call_record_phone_legs\n        WHERE call_record_id = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "call_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "direction!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "remote_number!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "local_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "participant_identity!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "crm_contact_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "contact_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "answered_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "ended_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "281a101f67cc8ca277df293ce1cf70ebfac51e8b0606fb54ee8b583cbc095d25"
+}

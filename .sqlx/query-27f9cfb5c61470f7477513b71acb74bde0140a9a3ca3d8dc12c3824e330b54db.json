@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            cr.id AS \"call_id!\",\n            cr.channel_id AS \"channel_id?\",\n            cr.created_by AS \"created_by!\",\n            cr.custom_name AS \"custom_name?\",\n            cc.name AS \"channel_name?\"\n        FROM call_records cr\n        LEFT JOIN comms_channels cc ON cc.id = cr.channel_id\n        WHERE cr.id = $1\n        ",
+  "query": "\n        SELECT\n            cr.id AS \"call_id!\",\n            cr.channel_id AS \"channel_id?\",\n            cr.created_by AS \"created_by!\",\n            cr.custom_name AS \"custom_name?\",\n            -- Phone calls have no channel; they are found by the party on\n            -- the other end instead.\n            COALESCE(cc.name, pl.contact_name, pl.remote_number) AS \"channel_name?\"\n        FROM call_records cr\n        LEFT JOIN comms_channels cc ON cc.id = cr.channel_id\n        LEFT JOIN call_record_phone_legs pl ON pl.call_record_id = cr.id\n        WHERE cr.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -39,8 +39,8 @@
       true,
       false,
       true,
-      true
+      null
     ]
   },
-  "hash": "69c33f08614680f874f2764e92e6e618a98eb82ee56e0e00398ffcb43583d52b"
+  "hash": "27f9cfb5c61470f7477513b71acb74bde0140a9a3ca3d8dc12c3824e330b54db"
 }
