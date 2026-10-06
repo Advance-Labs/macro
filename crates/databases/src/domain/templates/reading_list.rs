@@ -1,9 +1,10 @@
 //! Reading list: books to read, reading and finished, with a rating.
 
 use super::{
-    DatabaseTemplate, SELECT, TemplateContext, TemplateIcon, TemplateId, create_column,
-    create_table, insert_rows, link, number, option, options, text,
+    DatabaseTemplate, SELECT, TemplateContext, TemplateIcon, TemplateId, board, create_column,
+    create_table, insert_rows, link, number, option, option_filter, options, table_view, text,
 };
+use models_databases::views::SetOperator;
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
 pub(super) const TEMPLATE: DatabaseTemplate = DatabaseTemplate {
@@ -61,6 +62,19 @@ pub(super) fn ops(_: &TemplateContext) -> Vec<DatabaseOp> {
                     ),
                 ],
             ],
+        ),
+        table_view(
+            books,
+            "To read",
+            Some(option_filter(status, SetOperator::IsNoneOf, &[finished])),
+            &[title],
+        ),
+        board(
+            books,
+            "By status",
+            (status, &statuses),
+            title,
+            &[author, rating],
         ),
     ]
 }

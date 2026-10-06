@@ -11,7 +11,7 @@ the arrow keys only changes the selection; nothing is created until **Create
 database** / **Use template**, or Enter, confirms it. Escape or **Cancel** closes
 the gallery without creating anything, and reopening always starts with **No
 template** again. The grid adapts to the available width and scrolls as more
-templates are added, with the create action kept below it.
+templates are added, with only the confirmation buttons in the fixed footer.
 On mobile, open it from **New → More → Database**.
 **No template** creates an empty database and its first table with a Name column,
 and opens it with its title selected and ready to type. Enter saves the title
@@ -21,7 +21,21 @@ list**, **Trip planner**, **Habit tracker**, **Recipe collection** and **Getting
 started**. Trip planner includes an itinerary with dates, places and budgets;
 Habit tracker includes routines with goals, frequency and completion dates;
 Recipe collection includes meal categories, ingredients and cooking notes.
-Each has table and board views. Confirming one creates a database under the
+Every table has **All records** for the complete, manually ordered list. Saved
+views add a focused filter, sort, or board rather than duplicating that list:
+
+| Template | Saved views |
+| --- | --- |
+| Project tracker | **By status** board; **Open tasks** excludes Done and sorts by Due, then Name. |
+| Event planner | Parties: **By date** sorts by Date, then Name. Invites: **RSVPs** board; **Awaiting reply** shows Invited/Maybe, sorted by Guest Name. |
+| Content calendar | **By status** board; **Publishing queue** excludes Published and sorts by Publish date, then Title (undated ideas last). |
+| Reading list | **To read** excludes Finished, sorted by Title; **By status** board. |
+| Trip planner | **By date** sorts by Date, then Activity; **By type** board. |
+| Habit tracker | **To do** shows pending routines, sorted by Frequency, then Habit; **Progress** board. Status and Last completed are updated manually. |
+| Recipe collection | **Quick recipes** shows recipes with at most 20 prep minutes, shortest first; **By meal** board. |
+| Getting started | **By stage** board. |
+
+Confirming one creates a database under the
 template's name with its tables, columns, views and a few sample records (person
 cells are left empty), all in one request, and opens it. While the templates
 load, or if they fail to, **Create database** still works without a template.
@@ -383,8 +397,8 @@ When Databases is enabled and an authenticated user has no accessible databases,
 the app creates one small **Getting started** example in the background, from
 the Getting started template. Its
 **Ideas** table has Name and Stage columns and three cards spread across To do,
-Doing, and Done. Its Table and Board views show the same records; the first
-open selects Board. This example is created at most once per user. Retrying or
+Doing, and Done. **All records** shows the table; **By stage** shows the board and
+is selected on the first open. This example is created at most once per user. Retrying or
 opening another tab never overwrites edits, and removing the example does not
 cause it to reappear. The app waits for the feature flag and database list before
 provisioning, and disabled users receive no starter database.

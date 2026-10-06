@@ -14,7 +14,10 @@ mod recipe_collection;
 mod trip_planner;
 
 use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
-use models_databases::views::{Lane, LaneKey, NewView, RequestedLayout, ViewQuery};
+use models_databases::views::{
+    Conjunction, FilterCondition, FilterGroup, FilterNode, FilterTest, Lane, LaneKey, NewView,
+    RequestedLayout, SetOperator, SortDirection, SortKey, ViewQuery,
+};
 use models_databases::{
     CellValue, CellWrite, ColumnChange, ColumnId, ColumnKind, DatabaseId, DatabaseOp, NewColumn,
     NewOption, OptionRef, RowsChange, TableChange, TableId, ViewChange, ViewId,
@@ -211,18 +214,51 @@ const PERSON: ColumnKind = ColumnKind::Entity {
 /// A single-select column.
 const SELECT: ColumnKind = ColumnKind::Select { multi: false };
 
-fn table_view(table: TableId, name: &str) -> DatabaseOp {
+/// A focused table view, with optional filtering and ascending sort keys.
+/// All records already supplies the unfiltered, manually ordered table.
+fn table_view(
+    table: TableId,
+    name: &str,
+    filter: Option<FilterCondition>,
+    sort: &[ColumnId],
+) -> DatabaseOp {
     DatabaseOp::View {
         table,
         view: ViewId::new(),
         change: ViewChange::Create {
             view: NewView {
                 name: name.into(),
-                query: ViewQuery::default(),
+                query: ViewQuery {
+                    filter: filter.map(|condition| FilterGroup {
+                        conjunction: Conjunction::And,
+                        conditions: vec![FilterNode::Condition(condition)],
+                    }),
+                    sort: sort
+                        .iter()
+                        .map(|column| SortKey {
+                            column: *column,
+                            direction: SortDirection::Ascending,
+                        })
+                        .collect(),
+                },
                 layout: RequestedLayout::Table {
                     columns: Vec::new(),
                 },
             },
+        },
+    }
+}
+
+fn option_filter(
+    column: ColumnId,
+    operator: SetOperator,
+    options: &[&NewOption],
+) -> FilterCondition {
+    FilterCondition {
+        column,
+        test: FilterTest::Options {
+            operator,
+            options: options.iter().map(|option| option.id).collect(),
         },
     }
 }

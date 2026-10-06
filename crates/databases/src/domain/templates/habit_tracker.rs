@@ -1,15 +1,16 @@
-//! Habit tracker: routines, goals and completion dates, with a daily status board.
+//! Habit tracker: routines, goals and completion dates, with a status board.
 
 use super::{
     DatabaseTemplate, SELECT, TemplateContext, TemplateIcon, TemplateId, board, create_column,
-    create_table, date, insert_rows, option, options, table_view, text,
+    create_table, date, insert_rows, option, option_filter, options, table_view, text,
 };
+use models_databases::views::SetOperator;
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
 pub(super) const TEMPLATE: DatabaseTemplate = DatabaseTemplate {
     id: TemplateId::HabitTracker,
     name: "Habit tracker",
-    description: "Make space for small routines with goals, frequency and daily progress.",
+    description: "Keep routines, goals and recent completions in one place.",
     icon: TemplateIcon::Checks,
 };
 
@@ -31,7 +32,12 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
         create_column(habits, goal, "Goal", ColumnKind::Text, &[]),
         create_column(habits, status, "Status", SELECT, &statuses),
         create_column(habits, completed, "Last completed", ColumnKind::Date, &[]),
-        table_view(habits, "Routines"),
+        table_view(
+            habits,
+            "To do",
+            Some(option_filter(status, SetOperator::IsAnyOf, &[todo])),
+            &[frequency, name],
+        ),
         board(
             habits,
             "Progress",
@@ -54,18 +60,21 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
                     option(frequency, daily),
                     text(goal, "20 pages"),
                     option(status, todo),
+                    date(context, completed, -1),
                 ],
                 vec![
                     text(name, "Stretch"),
                     option(frequency, weekdays),
                     text(goal, "10 minutes"),
                     option(status, todo),
+                    date(context, completed, -1),
                 ],
                 vec![
                     text(name, "Weekly review"),
                     option(frequency, weekly),
                     text(goal, "Reflect and plan the week"),
                     option(status, todo),
+                    date(context, completed, -7),
                 ],
             ],
         ),

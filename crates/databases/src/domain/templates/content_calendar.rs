@@ -2,8 +2,10 @@
 
 use super::{
     DatabaseTemplate, PERSON, SELECT, TemplateContext, TemplateIcon, TemplateId, board,
-    create_column, create_table, date, insert_rows, option, options, table_view, text,
+    create_column, create_table, date, insert_rows, option, option_filter, options, table_view,
+    text,
 };
+use models_databases::views::SetOperator;
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
 pub(super) const TEMPLATE: DatabaseTemplate = DatabaseTemplate {
@@ -36,7 +38,7 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
             posts,
             vec![
                 vec![
-                    text(title, "Our year in review"),
+                    text(title, "Our latest launch"),
                     option(status, published),
                     option(channel, blog),
                     date(context, publish, -5),
@@ -58,11 +60,16 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
         ),
         board(
             posts,
-            "Board",
+            "By status",
             (status, &statuses),
             title,
             &[channel, publish, author],
         ),
-        table_view(posts, "Table"),
+        table_view(
+            posts,
+            "Publishing queue",
+            Some(option_filter(status, SetOperator::IsNoneOf, &[published])),
+            &[publish, title],
+        ),
     ]
 }

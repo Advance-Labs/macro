@@ -258,13 +258,13 @@ async fn the_project_tracker_builds_tasks_with_a_board_by_status() {
             ],
             views: vec![
                 BuiltView::Board {
-                    name: "Board",
+                    name: "By status",
                     group_by: "Status",
                     title: "Name",
                     lanes: vec!["To do", "In progress", "Done"],
                     card_fields: vec!["Owner", "Due", "Priority"],
                 },
-                BuiltView::Table { name: "Table" },
+                BuiltView::Table { name: "Open tasks" },
             ],
             rows: 4,
         }]
@@ -302,7 +302,7 @@ async fn the_event_planner_builds_parties_and_an_rsvp_board_of_invites() {
                         options: vec![],
                     },
                 ],
-                views: vec![],
+                views: vec![BuiltView::Table { name: "By date" }],
                 rows: 2,
             },
             BuiltTable {
@@ -343,9 +343,11 @@ async fn the_event_planner_builds_parties_and_an_rsvp_board_of_invites() {
                         group_by: "RSVP",
                         title: "Guest Name",
                         lanes: vec!["Invited", "Going", "Maybe", "Declined"],
-                        card_fields: vec!["Plus Ones", "Party"],
+                        card_fields: vec!["Email", "Plus Ones"],
                     },
-                    BuiltView::Table { name: "Table" },
+                    BuiltView::Table {
+                        name: "Awaiting reply",
+                    },
                 ],
                 rows: 4,
             },
@@ -389,13 +391,15 @@ async fn the_content_calendar_builds_posts_with_a_board_by_status() {
             ],
             views: vec![
                 BuiltView::Board {
-                    name: "Board",
+                    name: "By status",
                     group_by: "Status",
                     title: "Title",
                     lanes: vec!["Idea", "Drafting", "Scheduled", "Published"],
                     card_fields: vec!["Channel", "Publish date", "Author"],
                 },
-                BuiltView::Table { name: "Table" },
+                BuiltView::Table {
+                    name: "Publishing queue",
+                },
             ],
             rows: 4,
         }]
@@ -436,7 +440,16 @@ async fn the_reading_list_builds_books() {
                     options: vec![],
                 },
             ],
-            views: vec![],
+            views: vec![
+                BuiltView::Table { name: "To read" },
+                BuiltView::Board {
+                    name: "By status",
+                    group_by: "Status",
+                    title: "Title",
+                    lanes: vec!["Want to read", "Reading", "Finished"],
+                    card_fields: vec!["Author", "Rating"],
+                },
+            ],
             rows: 3,
         }]
     );
@@ -461,16 +474,13 @@ async fn getting_started_builds_ideas_on_a_board_by_stage() {
                     options: vec!["To do", "Doing", "Done"],
                 },
             ],
-            views: vec![
-                BuiltView::Table { name: "Table" },
-                BuiltView::Board {
-                    name: "Board",
-                    group_by: "Stage",
-                    title: "Name",
-                    lanes: vec!["To do", "Doing", "Done"],
-                    card_fields: vec![],
-                },
-            ],
+            views: vec![BuiltView::Board {
+                name: "By stage",
+                group_by: "Stage",
+                title: "Name",
+                lanes: vec!["To do", "Doing", "Done"],
+                card_fields: vec![],
+            }],
             rows: 3,
         }]
     );
@@ -507,11 +517,42 @@ async fn getting_started_builds_ideas_on_a_board_by_stage() {
             ("Add your first idea".to_owned(), "To do".to_owned()),
             ("Try moving a card".to_owned(), "Doing".to_owned()),
             (
-                "Explore table and board views".to_owned(),
+                "Explore All records and the board".to_owned(),
                 "Done".to_owned()
             ),
         ]
     );
+}
+
+#[tokio::test]
+async fn every_template_view_adds_something_beyond_all_records() {
+    for template in &TEMPLATES {
+        let (_, _, detail) = create_from(template.id, template.name).await;
+        for table in &detail.tables {
+            for (index, view) in table.views.iter().enumerate() {
+                if matches!(view.layout, ViewLayout::Table { .. }) {
+                    assert_ne!(
+                        view.query,
+                        models_databases::views::ViewQuery::default(),
+                        "{} / {} / {} duplicates All records",
+                        template.name,
+                        table.table.name,
+                        view.name,
+                    );
+                }
+                for other in &table.views[..index] {
+                    assert!(
+                        view.query != other.query || view.layout != other.layout,
+                        "{} / {}: {} duplicates {}",
+                        template.name,
+                        table.table.name,
+                        view.name,
+                        other.name,
+                    );
+                }
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -659,11 +700,11 @@ async fn the_starter_is_getting_started_given_once() {
         StarterDatabase {
             database_id: Some(database_id),
             table_id: Some(ideas.table.id),
-            view_id: Some(ideas.views[1].id),
+            view_id: Some(ideas.views[0].id),
             created: true,
         }
     );
-    assert_eq!(ideas.views[1].name, "Board");
+    assert_eq!(ideas.views[0].name, "By stage");
 
     let again = service.ensure_starter(viewer(OWNER)).await.unwrap();
     assert_eq!(

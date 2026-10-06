@@ -4,6 +4,7 @@ use super::{
     DatabaseTemplate, SELECT, TemplateContext, TemplateIcon, TemplateId, board, create_column,
     create_table, insert_rows, number, option, options, table_view, text,
 };
+use models_databases::views::{FilterCondition, FilterTest, NumberOperator};
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
 pub(super) const TEMPLATE: DatabaseTemplate = DatabaseTemplate {
@@ -31,7 +32,18 @@ pub(super) fn ops(_: &TemplateContext) -> Vec<DatabaseOp> {
         create_column(recipes, servings, "Servings", ColumnKind::Number, &[]),
         create_column(recipes, ingredients, "Ingredients", ColumnKind::Text, &[]),
         create_column(recipes, instructions, "Instructions", ColumnKind::Text, &[]),
-        table_view(recipes, "Cookbook"),
+        table_view(
+            recipes,
+            "Quick recipes",
+            Some(FilterCondition {
+                column: minutes,
+                test: FilterTest::Number {
+                    operator: NumberOperator::LessThanOrEqual,
+                    value: 20.0,
+                },
+            }),
+            &[minutes, name],
+        ),
         board(
             recipes,
             "By meal",

@@ -217,12 +217,7 @@ export function DatabaseTemplatePicker(props: {
             </p>
           </Show>
         </Panel.Body>
-        <Panel.Footer class="flex-wrap justify-between gap-3 px-6 py-4">
-          <p class="text-xs text-ink-muted">
-            {selected().creation.template
-              ? 'Includes sample records. Everything is editable.'
-              : 'No sample data will be added.'}
-          </p>
+        <Panel.Footer class="justify-end px-6 py-4">
           <div class="ml-auto flex items-center gap-2">
             <Button
               variant="ghost"

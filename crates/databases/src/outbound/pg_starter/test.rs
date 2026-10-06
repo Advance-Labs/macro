@@ -86,11 +86,7 @@ async fn database_count(pool: &PgPool) -> i64 {
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn the_starter_records_initial_values_in_history(pool: PgPool) {
     insert_user(&pool).await;
-    let blueprint = StarterBlueprint::default();
-    let created = repo(&pool)
-        .ensure_starter(&viewer(), &blueprint)
-        .await
-        .unwrap();
+    let created = service(&pool).ensure_starter(viewer()).await.unwrap();
     let database = created.database_id.unwrap();
     let table = created.table_id.unwrap();
     let data = PgDatabasesRepo::new(pool.clone(), PropertiesPgRepo::new(pool.clone()));
@@ -103,8 +99,13 @@ async fn the_starter_records_initial_values_in_history(pool: PgPool) {
     .await
     .unwrap();
     let rows = data.row_refs(table).await.unwrap();
-    assert_eq!(rows.len(), blueprint.rows.len());
-    for (row, (name, stage_index)) in rows.iter().zip(blueprint.rows) {
+    let examples = [
+        ("Add your first idea", 0),
+        ("Try moving a card", 1),
+        ("Explore All records and the board", 2),
+    ];
+    assert_eq!(rows.len(), examples.len());
+    for (row, (name, stage_index)) in rows.iter().zip(examples) {
         let changes = data.row_history(database, table, row.id).await.unwrap();
         let history = crate::domain::journal::row_history(row.id, changes);
         assert_eq!(history.len(), 1);
@@ -184,34 +185,26 @@ async fn concurrent_starter_requests_create_one_complete_editable_example(pool: 
         .collect();
     assert_eq!(
         shown,
-        vec![
-            (
-                "Table",
-                "80",
-                &ViewQuery::default(),
-                &ViewLayout::Table { columns: vec![] }
-            ),
-            (
-                "Board",
-                "8180",
-                &ViewQuery::default(),
-                &ViewLayout::Board {
-                    group_by: columns[1].id,
-                    title: columns[0].id,
-                    lanes: stages
-                        .iter()
-                        .map(|option| Lane {
-                            key: LaneKey::Option(*option),
-                            hidden: false,
-                        })
-                        .collect(),
-                    card_fields: vec![],
-                    hide_empty_lanes: false,
-                }
-            ),
-        ]
+        vec![(
+            "By stage",
+            "80",
+            &ViewQuery::default(),
+            &ViewLayout::Board {
+                group_by: columns[1].id,
+                title: columns[0].id,
+                lanes: stages
+                    .iter()
+                    .map(|option| Lane {
+                        key: LaneKey::Option(*option),
+                        hidden: false,
+                    })
+                    .collect(),
+                card_fields: vec![],
+                hide_empty_lanes: false,
+            }
+        ),]
     );
-    assert_eq!(created.view_id, Some(views[1].id));
+    assert_eq!(created.view_id, Some(views[0].id));
     let owner = sqlx::query_scalar!(
         "SELECT COUNT(*) FROM entity_access WHERE entity_id = $1 AND access_level = 'owner'",
         id.into_uuid()

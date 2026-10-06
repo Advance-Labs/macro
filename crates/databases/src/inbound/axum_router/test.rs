@@ -1146,7 +1146,7 @@ async fn the_template_list_answers_every_template_to_a_signed_in_caller() {
             {
                 "id": "habit_tracker",
                 "name": "Habit tracker",
-                "description": "Make space for small routines with goals, frequency and daily progress.",
+                "description": "Keep routines, goals and recent completions in one place.",
                 "icon": "checks",
             },
             {

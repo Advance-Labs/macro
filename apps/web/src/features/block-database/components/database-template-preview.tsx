@@ -77,18 +77,25 @@ function EventPreview() {
         <span>Guest name</span>
         <span>RSVP</span>
       </div>
-      <For each={['Jordan Lee', 'Priya Shah', 'Marco Rossi']}>
-        {(name, index) => (
+      <For
+        each={[
+          ['Jordan Lee', 'Going'],
+          ['Priya Shah', 'Maybe'],
+          ['Marco Rossi', 'Invited'],
+        ]}
+      >
+        {(guest, index) => (
           <div class="flex items-center justify-between gap-2 border-b border-edge-muted px-2.5 py-2">
-            <span>{name}</span>
+            <span>{guest[0]}</span>
             <span
               class="rounded px-1.5 py-0.5 text-[8px]"
               classList={{
-                'bg-success-bg text-success': index() < 2,
-                'bg-warning-bg text-warning': index() === 2,
+                'bg-success-bg text-success': index() === 0,
+                'bg-warning-bg text-warning': index() === 1,
+                'bg-hover text-ink-muted': index() === 2,
               }}
             >
-              {index() < 2 ? 'Going' : 'Maybe'}
+              {guest[1]}
             </span>
           </div>
         )}
@@ -106,7 +113,7 @@ function ContentPreview() {
       </div>
       <For
         each={[
-          ['Our year in review', 'Blog'],
+          ['Our latest launch', 'Blog'],
           ['Monthly product update', 'Newsletter'],
           ['Behind the scenes', 'LinkedIn'],
         ]}

@@ -3,7 +3,7 @@
 
 use super::{
     DatabaseTemplate, SELECT, TemplateContext, TemplateIcon, TemplateId, board, create_column,
-    create_table, insert_rows, option, options, table_view, text,
+    create_table, insert_rows, option, options, text,
 };
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
@@ -30,12 +30,11 @@ pub(super) fn ops(_: &TemplateContext) -> Vec<DatabaseOp> {
                 vec![text(name, "Add your first idea"), option(stage, to_do)],
                 vec![text(name, "Try moving a card"), option(stage, doing)],
                 vec![
-                    text(name, "Explore table and board views"),
+                    text(name, "Explore All records and the board"),
                     option(stage, done),
                 ],
             ],
         ),
-        table_view(ideas, "Table"),
-        board(ideas, "Board", (stage, &stages), name, &[]),
+        board(ideas, "By stage", (stage, &stages), name, &[]),
     ]
 }

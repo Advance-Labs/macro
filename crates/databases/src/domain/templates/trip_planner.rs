@@ -34,7 +34,7 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
         create_column(itinerary, when, "Date", ColumnKind::Date, &[]),
         create_column(itinerary, category, "Type", SELECT, &categories),
         create_column(itinerary, budget, "Budget", ColumnKind::Number, &[]),
-        table_view(itinerary, "Itinerary"),
+        table_view(itinerary, "By date", None, &[when, activity]),
         board(
             itinerary,
             "By type",

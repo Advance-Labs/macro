@@ -2,8 +2,10 @@
 
 use super::{
     DatabaseTemplate, PERSON, SELECT, TemplateContext, TemplateIcon, TemplateId, board,
-    create_column, create_table, date, insert_rows, number, option, options, table_view, text,
+    create_column, create_table, date, insert_rows, number, option, option_filter, options,
+    table_view, text,
 };
+use models_databases::views::SetOperator;
 use models_databases::{ColumnId, ColumnKind, DatabaseOp, TableId};
 
 pub(super) const TEMPLATE: DatabaseTemplate = DatabaseTemplate {
@@ -38,17 +40,18 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
             parties,
             vec![
                 vec![
-                    text(party_name, "Summer picnic"),
+                    text(party_name, "Team picnic"),
                     text(location, "Riverside Park"),
                     date(context, party_date, 21),
                 ],
                 vec![
-                    text(party_name, "Year-end dinner"),
+                    text(party_name, "Community dinner"),
                     text(location, "The Long Table"),
                     date(context, party_date, 60),
                 ],
             ],
         ),
+        table_view(parties, "By date", None, &[party_date, party_name]),
         create_table(invites, "Invites"),
         create_column(invites, guest, "Guest Name", ColumnKind::Text, &[]),
         create_column(invites, email, "Email", ColumnKind::Text, &[]),
@@ -98,8 +101,13 @@ pub(super) fn ops(context: &TemplateContext) -> Vec<DatabaseOp> {
             "RSVPs",
             (rsvp, &answers),
             guest,
-            &[plus_ones, party],
+            &[email, plus_ones],
         ),
-        table_view(invites, "Table"),
+        table_view(
+            invites,
+            "Awaiting reply",
+            Some(option_filter(rsvp, SetOperator::IsAnyOf, &[invited, maybe])),
+            &[guest],
+        ),
     ]
 }
