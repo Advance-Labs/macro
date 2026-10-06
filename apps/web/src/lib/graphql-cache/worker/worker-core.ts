@@ -572,7 +572,8 @@ export class CacheWorkerCore {
             request.createdAtMs,
             request.owner,
             request.nowMs,
-            request.leaseExpiresAtMs
+            request.leaseExpiresAtMs,
+            request.clientMetadata
           );
         result.revision = parseCacheRevision(result.revision);
         this.fanOut(result, true);
@@ -604,6 +605,10 @@ export class CacheWorkerCore {
           request.variableFilters ?? []
         );
       })
+      .with(
+        { kind: 'inspect-mutations' },
+        async () => await this.requireEngine().inspectMutations()
+      )
       .with({ kind: 'claim-next-mutation' }, async (request) => {
         const engine = this.requireEngine();
         return await engine.claimNextMutation(
@@ -619,7 +624,8 @@ export class CacheWorkerCore {
           request.leaseOwner,
           request.leaseGeneration,
           request.nextAttemptAtMs,
-          request.error
+          request.error,
+          request.serverFailure ?? false
         );
         if (result.kind === 'discarded-superseded') {
           result.revision = parseCacheRevision(result.revision);

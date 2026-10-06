@@ -86,6 +86,8 @@ setup_test_envs:
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/frecency/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/favorites/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/reminders/.env
+    echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/slack_integration/.env
+    echo "DATABASE_URL={{ DATABASE_URL }}" >> ./services/slack_import_worker/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/user_api_key/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/soup/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/email/.env
@@ -121,6 +123,7 @@ setup_test_envs:
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/share_permission_db_utils/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/ai_projections/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./services/ai_projections_refresh_handler/.env
+    echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/ai_billing/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/webhook/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./crates/calendar_events/.env
     echo "DATABASE_URL={{ DATABASE_URL }}" >> ./services/email_service/.env

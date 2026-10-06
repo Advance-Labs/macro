@@ -5,13 +5,14 @@ import {
   type InputAttachmentData,
   uploadInputAttachments,
 } from '@channel/Input';
+import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
 import { useSettingsState } from '@core/constant/SettingsState';
 import { useUserId } from '@core/context/user';
 import { uploadFile } from '@core/util/upload';
 import { useAgentCapabilitiesQuery } from '@queries/agents/capabilities';
 import type { PromptAttachment } from '@service-agent-harness/generated/schemas';
 import { tourTarget } from '@ui/components/Tour';
-import { createMemo, createSignal } from 'solid-js';
+import { createMemo, createSignal, Show } from 'solid-js';
 import {
   type EffortChoice,
   effortConfigOption,
@@ -48,6 +49,9 @@ export type StartConversation = {
 
 /** One agent choice determines the session kind, default model, and repository context. */
 export function NewChatPage(props: {
+  compact?: boolean;
+  active?: boolean;
+  workspaceId?: string;
   draft?: string;
   onDraftChange?: (draft: string) => void;
   autoFocus?: boolean;
@@ -69,6 +73,7 @@ export function NewChatPage(props: {
   const [agentId, setAgentId] = createSignal<string>();
   /** One-shot model from a coding agent's submenu; Macro uses {@link preferredInmem}. */
   const [modelOverride, setModelOverride] = createSignal<string>();
+  const [repositoryPickerOpen, setRepositoryPickerOpen] = createSignal(false);
   // A new conversation starts on Automatic until the caller picks a repository.
   const [repoUrl, setRepoUrl] = createSignal<string | undefined>();
   const persistedDraft = createPersistedComposerDraft();
@@ -91,27 +96,20 @@ export function NewChatPage(props: {
     const wanted = agentId() ?? recentAgentId() ?? MACRO_PERSONA_ID;
     return options().find((agent) => agent.id === wanted) ?? options()[0];
   });
-  const macro = () => options().find((agent) => agent.id === MACRO_PERSONA_ID);
-  const macroCatalog = createComposerModels(macro);
-  /** Preferred Macro model when it is still in the live in-memory catalog. */
-  const preferredInmemModel = () => {
-    const id = preferredInmem.model();
-    if (!id) return undefined;
-    const catalog = macroCatalog.models();
-    // Until discovery returns, keep the stored id so the trigger can label it.
-    if (catalog.length === 0) return id;
-    return catalog.some((option) => option.id === id) ? id : undefined;
-  };
-  /**
-   * Model shown on the agent control and sent with the next start. Coding
-   * agents use a one-shot override; Macro prefers an in-session pick, then
-   * the remembered Models choice.
-   */
+  const selectedCatalog = createComposerModels(selected);
+  /** In-memory choices come from the owner's catalog; other runtimes keep their rules. */
   const composerModelOverride = () => {
-    if (selected()?.id === MACRO_PERSONA_ID) {
-      return modelOverride() ?? preferredInmemModel();
-    }
-    return modelOverride();
+    const agent = selected();
+    if (agent?.harness !== 'macro-inmem' && agent?.harness !== 'in-memory')
+      return modelOverride();
+    const preferred =
+      modelOverride() ??
+      (agent.id === MACRO_PERSONA_ID
+        ? preferredInmem.model()
+        : agent.defaultModel);
+    return selectedCatalog.models().some((option) => option.id === preferred)
+      ? preferred
+      : selectedCatalog.currentModel();
   };
   const capabilityTarget = () => {
     const agent = selected();
@@ -120,7 +118,9 @@ export function NewChatPage(props: {
     if (harness !== 'in-memory' && harness !== 'cursor') return undefined;
     return {
       harness,
-      model: composerModelOverride() ?? agent?.defaultModel,
+      model:
+        composerModelOverride() ??
+        (harness === 'in-memory' ? undefined : agent?.defaultModel),
     } as const;
   };
   const capabilities = useAgentCapabilitiesQuery(capabilityTarget);
@@ -149,8 +149,9 @@ export function NewChatPage(props: {
       : undefined;
   };
   const coding = () => selected()?.kind === 'coder';
-  // The create-session API accepts explicit repositories only for Cursor.
-  const canSelectRepository = () => selected()?.harness === 'cursor';
+  const localRuntime = () => selected()?.harness === 'macrod';
+  const canSelectRepository = () =>
+    selected()?.harness === 'cursor' || localRuntime();
   const blocked = () => {
     const agent = selected();
     return agent ? agent.unavailableReason : 'Choose an agent to start';
@@ -159,11 +160,14 @@ export function NewChatPage(props: {
   const reachable = createReachableRepositories(coding);
   // Listed only while a repository is chosen: listing costs a GitHub call.
   const reachableBranches = createRepositoryBranches(() =>
-    coding() ? repoUrl() : undefined
+    coding() && !localRuntime() ? repoUrl() : undefined
   );
   // A chosen branch, or where the selected repository's own clones start.
   const repoBranch = () =>
-    branchOverride() ?? defaultBranchFor(reachable.repositories(), repoUrl());
+    localRuntime()
+      ? 'main'
+      : (branchOverride() ??
+        defaultBranchFor(reachable.repositories(), repoUrl()));
   const selectRepository = (url: string | undefined) => {
     // Another repository starts on its own default branch, not the last one's.
     if (url !== repoUrl()) setBranchOverride(undefined);
@@ -255,49 +259,69 @@ export function NewChatPage(props: {
     />
   );
 
-  return (
-    <section class="page newchat" data-active aria-label="New conversation">
-      <div ref={tourTarget(AGENTS_TOUR.composer)} class="col">
-        <div class="greeting">
-          <h2>
-            {coding() ? 'What should we build?' : 'What should we work on?'}
-          </h2>
-        </div>
-        <ChatComposer
-          autoFocus={props.autoFocus}
-          registerFocus={props.registerFocus}
-          draft={draft()}
-          onDraftChange={setDraft}
-          blockedReason={blocked()}
-          selector={agentSelector()}
-          drawer={
-            <RepositoryPicker
-              repoUrl={repoUrl()}
-              branch={repoBranch()}
-              repositories={reachable.repositories()}
-              repositoriesLoading={reachable.loading()}
-              repositoriesError={reachable.error()}
-              recentRepositories={repositories.urls()}
-              onRetryRepositories={reachable.retry}
-              branches={reachableBranches.branches()}
-              branchesLoading={reachableBranches.loading()}
-              branchesError={reachableBranches.error()}
-              onRetryBranches={reachableBranches.retry}
-              onConnectGitHub={() => openSettings('Connected')}
-              onSelectRepository={selectRepository}
-              onSelectBranch={setBranchOverride}
-            />
-          }
-          drawerOpen={coding()}
-          placeholder={coding() ? 'Describe what you want to build' : undefined}
-          onSend={send}
-          attachments={attachmentTracker.attachments()}
-          onAttachFiles={attachFiles}
-          onRemoveAttachment={(attachment) =>
-            attachmentTracker.removeAttachment(attachment.id)
-          }
+  const composer = () => (
+    <ChatComposer
+      autoFocus={props.autoFocus}
+      collapseOnBlur={props.compact}
+      controlsOpen={repositoryPickerOpen()}
+      registerFocus={props.registerFocus}
+      draft={draft()}
+      onDraftChange={setDraft}
+      blockedReason={blocked()}
+      selector={agentSelector()}
+      drawer={
+        <RepositoryPicker
+          onOpenChange={setRepositoryPickerOpen}
+          repoUrl={repoUrl()}
+          branch={repoBranch()}
+          branchLocked={localRuntime()}
+          repositories={reachable.repositories()}
+          repositoriesLoading={reachable.loading()}
+          repositoriesError={reachable.error()}
+          recentRepositories={repositories.urls()}
+          onRetryRepositories={reachable.retry}
+          branches={reachableBranches.branches()}
+          branchesLoading={reachableBranches.loading()}
+          branchesError={reachableBranches.error()}
+          onRetryBranches={reachableBranches.retry}
+          onConnectGitHub={() => openSettings('Connected')}
+          onSelectRepository={selectRepository}
+          onSelectBranch={setBranchOverride}
         />
-      </div>
-    </section>
+      }
+      drawerOpen={coding()}
+      placeholder={coding() ? 'Describe what you want to build' : undefined}
+      onSend={send}
+      attachments={attachmentTracker.attachments()}
+      onAttachFiles={attachFiles}
+      onRemoveAttachment={(attachment) =>
+        attachmentTracker.removeAttachment(attachment.id)
+      }
+    />
+  );
+
+  return (
+    <Show when={!props.compact} fallback={composer()}>
+      <section class="page newchat" data-active aria-label="New conversation">
+        <div ref={tourTarget(AGENTS_TOUR.composer)} class="col">
+          <div class="greeting">
+            <h2>
+              {coding() ? 'What should we build?' : 'What should we work on?'}
+            </h2>
+          </div>
+          <FloatRegionOrInline
+            region="accessory"
+            active={() => props.active !== false}
+          >
+            <div
+              data-agent-new-composer={props.workspaceId}
+              class="agents-view-portal touch:px-(--mobile-chrome-gutter) pointer-events-auto min-w-0"
+            >
+              {composer()}
+            </div>
+          </FloatRegionOrInline>
+        </div>
+      </section>
+    </Show>
   );
 }

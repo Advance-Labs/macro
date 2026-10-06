@@ -119,7 +119,9 @@ it('keeps the latest restoration when an older draft read finishes afterward', a
     expect(root.restored).toHaveBeenCalledWith(
       result.draft,
       newerChange,
-      'queued'
+      'queued',
+      undefined,
+      undefined
     );
     firstRead.resolve(result);
     await firstRead.promise;

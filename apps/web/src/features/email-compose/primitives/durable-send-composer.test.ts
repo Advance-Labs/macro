@@ -3,13 +3,89 @@ import { createSignal } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { message } from '../../email-message/tests/messages';
 import type { EmailDraftRestoration } from '../context/compose-capabilities';
+import type { LocalDraft } from '../core/local-draft';
 import type { ReplyType } from '../core/reply-type';
 import { createComposeContext } from '../tests/capabilities';
 import { mountEmailComposer } from '../tests/composer';
 import { mountReplyComposer } from '../tests/reply';
+import type { DraftFormAttachment } from './email-form-state';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
+
+it.each(['standalone', 'reply'] as const)(
+  'requires local persistence but no server acknowledgement for an offline %s send',
+  async (kind) => {
+    const context = createComposeContext();
+    context.delivery.queueActive = () => true;
+    context.connectivity.looksOffline = () => true;
+    context.drafts.saveLocalDraft = vi.fn(
+      async (input): Promise<LocalDraft> => ({
+        key: input.clientHandles?.draftId ?? input.draft.db_id!,
+        draftId: input.clientHandles?.draftId ?? input.draft.db_id!,
+        threadId:
+          input.clientHandles?.threadId ??
+          input.draft.thread_db_id ??
+          undefined,
+        accountId: 'owner',
+        generation: 'local-generation',
+        revision: 1,
+        acknowledgedRevision: 0,
+        status: 'dirty',
+        updatedAt: Date.now(),
+        content: input.draft,
+        attachments: [],
+      })
+    );
+    const root =
+      kind === 'standalone'
+        ? mountEmailComposer(context)
+        : mountReplyComposer(context);
+    try {
+      root.edit('Offline body');
+      if ('state' in root) {
+        root.state.context.onSend();
+        await vi.advanceTimersByTimeAsync(0);
+      } else await root.sendEmail();
+      expect(context.drafts.saveLocalDraft).toHaveBeenCalled();
+      expect(context.drafts.saveDraft).not.toHaveBeenCalled();
+      expect(context.delivery.sendMessage).toHaveBeenCalledOnce();
+      expect(context.delivery.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedLocalVersion: { generation: 'local-generation', revision: 1 },
+        })
+      );
+    } finally {
+      root.dispose();
+    }
+  }
+);
+
+it.each(['standalone', 'reply'] as const)(
+  'does not send a stale %s editor after a local revision conflict',
+  async (kind) => {
+    const context = createComposeContext();
+    context.delivery.queueActive = () => true;
+    context.drafts.saveLocalDraft = vi.fn(async () => {
+      throw new Error('This draft changed while saving');
+    });
+    const root =
+      kind === 'standalone'
+        ? mountEmailComposer(context)
+        : mountReplyComposer(context);
+    try {
+      root.edit('Stale content');
+      if ('state' in root) {
+        root.state.context.onSend();
+        await vi.advanceTimersByTimeAsync(0);
+      } else await root.sendEmail();
+      expect(context.delivery.sendMessage).not.toHaveBeenCalled();
+      expect(context.notices.feedback.failure).toHaveBeenCalled();
+    } finally {
+      root.dispose();
+    }
+  }
+);
 
 function restorationContext() {
   const context = createComposeContext();
@@ -32,6 +108,127 @@ function restorationContext() {
       }),
   };
 }
+
+it.each(['standalone', 'reply'] as const)(
+  'uses the restored local generation for subsequent mounted %s edits',
+  async (kind) => {
+    const { context, restore } = restorationContext();
+    const original: LocalDraft = {
+      key: 'draft',
+      draftId: 'draft',
+      threadId: 'thread',
+      accountId: 'owner',
+      generation: 'original-generation',
+      revision: 3,
+      acknowledgedRevision: 0,
+      status: 'dirty',
+      updatedAt: Date.now(),
+      content: { subject: 'Original' },
+      attachments: [],
+    };
+    const restored = {
+      ...original,
+      generation: 'restored-generation',
+      revision: 7,
+    };
+    context.drafts.saveLocalDraft = vi.fn(async () => original);
+    context.drafts.readDraft = vi.fn(async () => ({
+      draft: message('draft', {
+        is_draft: true,
+        replying_to_id: kind === 'reply' ? 'parent' : undefined,
+        body_text: 'Restored content',
+        body_html_sanitized: null,
+      }),
+      persistence: 'queued' as const,
+      local: restored,
+    }));
+    const seed = { draft: message('draft', { is_draft: true }) };
+    const root =
+      kind === 'standalone'
+        ? mountEmailComposer(context, undefined, seed)
+        : mountReplyComposer(context, undefined, seed);
+    try {
+      root.edit('Original editor');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.drafts.saveLocalDraft).toHaveBeenCalled();
+      restore({ replyingToId: kind === 'reply' ? 'parent' : undefined });
+      await vi.advanceTimersByTimeAsync(0);
+      root.edit('Edited after restoration');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.drafts.saveLocalDraft).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedRevision: restored.revision,
+          expectedGeneration: restored.generation,
+        })
+      );
+    } finally {
+      root.dispose();
+    }
+  }
+);
+
+it.each(['standalone', 'reply'] as const)(
+  'preserves newer local files when a delayed %s restoration adopts their revision',
+  async (kind) => {
+    const { context, restore } = restorationContext();
+    const [locked, setLocked] = createSignal(false);
+    context.delivery.sendLocked = locked;
+    const file: DraftFormAttachment = {
+      type: 'local',
+      file: new File(['new attachment'], 'new.txt', { type: 'text/plain' }),
+      uploaded: false,
+    };
+    const local: LocalDraft = {
+      key: 'draft',
+      draftId: 'draft',
+      threadId: 'thread',
+      accountId: 'owner',
+      generation: 'restored-generation',
+      revision: 7,
+      acknowledgedRevision: 0,
+      status: 'dirty',
+      updatedAt: Date.now(),
+      content: { subject: 'Restored' },
+      attachments: [],
+    };
+    context.drafts.saveLocalDraft = vi.fn(async () => local);
+    context.drafts.readDraft = vi.fn(async () => ({
+      draft: message('draft', {
+        is_draft: true,
+        replying_to_id: kind === 'reply' ? 'parent' : undefined,
+        body_text: 'Restored content with a new local file',
+        body_html_sanitized: null,
+      }),
+      persistence: 'queued' as const,
+      local,
+      attachments: [file],
+    }));
+    const seed = { draft: message('draft', { is_draft: true }) };
+    const root =
+      kind === 'standalone'
+        ? mountEmailComposer(context, undefined, seed)
+        : mountReplyComposer(context, undefined, seed);
+    try {
+      setLocked(true);
+      restore({ replyingToId: kind === 'reply' ? 'parent' : undefined });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(context.drafts.readDraft).not.toHaveBeenCalled();
+      setLocked(false);
+      await vi.advanceTimersByTimeAsync(0);
+      root.edit('Edited after restoration');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.drafts.saveLocalDraft).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedRevision: local.revision,
+          expectedGeneration: local.generation,
+          attachments: [file],
+        })
+      );
+    } finally {
+      root.dispose();
+    }
+  }
+);
 
 it.each([false, true])(
   'restores the mounted standalone body and envelope when the journal unlock is delayed: %s',

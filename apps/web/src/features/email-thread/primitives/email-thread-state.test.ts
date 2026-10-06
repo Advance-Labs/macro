@@ -48,6 +48,30 @@ describe('thread state with an injected source', () => {
       }
     }));
 
+  it('does not move an open bottom reply to a newly sent message', () =>
+    createRoot((dispose) => {
+      try {
+        const parent = message('parent');
+        const [snapshot, setSnapshot] = createSignal(thread([parent]));
+        const state = createEmailThreadState(
+          createThreadContext({ thread: snapshot })
+        );
+        state.messages.setBottomReplyOpen(true);
+        expect(state.messages.bottomReplyOpen()).toBe(true);
+        setSnapshot(thread([{ ...parent, body_text: 'Refreshed' }]));
+        expect(state.messages.bottomReplyOpen()).toBe(true);
+        setSnapshot(thread([parent, message('sent')]));
+        expect(state.messages.bottomReplyOpen()).toBe(false);
+        // Replying to the new message still requires a deliberate action.
+        state.messages.setBottomReplyOpen(true);
+        expect(state.messages.bottomReplyOpen()).toBe(true);
+        setSnapshot(thread([message('sent')], { db_id: 'another-thread' }));
+        expect(state.messages.bottomReplyOpen()).toBe(false);
+      } finally {
+        dispose();
+      }
+    }));
+
   it('keeps a newly restored canonical reply ahead of the unchanged local source handle', () =>
     createRoot((dispose) => {
       try {

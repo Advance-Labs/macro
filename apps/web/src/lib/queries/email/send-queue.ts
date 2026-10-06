@@ -34,6 +34,13 @@ import {
   createDraftThread,
   updateDraftThread,
 } from './graphql/optimistic-thread';
+import {
+  captureSendWorkingCopy,
+  restoreSendWorkingCopy,
+  retireSendWorkingCopy,
+  type SendRestorationVersion,
+  type SendWorkingCopy,
+} from './send-draft-lifecycle';
 
 /** Initialization failure must not bypass sends persisted by a previous session. */
 export function emailSendQueueSelected(
@@ -61,6 +68,8 @@ export type EmailSendIntent = {
     exclusive?: DurableMutationIntent['exclusive'];
     payload: {
       restoring?: boolean;
+      restorationVersion?: SendRestorationVersion;
+      workingCopy?: SendWorkingCopy;
       input: SendEmailMessageInput;
       draft: GraphqlSaveEmailDraftArgs;
     };
@@ -158,6 +167,7 @@ export function watchEmailSends(changed: () => void): () => void {
 
 export async function sendEmailQueued(args: {
   draft: GraphqlSaveEmailDraftArgs;
+  expectedLocalVersion?: Pick<SendWorkingCopy, 'generation' | 'revision'>;
   attachmentIds: string[];
   forwardedAttachmentIds: string[];
   includeSignature?: boolean | null;
@@ -179,6 +189,12 @@ export async function sendEmailQueued(args: {
     args.draft.threadDbId
   );
   const draft = { ...args.draft, ...cached };
+  const workingCopy = await captureSendWorkingCopy(
+    String(args.draft.draftId),
+    args.attachmentIds,
+    args.forwardedAttachmentIds,
+    args.expectedLocalVersion
+  );
   const attemptId = crypto.randomUUID();
   const input: SendEmailMessageInput = {
     attempt: { attemptId, linkId: draft.senderLinkId },
@@ -238,7 +254,7 @@ export async function sendEmailQueued(args: {
       uuid: attemptId,
       durableIntent: {
         kind: 'email-send-v1',
-        payload: { input, draft },
+        payload: { input, draft, workingCopy },
         exclusive: {
           entityKey: `GraphqlSoupEmailMessage:${draft.draftId}`,
           releaseOn: {
@@ -272,6 +288,7 @@ export async function sendEmailQueued(args: {
   ).toPromise();
   const queued = optimisticMutationDispositionOf(result)?.kind === 'queued';
   if (result.error && !queued) throw result.error;
+  await retireSendWorkingCopy(workingCopy);
   const attempt = result.data?.sendEmailMessage.attempt;
   return {
     draftId: attempt?.message?.id ?? String(draft.draftId),
@@ -383,21 +400,28 @@ export async function restoreCancelledEmailSend(
   if (emailSendLocked(intent))
     throw new Error('Confirm cancellation before restoring the draft');
   const { draft, input } = intent.metadata.payload;
-  const outcome = await saveEmailDraftQueued({
-    args: {
+  const { restorationVersion, ...restored } = await restoreSendWorkingCopy(
+    {
       ...draft,
       bodyHtml: input.restoreBodyHtml,
       bodyText: input.restoreBodyText,
       bodyMacro: input.restoreBodyMacro,
-      optimisticBodyHtml: input.restoreBodyHtml
-        ? new TextDecoder().decode(decodeBase64Bytes(input.restoreBodyHtml))
-        : null,
+    },
+    intent.metadata.payload.workingCopy
+  );
+  const outcome = await saveEmailDraftQueued({
+    args: {
+      ...restored,
       mutationUuid: intent.uuid,
       durableIntent: {
         ...intent.metadata,
         exclusive: undefined,
         replace: true,
-        payload: { ...intent.metadata.payload, restoring: true },
+        payload: {
+          ...intent.metadata.payload,
+          restoring: true,
+          restorationVersion,
+        },
       },
     },
   });
@@ -426,7 +450,7 @@ export async function restoreCancelledEmailSend(
   });
 }
 
-/** Only terminal success is automatically retired; failures keep recovery content. */
+/** The observer retires success or a restoration superseded by an acknowledged edit. */
 export async function retireEmailSendIntent(
   intent: EmailSendIntent
 ): Promise<boolean> {

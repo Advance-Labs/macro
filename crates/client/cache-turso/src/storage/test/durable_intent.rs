@@ -13,6 +13,7 @@ const UUID: &str = "00000000-0000-4000-8000-000000000001";
 
 async fn enqueue(engine: &mut Engine<TursoStorage>, uuid: &str, replace: bool, name: &str) -> u64 {
     engine.begin_optimistic_write(None, BeginOptimisticWrite {
+            client_metadata: None,
         uuid, query: QUERY, operation_name: Some("SetEntityProperty"),
         variables: &json!({"input": {"entityId": "doc", "value": {"string": name}}}).as_object().unwrap().clone(),
         data: &json!({"setEntityProperty": {"id":"property", "displayName": name}, "__durableIntent": {"kind":"test", "replace": replace, "payload":{"body":"recover me"}}}),
@@ -212,6 +213,7 @@ async fn exclusive_enqueue<S: Storage>(
     replace: bool,
 ) -> Result<u64, EngineError<S::Error>> {
     engine.begin_optimistic_write(None, BeginOptimisticWrite {
+            client_metadata: None,
         uuid, query: QUERY, operation_name: Some("SetEntityProperty"),
         variables: &json!({"input": {}}).as_object().unwrap().clone(),
         data: &json!({"setEntityProperty": {"id":"property", "displayName": "send"}, "__durableIntent": {

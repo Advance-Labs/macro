@@ -30,6 +30,10 @@ use foreign_entity::{
 };
 use frecency::domain::services::FrecencyQueryServiceImpl;
 use frecency::outbound::postgres::FrecencyPgStorage;
+use github_pull_requests::{
+    domain::service::GithubPullRequestServiceImpl,
+    outbound::pg_github_pull_request_repo::PgGithubPullRequestRepo,
+};
 use macro_auth::middleware::decode_jwt::JwtValidationArgs;
 use macro_authorization::{
     InternalAuthConfig, MacroAuthJwtValidator, MacroAuthorizationServiceImpl,
@@ -253,8 +257,10 @@ async fn main() -> anyhow::Result<()> {
         frecency_storage,
     );
     let email_service_for_tools: Arc<ai_tools::ToolEmailService> = Arc::new(email_service.clone());
-    let foreign_entity_service =
-        ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone()));
+    let github_pull_request_service = GithubPullRequestServiceImpl::new(
+        ForeignEntityServiceImpl::new(PgForeignEntityRepo::new(db.clone())),
+        PgGithubPullRequestRepo::new(db.clone()),
+    );
     let soup_service = Arc::new(soup::domain::service::SoupImpl::new(
         soup::outbound::pg_soup_repo::PgSoupRepo::new(ReadOnlyPool(db.clone())),
         frecency_service,
@@ -262,13 +268,17 @@ async fn main() -> anyhow::Result<()> {
         channels_service,
         CallRecordQueryServiceImpl::new(PgCallRepo::new(db.clone())),
         crm::domain::service::NoOpCrmService,
-        foreign_entity_service,
-        reminders::domain::service::NoOpRemindersService,
+        github_pull_request_service,
     ));
 
     tracing::info!("initialized soup service");
 
     let s3_client = macro_aws_config::s3_client().await;
+    let document_files = documents::outbound::s3_document_files::S3DocumentFiles::new(
+        db.clone(),
+        s3_client.clone(),
+        config.document_storage_bucket.to_string(),
+    );
     let s3_upload_adapter = S3UploadUrlAdapter::new(
         s3_client,
         config.document_storage_bucket.to_string(),
@@ -357,7 +367,11 @@ async fn main() -> anyhow::Result<()> {
             lexical_client.clone(),
             &side_effect_clients,
         ),
-    );
+    )
+    .with_presentation_files(Arc::new(document_files.clone()))
+    .with_design_files(Arc::new(document_files.clone()))
+    .with_photoshop_files(Arc::new(document_files.clone()))
+    .with_illustrator_files(Arc::new(document_files));
 
     tracing::info!("initialized document tool context");
 
@@ -474,7 +488,16 @@ async fn main() -> anyhow::Result<()> {
 
     // The AI billing gate reads allowances, credits, and overage state here;
     // collection (Stripe) lives in the authentication service, which the
-    // recorder below asks to settle once a payer runs past their allowance.
+    // recorder below asks to settle once a payer runs past their allowance
+    // and ENABLE_AI_USAGE_BILLING is enabled. This instance never settles.
+    let auth_service_client = Arc::new(authentication_service_client::AuthServiceClient::new(
+        config
+            .authentication_service_secret_key
+            .as_ref()
+            .to_string(),
+        AuthServiceUrl::new()?.to_string(),
+    ));
+    let ai_pricing = config.ai_pricing();
     let ai_billing = Arc::new(
         ai_billing::domain::BillingServiceImpl::new(
             ai_billing::outbound::RolesTeamsEntitlementSource::new(
@@ -482,9 +505,9 @@ async fn main() -> anyhow::Result<()> {
                 teams::outbound::team_repo::TeamRepositoryImpl::new(db.clone()),
             ),
             ai_billing::outbound::PgUsageReader::new(db.clone()),
-            ai_billing::outbound::PgBillingRepo::new(db.clone()),
-            ai_billing::outbound::NoOpPaymentGateway,
-            config.environment,
+            ai_billing::outbound::PgBillingRepo::new(db.clone(), ai_pricing),
+            ai_billing::outbound::HttpPaymentGateway::new(auth_service_client.clone()),
+            ai_pricing,
         )
         .with_enforcement(config.enable_ai_usage_enforcement),
     );
@@ -493,10 +516,6 @@ async fn main() -> anyhow::Result<()> {
             ai_billing.clone(),
             config.enable_ai_usage_enforcement,
         ));
-    let auth_service_client = Arc::new(authentication_service_client::AuthServiceClient::new(
-        internal_api_key.clone(),
-        AuthServiceUrl::new()?.to_string(),
-    ));
     let recorder: Arc<dyn ai_usage::UsageRecorder> =
         Arc::new(ai_billing::outbound::SettlingUsageRecorder::new(
             Arc::new(
@@ -507,11 +526,12 @@ async fn main() -> anyhow::Result<()> {
             ),
             ai_billing.clone(),
             ai_billing::outbound::HttpSettlementTrigger::new(auth_service_client),
-            config.environment,
+            config.enable_ai_usage_billing,
         ));
 
     // Per-attempt observations use a separate journal and never feed the
-    // legacy settlement trigger, which remains counted-usage-only and dev-only.
+    // legacy settlement trigger, which remains counted-usage-only and gated by
+    // ENABLE_AI_USAGE_BILLING.
     let recorder = ai_usage::with_tracking(recorder, ai_usage::pg_tracking(db.clone()));
 
     // The import pipeline: staged/imported external items, gather jobs over
@@ -605,6 +625,7 @@ async fn main() -> anyhow::Result<()> {
     // The one sanctioned meeting point of the two MCP stacks: agents load
     // tools through this selector, which prefers a user's Pipedream
     // connectors and falls back to the native ones (see `mcp_select`).
+    // The import service's live Slack source shares this selector.
     let mcp_selector: Arc<ai_tools::ToolMcpSelector> = Arc::new(mcp_select::McpToolSelector::new(
         Arc::new(mcp_server_repo.clone()),
         Arc::new(pipedream_repo.clone()),
@@ -614,8 +635,9 @@ async fn main() -> anyhow::Result<()> {
     // Nudges the user's connected clients when import rows flip, so setup
     // sections and chat surfaces update immediately instead of on the next
     // poll (see import::outbound::gateway_notifier).
-    let import_notify =
-        import::outbound::gateway_notifier::gateway_import_notify(channels_connection_gateway);
+    let import_notify = import::outbound::gateway_notifier::gateway_import_notify(
+        channels_connection_gateway.clone(),
+    );
 
     let entity_creator = ai_tools::ToolEntityCreator {
         document_creator: document_tool_context.creator.clone(),
@@ -632,6 +654,9 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(entity_creator),
             recorder.clone(),
         )
+        .with_slack_source(Arc::new(
+            import::outbound::mcp_slack_source::McpSlackSource::new(mcp_selector.clone()),
+        ))
         .with_admission(admission.clone())
         .with_notifier(import_notify),
     );
@@ -655,8 +680,23 @@ async fn main() -> anyhow::Result<()> {
         &document_tool_context,
         properties_service.clone(),
         entity_access_service.clone(),
-        aws_sdk_sqs::Client::new(&aws_config),
         macro_event_broker.clone(),
+    );
+
+    let databases_tool_context = ai_tools::build_databases_tool_context(
+        db.clone(),
+        entity_access_service.clone(),
+        ai_tools::ToolTableEventPublisher::Gateway(
+            databases::outbound::gateway_event_publisher::GatewayTableEventPublisher::new(
+                channels_connection_gateway.as_ref().clone(),
+            ),
+        ),
+        ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+    );
+    let databases_sql_tool_context = ai_tools::build_databases_sql_tool_context(
+        &databases_tool_context,
+        soup_service.clone(),
+        db.clone(),
     );
 
     let tool_service_context = ai_tools::ToolServiceContext {
@@ -672,6 +712,7 @@ async fn main() -> anyhow::Result<()> {
         image_generation_tool_context: ai_tools::build_image_generation_tool_context(
             &document_tool_context,
             ai_tools::build_image_generator_from_env(),
+            recorder.clone(),
         )?,
         document_tool_context: document_tool_context.clone(),
         properties_tool_context: properties_tool_context.clone(),
@@ -683,11 +724,8 @@ async fn main() -> anyhow::Result<()> {
             internal_api_key.clone(),
         ),
         notification_tool_context: notification_tool_context.clone(),
-        reminders_tool_context: ai_tools::build_reminders_tool_context(
-            db.clone(),
-            user_email_service.clone(),
-            entity_access_service.clone(),
-        ),
+        databases_tool_context,
+        databases_sql_tool_context,
         import_tool_context: import::inbound::toolset::ImportToolContext::wired(
             import_service.clone(),
         ),
@@ -695,11 +733,15 @@ async fn main() -> anyhow::Result<()> {
         channel_tool_context,
         bot_tool_context: ai_tools::build_bot_tool_context(
             db.clone(),
-            ai_tools::ToolBotEventBroker::Real(macro_event_broker.clone()),
+            ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
             entity_access_service.clone(),
             DocumentStorageServiceUrl::new()?.to_string(),
             pipedream_client.clone(),
         ),
+        coding_agent_tool_context: ai_tools::build_coding_agent_tool_context(
+            macro_service_urls::AgentHarnessServiceUrl::new()?,
+            internal_api_key.clone(),
+        )?,
         project_tool_context,
         initiative_tool_context,
         team_tool_context: ai_tools::build_team_tool_context(db.clone()),
@@ -709,7 +751,7 @@ async fn main() -> anyhow::Result<()> {
             soup_service.clone(),
             &document_tool_context,
         ),
-        schedule_tool_context: ai_tools::NoOpScheduleContext,
+        schedule_tool_context: ai_tools::build_routine_tool_context()?,
         anthropic_tool_context: ai_tools::build_anthropic_tool_context(),
         admission,
         recorder,

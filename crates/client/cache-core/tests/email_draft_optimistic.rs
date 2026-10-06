@@ -307,6 +307,89 @@ mutation DeleteEmailDraft($input: DeleteEmailDraftInput!) {
 "#;
 
 #[test]
+fn restored_draft_enqueues_without_a_previously_loaded_thread_query() {
+    block_on(async {
+        let mut engine = Engine::new(InMemoryStorage::new());
+        engine
+            .write_query(
+                None,
+                "query { user { id } }",
+                None,
+                &serde_json::Map::new(),
+                &json!({"user": {"id": "user-1"}}),
+                None,
+            )
+            .await
+            .unwrap();
+        let mut response = mutation_response();
+        response["__durableIntent"] = json!({
+            "kind": "email-send-v1",
+            "replace": true,
+            "payload": {"restoring": true}
+        });
+        let (transaction, _) = engine
+            .begin_optimistic_write(
+                None,
+                BeginOptimisticWrite {
+                    client_metadata: None,
+                    uuid: "11111111-1111-4111-8111-111111111110",
+                    query: MUTATION,
+                    operation_name: Some("SaveEmailDraft"),
+                    variables: &mutation_variables(),
+                    data: &response,
+                    link_patches: &[messages_patch()],
+                    revalidations: &[],
+                    created_at_ms: 0,
+                    identity_bindings: &[],
+                },
+            )
+            .await
+            .expect("an uncached thread lookup must not reject durable restoration");
+
+        let mut engine = Engine::new(engine.into_storage());
+        let selection = cache_core::record_selection::RecordSelection::parse(
+            "fragment Draft on GraphqlSoupEmailMessage { id bodyHtmlSanitized }",
+            "Draft",
+        )
+        .unwrap();
+        let records = engine
+            .read_records_by_keys(
+                &selection,
+                &[EntityKey("GraphqlSoupEmailMessage:draft-1".into())],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            records.value[0].record["bodyHtmlSanitized"],
+            "<p>offline</p>"
+        );
+        assert!(matches!(
+            engine
+                .read_query(None, PAGE_QUERY, Some("EmailThreadPage"), &page_variables())
+                .await
+                .unwrap(),
+            ReadResult::Miss
+        ));
+        let claim = claim_head(&mut engine).await;
+        let committed = engine
+            .commit_optimistic_write(
+                transaction,
+                claim,
+                MUTATION,
+                Some("SaveEmailDraft"),
+                &mutation_variables(),
+                &mutation_response(),
+            )
+            .await
+            .unwrap();
+        assert!(committed.revalidations.iter().any(|query| {
+            query.query == PAGE_QUERY
+                && query.variables_json == serde_json::to_string(&page_variables()).unwrap()
+        }));
+    });
+}
+
+#[test]
 fn restored_draft_enqueues_and_survives_restart_with_a_null_thread_lookup() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
@@ -326,6 +409,7 @@ fn restored_draft_enqueues_and_survives_restart_with_a_null_thread_lookup() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111109",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -441,6 +525,7 @@ fn queued_draft_save_is_visible_in_the_thread_page_read() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111101",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -509,6 +594,7 @@ fn queued_draft_delete_removes_the_draft_from_the_thread_page_read() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111102",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -530,6 +616,7 @@ fn queued_draft_delete_removes_the_draft_from_the_thread_page_read() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111103",
                     query: DELETE_MUTATION,
                     operation_name: Some("DeleteEmailDraft"),
@@ -634,6 +721,7 @@ fn identity_binding_keeps_newer_edits_readable_across_commit_and_restart() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111104",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -652,6 +740,7 @@ fn identity_binding_keeps_newer_edits_readable_across_commit_and_restart() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111104",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -749,6 +838,7 @@ fn committed_draft_save_with_the_same_id_keeps_the_draft_visible() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111104",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),
@@ -828,6 +918,7 @@ fn committed_alias_id_response_skips_the_patch_and_stays_readable() {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
                     uuid: "11111111-1111-4111-8111-111111111105",
                     query: MUTATION,
                     operation_name: Some("SaveEmailDraft"),

@@ -4,6 +4,8 @@ import type {
   EmailDraftRestoration,
   EmailDraftStorage,
 } from '../context/compose-capabilities';
+import type { LocalDraft } from '../core/local-draft';
+import type { DraftFormAttachment } from './email-form-state';
 
 /** Explicit recovery reseeds the matching editor; normal cache echoes never do. */
 type RestorationOptions = {
@@ -16,7 +18,9 @@ type RestorationOptions = {
   restore(
     draft: EmailMessage,
     change: EmailDraftRestoration,
-    persistence: 'committed' | 'queued'
+    persistence: 'committed' | 'queued',
+    local?: LocalDraft,
+    attachments?: DraftFormAttachment[]
   ): void;
   reportError(error: unknown): void;
 };
@@ -71,7 +75,13 @@ function observeAvailableRestorations(
       }
       if (!result?.draft)
         throw new Error('The restored draft is unavailable on this device');
-      options.restore(result.draft, request.change, result.persistence);
+      options.restore(
+        result.draft,
+        request.change,
+        result.persistence,
+        result.local,
+        result.attachments
+      );
     } catch (error) {
       if (current(request) && valid(request)) options.reportError(error);
     } finally {

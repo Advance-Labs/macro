@@ -489,6 +489,7 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
     case 'current-revision':
     case 'durable-mutation-intents':
     case 'current-storage-generation':
+    case 'inspect-mutations':
       return hasOnlyKeys(value, ['id', 'kind']);
     case 'read':
       return (
@@ -561,6 +562,7 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
           'linkPatches',
           'revalidations',
           'identityBindings',
+          'clientMetadata',
           'createdAtMs',
           'owner',
           'nowMs',
@@ -575,6 +577,7 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
         (value.linkPatches === undefined || Array.isArray(value.linkPatches)) &&
         (value.revalidations === undefined ||
           Array.isArray(value.revalidations)) &&
+        isOptionalRecord(value.clientMetadata) &&
         (value.identityBindings === undefined ||
           (Array.isArray(value.identityBindings) &&
             value.identityBindings.length <= 32 &&
@@ -629,12 +632,15 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
           'leaseGeneration',
           'nextAttemptAtMs',
           'error',
+          'serverFailure',
         ]) &&
         isString(value.transactionId) &&
         isString(value.leaseOwner) &&
         isString(value.leaseGeneration) &&
         isSafeNonNegativeInteger(value.nextAttemptAtMs) &&
-        isString(value.error)
+        isString(value.error) &&
+        (value.serverFailure === undefined ||
+          typeof value.serverFailure === 'boolean')
       );
     case 'commit-optimistic-write':
       return (

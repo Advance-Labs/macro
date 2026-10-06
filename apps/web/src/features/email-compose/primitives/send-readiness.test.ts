@@ -13,6 +13,7 @@ const handle: DraftIdentity = { kind: 'handle', draftId: 'h-1', queued: false };
 const uploaded = {
   type: 'local',
   attachmentId: 'a-1',
+  uploaded: true,
 } as unknown as DraftFormAttachment;
 const pending = { type: 'local' } as unknown as DraftFormAttachment;
 
@@ -54,6 +55,22 @@ describe('sendRefusalBeforeSave', () => {
 });
 
 describe('sendRefusalAfterSave', () => {
+  it('refuses an interrupted upload after reopening even though it has an ID', () => {
+    const attachment: DraftFormAttachment = {
+      type: 'local',
+      file: new File(['pending'], 'pending.txt'),
+      attachmentId: 'allocated-id',
+      uploaded: false,
+      uploadPending: true,
+    };
+    expect(
+      sendRefusalAfterSave({
+        ...ready,
+        queueActive: true,
+        attachments: [attachment],
+      })
+    ).toBe('attachment-not-uploaded');
+  });
   it('allows a confirmed server draft with uploaded attachments', () => {
     expect(sendRefusalAfterSave(ready)).toBeUndefined();
   });

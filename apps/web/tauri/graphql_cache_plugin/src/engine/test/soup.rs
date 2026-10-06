@@ -57,12 +57,11 @@ fn filters() -> Value {
     let nil = id(0);
     json!({
         "documentFilter": {"literal": {"id": nil}},
-        "projectFilter": {"literal": {"projectId": nil}},
+        "projectFilter": {"literal": {"projectIdSelf": nil}},
         "chatFilter": {"literal": {"chatId": nil}},
         "calendarEventFilter": {"literal": {"id": nil}},
         "channelFilter": {"literal": {"channelId": nil}},
-        "channelThreadFilter": {"literal": {"channelId": nil}},
-        "reminderFilter": {"literal": {"id": nil}},
+        "channelThreadFilter": {"literal": {"threadId": nil}},
         "agentSessionFilter": {"literal": {"id": nil}},
         "callFilter": {"literal": {"callId": nil}},
         "crmCompanyFilter": {"literal": {"id": nil}},
@@ -267,6 +266,7 @@ fn enqueue_archive(handle: &EngineHandle, n: u16) -> (String, String) {
         "native-runner".into(),
         10,
         1000,
+        None,
     ))
     .unwrap();
     let InitialMutationClaimWire::Claimed { mutation } = result.initial_claim else {
@@ -412,9 +412,8 @@ fn native_mail_confinement_never_admits_nonempty_deferred_partitions() {
     let handle = spawn_handle();
     hydrate(&handle);
     for (partition, id_field) in [
-        ("reminderFilter", "id"),
         ("agentSessionFilter", "id"),
-        ("channelThreadFilter", "channelId"),
+        ("channelThreadFilter", "threadId"),
     ] {
         for tree in [
             json!({"literal": {id_field: id(999)}}),

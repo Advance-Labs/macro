@@ -59,7 +59,10 @@ export function sendRefusalAfterSave(input: {
   }
   if (
     input.attachments.some(
-      (attachment) => attachment.type === 'local' && !attachment.attachmentId
+      (attachment) =>
+        attachment.type === 'local' &&
+        (!attachment.attachmentId ||
+          (input.queueActive && attachment.uploaded !== true))
     )
   ) {
     return 'attachment-not-uploaded';

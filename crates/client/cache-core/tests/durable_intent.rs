@@ -17,6 +17,7 @@ async fn enqueue(
     name: &str,
 ) -> u64 {
     engine.begin_optimistic_write(None, BeginOptimisticWrite {
+            client_metadata: None,
         uuid, query: QUERY, operation_name: Some("SetEntityProperty"),
         variables: &json!({"input": {"entityId": "doc", "value": {"string": name}}}).as_object().unwrap().clone(),
         data: &json!({"setEntityProperty": {"id":"property", "displayName": name}, "__durableIntent": {"kind":"test", "replace": replace, "payload":{"body":"recover me"}}}),
@@ -128,6 +129,7 @@ fn offline_admission_does_not_claim_or_attempt_the_send() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
         let result = engine.enqueue_optimistic_mutation(None,BeginOptimisticWrite {
+            client_metadata: None,
             uuid:UUID,query:QUERY,operation_name:Some("SetEntityProperty"),variables:&json!({"input":{}}).as_object().unwrap().clone(),
             data:&json!({"setEntityProperty":{"id":"property","displayName":"send"},"__durableIntent":{"kind":"test","deferInitialClaim":true}}),
             link_patches:&[],revalidations:&[],identity_bindings:&[],created_at_ms:1,
@@ -157,6 +159,7 @@ async fn exclusive_enqueue<S: Storage>(
     replace: bool,
 ) -> Result<u64, EngineError<S::Error>> {
     engine.begin_optimistic_write(None, BeginOptimisticWrite {
+            client_metadata: None,
         uuid, query: QUERY, operation_name: Some("SetEntityProperty"),
         variables: &json!({"input": {}}).as_object().unwrap().clone(),
         data: &json!({"setEntityProperty": {"id":"property", "displayName": "send"}, "__durableIntent": {

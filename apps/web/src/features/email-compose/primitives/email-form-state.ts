@@ -22,6 +22,9 @@ export type DraftFormAttachment =
       type: 'local';
       file: File;
       attachmentId?: string;
+      /** Restored after interruption: remove the uncertain record before re-uploading. */
+      uploadPending?: boolean;
+      uploaded?: boolean;
     }
   | {
       type: 'remote';
@@ -301,6 +304,7 @@ export function createEmailFormState(
     reset: () => reset(getInitialState()),
     clear: () => reset({ ...EMPTY_FORM_STATE }),
     attachments: {
+      clear: () => setAttachments([]),
       list: attachments,
       replace: (next: DraftFormAttachment[]) => setAttachments([...next]),
       add: (attachment: DraftFormAttachment) => {
@@ -313,11 +317,30 @@ export function createEmailFormState(
           )
         );
       },
+      markAttachmentUploaded: (file: File, attachmentId: string) => {
+        setAttachments((previous) =>
+          previous.map((attachment) =>
+            attachment.type === 'local' && attachment.file === file
+              ? {
+                  ...attachment,
+                  attachmentId,
+                  uploadPending: false,
+                  uploaded: true,
+                }
+              : attachment
+          )
+        );
+      },
       clearAttachmentId: (file: File) => {
         setAttachments((p) =>
           p.map((a) =>
             a.type === 'local' && a.file === file
-              ? { ...a, attachmentId: undefined }
+              ? {
+                  ...a,
+                  attachmentId: undefined,
+                  uploadPending: false,
+                  uploaded: false,
+                }
               : a
           )
         );

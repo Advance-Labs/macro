@@ -431,6 +431,8 @@ fn is_json_scalar(value: &Json) -> bool {
 ///
 /// Null parents are always skipped: an absent optional relation cannot be
 /// patched, but does not make the accompanying mutation invalid.
+/// Query-rooted recipes also skip records or fields that have not been cached.
+/// Explicit record-rooted recipes still require their target to exist.
 /// When `skip_not_applicable` is true, stale/missing recipes are ignored. This
 /// mode is used during hydration and successful settlement, where stale query
 /// fields must never be recreated.
@@ -464,7 +466,16 @@ fn apply_one(
     response_updates: &RecordUpdates,
     patch: &OptimisticLinkPatch,
 ) -> Result<(), LinkPatchError> {
-    let resolved = resolve_target(effective, patch)?;
+    let resolved = match resolve_target(effective, patch) {
+        Err(LinkPatchError::MissingParent(_) | LinkPatchError::MissingField { .. })
+            if patch.record_root.is_none() =>
+        {
+            // Query caches need not have loaded this relation. Keep the entity
+            // mutation durable and let its revalidation populate the query.
+            return Ok(());
+        }
+        resolved => resolved?,
+    };
     let upsert = upsert::resolve(&patch.operation, &resolved, response_updates)?;
     if let Some(inserted) = upsert
         .as_ref()

@@ -1,6 +1,10 @@
 import type { EmailSendAttemptFieldsFragment } from '@service-storage/graphql/generated/graphql';
 import { createSignal, onCleanup, onMount } from 'solid-js';
 import {
+  retireSendWorkingCopy,
+  supersededSendRestoration,
+} from './send-draft-lifecycle';
+import {
   type EmailSendIntent,
   fetchEmailSendStatus,
   readEmailSendIntents,
@@ -34,10 +38,13 @@ export function useQueuedEmailSends(enabled: () => boolean = () => true) {
       if (disposed || current !== generation) return;
       const active: EmailSendIntent[] = [];
       for (const row of rows) {
+        if (!row.metadata.payload.restoring)
+          await retireSendWorkingCopy(row.metadata.payload.workingCopy);
         const resolved = applyStatus(row);
         if (
           (settledSendAttempt(resolved)?.status === 'SENT' ||
-            (row.metadata.payload.restoring && row.phase === 'committed')) &&
+            (row.metadata.payload.restoring && row.phase === 'committed') ||
+            (await supersededSendRestoration(row))) &&
           (await retireEmailSendIntent(row))
         ) {
           statuses.delete(row.uuid);

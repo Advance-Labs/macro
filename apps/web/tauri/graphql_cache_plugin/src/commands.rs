@@ -322,6 +322,7 @@ pub async fn graphql_cache_enqueue_optimistic_mutation<R: Runtime>(
     owner: String,
     now_ms: i64,
     lease_expires_at_ms: i64,
+    client_metadata: Option<serde_json::Value>,
 ) -> Result<EnqueueOptimisticMutationResultWire, String> {
     let result = engine_handle(&state)?
         .enqueue_optimistic_mutation(
@@ -338,6 +339,7 @@ pub async fn graphql_cache_enqueue_optimistic_mutation<R: Runtime>(
             owner,
             now_ms,
             lease_expires_at_ms,
+            client_metadata,
         )
         .await?;
     emit_ops_affected(&app, &result.result.affected_ops, &result.result.changed);
@@ -427,6 +429,7 @@ pub async fn graphql_cache_defer_optimistic_write<R: Runtime>(
     lease_generation: String,
     next_attempt_at_ms: i64,
     error: String,
+    server_failure: Option<bool>,
 ) -> Result<DeferOptimisticWriteResultWire, String> {
     let settlement_transaction_id = transaction_id.clone();
     let result = engine_handle(&state)?
@@ -436,6 +439,7 @@ pub async fn graphql_cache_defer_optimistic_write<R: Runtime>(
             lease_generation,
             next_attempt_at_ms,
             error,
+            server_failure.unwrap_or(false),
         )
         .await?;
     if let DeferOptimisticWriteResultWire::DiscardedSuperseded {
@@ -624,4 +628,12 @@ pub async fn graphql_cache_clear<R: Runtime>(
     let revision = engine_handle(&state)?.clear().await?.to_string();
     emit_cache_changed(&app, &revision, true);
     Ok(revision)
+}
+
+/// Reads durable queue entries without claiming or modifying them.
+#[tauri::command]
+pub async fn graphql_cache_inspect_mutations(
+    state: State<'_, CacheState>,
+) -> Result<Vec<cache_core::queue::MutationInspection>, String> {
+    engine_handle(&state)?.inspect_mutations().await
 }

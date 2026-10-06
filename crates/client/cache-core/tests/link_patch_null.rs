@@ -47,6 +47,27 @@ fn strict_patch_skips_a_null_parent_without_inventing_a_thread() {
 }
 
 #[test]
+fn strict_query_patch_skips_an_uncached_normalized_relation() {
+    let user = EntityKey("GraphqlUser:user".into());
+    for user_record in [None, Some(Record::default())] {
+        let mut effective = HashMap::from([(
+            EntityKey::root(),
+            Record {
+                fields: BTreeMap::from([("user".into(), CacheValue::Ref(user.clone()))]),
+            },
+        )]);
+        if let Some(record) = user_record {
+            effective.insert(user.clone(), record);
+        }
+        let before = effective.clone();
+        let mut updates = BTreeMap::new();
+        apply_link_patches(&mut effective, &mut updates, &[patch()], false).unwrap();
+        assert_eq!(effective, before);
+        assert!(updates.is_empty());
+    }
+}
+
+#[test]
 fn strict_patch_still_rejects_scalar_parents_and_null_target_lists() {
     for thread in [
         CacheValue::String("malformed thread".into()),

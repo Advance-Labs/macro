@@ -129,6 +129,7 @@ export function ProjectsCollection(props: {
       alternateDescription: 'Open project in new split',
     },
     disclosure: {
+      isHeader: (row) => row.kind === 'group-header',
       getKey: (row) =>
         row.kind === 'section-header' ? undefined : row.groupId,
       isExpanded: collection.disclosure.isExpanded,
@@ -352,11 +353,9 @@ export function ProjectsCollection(props: {
               </div>
               <Dropdown>
                 <Dropdown.Trigger
-                  variant="outline"
+                  variant="ghost"
                   size="md"
                   square
-                  depth={2}
-                  class="rounded-lg bg-surface"
                   label="Filter due date"
                 >
                   <CalendarIcon />

@@ -1,3 +1,4 @@
+import type { DraftAttempt } from '@app/features/email-compose/core/local-draft';
 import { DEFAULT_THREAD_MESSAGES_LIMIT } from '@core/constant/pagination';
 import {
   type DurableMutationIntent,
@@ -73,6 +74,8 @@ export type GraphqlSaveEmailDraftArgs = Omit<
   /** Original queue coalescing key survives adoption of server IDs. */
   mutationUuid?: string;
   durableIntent?: DurableMutationIntent;
+  clientMetadata?: DraftAttempt;
+  localRevision?: number;
 };
 
 /** Maps a REST-shaped contact to the mutation's input shape. */
@@ -251,6 +254,8 @@ export async function executeGraphqlSaveEmailDraft(
     senderIsSignal: _senderIsSignal,
     mutationUuid: _mutationUuid,
     durableIntent: _durableIntent,
+    clientMetadata: _clientMetadata,
+    localRevision: _localRevision,
     ...input
   } = args;
   const variables: SaveEmailDraftMutationVariables = { input };
@@ -299,6 +304,7 @@ export async function executeGraphqlSaveEmailDraft(
       // a discard supersedes any still-queued save.
       uuid: args.mutationUuid ?? String(args.draftId),
       durableIntent: args.durableIntent,
+      clientMetadata: args.clientMetadata,
       identityBindings: [
         {
           localKey: `GraphqlSoupEmailMessage:${args.draftId}`,
@@ -373,6 +379,7 @@ export type GraphqlDeleteEmailDraftArgs = {
   threadDbId: string;
   existingThread?: DraftThread;
   mutationUuid?: string;
+  clientMetadata?: DraftAttempt;
 };
 
 /**
@@ -429,6 +436,7 @@ export async function executeGraphqlDeleteEmailDraft(
       // still-queued save of this draft — the replaced entry never replays,
       // and the delete itself is an idempotent no-op if nothing was created.
       uuid: args.mutationUuid ?? args.draftId,
+      clientMetadata: args.clientMetadata,
       identityBindings: [
         {
           localKey: `GraphqlSoupEmailMessage:${args.draftId}`,

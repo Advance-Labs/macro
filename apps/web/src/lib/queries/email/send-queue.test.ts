@@ -1,3 +1,4 @@
+import { decodeBase64Utf8 } from '@app/features/email-compose/core/decode-base64';
 import { optimisticContextOf } from '@graphql-cache/exchange/optimistic';
 import { CombinedError, createClient, type Operation } from '@urql/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,6 +31,21 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('./draft-lifecycle-events', () => ({
   publishDraftRestoration: mocks.restored,
+}));
+vi.mock('./send-draft-lifecycle', () => ({
+  captureSendWorkingCopy: vi.fn(async () => undefined),
+  retireSendWorkingCopy: vi.fn(async () => {}),
+  restoreSendWorkingCopy: vi.fn(async (draft: GraphqlSaveEmailDraftArgs) => ({
+    ...draft,
+    restorationVersion: {
+      key: draft.draftId,
+      generation: 'restored',
+      revision: 1,
+    },
+    optimisticBodyHtml: draft.bodyHtml
+      ? decodeBase64Utf8(draft.bodyHtml)
+      : null,
+  })),
 }));
 vi.mock('@core/constant/featureFlags', () => ({
   enableGraphqlSoup: 'graphql',
@@ -269,7 +285,14 @@ describe('durable email send intent', () => {
         durableIntent: expect.objectContaining({
           exclusive: undefined,
           replace: true,
-          payload: expect.objectContaining({ restoring: true }),
+          payload: expect.objectContaining({
+            restoring: true,
+            restorationVersion: {
+              key: draft.draftId,
+              generation: 'restored',
+              revision: 1,
+            },
+          }),
         }),
       }),
     });
