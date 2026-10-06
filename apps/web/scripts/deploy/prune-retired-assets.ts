@@ -112,6 +112,34 @@ aws(
   ],
   JSON.stringify(retired)
 );
-for (const [key, retiredAt] of Object.entries(retired)) {
-  if (retiredAt <= cutoff) aws(['s3', 'rm', `s3://${bucket}/${key}`]);
+const expired = Object.entries(retired)
+  .filter(([, retiredAt]) => retiredAt <= cutoff)
+  .map(([Key]) => ({ Key }));
+// Dev can retire thousands of chunks per deployment. Batch the deletes and
+// pass the payload on stdin so key lengths cannot exceed OS argument limits.
+for (let offset = 0; offset < expired.length; offset += 1000) {
+  const result: { Errors?: unknown[] } = JSON.parse(
+    aws(
+      [
+        's3api',
+        'delete-objects',
+        '--bucket',
+        bucket,
+        '--delete',
+        'file:///dev/stdin',
+        '--output',
+        'json',
+      ],
+      JSON.stringify({
+        Objects: expired.slice(offset, offset + 1000),
+        Quiet: true,
+      })
+    ) || '{}'
+  );
+  // S3 reports per-object failures inside a successful HTTP response.
+  if (result.Errors?.length) {
+    throw new Error(
+      `Failed to delete retired assets: ${JSON.stringify(result.Errors)}`
+    );
+  }
 }

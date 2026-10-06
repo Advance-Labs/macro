@@ -35,6 +35,7 @@ function fixture() {
   );
   const log = join(root, 'calls.jsonl');
   const manifest = join(root, 'manifest.json');
+  const deletions = join(root, 'deletions.jsonl');
   const fakeAws = join(bin, 'aws');
   writeFileSync(
     fakeAws,
@@ -44,7 +45,12 @@ const args = process.argv.slice(2);
 fs.appendFileSync(process.env.AWS_TEST_LOG, JSON.stringify(args) + '\\n');
 const failure = process.env.AWS_TEST_FAIL;
 if (failure === 'manifest-write' ? args[2] === '-' : failure && args.some(arg => arg.includes(failure))) process.exit(42);
-if (args[0] === 's3api') process.stdout.write(process.env.AWS_TEST_KEYS || '[]');
+if (args[1] === 'list-objects-v2') process.stdout.write(process.env.AWS_TEST_KEYS || '[]');
+if (args[1] === 'delete-objects') {
+  const payload = fs.readFileSync(args[args.indexOf('--delete') + 1].slice('file://'.length), 'utf8');
+  fs.appendFileSync(process.env.AWS_TEST_DELETIONS, payload + '\\n');
+  process.stdout.write(process.env.AWS_TEST_DELETE_RESPONSE || '{}');
+}
 if (args[0] === 's3' && args[1] === 'cp' && args[3] === '-') process.stdout.write(process.env.AWS_TEST_PREVIOUS || '{}');
 if (args[0] === 's3' && args[1] === 'cp' && args[2] === '-') fs.writeFileSync(process.env.AWS_TEST_MANIFEST, fs.readFileSync(0));
 `
@@ -55,6 +61,7 @@ if (args[0] === 's3' && args[1] === 'cp' && args[2] === '-') fs.writeFileSync(pr
     PATH: `${bin}:${process.env.PATH}`,
     AWS_TEST_LOG: log,
     AWS_TEST_MANIFEST: manifest,
+    AWS_TEST_DELETIONS: deletions,
   };
   return {
     dist,
@@ -73,6 +80,12 @@ if (args[0] === 's3' && args[1] === 'cp' && args[2] === '-') fs.writeFileSync(pr
     },
     manifest(): Record<string, number> {
       return JSON.parse(readFileSync(manifest, 'utf8'));
+    },
+    deletions(): { Key: string }[][] {
+      return readFileSync(deletions, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line).Objects);
     },
   };
 }
@@ -170,11 +183,9 @@ describe('retired web assets', () => {
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
     const calls = f.calls();
-    expect(calls.filter((call) => call[1] === 'rm')).toEqual([
-      ['s3', 'rm', `s3://example/${expired}`],
-    ]);
+    expect(f.deletions()).toEqual([[{ Key: expired }]]);
     expect(calls.findIndex((call) => call[2] === '-')).toBeLessThan(
-      calls.findIndex((call) => call[1] === 'rm')
+      calls.findIndex((call) => call[1] === 'delete-objects')
     );
     const manifest = f.manifest();
     expect(manifest[newlyRetired]).toBeGreaterThanOrEqual(now);
@@ -190,7 +201,7 @@ describe('retired web assets', () => {
         AWS_TEST_KEYS: JSON.stringify([current, expired]),
       }).status
     ).toBe(0);
-    expect(f.calls().some((call) => call[1] === 'rm')).toBe(false);
+    expect(f.calls().some((call) => call[1] === 'delete-objects')).toBe(false);
     expect(f.manifest()).toHaveProperty(expired);
   });
 
@@ -204,7 +215,9 @@ describe('retired web assets', () => {
         AWS_TEST_FAIL: failure,
       });
       expect(result.status).not.toBe(0);
-      expect(f.calls().some((call) => call[1] === 'rm')).toBe(false);
+      expect(f.calls().some((call) => call[1] === 'delete-objects')).toBe(
+        false
+      );
     }
   );
 
@@ -216,6 +229,39 @@ describe('retired web assets', () => {
         AWS_TEST_PREVIOUS: '{"app/old-A2bcdef0.js":"yesterday"}',
       }).status
     ).not.toBe(0);
-    expect(f.calls().some((call) => call[1] === 'rm')).toBe(false);
+    expect(f.calls().some((call) => call[1] === 'delete-objects')).toBe(false);
+  });
+
+  it('deletes large retired builds in batches of at most 1000 objects', () => {
+    const f = fixture();
+    const keys = Array.from(
+      { length: 1001 },
+      (_, index) => `app/chunk-${index}-A2bcdef0.js`
+    );
+    expect(
+      f.run('prune-retired-assets.ts', {
+        AWS_TEST_KEYS: JSON.stringify([...keys, manifestKey]),
+        AWS_TEST_PREVIOUS: JSON.stringify(
+          Object.fromEntries(keys.map((key) => [key, Date.now() - 8 * day]))
+        ),
+      }).status
+    ).toBe(0);
+    const batches = f.deletions();
+    expect(batches.map((batch) => batch.length)).toEqual([1000, 1]);
+    expect(batches.flat().map(({ Key }) => Key)).toEqual(keys);
+  });
+
+  it('reports per-object deletion errors even when the AWS command succeeds', () => {
+    const f = fixture();
+    const result = f.run('prune-retired-assets.ts', {
+      AWS_TEST_KEYS: JSON.stringify([expired, manifestKey]),
+      AWS_TEST_PREVIOUS: JSON.stringify({ [expired]: Date.now() - 8 * day }),
+      AWS_TEST_DELETE_RESPONSE: JSON.stringify({
+        Errors: [{ Key: expired, Code: 'AccessDenied' }],
+      }),
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('AccessDenied');
+    expect(f.manifest()).toHaveProperty(expired);
   });
 });
