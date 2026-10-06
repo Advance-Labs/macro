@@ -942,7 +942,7 @@ export function ComposeTask(props: ComposeTaskProps) {
           />
         </EntityComposer.Title>
 
-        <EntityComposer.Body>
+        <EntityComposer.Body class="mb-0">
           <Scroll>
             <MarkdownShell
               config={editorConfig}
@@ -957,6 +957,27 @@ export function ComposeTask(props: ComposeTaskProps) {
             />
           </Scroll>
         </EntityComposer.Body>
+
+        <div class="shrink-0 flex items-center px-2 py-2">
+          <input
+            ref={(el) => {
+              attachInputRef = el;
+            }}
+            type="file"
+            class="hidden"
+            multiple
+            accept="image/*,video/*"
+            onChange={handleAttachFiles}
+          />
+          <Button
+            onMouseDown={() => attachInputRef?.click()}
+            tabIndex={-1}
+            tooltip="Attach image or video"
+            size="icon-composer"
+          >
+            <PaperclipIcon />
+          </Button>
+        </div>
 
         <Suspense fallback={<div class="h-7" />}>
           <PropertiesProvider
@@ -1026,25 +1047,17 @@ export function ComposeTask(props: ComposeTaskProps) {
         </div>
       </Show>
 
-      <EntityComposer.Footer>
-        <input
-          ref={(el) => {
-            attachInputRef = el;
-          }}
-          type="file"
-          class="hidden"
-          multiple
-          accept="image/*,video/*"
-          onChange={handleAttachFiles}
-        />
-        <Button
-          onMouseDown={() => attachInputRef?.click()}
-          tabIndex={-1}
-          tooltip="Attach image or video"
-          size="icon-composer"
-        >
-          <PaperclipIcon />
-        </Button>
+      <EntityComposer.Footer class="items-center">
+        <Tooltip label={sharingHint()} tabIndex={0}>
+          <ToggleSwitch
+            class="shrink-0"
+            checked={shareWithTeam()}
+            onChange={setShareWithTeam}
+            disabled={isCreating()}
+            label="Team"
+            labelClass="text-xs text-ink-muted font-normal whitespace-nowrap"
+          />
+        </Tooltip>
         <div class="flex items-center gap-3">
           <ToggleSwitch
             labelClass="text-xs text-ink-muted font-normal whitespace-nowrap"
@@ -1062,20 +1075,6 @@ export function ComposeTask(props: ComposeTaskProps) {
           </EntityComposer.Submit>
         </div>
       </EntityComposer.Footer>
-
-      <div class="-mx-4 flex shrink-0 items-center gap-3 border-t border-edge-muted px-6 pt-4">
-        <ToggleSwitch
-          class="shrink-0"
-          checked={shareWithTeam()}
-          onChange={setShareWithTeam}
-          disabled={isCreating()}
-          label="Shared with Team"
-          labelClass="text-xs text-ink-muted font-normal whitespace-nowrap"
-        />
-        <Tooltip label={sharingHint()} class="min-w-0" tabIndex={0}>
-          <p class="truncate text-xs text-ink-muted">{sharingHint()}</p>
-        </Tooltip>
-      </div>
 
       <SimilarTasksSection
         title={title}
