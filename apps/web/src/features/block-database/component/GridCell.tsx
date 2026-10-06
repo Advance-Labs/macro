@@ -28,9 +28,10 @@ import {
 import { SelectPill } from '../components/select-pill';
 import { useOptionEditing } from '../context/option-editing';
 import { fromCellDate, toCellDate } from '../core/cell-date';
-import type {
-  DatabaseEntityType,
-  DatabaseMention,
+import {
+  type DatabaseEntityType,
+  type DatabaseMention,
+  inferDatabaseNumber,
 } from '../core/column-inference';
 import {
   type DatabaseCellValue,
@@ -624,9 +625,9 @@ function InlineEditor(props: {
       props.draft.trim() === ''
         ? null
         : props.column.dataType === 'NUMBER'
-          ? Number(props.draft)
+          ? inferDatabaseNumber(props.draft)
           : props.draft;
-    if (typeof value === 'number' && !Number.isFinite(value)) {
+    if (value === undefined) {
       setError('Enter a valid number');
       input?.focus();
       return false;

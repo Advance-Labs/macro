@@ -318,6 +318,15 @@ owns authorized catalog access and cursor/query policy; the Postgres adapter own
 SQL and transaction mechanics. Core storage without an app entity stays outside
 app discovery and canonical Soup hydration.
 
+The final integration includes `main` at `b9f4217a52`. GitHub's combined-tree CI
+found two missing transitive dependency entries after main added the AI and PSD
+engines; the dependency generator repaired them. Revalidation passed 614 frontend
+tests, seven standalone browser tests, TypeScript, 139 database-engine tests,
+228 database tests, 35 query-service tests, one GraphQL adapter test, 60 complete-
+graph tests, 17 DSS tests and five QC reviews. The standalone browser ran in the
+isolated network namespace after host network changes interrupted module downloads.
+TypeScript passed with a 16 GiB Node heap after exhausting the default 4 GiB limit.
+
 ## Remaining limits
 
 - This achieves the requested opening target on the local table fixture. Broader
