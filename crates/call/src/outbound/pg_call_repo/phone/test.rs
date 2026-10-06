@@ -113,11 +113,12 @@ async fn outbound_calls_are_owned_joined_and_carry_their_leg(pool: PgPool) {
             .await
             .unwrap()
     );
-    let grant: String = sqlx::query_scalar(
-        "SELECT access_level::text FROM entity_access WHERE entity_id = $1 AND entity_type = 'call' AND source_id = $2",
+    let owner = user(OWNER);
+    let grant = sqlx::query_scalar!(
+        r#"SELECT access_level::text AS "grant!" FROM entity_access WHERE entity_id = $1 AND entity_type = 'call' AND source_id = $2"#,
+        call_id,
+        owner.as_ref(),
     )
-    .bind(call_id)
-    .bind(user(OWNER).as_ref())
     .fetch_one(&pool)
     .await
     .unwrap();
