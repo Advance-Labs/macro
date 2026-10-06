@@ -23,8 +23,9 @@
  * Mutations:
  * - With an optimistic response (see `executeOptimisticMutation`): the
  *   mutation and layer are durably queued before the ordered runner forwards
- *   it. Retryable failures retain optimism for background replay; permanent
- *   failures roll back. A caller whose operation is blocked behind the queue
+ *   it. Retryable failures retain optimism for background replay, but the tenth
+ *   server failure permanently rolls back; transport failures are not counted.
+ *   Other permanent failures roll back immediately. A caller blocked behind the queue
  *   head receives a synthetic `queued` disposition instead of waiting.
  * - Without one: forwarded normally; successful responses are normalized
  *   through the standard write path so dependent cached queries update.
@@ -107,6 +108,7 @@ const HYDRATION_DOCUMENT_CONTEXT_KEY = 'normalizedCacheHydrationDocument';
 const QUEUE_REQUEST_TIMEOUT_MS = 60_000;
 const QUEUE_LEASE_MS = 5 * 60_000;
 const EMPTY_QUEUE_POLL_MS = 30_000;
+const MAX_MUTATION_SERVER_FAILURES = 10;
 
 const NORMALIZED_CACHE_RESULT_METADATA_KEY = '__macroNormalizedCache';
 
@@ -169,6 +171,9 @@ type QueueAttemptContext = {
   leaseOwner: string;
   leaseGeneration: string;
   attemptCount: number;
+  serverFailureCount: number;
+  /** Transport-only metadata; urql drops the response on error-free payloads. */
+  response?: Response;
 };
 
 function queueAttemptOf(op: Operation): QueueAttemptContext | undefined {
@@ -273,19 +278,22 @@ function retryDelayMs(attemptCount: number): number {
   return Math.min(1_000 * 2 ** Math.max(0, attemptCount - 1), 60_000);
 }
 
-/** Applies a hard network bound well inside the durable queue lease. */
+/** Bounds network time inside the lease and retains HTTP status for settlement. */
 function withQueueRequestTimeout(op: Operation): Operation {
   const operationFetch = op.context.fetch ?? globalThis.fetch;
+  const attempt = queueAttemptOf(op);
   return makeOperation(op.kind, op, {
     ...op.context,
-    fetch: (input, init) => {
+    fetch: async (input, init) => {
       const timeoutSignal = AbortSignal.timeout(QUEUE_REQUEST_TIMEOUT_MS);
-      return operationFetch(input, {
+      const response = await operationFetch(input, {
         ...init,
         signal: init?.signal
           ? AbortSignal.any([init.signal, timeoutSignal])
           : timeoutSignal,
       });
+      if (attempt) attempt.response = response;
+      return response;
     },
   });
 }
@@ -863,6 +871,7 @@ export function normalizedCacheExchange(
           leaseOwner: queueOwner,
           leaseGeneration: claimed.leaseGeneration,
           attemptCount: claimed.attemptCount,
+          serverFailureCount: claimed.serverFailureCount ?? 0,
         };
         const live = liveQueuedOps.get(claimed.transactionId);
         if (live) {
@@ -1473,6 +1482,20 @@ export function normalizedCacheExchange(
               | 'superseded'
               | 'permanently-failed' = 'queued';
             try {
+              const response = result.error?.response ?? attempt.response;
+              const httpServerFailure = (response?.status ?? 0) >= 500;
+              // A valid GraphQL payload can arrive over HTTP 5xx without an
+              // urql error. Never commit it or bypass the retry policy.
+              if (httpServerFailure && !result.error) {
+                result = {
+                  ...result,
+                  data: undefined,
+                  error: new CombinedError({
+                    networkError: new Error(`HTTP ${response.status}`),
+                    response,
+                  }),
+                };
+              }
               if (result.error || result.data == null) {
                 let retry = false;
                 if (result.error && options.shouldRetryMutation) {
@@ -1482,13 +1505,38 @@ export function normalizedCacheExchange(
                     options.onCacheError?.(error, op);
                   }
                 }
+                // urql represents HTTP 5xx as networkError too. Count actual
+                // server responses, never connection failures or timeouts.
+                const serverFailure =
+                  httpServerFailure ||
+                  (result.error?.graphQLErrors.length ?? 0) > 0;
+                if (
+                  retry &&
+                  serverFailure &&
+                  attempt.serverFailureCount + 1 >= MAX_MUTATION_SERVER_FAILURES
+                ) {
+                  retry = false;
+                  result = {
+                    ...result,
+                    error: new CombinedError({
+                      graphQLErrors: [
+                        {
+                          message: `Mutation stopped after ${MAX_MUTATION_SERVER_FAILURES} server failures: ${result.error?.message}`,
+                          extensions: { code: 'MUTATION_RETRY_EXHAUSTED' },
+                        },
+                      ],
+                      response: result.error?.response,
+                    }),
+                  };
+                }
                 if (retry) {
                   retryAt = Date.now() + retryDelayMs(attempt.attemptCount);
                   const deferred = await host.deferOptimisticWrite(
                     attempt.transactionId,
                     claim,
                     retryAt,
-                    result.error?.message ?? 'mutation returned no data'
+                    result.error?.message ?? 'mutation returned no data',
+                    serverFailure
                   );
                   if (deferred.kind === 'discarded-superseded') {
                     retryAt = undefined;

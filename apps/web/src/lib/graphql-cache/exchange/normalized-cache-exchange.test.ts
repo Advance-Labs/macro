@@ -12,7 +12,9 @@ import { shouldRetryGraphqlMutation } from '@service-storage/graphql-mutation-re
 import {
   type Client,
   CombinedError,
+  createClient,
   createRequest,
+  fetchExchange,
   gql,
   makeOperation,
   type Operation,
@@ -49,6 +51,7 @@ import {
   normalizedCacheResultMetadata,
 } from './normalized-cache-exchange';
 import {
+  executeOptimisticMutation,
   optimisticContextOf,
   optimisticMutationDispositionOf,
 } from './optimistic';
@@ -205,7 +208,8 @@ type FakeHost = CacheHost & {
   teardowns: number[];
   scriptRead: (result: ReadResult) => void;
   seedQueued: (
-    args: Parameters<CacheHost['enqueueOptimisticMutation']>[0]
+    args: Parameters<CacheHost['enqueueOptimisticMutation']>[0],
+    serverFailureCount?: number
   ) => void;
   pushAffected: (opKeys: number[]) => void;
   pushGeneration: (change: CacheGenerationChange) => void;
@@ -221,6 +225,7 @@ function makeFakeHost(): FakeHost {
     transactionId: string;
     args: Parameters<CacheHost['enqueueOptimisticMutation']>[0];
     attemptCount: number;
+    serverFailureCount: number;
     leased: boolean;
     nextAttemptAtMs?: number;
   }> = [];
@@ -248,6 +253,7 @@ function makeFakeHost(): FakeHost {
       operationName: head.args.operationName,
       variables: head.args.variables ?? {},
       attemptCount: head.attemptCount,
+      serverFailureCount: head.serverFailureCount,
     };
   }
 
@@ -266,11 +272,12 @@ function makeFakeHost(): FakeHost {
     scriptRead: (r) => {
       readResult = r;
     },
-    seedQueued: (args) => {
+    seedQueued: (args, serverFailureCount = 0) => {
       queue.push({
         transactionId: `restored-${queue.length + 1}`,
         args,
         attemptCount: 0,
+        serverFailureCount,
         leased: false,
       });
     },
@@ -341,7 +348,13 @@ function makeFakeHost(): FakeHost {
         linkPatches: args.linkPatches,
       });
       const transactionId = `txn-${host.begins.length}`;
-      queue.push({ transactionId, args, attemptCount: 0, leased: false });
+      queue.push({
+        transactionId,
+        args,
+        attemptCount: 0,
+        serverFailureCount: 0,
+        leased: false,
+      });
       const mutation = claimQueueHead(claim.nowMs);
       return {
         transactionId,
@@ -372,13 +385,15 @@ function makeFakeHost(): FakeHost {
       transactionId,
       _claim: MutationClaim,
       nextAttemptAtMs,
-      error
+      error,
+      serverFailure = false
     ) {
       host.defers.push({ transactionId, error });
       const head = queue[0];
       if (head?.transactionId === transactionId) {
         head.leased = false;
         head.nextAttemptAtMs = nextAttemptAtMs;
+        if (serverFailure) head.serverFailureCount += 1;
       }
       return { kind: 'deferred' };
     },
@@ -4000,6 +4015,285 @@ describe('normalizedCacheExchange', () => {
         kind: 'queued',
         transactionId: 'txn-1',
       });
+    });
+
+    it.each([
+      { status: 500, data: null, failures: 0 },
+      { status: 503, data: { from: 'server' }, failures: 0 },
+      { status: 500, data: null, failures: 9 },
+      { status: 503, data: { from: 'server' }, failures: 9 },
+    ])(
+      'handles HTTP $status without GraphQL errors after $failures server failures',
+      async ({ status, data, failures }) => {
+        vi.useFakeTimers();
+        try {
+          if (failures > 0) {
+            host.seedQueued(
+              {
+                uuid: crypto.randomUUID(),
+                query: stringifyDocument(MUTATION),
+                data: optimistic,
+              },
+              failures
+            );
+          }
+          const response = new Response(JSON.stringify({ data }), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          });
+          const shouldRetryMutation = vi.fn(shouldRetryGraphqlMutation);
+          const rollback = vi.spyOn(host, 'rollbackOptimisticWrite');
+          const defer = vi.spyOn(host, 'deferOptimisticWrite');
+          const client = createClient({
+            url: 'http://test/graphql',
+            fetch: vi.fn(async () => response),
+            exchanges: [
+              normalizedCacheExchange(host, { shouldRetryMutation }),
+              fetchExchange,
+            ],
+          });
+          const pending =
+            failures === 0
+              ? executeOptimisticMutation(
+                  client,
+                  MUTATION,
+                  { input: {} },
+                  optimistic,
+                  { uuid: crypto.randomUUID() }
+                ).toPromise()
+              : undefined;
+          await vi.advanceTimersByTimeAsync(10);
+          expect(shouldRetryMutation).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ response, graphQLErrors: [] })
+          );
+          expect(host.commits).toHaveLength(0);
+          if (failures === 0) {
+            expect(defer).toHaveBeenCalledExactlyOnceWith(
+              'txn-1',
+              expect.any(Object),
+              expect.any(Number),
+              expect.stringContaining(String(status)),
+              true
+            );
+            expect(host.rollbacks).toHaveLength(0);
+            expect(optimisticMutationDispositionOf((await pending)!)).toEqual({
+              kind: 'queued',
+              transactionId: 'txn-1',
+            });
+          } else {
+            expect(host.defers).toHaveLength(0);
+            expect(rollback).toHaveBeenCalledExactlyOnceWith(
+              'restored-1',
+              expect.any(Object),
+              expect.stringContaining('10 server failures'),
+              'MUTATION_RETRY_EXHAUSTED'
+            );
+          }
+        } finally {
+          vi.clearAllTimers();
+          vi.useRealTimers();
+        }
+      }
+    );
+
+    it.each([false, true])(
+      'preserves success and explicit GraphQL rejection with fetchExchange (rejected=%s)',
+      async (rejected) => {
+        vi.useFakeTimers();
+        try {
+          const response = new Response(
+            JSON.stringify(
+              rejected
+                ? {
+                    errors: [
+                      { message: 'rejected', extensions: { code: 'INVALID' } },
+                    ],
+                  }
+                : { data: optimistic }
+            ),
+            {
+              status: rejected ? 503 : 200,
+              headers: { 'content-type': 'application/json' },
+            }
+          );
+          const client = createClient({
+            url: 'http://test/graphql',
+            fetch: vi.fn(async () => response),
+            exchanges: [
+              normalizedCacheExchange(host, {
+                shouldRetryMutation: shouldRetryGraphqlMutation,
+              }),
+              fetchExchange,
+            ],
+          });
+          const pending = executeOptimisticMutation(
+            client,
+            MUTATION,
+            { input: {} },
+            optimistic,
+            { uuid: crypto.randomUUID() }
+          ).toPromise();
+          await vi.advanceTimersByTimeAsync(10);
+          const result = await pending;
+          expect(host.defers).toHaveLength(0);
+          expect(optimisticMutationDispositionOf(result)?.kind).toBe(
+            rejected ? 'permanently-failed' : 'committed'
+          );
+          if (rejected) {
+            expect(result.error?.graphQLErrors[0]?.extensions.code).toBe(
+              'INVALID'
+            );
+            expect(result.error?.response).toBe(response);
+          }
+        } finally {
+          vi.clearAllTimers();
+          vi.useRealTimers();
+        }
+      }
+    );
+
+    it.each(['graphql', 'http-500', 'http-503'])(
+      'permanently fails the tenth %s failure and advances the queue',
+      async (kind) => {
+        vi.useFakeTimers();
+        try {
+          const error =
+            kind === 'graphql'
+              ? new CombinedError({
+                  graphQLErrors: [
+                    {
+                      message: 'persistent failure',
+                      extensions: { retryable: true },
+                    },
+                  ],
+                })
+              : new CombinedError({
+                  networkError: new Error('server unavailable'),
+                  response: new Response(null, {
+                    status: kind === 'http-500' ? 500 : 503,
+                  }),
+                });
+          const rollback = vi.spyOn(host, 'rollbackOptimisticWrite');
+          let attempts = 0;
+          const { ops, results, forwarded } = harness(
+            host,
+            () =>
+              ++attempts <= 10
+                ? { error, data: undefined }
+                : { data: optimistic },
+            { shouldRetryMutation: shouldRetryGraphqlMutation }
+          );
+          ops.next(makeMutationOp(1, optimistic));
+          ops.next(makeMutationOp(2, optimistic));
+          await vi.advanceTimersByTimeAsync(0);
+          for (let attempt = 1; attempt < 10; attempt += 1) {
+            expect(forwarded).toHaveLength(attempt);
+            expect(host.rollbacks).toHaveLength(0);
+            await vi.advanceTimersByTimeAsync(
+              Math.min(1_000 * 2 ** (attempt - 1), 60_000)
+            );
+          }
+          await vi.advanceTimersByTimeAsync(1);
+          expect(host.defers).toHaveLength(9);
+          expect(rollback).toHaveBeenCalledExactlyOnceWith(
+            'txn-1',
+            expect.any(Object),
+            expect.stringContaining('10 server failures'),
+            'MUTATION_RETRY_EXHAUSTED'
+          );
+          expect(host.commits.map((entry) => entry.transactionId)).toEqual([
+            'txn-2',
+          ]);
+          expect(forwarded).toHaveLength(11);
+          expect(
+            results.some(
+              (result) =>
+                optimisticMutationDispositionOf(result)?.kind ===
+                'permanently-failed'
+            )
+          ).toBe(true);
+        } finally {
+          vi.clearAllTimers();
+          vi.useRealTimers();
+        }
+      }
+    );
+
+    it('network failures neither consume nor reset the server failure budget', async () => {
+      vi.useFakeTimers();
+      try {
+        const server = new CombinedError({
+          graphQLErrors: [
+            { message: 'server failed', extensions: { retryable: true } },
+          ],
+        });
+        const network = new CombinedError({
+          networkError: new DOMException('request timed out', 'TimeoutError'),
+        });
+        let attempts = 0;
+        const { ops } = harness(
+          host,
+          () => {
+            attempts += 1;
+            // Transport failures before the first server error cannot consume
+            // the budget; transport failures after nine cannot reset it either.
+            return {
+              error:
+                (attempts >= 13 && attempts <= 21) || attempts === 34
+                  ? server
+                  : network,
+              data: undefined,
+            };
+          },
+          { shouldRetryMutation: shouldRetryGraphqlMutation }
+        );
+        ops.next(makeMutationOp(1, optimistic));
+        await vi.advanceTimersByTimeAsync(0);
+        for (let attempt = 1; attempt < 34; attempt += 1) {
+          expect(host.rollbacks).toHaveLength(0);
+          await vi.advanceTimersByTimeAsync(
+            Math.min(1_000 * 2 ** (attempt - 1), 60_000)
+          );
+        }
+        expect(attempts).toBe(34);
+        expect(host.defers).toHaveLength(33);
+        expect(host.rollbacks).toEqual(['txn-1']);
+      } finally {
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    });
+
+    it('uses the persisted budget on replay and revalidates after exhaustion', async () => {
+      host.seedQueued(
+        {
+          uuid: crypto.randomUUID(),
+          query: stringifyDocument(MUTATION),
+          data: optimistic,
+          revalidations: [
+            { query: stringifyDocument(QUERY), variablesJson: '{}' },
+          ],
+        },
+        9
+      );
+      const rollback = vi.spyOn(host, 'rollbackOptimisticWrite');
+      const error = new CombinedError({
+        graphQLErrors: [
+          { message: 'still failing', extensions: { retryable: true } },
+        ],
+      });
+      const { client } = harness(host, () => ({ error, data: undefined }), {
+        shouldRetryMutation: shouldRetryGraphqlMutation,
+      });
+      await tick();
+      expect(host.defers).toHaveLength(0);
+      expect(rollback).toHaveBeenCalledExactlyOnceWith(
+        'restored-1',
+        expect.any(Object),
+        expect.stringContaining('10 server failures'),
+        'MUTATION_RETRY_EXHAUSTED'
+      );
+      expect(client.query).toHaveBeenCalledOnce();
     });
 
     it('retries a draft response failure with the same handles and commits after recovery', async () => {
