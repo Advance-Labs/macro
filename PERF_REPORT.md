@@ -1,6 +1,6 @@
 # Database performance audit — 2026-10-05–06
 
-At 100,000 stored records, the table opens in **1.97 seconds cold and 1.16 seconds
+At 100,000 stored records, the table opens in **1.73 seconds cold and 1.66 seconds
 warm**, compared with 33.82 seconds cold and a Chrome crash on warm reload before
 server pagination and virtualization. All 18 final opening samples across three
 views were under 3 seconds. These are local measurements, not a production SLA.
@@ -12,7 +12,7 @@ not wait for all 100,000 records to download. The Soup and engine page limits re
 
 - Profiling PR: <https://github.com/macro-inc/macro/pull/7496>
 - Optimization PR: <https://github.com/macro-inc/macro/pull/7539>
-- Current measured code: `9a4bd03d65` (optimized frontend bundle, development Rust backend).
+- Current measured code: `c517578d32` (optimized frontend bundle, development Rust backend).
 - Original optimized measurements: `8bec61c252`, retained below for attribution.
 - Local app: <https://wolf-macro-google:26009/app/database/01a111d0-00e3-7069-bb51-3c8603fcf141>
 - Synthetic login: `database-profiling@macro.local` (local email-code flow).
@@ -45,7 +45,9 @@ Postgres buffer cache or operating-system filesystem cache. Final results use th
 repetitions per view, with CPU profiling disabled and browser tracing enabled.
 A TypeScript check overlapped the beginning of the original optimized run.
 The current final runs started after seeding, builds and recovery of the local
-collaboration gateway finished.
+collaboration gateway finished. The final browser runs used an isolated network
+namespace so unrelated host Docker network changes could not interrupt requests.
+The integrated app's default service-worker behavior was retained.
 
 The new fixture was also grown through all six sizes. Its 1k–25k opening checks
 were preflight runs with browser tracing disabled and are excluded from the final
@@ -65,15 +67,27 @@ seconds, **median [minimum–maximum]**, three samples in each column.
 
 | View | Cold | Warm |
 | --- | --- | --- |
+| All records | **1.731 [1.665–1.801]** | **1.662 [1.628–1.910]** |
+| Bucket 99 | **1.956 [1.869–2.024]** | **2.337 [1.872–2.890]** |
+| Stage + Account | **1.936 [1.743–1.962]** | **2.294 [1.922–2.338]** |
+
+Source: `entity-final/main-integrated-100000-{all,filtered,indexed}/results.json`.
+All 18 samples mounted exactly 25 rows. This revalidation includes main through
+`b9f4217a52`. Warm navigation is slower and more variable than the previous build;
+these latest results replace the earlier numbers as the current performance claim.
+
+The previous integration (`9a4bd03d65`) measured:
+
+| View | Cold | Warm |
+| --- | --- | --- |
 | All records | **1.975 [1.952–1.988]** | **1.163 [1.079–1.200]** |
 | Bucket 99 | **2.093 [2.084–2.160]** | **1.245 [1.161–1.302]** |
 | Stage + Account | **1.991 [1.986–2.177]** | **1.140 [1.133–1.153]** |
 
 Source: `entity-final/entity-healthy-100000-{all,filtered,indexed}/results.json`.
-All 18 samples mounted exactly 25 rows. This is a fresh-fixture revalidation after
-the upstream entity refactor and local-service recovery; environment and serving
-differences mean the small improvement from the original optimized run is not
-attributable to that merge.
+That was a fresh-fixture revalidation after the upstream entity refactor and local
+service recovery. Upstream startup changes, environment and serving differences
+prevent attributing the differences between these runs to one change.
 
 The original optimized build (`8bec61c252`, October 5) measured:
 
@@ -121,14 +135,22 @@ expected 500-row read. Timings below are milliseconds and include child spans.
 
 | View | Trace | Ordered-ID SQL | GraphQL including serialization | Serialization |
 | --- | --- | ---: | ---: | ---: |
-| All records | `fdd5973444d859fb0ef5d3a0a161872f` | 5.11 | 182.00 | 28.81 |
-| Bucket 99 | `83ea75f14d191536a3273270f181e66a` | 127.63 | 314.96 | 29.84 |
-| Stage + Account | `b1f1e26c9baa03afe25ad9a03927cf0c` | 67.18 | 245.60 | 29.86 |
+| All records | `f9c8cfc1c6cae251f581162d1cfa6b8c` | 5.53 | 194.54 | 28.61 |
+| Bucket 99 | `11e311c4aac6c25ab9968c44e1e37aaf` | 204.52 | 382.98 | 29.88 |
+| Stage + Account | `c6636043be69f92e34cdb16d037d4c90` | 72.72 | 252.09 | 29.37 |
 
-Connection acquisition was about 0.5 ms. For the all-records sample, browser row
-decoding took 20.3 ms, publication took 40.2 ms, and the database query span took
-434.9 ms. App startup and other browser work account for much of the remaining
-1.97-second navigation time.
+Connection acquisition was about 0.4 ms for the all-records sample. Browser row
+decoding took 8.9 ms, publication took 34.8 ms, and the database query span took
+398.8 ms. App startup and other browser work account for much of the remaining
+1.73-second navigation time.
+
+The slowest warm sample (Bucket 99, 2.890 seconds) has trace
+`ef52acf0b33cf2498c5ad7b8af8cf51c`. Its database query span took 997.1 ms, including
+203.8 ms of ID selection, 403.0 ms of GraphQL execution, 4.6 ms of browser decoding
+and 25.7 ms of publication. The HTTP request began about 471 ms after the query
+span began; earlier navigation also contains a roughly one-second gap between
+metadata and block requests. These timings identify work outside SQL as a remaining
+target, but do not establish the cause of the startup/request scheduling delays.
 
 The following before/after attribution uses the original optimized run so it
 remains paired with the SQL plans and profiles collected during those iterations.
@@ -178,13 +200,13 @@ Edits measure the visible optimistic result separately from the HTTP response.
 
 | Action | All records | Stage + Account |
 | --- | ---: | ---: |
-| Cached table switch | 466.3 | 512.0 |
-| Visible edit | 15.9 | 24.2 |
-| Edit HTTP response | 50.2 | 52.5 |
-| First picker open | 125.4 | 113.5 |
-| Insert HTTP response | 101.0 | 107.3 |
-| Switch to numeric filtered view | 932.2 | — |
-| Scroll frame interval p50 / p95 | 16.7 / 66.7 | 16.7 / 66.7 |
+| Cached table switch | 430.7 | 514.4 |
+| Visible edit | 19.5 | 17.4 |
+| Edit HTTP response | 57.7 | 50.2 |
+| First picker open | 66.3 | 68.9 |
+| Insert HTTP response | 146.1 | 109.7 |
+| Switch to numeric filtered view | 901.5 | — |
+| Scroll frame interval p50 / p95 | 16.7 / 66.6 | 16.7 / 66.7 |
 
 The numeric view-switch check waits for Record 099001, proving the new filter's
 membership is visible. The earlier 133.1 ms check waited only for 500 rows; because
@@ -195,11 +217,11 @@ record-opening control or the creation notice; a retained draft's UI identity ca
 differ from its saved server ID.
 
 Scroll uses sixty 800-pixel wheel events, about 16 ms apart. Maximum observed
-frame intervals were 83.4 ms (all) and 116.7 ms (indexed), so this is not a claim of
+frame intervals were 83.4 ms (all) and 100.0 ms (indexed), so this is not a claim of
 smooth 60 fps. Both runs had no page errors. Temporary edits and inserted records
 were restored/deleted; their cleanup journals are empty. Sources:
-`entity-final/interactions-restored-all` and
-`entity-final/interactions-restored-indexed-verified`.
+`entity-final/interactions-main-all` and
+`entity-final/interactions-main-indexed`.
 
 After the machine restart, LocalStack's temporary resources were missing and the
 collaboration gateway had exited. Writes committed quickly but waited 3–4 seconds
@@ -209,10 +231,10 @@ change or database reset. All final interaction measurements above use the
 recovered services.
 
 A separate stress run on the current code requested all 200 pages and reached
-100,000 loaded records in **86.31 seconds**, with **26 mounted rows**, **3,710 DOM
-nodes**, and **307.09 MB JavaScript heap after GC**. The last record opened, no page
-errors occurred, and switching to Accounts took **89.9 ms**. Heap immediately after
-that switch was **306.02 MB**. Source: `entity-final/deep-restored`. The fixture
+100,000 loaded records in **87.45 seconds**, with **26 mounted rows**, **3,854 DOM
+nodes**, and **303.46 MB JavaScript heap after GC**. The last record opened, no page
+errors occurred, and switching to Accounts took **99.0 ms**. Heap immediately after
+that switch was **302.29 MB**. Source: `entity-final/deep-main`. The fixture
 ended with exactly 100,000 Records and 20 Accounts.
 
 The original optimized deep test also requested all 200 pages, collecting garbage
@@ -261,6 +283,7 @@ journal. Supported row writes continue through database operations.
 | `73a084633c` | Integrate current main and regenerate the closure after the upstream crate move. |
 | `0025b45ee9` | Preserve cancellation classification during engine opening; build and remove indexes concurrently with safe interrupted-build retries. |
 | `9a4bd03d65` | Integrate the upstream storage/entity split while retaining paged reads, stable virtual rows and optional schema actions. |
+| `c517578d32` | Integrate main through the AI/PSD editors and regenerate dependency closures; rebuild and remeasure the combined app. |
 
 API traversal verified all 100,000 unique IDs in manual order, both endpoint
 numeric cohorts (Bucket 0 and Bucket 99, exactly 1,000 each), the 1,667-row indexed
@@ -326,6 +349,10 @@ tests, seven standalone browser tests, TypeScript, 139 database-engine tests,
 graph tests, 17 DSS tests and five QC reviews. The standalone browser ran in the
 isolated network namespace after host network changes interrupted module downloads.
 TypeScript passed with a 16 GiB Node heap after exhausting the default 4 GiB limit.
+The unrelated agent-fold WASM suite also passed both tests locally after a cold
+build hook timed out in the earlier CI run. The optimized frontend, all eight WASM
+modules and DSS were rebuilt before the current measurements. API traversal and
+the browser interaction/deep-read checks above passed again on `c517578d32`.
 
 ## Remaining limits
 
