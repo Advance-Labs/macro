@@ -1,7 +1,7 @@
 //! Domain layer for reminders.
 
 #[cfg(feature = "ports")]
-pub mod collection;
+pub mod email_collection;
 pub mod models;
 #[cfg(feature = "ports")]
 pub mod ports;

@@ -33,9 +33,12 @@ export const agentHarnessExcluded = [
   'loadAgentModelsHandler',
   'discoverAgentCapabilitiesHandler',
   'previewAgentSessions',
+  // Speculative page warm-up requires a signed-in user and is app-internal.
+  'warmAgentSessionHandler',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
 
 export const agentHarnessBacklog = [
+  'answerAgentSessionToolApproval',
   'getAgentSessionPermissions',
   'updateAgentSessionPermissions',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
@@ -89,6 +92,7 @@ export const authExcluded = [
   'listCursorModels',
   'listGtmInviteLinks',
   'logout',
+  'mergeGithubPullRequest',
   'oauth2Callback',
   'oauthRedirect',
   'passwordLogin',
@@ -121,6 +125,7 @@ export const authExcluded = [
   'startCodexLogin',
   'toggleTeamAutoJoinDomain',
   'toggleTeamNonAdminInvites',
+  'updateAiBillingAutoReload',
   'updateAiBillingOverage',
   'verifyEmailLink',
   'verifyFusionauthUserEmail',
@@ -159,6 +164,8 @@ export const cognitionExcluded = [
   'mcpAuthCallback',
   'mcpOauthClientMetadata',
   'rejectToolCall',
+  // Channel discovery shares the app-only import workflow below.
+  'discoverHandler',
   'runImportHandler',
   'dismissRunHandler',
   'retryGatherHandler',
@@ -263,6 +270,7 @@ export const scheduledActionBacklog = [
   'createScheduledAction',
   'deleteScheduledAction',
   'executeScheduledActionNow',
+  'getScheduledAction',
   'listScheduledActionHistory',
   'listScheduledActions',
   'setScheduledActionEnabled',
@@ -304,6 +312,8 @@ export const storageExcluded = [
   'createViewHandler',
   'deleteCollabSurface',
   'ensureCollabSurface',
+  // First-run sample content is provisioned by the app's feature-gated onboarding.
+  'ensureStarterHandler',
   'deleteHistoryHandler',
   'deleteUserDocumentViewLocation',
   'deleteViewHandler',
@@ -318,6 +328,10 @@ export const storageExcluded = [
   'getBatchProjectPreview',
   'getBotOwnerProfiles',
   'getCollabSurface',
+  // Storage for the web app's saved questions, not a user-facing surface.
+  'getDatabaseQuery',
+  // The web grid's incremental refresh after a version ping, not a user-facing surface.
+  'getDatabaseTableChanges',
   'getDocumentListHandler',
   'getDocumentLocationV3',
   'getDocumentProcessingResult',
@@ -355,8 +369,15 @@ export const storageExcluded = [
   'postItemsSoupAst',
   'postItemsSoupAstGrouped',
   'removeBotFromChannelByBot',
+  // Storage for the web app's saved questions, not a user-facing surface.
+  'saveDatabaseQuery',
+  // Live presence between viewers of a database, internal to the web app.
+  'shareDatabaseAwareness',
   // Composer dictation is an app-internal, user-only upload flow.
   'transcribeDictation',
+  // The web app's Ctrl+Z over the viewer's own session edits; the SDK's
+  // applyOps does not surface the journal changes an undo names.
+  'undoDatabaseChange',
   'uploadExtractFolderHandler',
   'uploadFolderHandler',
   'upsertHistoryHandler',
@@ -364,11 +385,11 @@ export const storageExcluded = [
 ] as const satisfies readonly (keyof StorageSdk)[];
 
 export const storageBacklog = [
-  // Email follow-ups are available through the generated client, like reminders.
+  // Email follow-ups are available through the generated client.
   'getEmailFollowup',
   'setEmailFollowup',
+  'listEmailReminders',
   'approveHarnessPairing',
-  'assignInitiativeTasks',
   'claimHarnessPairing',
   'createAgent',
   'createAnchor',
@@ -376,14 +397,12 @@ export const storageBacklog = [
   'createEntityMention',
   'createHarnessPairing',
   'createInitiative',
-  'createReminder',
   'createUserApiKey',
   'deleteAnchor',
   'deleteEntityMention',
   'deleteHarness',
   'deleteInitiative',
   'deleteSelfHarness',
-  'deleteReminder',
   'deleteUserApiKey',
   'editAnchor',
   'editCallTranscript',
@@ -397,20 +416,20 @@ export const storageBacklog = [
   'getDocumentPermissionsV2',
   'getDocumentVersion',
   'getEntityPermission',
+  'getGithubPullRequest',
+  'getGithubPullRequestChanges',
+  'getGithubPullRequestChangesPatch',
   'getProjectPermissionsV2',
   'getProjectUserAccessLevel',
   'getHarnessPairing',
   'getInitiative',
   'getSelfHarness',
-  'getReminder',
   'listAgents',
   'listHarnessAgents',
   'listHarnessSessions',
   'listHarnesses',
   'listInitiatives',
   'listOccurrences',
-  'listReminders',
-  'listReminderCollection',
   'listTeamOutOfOffice',
   'listUserApiKeys',
   // Meeting management uses the generated client.
@@ -430,10 +449,8 @@ export const storageBacklog = [
   'setChannelPicture',
   'simpleSave',
   'toggleShareWithTeam',
-  'unassignInitiativeTask',
   'updateAgent',
   'updateInitiative',
-  'updateReminder',
   'validateDocumentPermissionsToken',
 ] as const satisfies readonly (keyof StorageSdk)[];
 

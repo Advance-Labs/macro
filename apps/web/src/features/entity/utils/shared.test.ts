@@ -22,9 +22,10 @@ function row(
 describe('isSharedWithViewer', () => {
   it.each([
     ['agent_session', true],
-    ['automation', true],
+    ['routine', true],
     ['calendar_event', true],
     ['chat', true],
+    ['database', true],
     ['document', true],
     ['email', true],
     ['initiative', true],
@@ -35,7 +36,6 @@ describe('isSharedWithViewer', () => {
     ['channel_thread', false],
     ['crm_company', false],
     ['crm_contact', false],
-    ['reminder', false],
   ] as const)(
     '%s owned by another user reads as shared: %s',
     (type, shared) => {

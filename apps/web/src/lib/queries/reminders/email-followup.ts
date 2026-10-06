@@ -13,6 +13,7 @@ import { fetchGraphqlEmailThread } from '../email/graphql/thread';
 import { emailKeys } from '../email/keys';
 import { refetchSoupEntity } from '../soup/cache';
 import { refreshActiveGraphqlSoupQueries } from '../soup/graphql/active-queries';
+import { invalidateEmailReminderReads } from './email-collection';
 import { reminderKeys } from './keys';
 
 export function useEmailFollowupQuery(threadId: Accessor<string>) {
@@ -44,8 +45,8 @@ export async function executeEmailFollowup(
   }
   try {
     await Promise.all([
+      invalidateEmailReminderReads(),
       refetchSoupEntity(threadId, 'emailThread'),
-      refetchSoupEntity(result.reminderId, 'reminder'),
       queryClient.invalidateQueries({
         queryKey: emailKeys.threadMessages(threadId).queryKey,
       }),
@@ -53,11 +54,6 @@ export async function executeEmailFollowup(
       ...(isFeatureEnabled(enableGraphqlSoup)
         ? [refreshActiveGraphqlSoupQueries(), fetchGraphqlEmailThread(threadId)]
         : []),
-      queryClient.invalidateQueries({ queryKey: reminderKeys.list._def }),
-      queryClient.invalidateQueries({ queryKey: reminderKeys.collection._def }),
-      queryClient.invalidateQueries({
-        queryKey: reminderKeys.detail(result.reminderId).queryKey,
-      }),
     ]);
   } catch (error) {
     console.error('Email reminder saved but refresh failed', error);

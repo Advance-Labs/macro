@@ -11,6 +11,7 @@ import type {
   SoupThreadReply,
   CallStatus as StorageCallStatus,
 } from '@service-storage/generated/schemas';
+import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
 
 export type EntityBase = {
   id: string;
@@ -52,6 +53,12 @@ export type UnknownForeignEntity = ForeignEntityBase & {
   };
 };
 
+/** A GitHub label; `color` is GitHub's six-digit hex without `#`. */
+export type GithubPullRequestLabel = {
+  name: string;
+  color?: string | null;
+};
+
 // Consider making this a generic pull request entity so we can display
 // pull requests from other sources besides github
 export type GithubPullRequestEntity = ForeignEntityBase & {
@@ -67,6 +74,7 @@ export type GithubPullRequestEntity = ForeignEntityBase & {
     deletions: number;
     comments: GithubPullRequestComment[];
     checks: GithubPullRequestCheckRun[];
+    labels: GithubPullRequestLabel[];
     authorLogin?: string;
     authorId?: number;
   };
@@ -345,10 +353,10 @@ export function routineStatus(facts: {
   return { kind: 'unscheduled' };
 }
 
-export type AutomationEntity = EntityBase & {
-  type: 'automation';
-  /** Cron expression controlling when the automation runs. */
-  cron: string;
+export type RoutineEntity = EntityBase & {
+  type: 'routine';
+  /** Legacy single schedule, when the routine has exactly one cron trigger. */
+  cron?: string;
   /** Running is derived from the server claim and the backend's stale-claim
    *  window; claims update live via the connection-gateway websocket. */
   status: RoutineStatus;
@@ -384,6 +392,10 @@ export type CrmCompanyEntity = EntityBase & {
 
 export type CrmContactEntity = EntityBase & {
   type: 'crm_contact';
+  teamId?: string;
+  companyName?: string;
+  firstInteraction?: string;
+  lastInteraction?: string;
   /** The company the contact belongs to. */
   companyId: string;
   /** The contact's email address. */
@@ -393,45 +405,11 @@ export type CrmContactEntity = EntityBase & {
   hidden: boolean;
 };
 
-export type ReminderEntity = EntityBase & {
-  type: 'reminder';
-  /** What to remind the user about. Doubles as {@link EntityBase.name}. */
-  description: string;
-  /** The entity the reminder is about, when it is attached to one. Clicking a
-   * reminder navigates here rather than to the reminder itself, and the row
-   * borrows this entity's icon.
-   *
-   * `type` is already mapped to the display {@link EntityType} (`email`,
-   * `foreign`), not the canonical API names (`email_thread`,
-   * `foreign_entity`). `fileType`/`subType` are resolved server-side and only
-   * present for documents — without them a referenced document has no
-   * resolvable block, since the icon and open paths are both synchronous.
-   *
-   * A reminder never references another reminder — the mapper yields
-   * `undefined` for that — so the type excludes it and the reference stays
-   * assignable to the preview/open helpers, which only know real targets. */
-  referencedEntity?: {
-    id: string;
-    // Calendar events are excluded alongside reminders: neither has a
-    // previewable block, and the mapper yields `undefined` for both.
-    type: Exclude<EntityType, 'reminder' | 'calendar_event' | 'initiative'>;
-    fileType?: string;
-    subType?: string;
-  };
-  /** Whether the reminder fires once or on a cron schedule. */
-  scheduleType: 'once' | 'recurring';
-  /** Cron expression, for a recurring reminder. */
-  cron?: string;
-  /** Timezone the cron is evaluated in, for a recurring reminder. */
-  timezone?: string;
-  /** The next firing. Soup orders reminders on this. */
-  nextRunAt: DateValue;
-  /** When false, the dispatcher skips this reminder. */
-  enabled: boolean;
-  /** When the owner acknowledged the occurrence; recurring schedules can remain enabled. */
-  completedAt?: DateValue | null;
-  /** Owning email workflow; these mirrors must be rescheduled through Remind me. */
-  emailFollowup?: import('@service-storage/generated/schemas/emailFollowup').EmailFollowup;
+/** A Macro Database. Not a Soup entity: it has no view history, so `createdAt` is its only timestamp. */
+export type DatabaseEntity = EntityBase & {
+  type: 'database';
+  /** What the viewer may do with the database. */
+  grant: AccessLevel;
 };
 
 /** Normalized time shape of a calendar event soup row. */
@@ -470,7 +448,6 @@ export type CalendarEventEntity = EntityBase & {
 /** A native project, distinct from folder entities. */
 export type InitiativeEntity = EntityBase & {
   type: 'initiative';
-  descriptionDocumentId: string;
   properties?: SoupProperty[];
 };
 
@@ -489,8 +466,8 @@ export type EntityData =
   | CallEntity
   | CrmCompanyEntity
   | CrmContactEntity
-  | AutomationEntity
-  | ReminderEntity
+  | DatabaseEntity
+  | RoutineEntity
   | CalendarEventEntity
   | ForeignEntity;
 
@@ -507,8 +484,8 @@ const ENTITY_TYPE_VALUES = new Set<EntityData['type']>([
   'call',
   'crm_company',
   'crm_contact',
-  'automation',
-  'reminder',
+  'database',
+  'routine',
   'calendar_event',
   'foreign',
 ]);
@@ -612,16 +589,10 @@ export const isCallEntity = (entity: EntityData): entity is CallEntity => {
   return entity.type === 'call';
 };
 
-export const isReminderEntity = (
+export const isRoutineEntity = (
   entity: EntityData
-): entity is ReminderEntity => {
-  return entity.type === 'reminder';
-};
-
-export const isAutomationEntity = (
-  entity: EntityData
-): entity is AutomationEntity => {
-  return entity.type === 'automation';
+): entity is RoutineEntity => {
+  return entity.type === 'routine';
 };
 
 export const isCrmCompanyEntity = (

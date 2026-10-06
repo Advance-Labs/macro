@@ -60,10 +60,8 @@ const operationMocks = vi.hoisted(() => {
     invalidateQueries: vi.fn(
       async (_options: { queryKey?: readonly unknown[] }) => {}
     ),
-    invalidateRemindersById: vi.fn(),
     invalidateSoupEntity: vi.fn(async () => {}),
     openExternalUrl: vi.fn(),
-    setReminderCompleted: vi.fn(async () => {}),
     updateNotificationsForEntities: vi.fn(
       async (): Promise<Array<{ id: string }>> => []
     ),
@@ -111,10 +109,6 @@ vi.mock('@queries/notification/user-notifications', () => ({
   restoreUserNotifications: vi.fn(),
   snapshotUserNotifications: vi.fn(() => []),
 }));
-vi.mock('@queries/reminders/reminders', () => ({
-  invalidateRemindersById: operationMocks.invalidateRemindersById,
-  setReminderCompleted: operationMocks.setReminderCompleted,
-}));
 vi.mock('@queries/soup/cache', () => ({
   getSoupEntityById: vi.fn(),
   invalidateSoupEntity: operationMocks.invalidateSoupEntity,
@@ -152,6 +146,7 @@ vi.mock('@core/constant/featureFlags', async (importOriginal) => {
 });
 
 import type { SerializedSearchParams } from '@app/lib/split-router';
+import { paneRoute } from '@app/routes/app-route';
 import { setGlobalSplitManager } from '@app/signal/splitLayout';
 import type {
   OpenWithSplitOptions,
@@ -173,7 +168,6 @@ import {
   getDocumentCommentTarget,
   getRowClickFallbackLocation,
   markChannelNotificationsSeenOnOpen,
-  openEntityInNewTab,
   openEntityInSplitFromUnifiedList,
   resolveMarkEntitiesDoneVariables,
 } from './utils';
@@ -193,96 +187,6 @@ afterEach(() => {
   setGlobalSplitManager(undefined);
   vi.clearAllMocks();
   vi.mocked(isTouchDevice).mockReturnValue(false);
-});
-
-describe('reminder navigation', () => {
-  const reminder = {
-    type: 'reminder',
-    id: 'reminder-1',
-    name: 'Review reminder navigation',
-  } as EntityData;
-
-  it.each([false, true])(
-    'uses the reminder route for list opening (new split: %s)',
-    async (openInNewSplit) => {
-      const openWithSplit = vi.fn(() => ({ status: 'navigating' as const }));
-      setGlobalSplitManager({
-        activeSplit: () => undefined,
-        openWithSplit,
-      } as unknown as SplitManager);
-
-      await openEntityInSplitFromUnifiedList(reminder, { openInNewSplit });
-
-      expect(openWithSplit).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          type: 'component',
-          id: 'reminder-detail',
-          params: { reminderId: 'reminder-1' },
-        }),
-        expect.objectContaining({
-          activate: true,
-          preferNewSplit: openInNewSplit,
-          search: {},
-        })
-      );
-    }
-  );
-
-  it('opens an attached task in its requested Drive route rather than reusing another document', async () => {
-    const openWithSplit = vi.fn(() => ({ status: 'navigating' as const }));
-    setGlobalSplitManager({
-      activeSplit: () => undefined,
-      openWithSplit,
-    } as unknown as SplitManager);
-    await openEntityInSplitFromUnifiedList(
-      {
-        ...reminder,
-        referencedEntity: {
-          id: 'task-b',
-          type: 'document',
-          fileType: 'md',
-          subType: 'task',
-        },
-      } as EntityData,
-      {}
-    );
-    expect(openWithSplit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'component',
-        id: 'documents',
-        entryMetadata: expect.objectContaining({
-          route: expect.objectContaining({
-            matches: expect.arrayContaining([
-              expect.objectContaining({
-                params: { documentId: 'task-b', documentType: 'task' },
-              }),
-            ]),
-          }),
-        }),
-      }),
-      expect.objectContaining({ allowDuplicate: true })
-    );
-  });
-
-  it('opens an attached email directly in a new tab', () => {
-    openEntityInNewTab({
-      entity: {
-        ...reminder,
-        referencedEntity: { id: 'email-1', type: 'email' },
-      } as EntityData,
-    });
-    expect(operationMocks.openExternalUrl).toHaveBeenCalledWith(
-      expect.stringMatching(/\/app\/email\/email-1$/)
-    );
-  });
-
-  it('uses the same reminder component URL for a new browser tab', () => {
-    openEntityInNewTab({ entity: reminder });
-
-    expect(operationMocks.openExternalUrl).toHaveBeenCalledExactlyOnceWith(
-      expect.stringMatching(/\/app\/reminder\/reminder-1$/)
-    );
-  });
 });
 
 describe('agent session search navigation', () => {
@@ -697,7 +601,6 @@ describe('resolveMarkEntitiesDoneVariables', () => {
     ).toEqual({
       emailIds: [],
       notificationIds: ['notification-1'],
-      reminderIds: [],
     });
   });
 });
@@ -996,13 +899,7 @@ describe('calendar view navigation', () => {
           }),
         }),
         entryMetadata: expect.objectContaining({
-          route: {
-            matches: [
-              expect.objectContaining({
-                id: 'view-calendar',
-              }),
-            ],
-          },
+          route: paneRoute(expect.objectContaining({ id: 'view-calendar' })),
           search: {
             calendar: expect.objectContaining({
               eventId: ['event-1'],
@@ -1084,12 +981,10 @@ describe('Hosted details and Drive document routing', () => {
         type: 'component',
         id: 'reviews',
         entryMetadata: {
-          route: {
-            matches: [
-              { id: 'view-reviews', params: {} },
-              { id: 'reviews-pr', params: { foreignEntityId: 'pr-1' } },
-            ],
-          },
+          route: paneRoute(
+            { id: 'view-reviews', params: {} },
+            { id: 'reviews-pr', params: { foreignEntityId: 'pr-1' } }
+          ),
         },
       },
       expect.objectContaining({
@@ -1175,18 +1070,13 @@ describe('Hosted details and Drive document routing', () => {
           type: 'component',
           id: 'documents',
           entryMetadata: {
-            route: {
-              matches: [
-                { id: 'drive', params: {} },
-                {
-                  id: 'drive-document',
-                  params: {
-                    documentId: 'doc-1',
-                    documentType: fileType,
-                  },
-                },
-              ],
-            },
+            route: paneRoute(
+              { id: 'drive', params: {} },
+              {
+                id: 'drive-document',
+                params: { documentId: 'doc-1', documentType: fileType },
+              }
+            ),
           },
         },
         expect.objectContaining({
@@ -1910,15 +1800,13 @@ describe('getDocumentCommentTarget', () => {
         type: 'component',
         id: 'documents',
         entryMetadata: {
-          route: {
-            matches: [
-              { id: 'drive', params: {} },
-              {
-                id: 'drive-document',
-                params: { documentId: 'doc-1', documentType: 'md' },
-              },
-            ],
-          },
+          route: paneRoute(
+            { id: 'drive', params: {} },
+            {
+              id: 'drive-document',
+              params: { documentId: 'doc-1', documentType: 'md' },
+            }
+          ),
         },
       },
       expect.objectContaining({ activate: true, search: undefined })
@@ -2113,12 +2001,10 @@ describe('call navigation', () => {
         type: 'component',
         id: 'documents',
         entryMetadata: {
-          route: {
-            matches: [
-              { id: 'drive', params: {} },
-              { id: 'drive-call', params: { callId: 'call-1' } },
-            ],
-          },
+          route: paneRoute(
+            { id: 'drive', params: {} },
+            { id: 'drive-call', params: { callId: 'call-1' } }
+          ),
         },
       },
       expect.objectContaining({ allowDuplicate: true })
@@ -2146,12 +2032,10 @@ describe('call navigation', () => {
       type: 'component',
       id: 'documents',
       entryMetadata: {
-        route: {
-          matches: [
-            { id: 'drive', params: {} },
-            { id: 'drive-call', params: { callId: 'call-1' } },
-          ],
-        },
+        route: paneRoute(
+          { id: 'drive', params: {} },
+          { id: 'drive-call', params: { callId: 'call-1' } }
+        ),
       },
     });
     expect(targetSearch(openWithSplit, 'call-detail')).toMatchObject({

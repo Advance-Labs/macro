@@ -32,8 +32,6 @@ export interface BaseListEntityProps<E extends EntityData = EntityData> {
   actions?: JSX.Element;
   /** Persistent status/action immediately before the timestamp. */
   leadingAction?: JSX.Element;
-  /** Collection-owned completion of a reminder occurrence. */
-  onToggleReminderDone?: () => Promise<void>;
   hideContentHits?: boolean;
   /** Resolved app display name for a linked GitHub PR author, when available. */
   authorDisplayName?: string;
@@ -85,6 +83,8 @@ export interface LayoutProps {
     entity: ProjectEntity,
     e: PointerEvent | MouseEvent
   ) => void;
+  /** Show a task's Project with its other properties (Projects enabled). */
+  showProject?: boolean;
 }
 
 export type NarrowLayoutVariant = 'standard' | 'condensed' | 'single-line';

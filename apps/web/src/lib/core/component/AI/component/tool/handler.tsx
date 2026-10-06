@@ -2,12 +2,14 @@ import {
   getCompanyHandler,
   listCompaniesHandler,
 } from '@app/features/crm/crm-tool-renderers';
+import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { enableDatabases } from '@core/constant/featureFlags';
 import {
   deserializeToolCall,
   deserializeToolResponse,
   type ToolName,
 } from '@service-cognition/generated/tools/tool';
-import { createMemo } from 'solid-js';
+import { createMemo, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { configureAgentHandler, listAgentsHandler } from './Agents';
 import { bashCodeExecutionHandler } from './BashCodeExecution';
@@ -22,6 +24,7 @@ import {
 } from './Bots';
 import {
   createCalendarEventHandler,
+  createConfirmedCalendarEventHandler,
   deleteCalendarEventHandler,
   listCalendarEventsHandler,
   listCalendarsHandler,
@@ -32,10 +35,24 @@ import {
   manageChannelParticipantsHandler,
   renameChannelHandler,
 } from './ChannelMutations';
+import {
+  dispatchCodingAgentHandler,
+  listCodingAgentsHandler,
+} from './CodingAgents';
 import { createDocumentHandler } from './CreateDocument';
 import { createProjectHandler } from './CreateProject';
 import { createTagHandler } from './CreateTag';
+import {
+  DatabaseToolPlaceholder,
+  isToolShown,
+  lazyDatabaseToolHandlers,
+} from './DatabaseToolHandlers';
 import { deleteTagHandler } from './DeleteTag';
+import { readDesignHandler } from './Design';
+import {
+  readIllustratorDocumentHandler,
+  readPhotoshopDocumentHandler,
+} from './DesignDocument';
 import { displayResultsHandler } from './DisplayResults';
 import {
   commentOnDocumentHandler,
@@ -66,6 +83,10 @@ import {
   markNotificationsSeenHandler,
 } from './Notifications';
 import {
+  editPresentationHandler,
+  readPresentationHandler,
+} from './Presentation';
+import {
   bulkSetEntityPropertyOptionsHandler,
   getEntityPropertiesHandler,
   setEntityPropertyHandler,
@@ -83,13 +104,13 @@ import { readMetadataHandler } from './ReadMetadata';
 import { readProjectHandler } from './ReadProject';
 import { readSkillHandler } from './ReadSkill';
 import { readThreadHandler } from './ReadThread';
-import {
-  createReminderHandler,
-  deleteReminderHandler,
-  listRemindersHandler,
-  updateReminderHandler,
-} from './Reminders';
 import { renameDocumentHandler } from './RenameDocument';
+import {
+  createRoutineHandler,
+  listRoutinesHandler,
+  readRoutineHandler,
+  updateRoutineHandler,
+} from './Routines';
 import { contentSearchHandler, nameSearchHandler } from './Search';
 import { listSkillsHandler, searchSkillsHandler } from './SearchSkills';
 import { searchToolsHandler } from './SearchTools';
@@ -116,12 +137,25 @@ import { updateThreadLabelsHandler } from './UpdateThreadLabels';
 import { uploadFileHandler } from './UploadFile';
 import { webFetchHandler } from './WebFetch';
 import { webSearchHandler } from './WebSearch';
+import {
+  editWordDocumentHandler,
+  readWordDocumentHandler,
+} from './WordDocument';
 
 const toolHandlers: ToolHandlerMap<RenderContext> = {
   ...initiativeToolHandlers,
+  DispatchCodingAgent: dispatchCodingAgentHandler,
+  ListCodingAgents: listCodingAgentsHandler,
   ReadSpreadsheet: readSpreadsheetHandler,
   CalculateSpreadsheet: calculateSpreadsheetHandler,
   EditSpreadsheet: editSpreadsheetHandler,
+  ReadPresentation: readPresentationHandler,
+  EditPresentation: editPresentationHandler,
+  ReadDesign: readDesignHandler,
+  ReadPhotoshopDocument: readPhotoshopDocumentHandler,
+  ReadIllustratorDocument: readIllustratorDocumentHandler,
+  ReadWordDocument: readWordDocumentHandler,
+  EditWordDocument: editWordDocumentHandler,
   ConfigureAgent: configureAgentHandler,
   ListAgents: listAgentsHandler,
   ConfigureBot: configureBotHandler,
@@ -133,6 +167,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   ListBots: listBotsHandler,
   ManageBotChannelAccess: manageBotChannelAccessHandler,
   CreateCalendarEvent: createCalendarEventHandler,
+  CreateConfirmedCalendarEvent: createConfirmedCalendarEventHandler,
   UpdateCalendarEvent: updateCalendarEventHandler,
   DeleteCalendarEvent: deleteCalendarEventHandler,
   ListCalendarEvents: listCalendarEventsHandler,
@@ -144,13 +179,17 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   GetEntityProperties: getEntityPropertiesHandler,
   ListCompanies: listCompaniesHandler,
   ListImportEntities: listImportEntitiesHandler,
+  ...lazyDatabaseToolHandlers,
   ListEntities: listEntitiesHandler,
   ListInboxes: listInboxesHandler,
   ListLabels: listLabelsHandler,
   ListSkills: listSkillsHandler,
   ManageChannelParticipants: manageChannelParticipantsHandler,
   ListNotifications: listNotificationsHandler,
-  ListReminders: listRemindersHandler,
+  CreateRoutine: createRoutineHandler,
+  ListRoutines: listRoutinesHandler,
+  ReadRoutine: readRoutineHandler,
+  UpdateRoutine: updateRoutineHandler,
   ListTags: listTagsHandler,
   ListTeamMembers: listTeamMembersHandler,
   LoadTools: loadToolsHandler,
@@ -164,9 +203,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   UploadFile: uploadFileHandler,
   GenerateImage: generateImageHandler,
   CreateProject: createProjectHandler,
-  CreateReminder: createReminderHandler,
   CreateTag: createTagHandler,
-  DeleteReminder: deleteReminderHandler,
   DeleteTag: deleteTagHandler,
   EditDocument: editDocumentHandler,
   EditTag: editTagHandler,
@@ -198,7 +235,6 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   BulkSetEntityPropertyOptions: bulkSetEntityPropertyOptionsHandler,
   Subagent: subagentHandler,
   TextEditorCodeExecution: textEditorCodeExecutionHandler,
-  UpdateReminder: updateReminderHandler,
   UpdateThreadLabels: updateThreadLabelsHandler,
   WebFetch: webFetchHandler,
   WebSearch: webSearchHandler,
@@ -232,6 +268,7 @@ export function hasToolRenderer(name: string): boolean {
 }
 
 export function RenderTool(props: ToolProps) {
+  const databasesEnabled = useFeatureFlag(enableDatabases);
   const maybeTool = deserializeToolCall({
     id: props.tool_id,
     json: props.json,
@@ -304,15 +341,21 @@ export function RenderTool(props: ToolProps) {
       <ToolErrorContext.Provider
         value={() => (props.isComplete && !response() ? 'failed' : undefined)}
       >
-        <Dynamic
-          component={handler.render}
-          {...context}
-          response={response()}
-          renderContext={{
-            isStreaming: props.renderContext.renderContext.isStreaming,
-            grouped: props.renderContext.renderContext.grouped,
-          }}
-        />
+        <Show
+          when={isToolShown(tool.name, databasesEnabled().enabled)}
+          fallback={<DatabaseToolPlaceholder />}
+        >
+          <Dynamic
+            component={handler.render}
+            {...context}
+            response={response()}
+            renderContext={{
+              isStreaming: props.renderContext.renderContext.isStreaming,
+              grouped: props.renderContext.renderContext.grouped,
+              followedBy: props.renderContext.renderContext.followedBy,
+            }}
+          />
+        </Show>
       </ToolErrorContext.Provider>
     </LegacyGeneratedImage>
   );

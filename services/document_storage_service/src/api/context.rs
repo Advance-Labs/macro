@@ -71,10 +71,10 @@ use agent_session::{
     domain::search::{AgentSessionSearchMetadataService, AgentSessionSearchMetadataServiceImpl},
     outbound::postgres::PgAgentSessionRepo,
 };
-use collab_surface::{
-    domain::service::CollabSurfaceServiceImpl, inbound::axum_router::CollabSurfaceRouterState,
-    outbound::pg_collab_surface_repo::PgCollabSurfaceRepo,
-    outbound::surface_init::LexicalSyncSurfaceInitializer,
+use collab_surface::inbound::axum_router::CollabSurfaceRouterState;
+use databases::{
+    inbound::axum_router::DatabasesRouterState,
+    outbound::gateway_event_publisher::GatewayTableEventPublisher, wiring::PgDatabasesService,
 };
 use entity_registry::OwnerGrantPolicy;
 use entity_registry_db_utils::OwnedEntityRegistrar;
@@ -83,10 +83,26 @@ use foreign_entity::{
     outbound::pg_foreign_entity_repo::PgForeignEntityRepo,
 };
 use frecency::{domain::services::FrecencyQueryServiceImpl, outbound::postgres::FrecencyPgStorage};
-use github::domain::service::GithubSyncServiceImpl;
+use github::domain::service::{GithubSyncServiceImpl, PullRequestIndexService};
+use github::inbound::pull_request_index_router::PullRequestIndexRouterState;
 use github::outbound::connection_gateway_realtime::ConnectionGatewayGithubRealtime;
 use github::outbound::github_sync_client::GithubSyncClientImpl;
 use github::outbound::pg_github_sync_repo::PgGithubSyncRepo;
+use github::outbound::pull_request_diff::GithubPullRequestDiffClient;
+use github_pull_requests::{
+    domain::service::{
+        GithubPullRequestChangesServiceImpl, GithubPullRequestChangesetStore,
+        GithubPullRequestServiceImpl,
+    },
+    inbound::{
+        axum_router::GithubPullRequestRouterState,
+        changes_router::GithubPullRequestChangesRouterState,
+    },
+    outbound::{
+        pg_github_pull_request_repo::PgGithubPullRequestRepo,
+        s3_patch_store::S3GithubPullRequestPatchStore,
+    },
+};
 use initiative::{
     domain::service::InitiativeServiceImpl, inbound::axum_router::InitiativeRouterState,
     outbound::PgInitiativeRepo,
@@ -114,8 +130,7 @@ use properties::{
 };
 use readonly_pool::ReadOnlyPool;
 use reminders::{
-    domain::service::RemindersServiceImpl, inbound::axum_router::RemindersRouterState,
-    outbound::pg_reminders_repo::PgRemindersRepo,
+    inbound::axum_router::RemindersRouterState, outbound::pg_reminders_repo::PgRemindersRepo,
 };
 use search_service::SearchHandlerState;
 use soup::{
@@ -182,8 +197,7 @@ pub(crate) type DssSoupService = SoupImpl<
     ChannelListServiceImpl<PgChannelsRepo, PgChannelsRepo, FrecencyPgStorage>,
     call::domain::service::CallRecordQueryServiceImpl<call::outbound::pg_call_repo::PgCallRepo>,
     DssCrmService,
-    ForeignEntityServiceType,
-    RemindersServiceType,
+    GithubPullRequestServiceType,
 >;
 
 type DssSoupState =
@@ -480,6 +494,7 @@ pub(crate) type DssEntityMutationService =
         DssCallService,
         DssEmailService,
         ProjectService,
+        DatabasesServiceType,
         EntityAccessService,
         crate::outbound::entity_mutation::DssEntityLifecycleAdapter<DssEventBroker>,
     >;
@@ -508,6 +523,26 @@ pub(crate) type UserApiKeyServiceType = UserApiKeyServiceImpl<PgUserApiKeysRepo>
 /// Type alias for the user API key router state.
 pub(crate) type DssUserApiKeyState =
     UserApiKeyRouterState<UserApiKeyServiceType, AuthorizationService>;
+
+/// Type alias for the databases service.
+pub(crate) type DatabasesServiceType =
+    PgDatabasesService<GatewayTableEventPublisher, DssEventBroker, EntityAccessService>;
+
+/// Type alias for the databases router state.
+pub(crate) type DssDatabasesState =
+    DatabasesRouterState<DatabasesServiceType, EntityAccessService, AuthorizationService>;
+
+/// Database onboarding composes transaction-capable owning domain adapters.
+pub(crate) type DssDatabaseStarterState =
+    databases::inbound::starter_router::DatabaseStarterRouterState<
+        databases::domain::starter::DatabaseStarterServiceImpl<
+            databases::outbound::pg_starter::PgDatabaseStarterRepo<
+                properties::outbound::properties_pg_repo::PropertiesPgRepo,
+            >,
+            DssEventBroker,
+        >,
+        AuthorizationService,
+    >;
 
 /// HTTP-only authorization adapter: revalidates notification recipients. DSS
 /// never authorizes worker targets; that capability fails closed here.
@@ -586,40 +621,30 @@ pub(crate) type DssSlackState = slack_integration::inbound::axum_router::SlackRo
 /// Type alias for the reminders service.
 pub(crate) type RemindersServiceType =
     reminders::domain::email_followup::reminder_service::EmailRemindersService<
-        RemindersServiceImpl<PgRemindersRepo>,
         PgRemindersRepo,
         DssEmailService,
         reminders::domain::ports::SystemClock,
+        EntityAccessService,
     >;
 
 /// Type alias for the reminders router state.
 pub(crate) type DssRemindersState =
     RemindersRouterState<RemindersServiceType, EntityAccessService, AuthorizationService>;
 
-pub(crate) type InitiativeDescriptionDocumentsType =
-    initiative_documents::InitiativeDescriptionDocumentsAdapter<
-        Arc<DocumentService>,
-        documents_hex::outbound::markdown_init::LexicalSyncMarkdownInitializer,
-        documents_hex::outbound::document_bytes_upload::ReqwestDocumentBytesUploader,
-        documents_hex::outbound::mention_tracker::LexicalCommsMentionTracker,
-        documents_hex::domain::purge::DocumentPurger<
-            documents_hex::outbound::document_purge::LegacyDocumentPurgeRepository,
-            documents_hex::outbound::document_purge::SqsDocumentPurgeQueue,
-            DssEventBroker,
-        >,
-    >;
+/// Initiative description surfaces, backed by the shared collab-surface service.
+pub(crate) type InitiativeDescriptionSurfacesType =
+    initiative_description::InitiativeDescriptionSurfacesAdapter<CollabSurfaceServiceType>;
 
 /// Type alias for the initiative service.
 pub(crate) type InitiativeServiceType =
-    InitiativeServiceImpl<PgInitiativeRepo, InitiativeDescriptionDocumentsType>;
+    InitiativeServiceImpl<PgInitiativeRepo, InitiativeDescriptionSurfacesType>;
 
 /// Type alias for the initiative router state.
 pub(crate) type DssInitiativeState =
     InitiativeRouterState<InitiativeServiceType, EntityAccessService, AuthorizationService>;
 
 /// Type alias for the collab-surface service.
-pub(crate) type CollabSurfaceServiceType =
-    CollabSurfaceServiceImpl<PgCollabSurfaceRepo, LexicalSyncSurfaceInitializer>;
+pub(crate) type CollabSurfaceServiceType = collab_surface::outbound::PgCollabSurfaceService;
 
 /// Type alias for the collab-surface router state.
 pub(crate) type DssCollabSurfaceState =
@@ -632,15 +657,51 @@ pub(crate) type ForeignEntityServiceType = ForeignEntityServiceImpl<PgForeignEnt
 pub(crate) type DssForeignEntityState =
     ForeignEntityRouterState<ForeignEntityServiceType, EntityAccessService, AuthorizationService>;
 
+/// Type alias for the GitHub pull request service.
+pub(crate) type GithubPullRequestServiceType =
+    GithubPullRequestServiceImpl<ForeignEntityServiceType, PgGithubPullRequestRepo>;
+
+/// Type alias for the GitHub pull request router state.
+pub(crate) type DssGithubPullRequestState = GithubPullRequestRouterState<
+    GithubPullRequestServiceType,
+    EntityAccessService,
+    AuthorizationService,
+>;
+
+/// Type alias for the store of GitHub pull request changesets and their patches.
+pub(crate) type GithubPullRequestChangesetStoreType = GithubPullRequestChangesetStore<
+    GithubPullRequestDiffClient<PgGithubSyncRepo, GithubSyncClientImpl>,
+    PgGithubPullRequestRepo,
+    S3GithubPullRequestPatchStore,
+>;
+
+/// Type alias for the GitHub pull request changes router state.
+pub(crate) type DssGithubPullRequestChangesState = GithubPullRequestChangesRouterState<
+    GithubPullRequestChangesServiceImpl<
+        GithubPullRequestServiceType,
+        GithubPullRequestChangesetStoreType,
+    >,
+    EntityAccessService,
+    AuthorizationService,
+>;
+
 /// Type alias for the github sync service.
 pub(crate) type GithubSyncServiceType = GithubSyncServiceImpl<
     DocumentService,
     PgGithubSyncRepo,
     GithubSyncClientImpl,
-    ForeignEntityServiceType,
+    GithubPullRequestServiceType,
     NotificationIngressType,
     ConnectionGatewayGithubRealtime,
 >;
+
+/// Type alias for the GitHub pull request index service.
+pub(crate) type GithubPullRequestIndexServiceType =
+    PullRequestIndexService<PgGithubSyncRepo, GithubSyncClientImpl, GithubPullRequestServiceType>;
+
+/// Type alias for the GitHub pull request index router state.
+pub(crate) type DssGithubPullRequestIndexState =
+    PullRequestIndexRouterState<GithubPullRequestIndexServiceType, AuthorizationService>;
 
 /// Type alias for the cal.com webhook service.
 pub(crate) type CalWebhookServiceType = CalWebhookServiceImpl<AnalyticsClientSink>;
@@ -686,10 +747,14 @@ pub(crate) struct ApiContext {
     pub redis_client: Arc<Redis>,
     pub s3_client: Arc<S3>,
     pub github_sync_service: Arc<GithubSyncServiceType>,
+    pub github_pull_request_index_state: DssGithubPullRequestIndexState,
+    pub github_pull_request_state: DssGithubPullRequestState,
+    pub github_pull_request_changes_state: DssGithubPullRequestChangesState,
     pub dynamodb_client: Arc<DynamodbClient>,
     pub dynamo_db: aws_sdk_dynamodb::Client,
     pub soup_router_state: DssSoupState,
     pub graphql_soup_schema: DssGraphqlSoupSchema,
+    pub agent_session_log_subscriptions: complete_graph::AgentSessionLogSubscriptions,
     pub graphql_notification_reader: Arc<ai_tools::ToolNotificationService>,
     pub activity_reader: DssActivityReader,
     pub graphql_entity_mutation_service: Arc<DssEntityMutationService>,
@@ -704,6 +769,8 @@ pub(crate) struct ApiContext {
     pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,
     pub graphql_scheduled_action_context: graphql_scheduled_action::ScheduledActionGraphqlContext,
     pub graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader,
+    pub databases_state: DssDatabasesState,
+    pub database_starter_state: DssDatabaseStarterState,
     pub collab_surface_state: DssCollabSurfaceState,
     pub foreign_entity_state: DssForeignEntityState,
     pub macro_event_broker: DssEventBroker,

@@ -74,6 +74,15 @@ impl ai_billing::domain::BillingService for UnavailableBilling {
         panic!("admission must not change settings")
     }
 
+    async fn update_auto_reload(
+        &self,
+        _: &MacroUserIdStr<'_>,
+        _: bool,
+        _: ai_billing::domain::AutoReloadThresholds,
+    ) -> ai_billing::domain::Result<ai_billing::domain::UsageSnapshot> {
+        panic!("admission must not change settings")
+    }
+
     async fn create_credit_checkout(
         &self,
         _: &MacroUserIdStr<'_>,
@@ -106,10 +115,14 @@ impl ai_billing::domain::BillingService for UnavailableBilling {
     async fn mark_overage_invoice(&self, _: &str, _: bool) -> ai_billing::domain::Result<()> {
         panic!("admission must not handle invoices")
     }
+
+    async fn mark_credit_reload_invoice(&self, _: &str, _: bool) -> ai_billing::domain::Result<()> {
+        panic!("admission must not handle invoices")
+    }
 }
 
 /// Models advertised by shared test engines.
-pub(crate) const TEST_MODELS: &[&str] = &["anthropic/claude-sonnet-5", "other-model"];
+pub(crate) const TEST_MODELS: &[&str] = &["anthropic/claude-sonnet-5-5", "other-model"];
 
 /// An engine that plays back a script of parts for every turn.
 pub(crate) struct ScriptedEngine {
