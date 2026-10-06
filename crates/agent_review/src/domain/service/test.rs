@@ -111,6 +111,18 @@ async fn immutable_revisions_and_citations_survive_relocation() {
         f.service.link(agent(), 1, at(2)).await.unwrap().url,
         link.url
     );
+    assert!(matches!(
+        f.service.view(agent(), Some(3)).await,
+        Err(ReviewError::NotFound)
+    ));
+    assert!(matches!(
+        f.service.file(agent(), 3, "src/main.rs").await,
+        Err(ReviewError::NotFound)
+    ));
+    assert!(matches!(
+        f.service.file(agent(), 1, "missing.rs").await,
+        Err(ReviewError::NotFound)
+    ));
 }
 
 #[tokio::test]

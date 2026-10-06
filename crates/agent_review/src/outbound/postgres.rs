@@ -47,6 +47,66 @@ impl ReviewRepo for PgReviewRepo {
         Ok(row.map(|r| r.state.0))
     }
 
+    async fn load_view(
+        &self,
+        session: AgentSessionId,
+        revision: Option<u32>,
+    ) -> Result<Option<Review>> {
+        let row = sqlx::query!(
+            r#"
+            WITH selected AS MATERIALIZED (
+                SELECT state, COALESCE(
+                    $2::bigint, (state->'revisions'->-1->>'number')::bigint
+                ) AS number
+                FROM agent_review WHERE agent_session_id = $1
+            )
+            SELECT jsonb_set(state, '{revisions}', COALESCE((
+                SELECT jsonb_agg(CASE
+                    WHEN (item->>'number')::bigint = selected.number THEN item
+                    ELSE jsonb_build_object(
+                        'number', item->'number', 'createdAt', item->'createdAt',
+                        'comparison', item->'comparison', 'files', '[]'::jsonb,
+                        'symbols', '[]'::jsonb
+                    ) END ORDER BY position)
+                FROM jsonb_array_elements(state->'revisions')
+                    WITH ORDINALITY AS revisions(item, position)
+            ), '[]'::jsonb)) AS "state!: Json<Review>"
+            FROM selected
+            "#,
+            session.as_uuid(),
+            revision.map(i64::from),
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ReviewError::Infrastructure(rootcause::report!(e).into()))?;
+        Ok(row.map(|r| r.state.0))
+    }
+
+    async fn file_content(
+        &self,
+        session: AgentSessionId,
+        revision: u32,
+        path: &str,
+    ) -> Result<Option<String>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT jsonb_path_query_first(
+                state,
+                '$.revisions[*] ? (@.number == $revision).files[*] ? (@.path == $path).content',
+                jsonb_build_object('revision', $2::bigint, 'path', $3::text)
+            ) #>> '{}' AS content
+            FROM agent_review WHERE agent_session_id = $1
+            "#,
+            session.as_uuid(),
+            i64::from(revision),
+            path,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ReviewError::Infrastructure(rootcause::report!(e).into()))?;
+        Ok(row.and_then(|r| r.content))
+    }
+
     async fn save(
         &self,
         review: &Review,
@@ -65,23 +125,24 @@ impl ReviewRepo for PgReviewRepo {
                 return Err(ReviewError::Conflict);
             }
         }
-        let changed = sqlx::query!(
-            r#"
+        let changed = if previous.is_none() {
+            sqlx::query!(
+                r#"
             INSERT INTO agent_review (agent_session_id, review_id, version, state)
             SELECT $1, $2, $3, $4 WHERE $5::bigint IS NULL
             ON CONFLICT (agent_session_id) DO NOTHING
         "#,
-            review.session_id,
-            review.id.0,
-            review.version,
-            Json(review) as _,
-            previous
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ReviewError::Infrastructure(rootcause::report!(e).into()))?
-        .rows_affected();
-        let changed = if previous.is_some() {
+                review.session_id,
+                review.id.0,
+                review.version,
+                Json(review) as _,
+                previous
+            )
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ReviewError::Infrastructure(rootcause::report!(e).into()))?
+            .rows_affected()
+        } else {
             sqlx::query!(
                 r#"UPDATE agent_review SET version = $3, state = $4, updated_at = now()
                 WHERE agent_session_id = $1 AND version = $2"#,
@@ -94,8 +155,6 @@ impl ReviewRepo for PgReviewRepo {
             .await
             .map_err(|e| ReviewError::Infrastructure(rootcause::report!(e).into()))?
             .rows_affected()
-        } else {
-            changed
         };
         if changed == 0 {
             return Ok(false);

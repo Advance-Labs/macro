@@ -76,6 +76,109 @@ fn review(session: AgentSessionId) -> Review {
     }
 }
 
+fn revision(number: u32) -> Revision {
+    Revision {
+        number,
+        created_at: chrono::Utc::now(),
+        comparison: Comparison {
+            base: Some(format!("base-{number}")),
+            head: Some(format!("head-{number}")),
+            worktree: false,
+        },
+        files: vec![FileEntry {
+            path: "src/main.rs".into(),
+            old_path: None,
+            content: format!("body-{number}"),
+            status: diffd_core::model::FileStatus::Added,
+            language: Some("rust".into()),
+            added: 1,
+            removed: 0,
+            collapsed: None,
+            labels: vec![],
+            omitted: None,
+        }],
+        tour: vec![Chapter {
+            key: "main".into(),
+            title: format!("Revision {number}"),
+            description: "An explanation preserved in history".into(),
+            paths: vec!["src/main.rs".into()],
+            focus: Location {
+                path: "src/main.rs".into(),
+                side: diffd_core::model::Side::New,
+                line: 1,
+                end_line: None,
+            },
+        }],
+        annotations: vec![],
+        file_groups: vec![FileGroup {
+            key: "source".into(),
+            title: "Source".into(),
+            files: vec!["src/**".into()],
+            hidden: false,
+        }],
+        symbols: vec![],
+    }
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn projected_reads_preserve_selected_history_and_scope_body_references(pool: PgPool) {
+    let id = seed_session(&pool).await;
+    let other = seed_session(&pool).await;
+    let repo = PgReviewRepo::new(pool);
+    assert!(repo.load_view(id, None).await.unwrap().is_none());
+    let mut value = review(id);
+    value.revisions = vec![revision(2), revision(9)];
+    assert!(repo.save(&value, None, None).await.unwrap());
+
+    for requested in [None, Some(2), Some(9), Some(3)] {
+        let mut expected = value.clone();
+        for revision in &mut expected.revisions {
+            if revision.number != requested.unwrap_or(9) {
+                revision.files.clear();
+                revision.symbols.clear();
+                revision.tour.clear();
+                revision.annotations.clear();
+                revision.file_groups.clear();
+            }
+        }
+        let actual = repo.load_view(id, requested).await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+    // Reader projections must never prune the stored aggregate used by writers.
+    assert_eq!(
+        serde_json::to_value(repo.load(id).await.unwrap().unwrap()).unwrap(),
+        serde_json::to_value(&value).unwrap()
+    );
+    for number in [2, 9] {
+        assert_eq!(
+            repo.file_content(id, number, "src/main.rs").await.unwrap(),
+            Some(format!("body-{number}"))
+        );
+    }
+    assert!(
+        repo.file_content(id, 1, "src/main.rs")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repo.file_content(id, 2, "missing.rs")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repo.file_content(other, 2, "src/main.rs")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(repo.load_view(other, Some(2)).await.unwrap().is_none());
+}
+
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn capture_claims_fence_publication_and_cas_keeps_concurrent_comments(pool: PgPool) {
     let id = seed_session(&pool).await;

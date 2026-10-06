@@ -15,6 +15,20 @@ pub trait ReviewRepo: Send + Sync + 'static {
     async fn finish_cleanup(&self, session: AgentSessionId) -> Result<()>;
     /// Read the session's review. Sessions own one continuous review history.
     async fn load(&self, session: AgentSessionId) -> Result<Option<Review>>;
+    /// Read one manifest and compact history headers. Omitted selects the latest.
+    /// Unknown revisions retain the headers so the service can report NotFound.
+    async fn load_view(
+        &self,
+        session: AgentSessionId,
+        revision: Option<u32>,
+    ) -> Result<Option<Review>>;
+    /// Resolve a body reference only within this session and revision number.
+    async fn file_content(
+        &self,
+        session: AgentSessionId,
+        revision: u32,
+        path: &str,
+    ) -> Result<Option<String>>;
     /// Insert a new review or replace exactly `previous_version`. False is a race.
     async fn save(
         &self,
