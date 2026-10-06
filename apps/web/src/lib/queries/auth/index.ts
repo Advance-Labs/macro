@@ -11,6 +11,8 @@ export {
   useChangePlanMutation,
   useCreateAiCreditCheckoutMutation,
   useIncludedAiCentsByTier,
+  usePhoneAddonQuery,
+  useSetPhoneAddonMutation,
   useUpdateAiOverageMutation,
 } from './ai-billing';
 export {

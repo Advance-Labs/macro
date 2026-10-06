@@ -44,24 +44,40 @@ const host: string = SERVER_HOSTS['document-storage-service'];
 /**
  * `PHONE_INVALID` — the request was refused as written (an unreadable or
  * disallowed number, a call that can no longer be answered); `PHONE_UNAVAILABLE`
- * — phone calling isn't set up for the deployment.
+ * — phone calling isn't set up for the deployment; `PHONE_PAYMENT_REQUIRED` —
+ * the caller's plan doesn't pay for the call (no phone plan, or minutes and
+ * usage billing used up).
  */
-export type PhoneErrorCode = 'PHONE_INVALID' | 'PHONE_UNAVAILABLE';
+export type PhoneErrorCode =
+  | 'PHONE_INVALID'
+  | 'PHONE_UNAVAILABLE'
+  | 'PHONE_PAYMENT_REQUIRED';
+
+function phoneErrorCode(status: number): PhoneErrorCode | undefined {
+  switch (status) {
+    case 400:
+      return 'PHONE_INVALID';
+    case 402:
+      return 'PHONE_PAYMENT_REQUIRED';
+    case 503:
+      return 'PHONE_UNAVAILABLE';
+    default:
+      return undefined;
+  }
+}
 
 /** Phone endpoints explain refusals in words meant for the person dialing. */
 async function phoneErrorResponse(response: Response) {
   const failure = statusError(response.status);
-  if (response.status !== 400 && response.status !== 503) return failure;
+  const code = phoneErrorCode(response.status);
+  if (!code) return failure;
   const body: unknown = await response.json().catch(() => undefined);
   const message =
     body && typeof body === 'object' && 'message' in body
       ? body.message
       : undefined;
   return {
-    code:
-      response.status === 503
-        ? ('PHONE_UNAVAILABLE' as const)
-        : ('PHONE_INVALID' as const),
+    code,
     message: typeof message === 'string' && message ? message : failure.message,
   };
 }

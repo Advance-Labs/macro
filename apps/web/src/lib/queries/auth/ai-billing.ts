@@ -115,3 +115,30 @@ export function useChangePlanMutation() {
     },
   }));
 }
+
+/**
+ * The Phone add-on for the viewer's plan: their own seat and, for the payer,
+ * every seat they pay for.
+ */
+export function usePhoneAddonQuery() {
+  return useQuery(() => ({
+    queryKey: authKeys.aiPhoneAddon.queryKey,
+    queryFn: async () =>
+      await throwOnErr(async () => await authServiceClient.getPhoneAddon()),
+    staleTime: AI_BILLING_SUMMARY_STALE_TIME,
+    throwOnError: false,
+    retry: 1,
+  }));
+}
+
+/** Turn the Phone add-on on or off for a seat (the viewer's when omitted). */
+export function useSetPhoneAddonMutation() {
+  return useMutation(() => ({
+    mutationFn: async (args: { userId?: string; enabled: boolean }) =>
+      await throwOnErr(async () => await authServiceClient.setPhoneAddon(args)),
+    onSuccess: (overview) => {
+      queryClient.setQueryData(authKeys.aiPhoneAddon.queryKey, overview);
+      void invalidateAiBillingSummary();
+    },
+  }));
+}

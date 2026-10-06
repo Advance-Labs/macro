@@ -1,6 +1,7 @@
 import { useCallContext } from '@channel/Call/CallContext';
 import { startCallRinger } from '@channel/Call/CallStartedNotifier';
 import { LK_ROOM_EVENT } from '@channel/Call/livekit-loader';
+import { useSettingsState } from '@core/constant/SettingsState';
 import { useIsAuthenticated, useUserId } from '@core/context/user';
 import { usePlatformNotificationState } from '@notifications';
 import { createConnectionWebsocketEffect } from '@service-connection/websocket';
@@ -53,6 +54,7 @@ function createAppPhoneContext(): PhoneContext {
   const call = useCallContext();
   const userId = useUserId();
   const navigate = useNavigate();
+  const { openSettings } = useSettingsState();
   const notification = usePlatformNotificationState();
   return {
     operations: createPhoneCallOperations(),
@@ -120,5 +122,6 @@ function createAppPhoneContext(): PhoneContext {
       });
     },
     openContact: (contactId) => navigate(`/contact/${contactId}`),
+    openPhoneSettings: () => openSettings('Phone'),
   };
 }

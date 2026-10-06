@@ -21,6 +21,8 @@ export function DialerForm(props: {
   /** Something to know before calling, e.g. that it ends the current call. */
   notice?: string;
   error?: string;
+  /** Offered with the error when the viewer's plan doesn't cover the call. */
+  onOpenPlan?: () => void;
   inputRef?: (element: HTMLInputElement) => void;
 }) {
   return (
@@ -72,9 +74,23 @@ export function DialerForm(props: {
           <p class="text-sm text-ink-muted">{props.notice}</p>
         </Show>
         <Show when={props.error}>
-          <p role="alert" class="text-sm text-failure">
-            {props.error}
-          </p>
+          <div class="flex items-start justify-between gap-3">
+            <p role="alert" class="text-sm text-failure">
+              {props.error}
+            </p>
+            <Show when={props.onOpenPlan}>
+              {(onOpenPlan) => (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenPlan()()}
+                >
+                  Phone plan
+                </Button>
+              )}
+            </Show>
+          </div>
         </Show>
       </ActionDialogShell.Body>
       <ActionDialogShell.Footer>

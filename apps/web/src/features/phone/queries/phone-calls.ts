@@ -29,6 +29,12 @@ export function toPhoneCallError(error: unknown): PhoneCallError {
         'unavailable',
         failure.message || "Phone calling isn't set up for your workspace yet."
       );
+    case 'PHONE_PAYMENT_REQUIRED':
+      return new PhoneCallError(
+        'payment',
+        failure.message ||
+          "Your plan doesn't include phone calls. See Phone settings."
+      );
     case 'NOT_FOUND':
     case 'CONFLICT':
       return new PhoneCallError('gone', 'This call has already ended.');

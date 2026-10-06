@@ -78,6 +78,7 @@ function setup(
       emit = handler;
     },
     openContact: vi.fn(),
+    openPhoneSettings: vi.fn(),
   } satisfies PhoneContext;
   render(() => (
     <PhoneProvider value={context}>

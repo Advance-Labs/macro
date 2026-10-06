@@ -14,6 +14,7 @@ import { plural } from '@core/util/string';
 import CheckIcon from '@phosphor/check.svg';
 import EnvelopeIcon from '@phosphor/envelope.svg';
 import {
+  useAiBillingPlansQuery,
   useAiBillingSummaryQuery,
   useChangePlanMutation,
   useCreateCheckoutSessionMutation,
@@ -25,15 +26,20 @@ import type { TeamMember } from '@service-auth/generated/schemas/teamMember';
 import { stripeServiceClient } from '@service-stripe/client';
 import { Button, Layer } from '@ui';
 import { createMemo, For, Match, Show, Switch } from 'solid-js';
+import { usePhoneCallsEnabled } from '../phone/phone-actions';
 import { SettingsCard, SettingsPage, SettingsSection } from './primitives';
+
+/** What phone calling costs, from the plan catalog. */
+type PhonePricing = { minutes: string; addonPrice: string };
 
 /**
  * Plan bullet points. The allowance line appears only with AI usage billing on
- * and once the plan catalog has supplied the amount.
+ * and once the plan catalog has supplied the amount; the phone lines only
+ * where phone calling is rolled out.
  */
 const BILLING_PLAN_FEATURES: Record<
   PlanTier,
-  (includedAi: string | undefined) => string[]
+  (includedAi: string | undefined, phone: PhonePricing | undefined) => string[]
 > = {
   free: (includedAi) => [
     'Access to Haiku',
@@ -41,7 +47,7 @@ const BILLING_PLAN_FEATURES: Record<
     'MCP access',
     '5 GB storage',
   ],
-  premium: (includedAi) => [
+  premium: (includedAi, phone) => [
     'All agents',
     'All models',
     ...(includedAi ? [`${includedAi} of AI usage at cost each month`] : []),
@@ -49,12 +55,20 @@ const BILLING_PLAN_FEATURES: Record<
     'AI projections',
     'Multiple email inboxes',
     'Calls',
+    ...(phone
+      ? [
+          `Phone calling add-on: ${phone.addonPrice} per seat with ${phone.minutes} minutes`,
+        ]
+      : []),
     'Teams',
     '1 TB storage',
   ],
-  max: (includedAi) => [
+  max: (includedAi, phone) => [
     'Everything in Premium',
     ...(includedAi ? [`${includedAi} of AI usage at cost each month`] : []),
+    ...(phone
+      ? [`Phone calling with ${phone.minutes} minutes each month`]
+      : []),
     'Priority support',
   ],
 };
@@ -62,12 +76,24 @@ const BILLING_PLAN_FEATURES: Record<
 const PlanFeatures = (props: { tier: PlanTier }) => {
   const aiUsageBilling = useFeatureFlag(enableAiUsageBilling);
   const includedAi = useIncludedAiCentsByTier();
+  const phoneCalls = usePhoneCallsEnabled();
+  const plans = useAiBillingPlansQuery();
   const allowance = () =>
     aiUsageBilling().enabled
       ? formatIncludedAi(includedAi()[props.tier])
       : undefined;
+  const phone = (): PhonePricing | undefined => {
+    if (!phoneCalls() || !plans.isSuccess) return undefined;
+    const minutes = plans.data.included_phone_minutes_per_seat;
+    const price = plans.data.phone_addon_monthly_price_cents;
+    if (minutes === undefined || price === undefined) return undefined;
+    return {
+      minutes: minutes.toLocaleString(),
+      addonPrice: `${formatIncludedAi(price)}/mo`,
+    };
+  };
   return (
-    <For each={BILLING_PLAN_FEATURES[props.tier](allowance())}>
+    <For each={BILLING_PLAN_FEATURES[props.tier](allowance(), phone())}>
       {(label) => (
         <li class="flex items-center gap-2">
           <CheckIcon class="size-3 text-success" />

@@ -18,6 +18,7 @@ import type {
   AiPlanCatalog,
   AiUsageSnapshot,
   PaidPlan,
+  PhoneAddonOverview,
   TeamMemberPlan,
 } from './ai-billing-types';
 import { fetchWithAuth as _fetchWithAuth } from './fetch';
@@ -723,6 +724,37 @@ export const authServiceClient = {
     return await fetchWithAuth<AiPlanCatalog>(`${authHost}/ai-billing/plans`, {
       method: 'GET',
     });
+  },
+
+  async getPhoneAddon() {
+    return await fetchWithAuth<PhoneAddonOverview>(
+      `${authHost}/ai-billing/phone-addon`,
+      { method: 'GET' }
+    );
+  },
+
+  /** Turn the Phone add-on on or off for a seat (the viewer's when omitted). */
+  async setPhoneAddon(args: { userId?: string; enabled: boolean }) {
+    return await fetchWithAuth<PhoneAddonOverview>(
+      `${authHost}/ai-billing/phone-addon`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ userId: args.userId, enabled: args.enabled }),
+        errorResponseHandler: async (response) => {
+          const body: unknown = await response.json().catch(() => undefined);
+          const error =
+            body && typeof body === 'object' && 'error' in body
+              ? body.error
+              : undefined;
+          const failure = statusError(response.status);
+          return {
+            ...failure,
+            message:
+              typeof error === 'string' && error ? error : failure.message,
+          };
+        },
+      }
+    );
   },
 
   async updateAiOverage(args: { enabled: boolean; limitCents: number }) {

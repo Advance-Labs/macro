@@ -4,6 +4,7 @@ import type {
   PhoneCallEvent,
   PhoneLeg,
 } from '../core/phone-call';
+import type { PhonePlan } from '../core/phone-plan';
 
 /** What the client needs to join a phone call's room. Opaque to the feature. */
 export type PhoneRoomCredentials = {
@@ -71,6 +72,17 @@ export type PhoneSettingsSource = {
   isError: Accessor<boolean>;
 };
 
+/** The viewer's phone plan and the Phone add-on they can manage. */
+export type PhonePlanSource = {
+  /** `undefined` until loaded. */
+  plan: Accessor<PhonePlan | undefined>;
+  isError: Accessor<boolean>;
+  /** The seat whose add-on is being changed, if any. */
+  pendingSeat: Accessor<string | null>;
+  /** Turn the Phone add-on on or off for a seat; rejects with a message. */
+  setAddon(userId: string, enabled: boolean): Promise<void>;
+};
+
 /** Audible and system-level alerts for a ringing call. */
 export type PhoneAlerts = {
   /** Play the ringtone until `shouldStop` or `durationMs`; returns `stop`. */
@@ -97,6 +109,8 @@ export type PhoneContext = {
   subscribe(handler: (event: PhoneCallEvent) => void): void;
   /** Open the CRM contact a call was matched to. */
   openContact(contactId: string): void;
+  /** Open Phone settings, where the viewer's phone plan is managed. */
+  openPhoneSettings(): void;
 };
 
 const Context = createContext<PhoneContext>();

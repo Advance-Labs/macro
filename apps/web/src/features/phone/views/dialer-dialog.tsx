@@ -3,7 +3,10 @@ import { createSignal, onMount } from 'solid-js';
 import { DialerForm } from '../components/dialer-form';
 import { usePhoneContext } from '../context/phone-context';
 import { formatPhoneNumber, looksDialable } from '../core/phone-call';
-import { phoneCallErrorMessage } from '../core/phone-call-error';
+import {
+  isPhonePaymentError,
+  phoneCallErrorMessage,
+} from '../core/phone-call-error';
 import type { PhoneCallSession } from '../primitives/phone-call-session';
 
 /** A request to show the dialer, optionally placing the call right away. */
@@ -22,6 +25,7 @@ export function DialerDialog(props: {
   const context = usePhoneContext();
   const [value, setValue] = createSignal(props.request.number);
   const [error, setError] = createSignal<string>();
+  const [needsPlan, setNeedsPlan] = createSignal(false);
   let input: HTMLInputElement | undefined;
 
   const settings = () => context.settings.settings();
@@ -46,18 +50,24 @@ export function DialerDialog(props: {
     return number ? formatPhoneNumber(number) : undefined;
   };
 
+  function clearError() {
+    setError(undefined);
+    setNeedsPlan(false);
+  }
+
   function edit(next: string) {
     setValue(next);
-    setError(undefined);
+    clearError();
   }
 
   async function call() {
-    setError(undefined);
+    clearError();
     try {
       await props.session.dial(value());
       props.onClose();
     } catch (failure) {
       setError(phoneCallErrorMessage(failure));
+      setNeedsPlan(isPhonePaymentError(failure));
       input?.focus();
     }
   }
@@ -96,6 +106,14 @@ export function DialerDialog(props: {
           callerId={callerId()}
           notice={notice()}
           error={error()}
+          onOpenPlan={
+            needsPlan()
+              ? () => {
+                  props.onClose();
+                  context.openPhoneSettings();
+                }
+              : undefined
+          }
           inputRef={(element) => {
             input = element;
           }}

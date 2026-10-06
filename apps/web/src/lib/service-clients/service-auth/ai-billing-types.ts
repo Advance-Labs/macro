@@ -14,7 +14,9 @@ export type AiDenyReason =
   | 'allowance_exhausted'
   | 'free_allowance_exhausted'
   | 'overage_limit_reached'
-  | 'overage_payment_failed';
+  | 'overage_payment_failed'
+  | 'phone_plan_required'
+  | 'phone_minutes_exhausted';
 
 /** Machine-readable codes carried in 402 bodies from the AI endpoints. */
 export type AiDenyCode =
@@ -42,6 +44,14 @@ export interface AiUsageSnapshot {
   uncovered_cents: number;
   remaining_cents: number;
   blocked_reason?: AiDenyReason;
+  /** Whether this seat can make phone calls. Absent from older servers. */
+  phone_enabled?: boolean;
+  /** Phone minutes included with this seat this period. */
+  phone_included_minutes?: number;
+  /** Phone minutes this seat has used this period. */
+  phone_used_minutes?: number;
+  /** Why phone calls are refused right now, if they are. */
+  phone_blocked_reason?: AiDenyReason;
 }
 
 export interface AiPlanCatalogEntry {
@@ -49,6 +59,8 @@ export interface AiPlanCatalogEntry {
   monthly_price_cents: number;
   included_ai_cents_per_seat: number;
   purchasable: boolean;
+  /** Whether every seat on this plan can make phone calls. */
+  phone_included?: boolean;
 }
 
 export interface AiPlanCatalog {
@@ -56,6 +68,36 @@ export interface AiPlanCatalog {
   credit_packs_cents: number[];
   overage_limit_min_cents: number;
   overage_limit_max_cents: number;
+  /** Monthly price of the Phone add-on per Premium seat, cents. */
+  phone_addon_monthly_price_cents?: number;
+  /** Phone minutes included per phone seat per period. */
+  included_phone_minutes_per_seat?: number;
+}
+
+/** One billed seat in the Phone add-on overview. */
+export interface PhoneSeatStatus {
+  user_id: string;
+  tier: AiPlanTier;
+  /** Whether the seat can make phone calls now. */
+  phone_enabled: boolean;
+  /** Whether calling comes with the seat's plan (Max or enterprise). */
+  phone_included: boolean;
+  /** Whether the seat's Phone add-on renews with the subscription. */
+  addon: boolean;
+  /** When a turned-off add-on stops. */
+  addon_ends_at?: string;
+}
+
+/** The Phone add-on for the viewer's plan. */
+export interface PhoneAddonOverview {
+  /** Whether the viewer pays for the plan and may change the add-on. */
+  can_manage: boolean;
+  /** Whether the add-on can be bought in this deployment. */
+  available: boolean;
+  monthly_price_cents: number;
+  included_minutes_per_seat: number;
+  /** The viewer's own seat first, then (for the payer) every other seat. */
+  seats: PhoneSeatStatus[];
 }
 
 export type PaidPlan = 'premium' | 'max';

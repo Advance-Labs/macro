@@ -70,6 +70,8 @@ export const authExcluded = [
   'getCursorApiKey',
   'getGtmInviteOffer',
   'getLegacyUserPermissions',
+  // The Phone add-on is a billing settings flow, like the rest of AI billing.
+  'getPhoneAddon',
   'getPermissions',
   'getReferralCode',
   'getTeamInvites',
@@ -119,6 +121,7 @@ export const authExcluded = [
   'sendReferralCode',
   'sessionCreation',
   'sessionLogin',
+  'setPhoneAddon',
   'ssoLogin',
   'startCodexLogin',
   'toggleTeamAutoJoinDomain',
