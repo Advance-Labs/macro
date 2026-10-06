@@ -14,7 +14,7 @@ export function createDraftSyncStatus(options: {
   drafts: EmailDraftStorage;
   draftId: Accessor<string | undefined>;
   localSaveState: Accessor<'saving' | 'saved' | 'failed'>;
-  inputIdle: Accessor<boolean>;
+  acknowledgeSaved: Accessor<boolean>;
   retry(): Promise<unknown>;
   discard(): Promise<unknown>;
 }) {
@@ -66,7 +66,7 @@ export function createDraftSyncStatus(options: {
       return {
         message: 'Draft saved',
         savedVersion:
-          disk === 'saved' && options.inputIdle()
+          disk === 'saved' && options.acknowledgeSaved()
             ? draft
               ? `${draft.generation}:${draft.revision}`
               : saved.latest?.draft?.updated_at

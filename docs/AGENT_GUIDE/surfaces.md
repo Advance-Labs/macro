@@ -681,6 +681,8 @@ delete button after editing pauses for 500 ms and the latest local save complete
 then fades out after two seconds, including offline saves. Resuming typing hides
 it immediately; another pause and saved version restart the timer. Background
 sync updates do not. Failures replace it with persistent **Retry** in the same place; hover for details.
+Clicking Send must not show the badge for its preparatory draft save, including
+when delivery fails. Later edits can show it again after the usual pause.
 Verify the label does not cycle through saving/syncing text on each edit and
 that retry remains accessible beside the actions on mobile. Editing while failed
 continues saving locally without repeatedly submitting the rejected request.
@@ -746,6 +748,16 @@ open shadow root: Playwright text locators can reach them, but a card's ordinary
 
 Sending a reply from an inbox thread marks that thread done but stays on it;
 only the explicit Mark done action opens the next email.
+Sending a message shows it in the open thread immediately, while delivery is
+still pending. It stays visible until the thread refresh confirms it, with no
+duplicate message. Failed delivery removes that message and restores the reply
+draft; a successful Undo Send removes it and reopens the draft. This temporary
+thread display uses the existing REST delivery path.
+Sending must leave the new message's reply composer closed. After delivery,
+focus belongs to the sent message card in the same thread pane, even while
+the thread refresh is still pending. Replying again requires clicking Reply
+or using a reply shortcut.
+
 After a successful send, the `Email sent` notice offers `Undo`. Undo restores the
 sent envelope and editable content, including when the reply used another inbox;
 a slow background refresh must not keep the restored editor disabled. A rejected

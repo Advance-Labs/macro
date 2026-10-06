@@ -440,13 +440,16 @@ export function createEmailComposer(props: EmailComposerOptions) {
     );
     try {
       return persistence.confirmed(
-        await autosave.save({
-          draft: collectDraft(true),
-          inboxId: activeInboxId(),
-          generation: identityVersion,
-          revision: editVersion,
-          attachments: [...form.attachments.list()],
-        })
+        await autosave.save(
+          {
+            draft: collectDraft(true),
+            inboxId: activeInboxId(),
+            generation: identityVersion,
+            revision: editVersion,
+            attachments: [...form.attachments.list()],
+          },
+          { acknowledge: false }
+        )
       );
     } finally {
       cleanupWatermark();
@@ -708,10 +711,9 @@ export function createEmailComposer(props: EmailComposerOptions) {
     try {
       // Ensure the draft is saved before sending so undo-send always has a
       // draft id to snapshot and restore (the send reuses the draft's db_id).
-      autosave.cancel();
       const epochBeforeSave = session.epoch();
       try {
-        await autosave.save();
+        await autosave.save(undefined, { acknowledge: false });
       } catch {
         // Draft save is best-effort; the send still works without one.
       }
@@ -1167,7 +1169,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     retryDraft,
     flushLocal: autosave.flushLocal,
     localSaveState: autosave.localSaveState,
-    inputIdle: autosave.inputIdle,
+    acknowledgeSaved: autosave.acknowledgeSaved,
     context: ctxValue,
     editor,
     previewName,

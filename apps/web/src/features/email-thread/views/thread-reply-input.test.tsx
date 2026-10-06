@@ -51,6 +51,7 @@ vi.mock('../../email-compose/views/reply-input', () => ({
     onEngaged: () => void;
     session: EmailReplySession;
     preloadedHtml: string;
+    sideEffectOnSend?: (id: string) => Promise<void>;
   }) => {
     const id = props.replyingTo().db_id;
     lifecycle.mounted.push(id);
@@ -63,6 +64,9 @@ vi.mock('../../email-compose/views/reply-input', () => ({
         </button>
         <button onClick={() => props.session.exitToThread('last')}>
           Exit reply
+        </button>
+        <button onClick={() => void props.sideEffectOnSend?.('sent')}>
+          Complete send
         </button>
       </>
     );
@@ -148,9 +152,13 @@ it('waits for local reply discovery before mounting an editor and preserves it d
 
 function ThreadTestProvider(props: {
   messages: EmailMessage[];
+  refresh?: () => Promise<void>;
   children: (state: EmailThreadState) => JSX.Element;
 }) {
-  const context = createThreadContext({ thread: () => thread(props.messages) });
+  const context = createThreadContext({
+    thread: () => thread(props.messages),
+    ...(props.refresh && { refresh: props.refresh }),
+  });
   const state = createEmailThreadState(context);
   return (
     <EmailThreadViewProvider
@@ -185,6 +193,44 @@ it('preserves an engaged composer through a same-message update but resets it fo
     expect(lifecycle.disposed).toEqual(['first']);
   } finally {
     view.unmount();
+  }
+});
+
+it('focuses the sent card in its own pane before the thread refresh finishes', async () => {
+  vi.stubGlobal('CSS', { escape: (value: string) => value });
+  const refresh = Promise.withResolvers<void>();
+  const parent = message('parent');
+  const Pane = () => (
+    <ThreadTestProvider
+      messages={[parent, message('sent')]}
+      refresh={() => refresh.promise}
+    >
+      {(state) => (
+        <div ref={state.registerMessagesContainer}>
+          <div tabIndex={0} data-testid="sent-card">
+            <div data-message-body-id="sent" />
+          </div>
+          <ThreadReplyInput replyingTo={() => parent} />
+        </div>
+      )}
+    </ThreadTestProvider>
+  );
+  const view = render(() => (
+    <>
+      <Pane />
+      <Pane />
+    </>
+  ));
+  try {
+    view.getAllByText('Complete send')[1].click();
+    expect(document.activeElement).toBe(view.getAllByTestId('sent-card')[1]);
+    refresh.resolve();
+    await refresh.promise;
+    expect(document.activeElement).toBe(view.getAllByTestId('sent-card')[1]);
+  } finally {
+    refresh.resolve();
+    view.unmount();
+    vi.unstubAllGlobals();
   }
 });
 

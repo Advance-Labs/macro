@@ -719,7 +719,7 @@ export function createReplyComposer(
     );
     try {
       return persistence.confirmed(
-        await autosave.save(captureSave(false, true))
+        await autosave.save(captureSave(false, true), { acknowledge: false })
       );
     } finally {
       cleanupWatermark();
@@ -910,10 +910,9 @@ export function createReplyComposer(
     const sendGeneration = identityVersion;
     try {
       // Ensure draft is saved before sending so undo-send always has a draft to restore
-      autosave.cancel();
       const epochBeforeSave = session.epoch();
       try {
-        await executeSaveDraft(willMarkDone);
+        await autosave.save(captureSave(willMarkDone), { acknowledge: false });
       } catch (error) {
         props.notices.reportError(error);
         if (session.isStale(epochBeforeSave)) return;
@@ -1413,7 +1412,7 @@ export function createReplyComposer(
     retryDraft,
     flushLocal: autosave.flushLocal,
     localSaveState: autosave.localSaveState,
-    inputIdle: autosave.inputIdle,
+    acknowledgeSaved: autosave.acknowledgeSaved,
     onContentChange: handleChange,
     handleUserMention,
     scrollContainer,

@@ -35,7 +35,7 @@ it('offers retry discard when a crash interrupted deletion before admission', as
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saved',
-      inputIdle: () => true,
+      acknowledgeSaved: () => true,
       retry: vi.fn(),
       discard,
     });
@@ -61,7 +61,7 @@ it('shows a failed status read without throwing into the composer error boundary
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saved',
-      inputIdle: () => true,
+      acknowledgeSaved: () => true,
       retry: vi.fn(),
       discard: vi.fn(),
     });
@@ -94,7 +94,7 @@ it('acknowledges saved edits only after input pauses and stays stable through ba
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: disk,
-      inputIdle,
+      acknowledgeSaved: inputIdle,
       retry,
       discard: vi.fn(),
     });
@@ -151,7 +151,7 @@ it('offers retry for server failures while newer edits remain saved locally', as
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saving',
-      inputIdle: () => false,
+      acknowledgeSaved: () => false,
       retry: vi.fn(),
       discard: vi.fn(),
     });

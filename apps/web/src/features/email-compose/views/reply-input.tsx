@@ -147,7 +147,7 @@ function LoadedReplyInputView(props: ReplyInputViewProps) {
     drafts: composeContext.drafts,
     draftId: state.savedDraftId,
     localSaveState: state.localSaveState,
-    inputIdle: state.inputIdle,
+    acknowledgeSaved: state.acknowledgeSaved,
     retry: state.retryDraft,
     discard: state.deleteDraftAndReset,
   });

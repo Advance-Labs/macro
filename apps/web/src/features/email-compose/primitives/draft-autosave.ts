@@ -17,6 +17,7 @@ export function createDraftAutosave<Snapshot, Result>(options: {
   let localWrites: Promise<void> = Promise.resolve();
   let newestSnapshot = 0;
   const [inputIdle, setInputIdle] = createSignal(true);
+  const [shouldAcknowledge, setShouldAcknowledge] = createSignal(true);
   const [localSaveState, setLocalSaveState] = createSignal<
     'saving' | 'saved' | 'failed'
   >('saved');
@@ -63,7 +64,11 @@ export function createDraftAutosave<Snapshot, Result>(options: {
     queue = queue.then(write, write);
     return queue;
   };
-  const save = (snapshot = options.capture()) => {
+  const save = (
+    snapshot = options.capture(),
+    saveOptions: { acknowledge?: boolean } = {}
+  ) => {
+    setShouldAcknowledge(saveOptions.acknowledge !== false);
     cancel();
     return enqueue(snapshot, saveLocally(snapshot));
   };
@@ -88,9 +93,10 @@ export function createDraftAutosave<Snapshot, Result>(options: {
     settled: () => queue,
     flushLocal,
     localSaveState,
-    inputIdle,
+    acknowledgeSaved: () => inputIdle() && shouldAcknowledge(),
     schedule() {
       if (options.paused()) return;
+      setShouldAcknowledge(true);
       setInputIdle(false);
       const snapshot = options.capture();
       pending = { snapshot };

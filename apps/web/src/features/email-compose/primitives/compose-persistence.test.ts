@@ -20,6 +20,49 @@ const response: PersistedEmailIdentity = {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
+it.each(['standalone', 'reply'] as const)(
+  'does not acknowledge the %s pre-send save, including after failed delivery',
+  async (surface) => {
+    const context = createComposeContext();
+    context.drafts.saveLocalDraft = vi.fn(async (input) =>
+      localSnapshot(input)
+    );
+    const delivery = Promise.withResolvers<PersistedEmailIdentity>();
+    vi.mocked(context.delivery.sendMessage).mockReturnValueOnce(
+      delivery.promise
+    );
+    const root =
+      surface === 'standalone'
+        ? mountEmailComposer(context)
+        : mountReplyComposer(context);
+    const state = 'state' in root ? root.state : root;
+    try {
+      root.edit('Send without flashing Draft saved');
+      await vi.advanceTimersByTimeAsync(0);
+      if ('state' in root) root.state.context.onSend();
+      else void root.sendEmail();
+      expect(state.acknowledgeSaved()).toBe(false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(context.delivery.sendMessage).toHaveBeenCalledOnce();
+      expect(state.localSaveState()).toBe('saved');
+      expect(state.acknowledgeSaved()).toBe(false);
+      delivery.reject(new Error('Delivery failed'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(state.acknowledgeSaved()).toBe(false);
+      root.edit('Keep editing after failure');
+      await vi.advanceTimersByTimeAsync(500);
+      expect(state.acknowledgeSaved()).toBe(true);
+    } finally {
+      delivery.resolve({
+        draftId: 'sent',
+        threadId: 'thread',
+        inboxId: 'inbox',
+      });
+      root.dispose();
+    }
+  }
+);
+
 it('flushes the latest pending body and envelope exactly once on disposal', async () => {
   const composeContext = createComposeContext();
   const root = mountEmailComposer(composeContext);
