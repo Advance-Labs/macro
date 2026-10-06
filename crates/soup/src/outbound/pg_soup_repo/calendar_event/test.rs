@@ -216,6 +216,38 @@ fn event_ids(items: &[SoupItem<()>]) -> Vec<Uuid> {
         .collect()
 }
 
+async fn insert_user(pool: &PgPool, user_id: &str) -> anyhow::Result<()> {
+    let macro_user_id = Uuid::now_v7();
+    let email = user_id
+        .split_once('|')
+        .map(|(_, email)| email)
+        .unwrap_or(user_id);
+    sqlx::query!(
+        r#"
+        INSERT INTO macro_user (id, username, email, stripe_customer_id)
+        VALUES ($1, $2, $3, $4)
+        "#,
+        macro_user_id,
+        user_id,
+        email,
+        format!("cus_{macro_user_id}"),
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query!(
+        r#"
+        INSERT INTO "User" (id, email, macro_user_id)
+        VALUES ($1, $2, $3)
+        "#,
+        user_id,
+        email,
+        macro_user_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 async fn insert_link(pool: &PgPool, user_id: &str, email: &str) -> anyhow::Result<Uuid> {
     let link_id = Uuid::now_v7();
     sqlx::query!(
@@ -314,6 +346,9 @@ async fn notification_state_pages_follow_the_callers_rows(pool: PgPool) -> anyho
     let owner = "macro|cal-notif-owner@example.com";
     let delegate = "macro|cal-notif-delegate@example.com";
     let stranger = "macro|cal-notif-stranger@example.com";
+    insert_user(&pool, owner).await?;
+    insert_user(&pool, delegate).await?;
+    insert_user(&pool, stranger).await?;
     let owner_link = insert_link(&pool, owner, "cal-notif-owner@example.com").await?;
     let stranger_link = insert_link(&pool, stranger, "cal-notif-stranger@example.com").await?;
     sqlx::query!(
@@ -398,6 +433,7 @@ async fn notification_state_pages_follow_the_callers_rows(pool: PgPool) -> anyho
     .await?;
     insert_notification(&pool, owner, delegated, NotificationState::Unseen, false).await?;
     insert_notification(&pool, delegate, delegated, NotificationState::Unseen, false).await?;
+    insert_notification(&pool, stranger, delegated, NotificationState::Unseen, false).await?;
     insert_notification(
         &pool,
         stranger,
