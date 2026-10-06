@@ -25,6 +25,11 @@ use model_user::UserContext;
 use rootcause::Report;
 use uuid::Uuid;
 
+/// CI clones every test database from a `template1` that already holds the macrodb
+/// schema (`just setup_test_template`). This test builds its own schema, so it
+/// starts from an empty `public` schema.
+const EMPTY_PUBLIC_SCHEMA: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
+
 #[derive(Clone)]
 struct NoAuth;
 impl MacroAuthorizationService for NoAuth {
@@ -90,6 +95,10 @@ async fn execute(context: Context, tool: &str, args: Value) -> Result<Value, Str
 
 #[sqlx::test(migrations = false)]
 async fn confirmed_booking_is_saved_and_bookable_without_touching_other_links(pool: sqlx::PgPool) {
+    sqlx::raw_sql(EMPTY_PUBLIC_SCHEMA)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::raw_sql("CREATE TABLE \"User\" (id text PRIMARY KEY); CREATE TABLE team (id uuid PRIMARY KEY); INSERT INTO \"User\" VALUES ('macro|owner@macro.com');").execute(&pool).await.unwrap();
     sqlx::raw_sql(include_str!(
         "../../../macro_db_client/migrations/20260918164303_calendar_scheduling.sql"
