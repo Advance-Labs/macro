@@ -1,4 +1,4 @@
-use crate::handler::fetch_pending_scheduled_messages;
+use crate::outbound::fetch_pending_scheduled_messages;
 use anyhow::Result;
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
 use sqlx::types::Uuid;
@@ -134,5 +134,128 @@ async fn fetch_pending_returns_empty_when_no_scheduled_messages(
 
     assert!(results.is_empty());
 
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "test/fixtures", scripts("fetch_pending_scheduled_messages"))
+)]
+async fn scanner_recovers_expired_preparation_submission_and_legacy_claims(
+    pool: Pool<Postgres>,
+) -> Result<()> {
+    let message = Uuid::parse_str("00000000-0000-0000-0000-00000000f501")?;
+    // Both modern phases have a lease. Neither may disappear from recovery forever.
+    for submitted in [false, true] {
+        sqlx::query!(
+            "UPDATE email_scheduled_messages SET processing=true, delivery_claim_id=$2,
+             delivery_lease_expires_at=NOW()-INTERVAL '1 second',
+             delivery_started_at=CASE WHEN $3 THEN NOW()-INTERVAL '10 minutes' ELSE NULL END
+             WHERE message_id=$1",
+            message,
+            Uuid::new_v4(),
+            submitted,
+        )
+        .execute(&pool)
+        .await?;
+        assert!(
+            fetch_pending_scheduled_messages(&pool)
+                .await?
+                .iter()
+                .any(|row| row.message_id == message)
+        );
+    }
+    sqlx::query!(
+        "UPDATE email_scheduled_messages SET delivery_claim_id=NULL, delivery_lease_expires_at=NULL,
+         delivery_started_at=NULL, updated_at=NOW()-INTERVAL '10 minutes' WHERE message_id=$1",
+        message,
+    )
+    .execute(&pool)
+    .await?;
+    assert!(
+        fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message)
+    );
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "test/fixtures", scripts("fetch_pending_scheduled_messages"))
+)]
+async fn scanner_obeys_active_lease_and_preparation_backoff(pool: Pool<Postgres>) -> Result<()> {
+    let message = Uuid::parse_str("00000000-0000-0000-0000-00000000f501")?;
+    for processing in [true, false] {
+        sqlx::query!(
+            "UPDATE email_scheduled_messages SET processing=$2,
+             delivery_lease_expires_at=NOW()+INTERVAL '5 minutes' WHERE message_id=$1",
+            message,
+            processing,
+        )
+        .execute(&pool)
+        .await?;
+        assert!(
+            !fetch_pending_scheduled_messages(&pool)
+                .await?
+                .iter()
+                .any(|row| row.message_id == message)
+        );
+    }
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "test/fixtures", scripts("fetch_pending_scheduled_messages"))
+)]
+async fn scanner_does_not_restart_failed_delivery_after_expiry(pool: Pool<Postgres>) -> Result<()> {
+    let message = Uuid::parse_str("00000000-0000-0000-0000-00000000f501")?;
+    sqlx::query!(
+        "UPDATE email_scheduled_messages SET processing=true, delivery_status='failed',
+         delivery_lease_expires_at=NOW()-INTERVAL '1 day' WHERE message_id=$1",
+        message,
+    )
+    .execute(&pool)
+    .await?;
+    assert!(
+        !fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message)
+    );
+    Ok(())
+}
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "test/fixtures", scripts("fetch_pending_scheduled_messages"))
+)]
+async fn scanner_retries_unconfirmed_lookups_only_after_backoff(
+    pool: Pool<Postgres>,
+) -> Result<()> {
+    let message = Uuid::parse_str("00000000-0000-0000-0000-00000000f501")?;
+    sqlx::query!(
+        "UPDATE email_scheduled_messages SET processing=true, delivery_status='unconfirmed',
+         delivery_started_at=NOW(), delivery_lease_expires_at=NOW()+INTERVAL '5 minutes' WHERE message_id=$1",
+        message,
+    ).execute(&pool).await?;
+    assert!(
+        !fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message)
+    );
+    sqlx::query!(
+        "UPDATE email_scheduled_messages SET delivery_lease_expires_at=NOW()-INTERVAL '1 second' WHERE message_id=$1",
+        message,
+    ).execute(&pool).await?;
+    assert!(
+        fetch_pending_scheduled_messages(&pool)
+            .await?
+            .iter()
+            .any(|row| row.message_id == message)
+    );
     Ok(())
 }

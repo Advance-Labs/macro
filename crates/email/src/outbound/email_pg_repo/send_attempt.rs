@@ -1,6 +1,6 @@
 //! Atomic send admission and cancellation. Lock order is attempt, draft handle,
 //! message, schedule; provider work never holds these locks.
-use super::{EmailPgRepo, draft};
+use super::{EmailPgRepo, draft, thread};
 use crate::domain::{models::EmailErr, send_attempt::*};
 use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgConnection;
@@ -31,8 +31,10 @@ async fn read_attempt(
 ) -> Result<Option<SendAttempt>, EmailErr> {
     let row = sqlx::query!(
         r#"SELECT a.request, a.message_id, a.thread_id, a.send_time, a.cancelled,
-                  COALESCE(m.is_sent, false) AS "sent!",
-                  COALESCE(s.processing, false) AS "processing!"
+                  (a.sent OR COALESCE(m.is_sent, false)) AS "sent!",
+                  COALESCE(s.processing, false) AS "processing!",
+                  s.delivery_status AS "delivery_status?", s.delivery_started_at,
+                  a.delivery_unconfirmed
            FROM email_send_attempts a
            LEFT JOIN email_messages m ON m.id = a.message_id AND m.link_id = a.link_id
            LEFT JOIN email_scheduled_messages s ON s.message_id = a.message_id AND s.link_id = a.link_id
@@ -55,6 +57,13 @@ async fn read_attempt(
             SendAttemptStatus::Cancelled
         } else if row.sent {
             SendAttemptStatus::Sent
+        } else if row.delivery_status.as_deref() == Some("failed") {
+            SendAttemptStatus::Failed
+        } else if row.delivery_unconfirmed
+            || row.delivery_status.as_deref() == Some("unconfirmed")
+            || (row.delivery_started_at.is_some() && !row.processing)
+        {
+            SendAttemptStatus::DeliveryUnconfirmed
         } else if row.processing {
             SendAttemptStatus::Sending
         } else {
@@ -147,12 +156,37 @@ impl EmailSendRepo for EmailPgRepo {
             chrono::Utc::now() + chrono::Duration::seconds(prepared.undo_delay_secs.into());
         sqlx::query!("UPDATE email_scheduled_messages SET send_time = $1 WHERE message_id = $2 AND link_id = $3", send_time, ids.message_db_id, link)
             .execute(&mut *tx).await.map_err(anyhow::Error::from)?;
+        let sender = sqlx::query!(
+            r#"SELECT l.email_address, COALESCE(m.from_name, c.name) AS name, c.sfs_photo_url
+               FROM email_messages m JOIN email_links l ON l.id = m.link_id
+               LEFT JOIN email_contacts c ON c.id = m.from_contact_id
+               WHERE m.id = $1 AND m.link_id = $2"#,
+            ids.message_db_id,
+            link,
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(anyhow::Error::from)?;
+        let mut content_message = prepared.message;
+        content_message.db_id = ids.message_db_id;
+        content_message.thread_db_id = ids.thread_db_id;
+        content_message.send_time = Some(send_time);
+        let prepared_content = serde_json::to_value(PreparedSendContent {
+            message: content_message,
+            sender: crate::domain::models::ContactInfo {
+                email: sender.email_address,
+                name: sender.name,
+                photo_url: sender.sfs_photo_url,
+            },
+        })
+        .map_err(anyhow::Error::from)?;
         let request = serde_json::to_value(&prepared.snapshot).map_err(anyhow::Error::from)?;
         sqlx::query!(
-            r#"INSERT INTO email_send_attempts (user_id, link_id, attempt_id, request, message_id, thread_id, send_time, restore_body_html, restore_body_text, restore_body_macro)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+            r#"INSERT INTO email_send_attempts (user_id, link_id, attempt_id, request, message_id, thread_id, send_time, restore_body_html, restore_body_text, restore_body_macro, prepared_content)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
             actor.as_ref(), link, attempt.0, request, ids.message_db_id, ids.thread_db_id, send_time,
-            prepared.restore_html, prepared.snapshot.restore_body_text, prepared.snapshot.restore_body_macro,
+            prepared.restore_html, prepared.restore_text, prepared.restore_macro,
+            prepared_content,
         ).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
         tx.commit().await.map_err(anyhow::Error::from)?;
         Ok(SendAttempt {
@@ -176,7 +210,12 @@ impl EmailSendRepo for EmailPgRepo {
         lock_attempt(&mut tx, actor, link, attempt).await?;
         let existing = read_attempt(&mut tx, actor, link, attempt, None).await?;
         if let Some(existing) = &existing {
-            if existing.status == SendAttemptStatus::Cancelled {
+            if matches!(
+                existing.status,
+                SendAttemptStatus::Cancelled
+                    | SendAttemptStatus::Sent
+                    | SendAttemptStatus::DeliveryUnconfirmed
+            ) {
                 return Ok(existing.clone());
             }
             if let Some(message_id) = existing.message_id {
@@ -188,14 +227,28 @@ impl EmailSendRepo for EmailPgRepo {
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(anyhow::Error::from)?;
-                let schedule = sqlx::query!("SELECT sent, processing FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2 FOR UPDATE", message_id, link)
+                let schedule = sqlx::query!("SELECT sent, processing, delivery_status, delivery_started_at FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2 FOR UPDATE", message_id, link)
                     .fetch_optional(&mut *tx).await.map_err(anyhow::Error::from)?;
-                if message.is_some_and(|m| m.is_sent)
-                    || schedule.as_ref().is_some_and(|s| s.sent || s.processing)
+                // Delivery and deletion can commit while we wait for the message
+                // lock. Its absence does not mean the send was never delivered.
+                let current = read_attempt(&mut tx, actor, link, attempt, None)
+                    .await?
+                    .ok_or(EmailErr::MessageNotFound(message_id))?;
+                if matches!(
+                    current.status,
+                    SendAttemptStatus::Cancelled
+                        | SendAttemptStatus::Sent
+                        | SendAttemptStatus::DeliveryUnconfirmed
+                ) || message.is_some_and(|m| m.is_sent)
+                    || schedule.as_ref().is_some_and(|s| {
+                        s.sent
+                            || (s.delivery_status != "failed"
+                                && (s.processing
+                                    || s.delivery_started_at.is_some()
+                                    || s.delivery_status == "unconfirmed"))
+                    })
                 {
-                    return read_attempt(&mut tx, actor, link, attempt, None)
-                        .await?
-                        .ok_or(EmailErr::MessageNotFound(message_id));
+                    return Ok(current);
                 }
                 sqlx::query!(
                     "DELETE FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2",
@@ -212,6 +265,11 @@ impl EmailSendRepo for EmailPgRepo {
                        AND m.id = a.message_id AND m.link_id = a.link_id AND NOT m.is_sent"#,
                     actor.as_ref(), link, attempt.0,
                 ).execute(&mut *tx).await.map_err(anyhow::Error::from)?;
+                if let Some(thread_id) = existing.thread_id {
+                    thread::update_thread_metadata(&mut tx, thread_id, link)
+                        .await
+                        .map_err(anyhow::Error::from)?;
+                }
             }
         }
         sqlx::query!(

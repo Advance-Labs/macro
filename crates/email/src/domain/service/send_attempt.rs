@@ -72,6 +72,7 @@ where
             let restore_html = snapshot
                 .restore_body_html
                 .as_ref()
+                .or(snapshot.message.body_html.as_ref())
                 .map(|html| {
                     let html = String::from_utf8(URL_SAFE_NO_PAD.decode(html)?)?;
                     Ok::<_, EmailErr>(email_utils::sanitize_authored_html(&html))
@@ -84,6 +85,14 @@ where
                 contacts,
                 new_thread,
                 restore_html,
+                restore_text: snapshot
+                    .restore_body_text
+                    .clone()
+                    .or_else(|| snapshot.message.body_text.clone()),
+                restore_macro: snapshot
+                    .restore_body_macro
+                    .clone()
+                    .or_else(|| snapshot.message.body_macro.clone()),
             })
         }
         .await;

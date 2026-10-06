@@ -149,3 +149,144 @@ fn offline_admission_does_not_claim_or_attempt_the_send() {
         );
     });
 }
+
+async fn exclusive_enqueue<S: Storage>(
+    engine: &mut Engine<S>,
+    uuid: &str,
+    entity: &str,
+    replace: bool,
+) -> Result<u64, EngineError<S::Error>> {
+    engine.begin_optimistic_write(None, BeginOptimisticWrite {
+        uuid, query: QUERY, operation_name: Some("SetEntityProperty"),
+        variables: &json!({"input": {}}).as_object().unwrap().clone(),
+        data: &json!({"setEntityProperty": {"id":"property", "displayName": "send"}, "__durableIntent": {
+            "kind":"test", "replace":replace, "exclusive": {
+                "entityKey":entity,"releaseOn":{"responsePath":["setEntityProperty","displayName"],"value":"CANCELLED"}
+            }
+        }}),
+        link_patches: &[], revalidations: &[], identity_bindings: &[], created_at_ms: 1,
+    }).await.map(|result| result.0)
+}
+
+#[test]
+fn exclusive_send_rejects_another_tab_without_changing_the_winning_snapshot() {
+    block_on(async {
+        let mut engine = Engine::new(InMemoryStorage::new());
+        exclusive_enqueue(&mut engine, UUID, "GraphqlSoupEmailMessage:draft", false)
+            .await
+            .unwrap();
+        let queue = engine.storage().load_mutation_queue().await.unwrap();
+        let journal = engine.durable_mutation_intents().await.unwrap();
+        let error = exclusive_enqueue(
+            &mut engine,
+            "00000000-0000-4000-8000-000000000002",
+            "GraphqlSoupEmailMessage:draft",
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            EngineError::Storage(cache_core::durable_intent::DurableIntentError::ExclusiveConflict)
+        ));
+        assert_eq!(engine.storage().load_mutation_queue().await.unwrap(), queue);
+        assert_eq!(engine.durable_mutation_intents().await.unwrap(), journal);
+        // Cancellation owns the same UUID and releases an unattempted send atomically.
+        exclusive_enqueue(&mut engine, UUID, "GraphqlSoupEmailMessage:draft", true)
+            .await
+            .unwrap();
+        exclusive_enqueue(
+            &mut engine,
+            "00000000-0000-4000-8000-000000000002",
+            "GraphqlSoupEmailMessage:draft",
+            false,
+        )
+        .await
+        .unwrap();
+        let queue = engine.storage().load_mutation_queue().await.unwrap();
+        assert_eq!(queue.len(), 2);
+        assert!(
+            cache_core::durable_intent::source_metadata(&queue[0].optimistic.optimistic_data_json)
+                .unwrap()["replace"]
+                .as_bool()
+                .unwrap()
+        );
+    });
+}
+
+#[test]
+fn exclusive_send_resolves_aliases_and_keeps_ownership_after_failure() {
+    block_on(async {
+        let mut engine = Engine::new(InMemoryStorage::new());
+        let send = exclusive_enqueue(&mut engine, UUID, "GraphqlSoupEmailMessage:local", false)
+            .await
+            .unwrap();
+        let token = claim(&mut engine).await;
+        engine.rollback_optimistic_write(send, token).await.unwrap();
+        let mut storage = engine.into_storage();
+        let canonical =
+            cache_core::value::EntityKey::entity("GraphqlSoupEmailMessage", &["server"]);
+        storage
+            .put_batch(vec![(
+                cache_core::value::EntityKey::entity("GraphqlSoupEmailMessage", &["local"]),
+                cache_core::identity::alias_record(&canonical),
+            )])
+            .await
+            .unwrap();
+        let mut reopened = Engine::new(storage);
+        assert!(
+            exclusive_enqueue(
+                &mut reopened,
+                "00000000-0000-4000-8000-000000000002",
+                canonical.as_ref(),
+                false
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(reopened.durable_mutation_intents().await.unwrap().len(), 1);
+    });
+}
+
+#[test]
+fn exclusive_attempted_cancellation_releases_only_after_confirmed_cancel() {
+    block_on(async {
+        for status in [
+            "ACCEPTED",
+            "SENDING",
+            "SENT",
+            "FAILED",
+            "DELIVERY_UNCONFIRMED",
+            "CANCELLED",
+        ] {
+            let mut engine = Engine::new(InMemoryStorage::new());
+            let send = exclusive_enqueue(&mut engine, UUID, "GraphqlSoupEmailMessage:draft", false)
+                .await
+                .unwrap();
+            claim(&mut engine).await;
+            exclusive_enqueue(&mut engine, UUID, "GraphqlSoupEmailMessage:draft", true)
+                .await
+                .unwrap();
+            let token = claim(&mut engine).await;
+            engine
+                .commit_optimistic_write(
+                    send,
+                    token,
+                    QUERY,
+                    Some("SetEntityProperty"),
+                    &json!({"input":{}}).as_object().unwrap().clone(),
+                    &json!({"setEntityProperty":{"id":"property","displayName":status}}),
+                )
+                .await
+                .unwrap();
+            let result = exclusive_enqueue(
+                &mut engine,
+                "00000000-0000-4000-8000-000000000002",
+                "GraphqlSoupEmailMessage:draft",
+                false,
+            )
+            .await;
+            assert_eq!(result.is_ok(), status == "CANCELLED", "status {status}");
+        }
+    });
+}

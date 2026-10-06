@@ -118,6 +118,12 @@ export type DurableMutationIntent = {
   payload: Record<string, unknown>;
   /** Fence and replace the same UUID's current request, including a live lease. */
   replace?: boolean;
+  /** Atomically reserve one active intent for a normalized entity across tabs. */
+  exclusive?: {
+    entityKey: string;
+    /** A successful response releases ownership only when this value matches. */
+    releaseOn: { responsePath: string[]; value: string };
+  };
 };
 
 export type OptimisticMutationOptions = {

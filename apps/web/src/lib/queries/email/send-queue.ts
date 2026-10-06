@@ -5,6 +5,7 @@ import {
 import { DEFAULT_THREAD_MESSAGES_LIMIT } from '@core/constant/pagination';
 import { decodeBase64Bytes } from '@core/util/base64';
 import {
+  type DurableMutationIntent,
   executeOptimisticMutation,
   optimisticMutationDispositionOf,
 } from '@graphql-cache/exchange/optimistic';
@@ -23,6 +24,7 @@ import {
   graphqlCacheEnabled,
 } from '@service-storage/graphql-soup';
 import { getActiveGraphqlSoupRevalidations } from '../soup/graphql/active-queries';
+import { publishDraftRestoration } from './draft-lifecycle-events';
 import { readCachedDraftAndThread, saveEmailDraftQueued } from './draft-queue';
 import {
   type GraphqlSaveEmailDraftArgs,
@@ -56,6 +58,7 @@ export type EmailSendIntent = {
   metadata: {
     kind: 'email-send-v1';
     replace?: boolean;
+    exclusive?: DurableMutationIntent['exclusive'];
     payload: {
       restoring?: boolean;
       input: SendEmailMessageInput;
@@ -233,7 +236,17 @@ export async function sendEmailQueued(args: {
     },
     {
       uuid: attemptId,
-      durableIntent: { kind: 'email-send-v1', payload: { input, draft } },
+      durableIntent: {
+        kind: 'email-send-v1',
+        payload: { input, draft },
+        exclusive: {
+          entityKey: `GraphqlSoupEmailMessage:${draft.draftId}`,
+          releaseOn: {
+            responsePath: ['cancelEmailSend', 'attempt', 'status'],
+            value: 'CANCELLED',
+          },
+        },
+      },
       identityBindings: [
         {
           localKey: `GraphqlSoupEmailMessage:${draft.draftId}`,
@@ -280,9 +293,28 @@ function sendRevalidations(threadId: string) {
 }
 
 /** Replaces the send request atomically, fencing any previously issued network claim. */
+export class EmailSendCancellationTooLate extends Error {
+  constructor() {
+    super('Delivery already started; cancellation was too late');
+    this.name = 'EmailSendCancellationTooLate';
+  }
+}
+
+export class EmailSendDeliveryUnconfirmed extends Error {
+  constructor() {
+    super(
+      'Delivery unconfirmed; check your sent mail. We will not resend automatically.'
+    );
+    this.name = 'EmailSendDeliveryUnconfirmed';
+  }
+}
+
+/** Returns persisted state independently of any mounted queue observer. */
 export async function cancelEmailSendQueued(
   intent: EmailSendIntent
-): Promise<void> {
+): Promise<EmailSendIntent> {
+  if (settledSendAttempt(intent)?.status === 'DELIVERY_UNCONFIRMED')
+    throw new EmailSendDeliveryUnconfirmed();
   const { input, draft } = intent.metadata.payload;
   const result = await executeOptimisticMutation(
     getGraphqlSoupClient(),
@@ -316,11 +348,19 @@ export async function cancelEmailSendQueued(
       revalidations: sendRevalidations(draft.threadDbId),
     }
   ).toPromise();
-  if (optimisticMutationDispositionOf(result)?.kind === 'queued') return;
-  if (result.error) throw result.error;
-  const status = result.data?.cancelEmailSend.attempt.status;
-  if (status === 'SENDING' || status === 'SENT')
-    throw new Error('Delivery already started; cancellation was too late');
+  if (optimisticMutationDispositionOf(result)?.kind !== 'queued') {
+    if (result.error) throw result.error;
+    const status = result.data?.cancelEmailSend.attempt.status;
+    if (status === 'DELIVERY_UNCONFIRMED')
+      throw new EmailSendDeliveryUnconfirmed();
+    if (status === 'SENDING' || status === 'SENT')
+      throw new EmailSendCancellationTooLate();
+  }
+  const updated = (await readEmailSendIntents()).find(
+    (row) => row.uuid === intent.uuid
+  );
+  if (!updated) throw new Error('This send is no longer available to undo');
+  return updated;
 }
 
 /** Status reconciliation never resubmits a send or creates another attempt. */
@@ -355,6 +395,7 @@ export async function restoreCancelledEmailSend(
       mutationUuid: intent.uuid,
       durableIntent: {
         ...intent.metadata,
+        exclusive: undefined,
         replace: true,
         payload: { ...intent.metadata.payload, restoring: true },
       },
@@ -364,6 +405,25 @@ export async function restoreCancelledEmailSend(
     throw new Error(
       'Unable to restore the draft. Your message is still saved in the send queue.'
     );
+  publishDraftRestoration({
+    draftId:
+      outcome.kind === 'committed'
+        ? outcome.draftId
+        : (intent.resolvedDraftId ?? String(draft.draftId)),
+    inboxId: draft.senderLinkId,
+    restoration: {
+      originalDraftId: String(draft.draftId),
+      threadId:
+        outcome.kind === 'committed'
+          ? outcome.threadId
+          : (intent.resolvedThreadId ?? draft.threadDbId),
+      replyingToId:
+        input.message.replyingToId == null
+          ? undefined
+          : String(input.message.replyingToId),
+      includeSignature: input.includeSignature,
+    },
+  });
 }
 
 /** Only terminal success is automatically retired; failures keep recovery content. */

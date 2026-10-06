@@ -105,6 +105,10 @@ export interface EmailAttachmentChange {
 }
 
 export interface EmailDraftStorage {
+  /** Explicit restoration may replace editor content; ordinary cache updates never do. */
+  watchRestorations?(
+    changed: (restoration: EmailDraftRestoration) => void
+  ): () => void;
   /** Resolve durable local drafts before mounting an editor. */
   readDraft?(draftId: string): Promise<
     | {
@@ -132,6 +136,15 @@ export interface EmailDraftStorage {
     html?: string;
     inboxId?: string;
   }): Promise<void>;
+}
+
+export interface EmailDraftRestoration {
+  draftId: string;
+  originalDraftId: string;
+  threadId: string;
+  inboxId?: string;
+  replyingToId?: string | null;
+  includeSignature?: boolean | null;
 }
 
 export interface EmailAttachmentStorage {

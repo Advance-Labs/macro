@@ -61,7 +61,7 @@ pub struct CreateDraftInput {
 
 /// A draft input with all IDs resolved, ready for database insertion.
 /// Created from `CreateDraftInput` after validation and ID generation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ResolvedDraftInput {
     /// The resolved message DB ID.
     pub db_id: Uuid,

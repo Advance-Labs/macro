@@ -8,6 +8,115 @@ use crate::{
 use serde_json::Value as Json;
 use uuid::Uuid;
 
+/// A durable enqueue was refused before any queue or optimistic state changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum DurableIntentError {
+    /// The exclusive entity or its committed alias is malformed.
+    #[error("invalid durable intent exclusivity")]
+    InvalidExclusivity,
+    /// Another intent still owns delivery authority for this entity.
+    #[error("Entity already has an active durable mutation")]
+    ExclusiveConflict,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Exclusivity {
+    entity_key: EntityKey<'static>,
+    release_on: ReleaseCondition,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseCondition {
+    response_path: Vec<String>,
+    value: Json,
+}
+
+fn exclusivity(metadata: &Json) -> Result<Option<Exclusivity>, DurableIntentError> {
+    let Some(value) = metadata.get("exclusive").filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let exclusive: Exclusivity = serde_json::from_value(value.clone())
+        .map_err(|_| DurableIntentError::InvalidExclusivity)?;
+    if exclusive.entity_key.typename().is_none()
+        || exclusive.entity_key.id().is_none_or(str::is_empty)
+        || exclusive.entity_key.as_ref().len() > 1024
+        || exclusive.release_on.response_path.is_empty()
+        || exclusive.release_on.response_path.len() > 16
+    {
+        return Err(DurableIntentError::InvalidExclusivity);
+    }
+    Ok(Some(exclusive))
+}
+
+fn released(row: &Json, exclusive: &Exclusivity) -> bool {
+    row.get("locallyCancelled").and_then(Json::as_bool) == Some(true)
+        || (row.get("phase").and_then(Json::as_str) == Some("committed")
+            && exclusive
+                .release_on
+                .response_path
+                .iter()
+                .fold(row.get("response"), |value, field| {
+                    value.and_then(|value| value.get(field))
+                })
+                == Some(&exclusive.release_on.value))
+}
+
+fn resolve_exclusive_entity<E: From<DurableIntentError>>(
+    mut key: EntityKey<'static>,
+    load: &mut impl FnMut(&EntityKey<'_>) -> Result<Option<Record>, E>,
+) -> Result<EntityKey<'static>, E> {
+    for _ in 0..crate::identity::MAX_ALIAS_CHAIN_DEPTH {
+        let Some(target) = load(&key)?
+            .as_ref()
+            .and_then(crate::identity::alias_target)
+            .cloned()
+        else {
+            return Ok(key);
+        };
+        key = target;
+    }
+    Err(DurableIntentError::InvalidExclusivity.into())
+}
+
+/// Enforce one active intent per entity inside the queue's write transaction.
+/// Alias reads must share that transaction, so resolving a local handle and
+/// admitting another tab's canonical handle cannot acquire separate authority.
+pub fn check_exclusivity<E: From<DurableIntentError>>(
+    catalog: &Record,
+    uuid: Uuid,
+    metadata: &Json,
+    mut load: impl FnMut(&EntityKey<'_>) -> Result<Option<Record>, E>,
+) -> Result<(), E> {
+    let Some(exclusive) = exclusivity(metadata)? else {
+        return Ok(());
+    };
+    let entity = resolve_exclusive_entity(exclusive.entity_key, &mut load)?;
+    let uuid = uuid.to_string();
+    for value in catalog.fields.values() {
+        let CacheValue::String(value) = value else {
+            continue;
+        };
+        let row: Json =
+            serde_json::from_str(value).map_err(|_| DurableIntentError::InvalidExclusivity)?;
+        if row.get("uuid").and_then(Json::as_str) == Some(uuid.as_str())
+            && metadata.get("replace").and_then(Json::as_bool) == Some(true)
+        {
+            continue;
+        }
+        let Some(existing) = row.get("metadata").map(exclusivity).transpose()?.flatten() else {
+            continue;
+        };
+        if !released(&row, &existing)
+            && resolve_exclusive_entity(existing.entity_key, &mut load)? == entity
+        {
+            return Err(DurableIntentError::ExclusiveConflict.into());
+        }
+    }
+    Ok(())
+}
+
 /// Reserved metadata on an optimistic response; never part of the wire request.
 pub const FIELD: &str = "__durableIntent";
 /// Reserved catalog record type.

@@ -1960,7 +1960,7 @@ impl<S: Storage> Engine<S> {
         let key = crate::durable_intent::key();
         let mut record = self
             .storage
-            .get_batch(&[key.clone()])
+            .get_batch(std::slice::from_ref(&key))
             .await
             .map_err(EngineError::Storage)?
             .pop()
@@ -1984,7 +1984,7 @@ impl<S: Storage> Engine<S> {
         crate::durable_intent::update(
             &mut record,
             row.uuid,
-            &metadata,
+            metadata,
             phase,
             response,
             locally_cancelled,

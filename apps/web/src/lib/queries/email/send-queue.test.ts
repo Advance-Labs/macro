@@ -18,8 +18,18 @@ const mocks = vi.hoisted(() => ({
   cached: vi.fn(),
   save: vi.fn(),
   error: undefined as CombinedError | undefined,
+  disposition: 'queued',
+  cancellationStatus: undefined as
+    | 'SENDING'
+    | 'SENT'
+    | 'DELIVERY_UNCONFIRMED'
+    | undefined,
   cacheEnabled: vi.fn(),
   rolloutEnabled: vi.fn(),
+  restored: vi.fn(),
+}));
+vi.mock('./draft-lifecycle-events', () => ({
+  publishDraftRestoration: mocks.restored,
 }));
 vi.mock('@core/constant/featureFlags', () => ({
   enableGraphqlSoup: 'graphql',
@@ -57,10 +67,13 @@ const draft: GraphqlSaveEmailDraftArgs = {
 };
 let operations: Operation[];
 beforeEach(() => {
+  mocks.restored.mockClear();
   mocks.cacheEnabled.mockReturnValue(true);
   mocks.rolloutEnabled.mockReturnValue(true);
   operations = [];
   mocks.error = undefined;
+  mocks.disposition = 'queued';
+  mocks.cancellationStatus = undefined;
   mocks.intents.mockResolvedValue([]);
   mocks.cached.mockResolvedValue({
     draftId: draft.draftId,
@@ -80,9 +93,16 @@ beforeEach(() => {
               error: mocks.error,
               stale: false,
               hasNext: false,
+              data: mocks.cancellationStatus
+                ? {
+                    cancelEmailSend: {
+                      attempt: { status: mocks.cancellationStatus },
+                    },
+                  }
+                : undefined,
               extensions: {
                 normalizedCacheMutationDisposition: {
-                  kind: 'queued',
+                  kind: mocks.disposition,
                   transactionId: '1',
                 },
               },
@@ -144,13 +164,24 @@ describe('durable email send intent', () => {
       'existingThread'
     );
     expect(emailSendLocked(intent)).toBe(true);
+    expect(intent.metadata.exclusive).toEqual({
+      entityKey: `GraphqlSoupEmailMessage:${draft.draftId}`,
+      releaseOn: {
+        responsePath: ['cancelEmailSend', 'attempt', 'status'],
+        value: 'CANCELLED',
+      },
+    });
   });
   it('acknowledges a persisted send and cancellation despite a failed initial network attempt', async () => {
     mocks.error = new CombinedError({
       networkError: new Error('connection lost'),
     });
     const intent = await send();
-    await expect(cancelEmailSendQueued(intent)).resolves.toBeUndefined();
+    const cancelled = { ...intent, locallyCancelled: true };
+    mocks.intents.mockResolvedValue([cancelled]);
+    await expect(cancelEmailSendQueued(intent)).resolves.toMatchObject(
+      cancelled
+    );
     expect(operations).toHaveLength(2);
   });
   it('resolves queued draft handles before checking a canonical draft for duplicate sends', async () => {
@@ -171,6 +202,7 @@ describe('durable email send intent', () => {
 
   it('uses the same attempt UUID to atomically replace send with cancellation', async () => {
     const intent = await send();
+    mocks.intents.mockResolvedValue([intent]);
     await cancelEmailSendQueued(intent);
     expect(operations[1].variables).toEqual({
       input: intent.metadata.payload.input.attempt,
@@ -186,6 +218,33 @@ describe('durable email send intent', () => {
       })
     ).toBe(true);
     expect(emailSendLocked({ ...intent, locallyCancelled: true })).toBe(false);
+  });
+  it.each(['SENDING', 'SENT'] as const)(
+    'rejects cancellation once delivery is %s',
+    async (status) => {
+      const intent = await send();
+      mocks.disposition = 'committed';
+      mocks.cancellationStatus = status;
+      await expect(cancelEmailSendQueued(intent)).rejects.toThrow(
+        'Delivery already started'
+      );
+    }
+  );
+  it('surfaces storage failure instead of claiming cancellation succeeded', async () => {
+    const intent = await send();
+    mocks.intents.mockRejectedValue(new Error('journal read failed'));
+    await expect(cancelEmailSendQueued(intent)).rejects.toThrow(
+      'journal read failed'
+    );
+  });
+  it('reports unconfirmed provider delivery without unlocking or restoring the send', async () => {
+    const intent = await send();
+    mocks.disposition = 'committed';
+    mocks.cancellationStatus = 'DELIVERY_UNCONFIRMED';
+    await expect(cancelEmailSendQueued(intent)).rejects.toThrow(
+      'Delivery unconfirmed; check your sent mail'
+    );
+    expect(mocks.save).not.toHaveBeenCalled();
   });
   it('refuses a second send for the same locked draft', async () => {
     const intent = await send();
@@ -208,10 +267,37 @@ describe('durable email send intent', () => {
         bodyText: 'Editable body',
         mutationUuid: intent.uuid,
         durableIntent: expect.objectContaining({
+          exclusive: undefined,
           replace: true,
           payload: expect.objectContaining({ restoring: true }),
         }),
       }),
     });
+    expect(mocks.restored).toHaveBeenCalledWith({
+      draftId: draft.draftId,
+      inboxId: draft.senderLinkId,
+      restoration: expect.objectContaining({
+        originalDraftId: draft.draftId,
+        threadId: draft.threadDbId,
+      }),
+    });
+  });
+  it('publishes both local and committed identity after restoration resolves aliases', async () => {
+    const intent = await send();
+    mocks.save.mockResolvedValue({
+      kind: 'committed',
+      draftId: 'canonical-draft',
+      threadId: 'canonical-thread',
+    });
+    await restoreCancelledEmailSend({ ...intent, locallyCancelled: true });
+    expect(mocks.restored).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draftId: 'canonical-draft',
+        restoration: expect.objectContaining({
+          originalDraftId: draft.draftId,
+          threadId: 'canonical-thread',
+        }),
+      })
+    );
   });
 });

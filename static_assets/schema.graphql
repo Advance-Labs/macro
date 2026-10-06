@@ -336,6 +336,14 @@ enum EmailSendStatus {
 	"""
 	SENDING
 	"""
+	Delivery failed before acceptance; cancellation can restore the draft.
+	"""
+	FAILED
+	"""
+	Delivery may have occurred and is being reconciled without resending.
+	"""
+	DELIVERY_UNCONFIRMED
+	"""
 	Provider delivery was recorded.
 	"""
 	SENT

@@ -1,4 +1,5 @@
 import { MACRO_EMAIL_SIGNATURE } from '@app/features/email-compose/core/constants';
+import { setEditorStateFromHtml } from '@core/component/LexicalMarkdown/utils/setEditorStateFromHtml';
 import { $generateHtmlFromNodes } from '@lexical/html';
 import {
   $appendWatermarkNodeToLast,
@@ -58,6 +59,7 @@ import {
   createDraftPersistence,
   deleteDraftForDiscard,
 } from './draft-persistence';
+import { observeDraftRestoration } from './draft-restoration';
 import { createDraftSession } from './draft-session';
 import { createEmailSendSchedule } from './email-send-schedule';
 import {
@@ -171,6 +173,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
   const [editor, setEditor] = createSignal<LexicalEditor | undefined>();
   const [content, setContent] = createSignal('');
+  const [restoring, setRestoring] = createSignal(false);
   // The selected sender can change before the server migrates the draft.
   // Lifecycle reads always use one complete persisted identity.
   const session = createDraftSession(
@@ -228,9 +231,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     form.setRecipients('cc', restoredSnapshot.recipients.cc);
     form.setRecipients('bcc', restoredSnapshot.recipients.bcc);
     form.setSubject(restoredSnapshot.subject);
-    for (const attachment of restoredSnapshot.attachments) {
-      form.attachments.add(attachment);
-    }
+    form.attachments.replace(restoredSnapshot.attachments);
     setIncludeSignature(restoredSnapshot.includeSignature);
   }
 
@@ -383,6 +384,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
   >();
   let schedule: ReturnType<typeof createEmailSendSchedule>;
   const persistencePaused = () =>
+    restoring() ||
     sendLocked() ||
     submitting() ||
     discarding() ||
@@ -400,6 +402,40 @@ export function createEmailComposer(props: EmailComposerOptions) {
     }),
     persist: persistDraft,
     paused: persistencePaused,
+  });
+  observeDraftRestoration({
+    storage: props.drafts,
+    accepts: (change) =>
+      [change.draftId, change.originalDraftId].includes(currentDraftId() ?? ''),
+    ready: () => !sendLocked(),
+    version: () => `${identityVersion}:${editVersion}:${session.epoch()}`,
+    cancelPendingSave: () => {
+      identityVersion += 1;
+      autosave.cancel();
+    },
+    setPending: setRestoring,
+    restore: (draft, change, persistence) => {
+      session.dispatch({
+        type: 'seeded',
+        draftId: draft.db_id,
+        threadId: draft.thread_db_id,
+        inboxId: draft.link_id,
+        persistence,
+      });
+      form.restoreDraft(draft);
+      setIncludeSignature(change.includeSignature !== false);
+      const currentEditor = editor();
+      if (currentEditor)
+        setEditorStateFromHtml(
+          currentEditor,
+          draft.body_html_sanitized
+            ? decodeBase64Utf8(draft.body_html_sanitized)
+            : plainTextToHtml(draft.body_text ?? '')
+        );
+      setDraftDirty(false);
+      setCompleted(false);
+    },
+    reportError: props.notices.reportError,
   });
 
   const saveForSchedule = async () => {
@@ -614,6 +650,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
   const onSubmit = async () => {
     if (
+      restoring() ||
       schedule.pending() ||
       submitting() ||
       discarding() ||
@@ -890,7 +927,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
       scheduling(),
       movingInbox(),
       submitting(),
-      sendLocked(),
+      sendLocked() || restoring(),
     ] as const;
   createEffect(
     on(lifecycleInputs, ([state, , moving, sending, queued]) => {
@@ -1111,6 +1148,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
 
     // Status
     disabled: () =>
+      restoring() ||
       sendLocked() ||
       hasInboxError() ||
       submitting() ||

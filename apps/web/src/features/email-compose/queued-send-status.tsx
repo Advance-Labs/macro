@@ -60,6 +60,10 @@ function SendStatus(props: {
         ? 'Draft restoration needs attention. Your message is saved here.'
         : 'Restoring draft';
     if (!emailSendLocked(props.intent)) return 'Send cancelled';
+    if (status() === 'DELIVERY_UNCONFIRMED')
+      return 'Delivery unconfirmed. Your email may already have been sent. Check your sent mail. We will not resend automatically.';
+    if (status() === 'FAILED')
+      return 'Send failed before delivery. Cancel to recover this draft.';
     if (props.intent.phase === 'failed')
       return 'Send needs attention. Cancel to recover this draft.';
     if (
@@ -83,6 +87,19 @@ function SendStatus(props: {
     } catch (error) {
       setError(
         error instanceof Error ? error.message : 'Unable to cancel the send'
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+  const checkStatus = async () => {
+    setWorking(true);
+    setError(undefined);
+    try {
+      await props.refresh();
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : 'Unable to check send status'
       );
     } finally {
       setWorking(false);
@@ -120,6 +137,7 @@ function SendStatus(props: {
       <Show
         when={
           status() !== 'SENDING' &&
+          status() !== 'DELIVERY_UNCONFIRMED' &&
           !(
             props.intent.metadata.payload.restoring &&
             props.intent.phase === 'pending'
@@ -136,6 +154,11 @@ function SendStatus(props: {
           onClick={() => void cancel()}
         >
           {emailSendLocked(props.intent) ? 'Cancel' : 'Restore draft'}
+        </Button>
+      </Show>
+      <Show when={status() === 'DELIVERY_UNCONFIRMED'}>
+        <Button disabled={working()} onClick={() => void checkStatus()}>
+          Check status
         </Button>
       </Show>
     </div>

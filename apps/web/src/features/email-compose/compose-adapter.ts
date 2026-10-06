@@ -37,6 +37,7 @@ import {
   useSaveDraftMutation,
 } from '@queries/email/draft';
 import { markThreadDraftSaved } from '@queries/email/draft-cache';
+import { subscribeToDraftLifecycleChanges } from '@queries/email/draft-lifecycle-events';
 import {
   deleteEmailDraftQueued,
   draftQueueActive,
@@ -56,12 +57,9 @@ import {
 import { useMailAccountsQuery } from '@queries/email/mail-accounts';
 import { useQueuedEmailSends } from '@queries/email/queued-sends';
 import {
-  cancelEmailSendQueued,
   emailSendLocked,
   emailSendMatchesDraft,
   emailSendQueueSelected,
-  readEmailSendIntents,
-  restoreCancelledEmailSend,
   sendEmailQueued,
 } from '@queries/email/send-queue';
 import {
@@ -92,7 +90,11 @@ import {
 } from './queries/draft-lifecycle';
 import { createEmailInboxSource } from './queries/inbox-source';
 import { queuedDraftSaveArgs } from './queries/queued-draft';
-import { restoreDraftBodyAfterUndo, runUndoSend } from './undo-send';
+import {
+  restoreDraftBodyAfterUndo,
+  runQueuedUndoSend,
+  runUndoSend,
+} from './undo-send';
 
 export type EmailComposeContextOptions = {
   /** Transport of the thread read this surface sits under; a compose surface has none. */
@@ -277,6 +279,15 @@ export function createEmailComposeContext(
       reportError,
     },
     drafts: {
+      watchRestorations: (changed) =>
+        subscribeToDraftLifecycleChanges((event) => {
+          if (event.restoration)
+            changed({
+              ...event.restoration,
+              draftId: event.draftId,
+              inboxId: event.inboxId,
+            });
+        }),
       get readDraft() {
         return queueActive() ? readEmailDraft : undefined;
       },
@@ -508,21 +519,11 @@ export function createEmailComposeContext(
       },
       undoSend: async (input) => {
         if (input.sendAttemptId) {
-          const intent = (await readEmailSendIntents()).find(
-            (row) => row.uuid === input.sendAttemptId
-          );
-          if (!intent)
-            throw new Error('This send is no longer available to undo');
-          await cancelEmailSendQueued(intent);
-          await sends.refresh();
-          const updated = sends
-            .intents()
-            .find((row) => row.uuid === intent.uuid);
-          if (updated && !emailSendLocked(updated)) {
-            await restoreCancelledEmailSend(updated);
-            await sends.refresh();
-            await input.onUndone({ draftRestored: true });
-          }
+          await runQueuedUndoSend({
+            draftId: input.draftId,
+            attemptId: input.sendAttemptId,
+            onUndone: () => input.onUndone({ draftRestored: true }),
+          });
           return;
         }
         await runUndoSend({

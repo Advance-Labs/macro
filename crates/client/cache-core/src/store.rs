@@ -27,7 +27,6 @@ use predicate_index::{
     RecordKey as PredicateRecordKey, evaluate_reference,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use uuid::Uuid;
@@ -375,7 +374,7 @@ impl InMemoryStorage {
 }
 
 impl Storage for InMemoryStorage {
-    type Error = Infallible;
+    type Error = crate::durable_intent::DurableIntentError;
 
     async fn get_batch(&self, keys: &[EntityKey<'_>]) -> Result<Vec<Option<Record>>, Self::Error> {
         self.record_get_count.fetch_add(1, Ordering::Relaxed);
@@ -495,6 +494,16 @@ impl Storage for InMemoryStorage {
 
         let metadata =
             crate::durable_intent::source_metadata(&entry.optimistic.optimistic_data_json);
+        if let Some(metadata) = &metadata {
+            crate::durable_intent::check_exclusivity(
+                self.records
+                    .get(&crate::durable_intent::key())
+                    .unwrap_or(&Record::default()),
+                entry.uuid,
+                metadata,
+                |key| Ok(self.records.get(key).cloned()),
+            )?;
+        }
         let replacing = metadata
             .as_ref()
             .and_then(|v| v.get("replace"))

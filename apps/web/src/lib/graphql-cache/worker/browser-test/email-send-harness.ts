@@ -14,6 +14,7 @@ const host = createWorkerCacheHost({ scope });
 const status = document.querySelector<HTMLParagraphElement>('#status')!;
 const requests = document.querySelector<HTMLPreElement>('#requests')!;
 const editor = document.querySelector<HTMLTextAreaElement>('#body')!;
+const error = document.querySelector<HTMLParagraphElement>('#error')!;
 const id = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const draft = {
@@ -58,7 +59,17 @@ const message: EmailThreadMessageFieldsFragment = {
   attachmentsDraft: [],
   attachmentsForwarded: [],
 };
-const attempt = { attemptId: id(1), linkId: id(4) };
+const attempt = {
+  attemptId: new URLSearchParams(location.search).get('attempt') ?? id(1),
+  linkId: id(4),
+};
+const exclusive = {
+  entityKey: `GraphqlSoupEmailMessage:${draft.draftId}`,
+  releaseOn: {
+    responsePath: ['cancelEmailSend', 'attempt', 'status'],
+    value: 'CANCELLED',
+  },
+};
 const input = {
   attempt,
   message: {
@@ -107,6 +118,7 @@ const client = createClient({
 });
 async function refresh() {
   const rows = await host.durableMutationIntents();
+  document.documentElement.dataset.intentCount = String(rows.length);
   const row = rows[0] as
     | {
         phase: string;
@@ -135,7 +147,7 @@ async function refresh() {
 }
 host.onCacheChanged(() => void refresh());
 document.querySelector('#send')!.addEventListener('click', async () => {
-  await executeOptimisticMutation(
+  const result = await executeOptimisticMutation(
     client,
     SendEmailMessageDocument,
     { input },
@@ -153,9 +165,14 @@ document.querySelector('#send')!.addEventListener('click', async () => {
     },
     {
       uuid: attempt.attemptId,
-      durableIntent: { kind: 'email-send-v1', payload: { input, draft } },
+      durableIntent: {
+        kind: 'email-send-v1',
+        payload: { input, draft },
+        exclusive,
+      },
     }
   ).toPromise();
+  error.textContent = result.error?.message ?? '';
   await refresh();
 });
 document.querySelector('#cancel')!.addEventListener('click', async () => {
@@ -181,6 +198,7 @@ document.querySelector('#cancel')!.addEventListener('click', async () => {
         kind: 'email-send-v1',
         replace: true,
         payload: { input, draft },
+        exclusive,
       },
     }
   ).toPromise();

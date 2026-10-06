@@ -83,6 +83,10 @@ export type EmailSendStatus =
   | 'ACCEPTED'
   /** This attempt cannot deliver. */
   | 'CANCELLED'
+  /** Delivery may have occurred and is being reconciled without resending. */
+  | 'DELIVERY_UNCONFIRMED'
+  /** Delivery failed before acceptance; cancellation can restore the draft. */
+  | 'FAILED'
   /** Delivery has been claimed and cannot be cancelled. */
   | 'SENDING'
   /** Provider delivery was recorded. */

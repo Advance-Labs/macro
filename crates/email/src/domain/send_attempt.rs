@@ -5,7 +5,24 @@ use macro_user_id::user_id::MacroUserIdStr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::models::{CreateDraftInput, EmailErr, ResolvedDraftInput, ThreadRow, UpsertedContacts};
+use super::models::{
+    ContactInfo, CreateDraftInput, EmailErr, ResolvedDraftInput, ThreadRow, UpsertedContacts,
+};
+
+/// Frozen delivery content after validation, sanitization and signature injection.
+/// The raw request remains separate for exact idempotency comparisons.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreparedSendContent {
+    /// Message content and identities as settled by admission.
+    pub message: ResolvedDraftInput,
+    /// Sender identity captured at admission, independent of later contact sync.
+    pub sender: ContactInfo,
+}
+
+/// Older or invalid admitted content cannot safely be reconstructed from live rows.
+#[derive(Debug, thiserror::Error)]
+#[error("approved email content is unavailable; cancel and review the draft before sending")]
+pub struct PreparedSendContentUnavailable;
 
 /// Unique identity for one explicit Send action, retained across retries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,11 +37,11 @@ pub struct SendSnapshot {
     pub attachment_ids: Vec<Uuid>,
     /// Original attachment IDs for forwarded attachments.
     pub forwarded_attachment_ids: Vec<Uuid>,
-    /// Original editor HTML, encoded like the message HTML, without the watermark.
+    /// Original editor HTML, encoded like message HTML; omitted values use the approved body.
     pub restore_body_html: Option<String>,
-    /// Original editor text.
+    /// Original editor text; omitted values use the approved body.
     pub restore_body_text: Option<String>,
-    /// Original editor document.
+    /// Original editor document; omitted values use the approved body.
     pub restore_body_macro: Option<String>,
 }
 
@@ -35,6 +52,10 @@ pub enum SendAttemptStatus {
     Accepted,
     /// The worker owns delivery; cancellation is too late.
     Sending,
+    /// Preparation or provider rejection needs attention; cancellation is safe.
+    Failed,
+    /// Provider acceptance is uncertain; automatic resubmission is forbidden.
+    DeliveryUnconfirmed,
     /// Provider delivery was recorded successfully.
     Sent,
     /// Delivery authority was revoked, including before admission.
@@ -74,6 +95,10 @@ pub struct PreparedSend {
     pub new_thread: Option<ThreadRow>,
     /// Sanitized restoration HTML.
     pub restore_html: Option<String>,
+    /// Restoration text, defaulted from the approved body.
+    pub restore_text: Option<String>,
+    /// Restoration editor document, defaulted from the approved body.
+    pub restore_macro: Option<String>,
 }
 
 /// Persistence operations serialize admission/cancellation and message delivery locks.

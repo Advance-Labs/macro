@@ -37,7 +37,9 @@ import type {
   EmailUndoHandle,
 } from '../context/compose-capabilities';
 import type { EmailReplySession } from '../context/email-form-inputs';
+import { decodeBase64Utf8 } from '../core/decode-base64';
 import type { EmailDraft } from '../core/email-draft';
+import { plainTextToHtml } from '../core/plain-text-to-html';
 import {
   convertContactInfoToEmailRecipient,
   convertEmailRecipientToContactInfo,
@@ -52,6 +54,7 @@ import {
   createDraftPersistence,
   deleteDraftForDiscard,
 } from './draft-persistence';
+import { observeDraftRestoration } from './draft-restoration';
 import { createDraftSession } from './draft-session';
 import type { DraftFormAttachment } from './email-form-state';
 import type { EmailFormContextValue, FormAccessKey } from './email-form-types';
@@ -204,6 +207,7 @@ export function createReplyComposer(
       : undefined;
 
   const [bodyMacro, setBodyMacro] = createSignal<string>('');
+  const [restoring, setRestoring] = createSignal(false);
   const [scrollContainer, setScrollContainer] = createSignal<HTMLElement>();
   // Gmail-style sizing: the composer opens compact and grows to the full cap
   // once the user scrolls the content
@@ -250,6 +254,7 @@ export function createReplyComposer(
     onChange: scheduleDraftSave,
     container: dom.container,
     disabled: () =>
+      restoring() ||
       submitting() ||
       pendingDeletion() ||
       movingInbox() ||
@@ -309,9 +314,7 @@ export function createReplyComposer(
     onMount(() => {
       // Restored content is local state worth keeping — latch the seed.
       props.onEngaged?.();
-      for (const attachment of restoredSnapshot.attachments) {
-        form.attachments.add(attachment);
-      }
+      form.attachments.replace(restoredSnapshot.attachments);
       setIncludeSignature(restoredSnapshot.includeSignature);
       form.setReplyAppended(restoredSnapshot.replyAppended);
       // Reopen with the quote visible, as it was when the send was undone.
@@ -348,9 +351,7 @@ export function createReplyComposer(
     if (currentEditor && snapshot.bodyHtml) {
       setEditorStateFromHtml(currentEditor, snapshot.bodyHtml);
     }
-    for (const attachment of snapshot.attachments) {
-      form.attachments.add(attachment);
-    }
+    form.attachments.replace(snapshot.attachments);
     setIncludeSignature(snapshot.includeSignature);
     form.setReplyAppended(snapshot.replyAppended);
     // Reopen with the quote visible, as it was when the send was undone.
@@ -621,6 +622,7 @@ export function createReplyComposer(
     capture: captureSave,
     persist: persistDraft,
     paused: () =>
+      restoring() ||
       submitting() ||
       pendingDeletion() ||
       movingInbox() ||
@@ -629,11 +631,53 @@ export function createReplyComposer(
       terminalState() !== undefined ||
       sendLocked(),
   });
+  observeDraftRestoration({
+    storage: props.drafts,
+    accepts: (change) =>
+      savedDraftId()
+        ? [change.draftId, change.originalDraftId].includes(savedDraftId()!)
+        : !hasLocalChanges &&
+          change.threadId === thread()?.db_id &&
+          change.replyingToId === replyTarget?.db_id,
+    ready: () => !sendLocked(),
+    version: () => `${identityVersion}:${editVersion}:${session.epoch()}`,
+    cancelPendingSave: () => {
+      identityVersion += 1;
+      autosave.cancel();
+    },
+    setPending: setRestoring,
+    restore: (draft, change, persistence) => {
+      session.dispatch({
+        type: 'seeded',
+        draftId: draft.db_id,
+        threadId: draft.thread_db_id,
+        inboxId: draft.link_id,
+        persistence,
+      });
+      form.restoreDraft(draft);
+      setIncludeSignature(change.includeSignature !== false);
+      const currentEditor = editor();
+      if (currentEditor)
+        setEditorStateFromHtml(
+          currentEditor,
+          draft.body_html_sanitized
+            ? decodeBase64Utf8(draft.body_html_sanitized)
+            : plainTextToHtml(draft.body_text ?? '')
+        );
+      setQuoteCollapsed(!form.replyAppended());
+      hasLocalChanges = false;
+      setTerminalState(undefined);
+      props.onEngaged?.();
+      props.setShowReply?.(true);
+    },
+    reportError: props.notices.reportError,
+  });
   function executeSaveDraft(completingThread = false) {
     return autosave.save(captureSave(completingThread));
   }
   function scheduleDraftSave() {
     if (
+      restoring() ||
       submitting() ||
       pendingDeletion() ||
       movingInbox() ||
@@ -654,6 +698,7 @@ export function createReplyComposer(
   // refresh. Driven by the explicit switch (below) rather than inbox reactivity.
   const saveSelectedInbox = async (inboxId: string) => {
     if (
+      restoring() ||
       submitting() ||
       pendingDeletion() ||
       movingInbox() ||
@@ -736,6 +781,27 @@ export function createReplyComposer(
 
     if (!requestReplyType) return;
 
+    // Message-card actions reach this path even while composer controls are disabled.
+    // Consume the request so cancelling the send cannot apply a stale Forward later.
+    if (sendLocked()) {
+      // A fresh composer can be waiting for durable storage initialization.
+      // Preserve its initial action; requests against a queued draft are discarded.
+      if (savedDraftId()) ctx.replyRequest.clear();
+      return;
+    }
+    if (
+      restoring() ||
+      submitting() ||
+      pendingDeletion() ||
+      movingInbox() ||
+      schedule.pending() ||
+      schedule.state().type === 'scheduled' ||
+      terminalState()
+    ) {
+      ctx.replyRequest.clear();
+      return;
+    }
+
     if (form.replyType() !== requestReplyType) {
       form.setReplyType(requestReplyType);
     } else if (requestReplyType === 'forward') {
@@ -764,6 +830,7 @@ export function createReplyComposer(
   const hasPaidAccess = props.hasPaidAccess;
 
   const sendEmail = async (markDone = false) => {
+    if (sendLocked() || restoring()) return;
     if (scheduling() || movingInbox() || terminalState()) return;
     if (submitting() || pendingDeletion()) return;
 
@@ -1116,6 +1183,7 @@ export function createReplyComposer(
   };
 
   const deleteDraftAndReset = async () => {
+    if (sendLocked() || restoring()) return;
     if (schedule.state().type === 'scheduled') {
       props.notices.feedback.alert(
         'Cancel the schedule before deleting this draft.'
@@ -1282,7 +1350,7 @@ export function createReplyComposer(
         scheduling,
         movingInbox,
         () => sendPhase() === 'sending',
-        sendLocked,
+        () => sendLocked() || restoring(),
       ],
       ([state, , moving, sending, queued]) => {
         if (queued) {
@@ -1377,6 +1445,7 @@ export function createReplyComposer(
 
   const hasBodyText = () => bodyMacro().trim().length > 0;
   const editingDisabled = () =>
+    restoring() ||
     submitting() ||
     pendingDeletion() ||
     movingInbox() ||
@@ -1397,6 +1466,7 @@ export function createReplyComposer(
     return undefined;
   };
   const sendActionDisabled = () =>
+    restoring() ||
     submitting() ||
     pendingDeletion() ||
     movingInbox() ||

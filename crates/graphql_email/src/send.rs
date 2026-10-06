@@ -49,6 +49,10 @@ pub enum EmailSendStatus {
     Accepted,
     /// Delivery has been claimed and cannot be cancelled.
     Sending,
+    /// Delivery failed before acceptance; cancellation can restore the draft.
+    Failed,
+    /// Delivery may have occurred and is being reconciled without resending.
+    DeliveryUnconfirmed,
     /// Provider delivery was recorded.
     Sent,
     /// This attempt cannot deliver.
@@ -70,6 +74,8 @@ impl EmailSendAttemptPayload {
         match self.0.status {
             SendAttemptStatus::Accepted => EmailSendStatus::Accepted,
             SendAttemptStatus::Sending => EmailSendStatus::Sending,
+            SendAttemptStatus::Failed => EmailSendStatus::Failed,
+            SendAttemptStatus::DeliveryUnconfirmed => EmailSendStatus::DeliveryUnconfirmed,
             SendAttemptStatus::Sent => EmailSendStatus::Sent,
             SendAttemptStatus::Cancelled => EmailSendStatus::Cancelled,
         }

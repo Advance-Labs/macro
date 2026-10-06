@@ -6698,6 +6698,8 @@ dependencies = [
  "aws-sdk-sqs",
  "aws_lambda_events",
  "chrono",
+ "email",
+ "futures",
  "lambda_runtime",
  "macro_aws_config",
  "macro_db_migrator",

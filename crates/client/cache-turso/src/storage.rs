@@ -1035,6 +1035,26 @@ impl Storage for TursoStorage {
                     Some(row) => decode_record(&required_blob(row, 0)?).map_err(|_| invariant())?,
                     None => Record::default(),
                 };
+                if let Some(metadata) = &metadata {
+                    cache_core::durable_intent::check_exclusivity(
+                        &catalog,
+                        entry.uuid,
+                        metadata,
+                        |key| {
+                            let key = RecordKey::from_entity(key)?;
+                            let rows = driver::query(
+                                &connection,
+                                RECORD_GET,
+                                vec![text(&key.typename), text(&key.id)],
+                            )?;
+                            rows.first()
+                                .map(|row| {
+                                    decode_record(&required_blob(row, 0)?).map_err(|_| invariant())
+                                })
+                                .transpose()
+                        },
+                    )?;
+                }
                 let previous = catalog
                     .fields
                     .get(&entry.uuid.to_string())
