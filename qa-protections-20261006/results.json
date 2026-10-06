@@ -1,0 +1,285 @@
+{
+  "results": [
+    {
+      "col": "01a1124f-e007-790c-b32a-ef776980f687",
+      "change": {
+        "kind": "delete"
+      },
+      "status": 400,
+      "body": {
+        "message": "This column is protected against this schema change. Remove the feature using it first.",
+        "op": 0,
+        "row": null,
+        "column": "01a1124f-e007-790c-b32a-ef776980f687",
+        "taken": null
+      }
+    },
+    {
+      "col": "01a1124f-e007-790c-b32a-ef776980f687",
+      "change": {
+        "kind": "change_type",
+        "to": {
+          "type": "text"
+        }
+      },
+      "status": 400,
+      "body": {
+        "message": "This column is protected against this schema change. Remove the feature using it first.",
+        "op": 0,
+        "row": null,
+        "column": "01a1124f-e007-790c-b32a-ef776980f687",
+        "taken": null
+      }
+    },
+    {
+      "col": "01a1124f-e007-7fcf-b504-9470f077d326",
+      "change": {
+        "kind": "delete"
+      },
+      "status": 400,
+      "body": {
+        "message": "This column is protected against this schema change. Remove the feature using it first.",
+        "op": 0,
+        "row": null,
+        "column": "01a1124f-e007-7fcf-b504-9470f077d326",
+        "taken": null
+      }
+    },
+    {
+      "col": "01a1124f-e007-7fcf-b504-9470f077d326",
+      "change": {
+        "kind": "change_type",
+        "to": {
+          "type": "text"
+        }
+      },
+      "status": 400,
+      "body": {
+        "message": "This column is protected against this schema change. Remove the feature using it first.",
+        "op": 0,
+        "row": null,
+        "column": "01a1124f-e007-7fcf-b504-9470f077d326",
+        "taken": null
+      }
+    },
+    {
+      "test": "duplicate",
+      "status": 409,
+      "body": {
+        "code": "tableAlreadyHasForm",
+        "message": "This table already has a form. Open or restore it, or permanently delete it before creating another.",
+        "question": null,
+        "problem": null
+      }
+    }
+  ],
+  "trashDuplicate": {
+    "status": 409,
+    "body": {
+      "code": "tableAlreadyHasForm",
+      "message": "This table already has a form. Open or restore it, or permanently delete it before creating another.",
+      "question": null,
+      "problem": null
+    }
+  },
+  "trashDelete": {
+    "status": 400,
+    "body": {
+      "message": "This column is protected against this schema change. Remove the feature using it first.",
+      "op": 0,
+      "row": null,
+      "column": "01a1124f-e007-790c-b32a-ef776980f687",
+      "taken": null
+    }
+  },
+  "permanent": {
+    "status": 200,
+    "body": {
+      "data": {
+        "deleteEntitiesPermanently": {
+          "results": [
+            {
+              "__typename": "GraphqlMutationSuccess"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "unlockMenus": [
+    {
+      "text": "Rename column",
+      "disabled": "false"
+    },
+    {
+      "text": "Insert left",
+      "disabled": "false"
+    },
+    {
+      "text": "Insert right",
+      "disabled": "false"
+    },
+    {
+      "text": "Change type",
+      "disabled": "false"
+    },
+    {
+      "text": "Sort ascending",
+      "disabled": "false"
+    },
+    {
+      "text": "Sort descending",
+      "disabled": "false"
+    },
+    {
+      "text": "Move left",
+      "disabled": "true"
+    },
+    {
+      "text": "Move right",
+      "disabled": "false"
+    },
+    {
+      "text": "Delete column",
+      "disabled": "false"
+    }
+  ],
+  "demo": {
+    "status": 200,
+    "body": {
+      "form": {
+        "id": "01a11252-f6f1-774c-b382-8edc83a519d7",
+        "name": "Forms playground",
+        "description": "Try building questions, previewing the form, and reviewing responses. The linked database keeps your answers.",
+        "ownerId": "macro|forms-final-qa@macro.com",
+        "databaseId": "01a1124f-587c-7f99-846a-14d6eb8f3669",
+        "tableId": "01a1124f-587c-7ecc-a04c-2a6b49f19af9",
+        "submittedColumnId": "01a1124f-e007-790c-b32a-ef776980f687",
+        "respondentColumnId": "01a1124f-e007-7fcf-b504-9470f077d326",
+        "audience": "public",
+        "tallyVisible": false,
+        "status": "open",
+        "closesAt": null,
+        "confirmationMessage": "",
+        "createdAt": "2026-10-06T17:46:29.489834Z",
+        "updatedAt": "2026-10-06T17:47:07.920806Z"
+      },
+      "access": "owner",
+      "tableGone": false,
+      "sections": [
+        {
+          "kind": "questions",
+          "id": "01a11252-f6f1-74de-983f-8d3e6021abbd",
+          "title": "",
+          "description": "",
+          "questions": [
+            {
+              "id": "01a11252-f6f1-7956-a572-cd51d54348da",
+              "column": "01a1124f-5883-792f-8602-81816a76d164",
+              "title": "Name",
+              "kind": {
+                "type": "text"
+              },
+              "options": [],
+              "helpText": "",
+              "required": false,
+              "widget": "short"
+            },
+            {
+              "id": "01a11253-730b-7339-aa50-78d7081fb81b",
+              "column": "01a11253-730b-7339-aa50-71811507570e",
+              "title": "What would you like to build?",
+              "kind": {
+                "type": "text"
+              },
+              "options": [],
+              "helpText": "",
+              "required": false,
+              "widget": "paragraph"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": [],
+  "sockets": [
+    {
+      "url": "wss://wolf-macro-google:35709/",
+      "received": 3,
+      "sent": 11,
+      "error": null,
+      "closed": false
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/websocket",
+      "received": 1,
+      "sent": 1,
+      "error": null,
+      "closed": false
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 0,
+      "sent": 0,
+      "error": "HTTP Authentication failed; no valid credentials available",
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 0,
+      "sent": 0,
+      "error": "HTTP Authentication failed; no valid credentials available",
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 0,
+      "sent": 0,
+      "error": "HTTP Authentication failed; no valid credentials available",
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 0,
+      "sent": 0,
+      "error": "HTTP Authentication failed; no valid credentials available",
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 0,
+      "sent": 0,
+      "error": "HTTP Authentication failed; no valid credentials available",
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/connection-gateway",
+      "received": 388,
+      "sent": 369,
+      "error": null,
+      "closed": false
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/sync/document/01a1124f-e023-7b92-bda4-b93840b2be01/connect",
+      "received": 4,
+      "sent": 5,
+      "error": null,
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/sync/document/01a1124f-e023-7b92-bda4-b93840b2be01/connect",
+      "received": 7,
+      "sent": 8,
+      "error": null,
+      "closed": true
+    },
+    {
+      "url": "wss://wolf-macro-google:35709/sync/document/01a11252-f6f1-774c-b382-8edc83a519d7/connect",
+      "received": 7,
+      "sent": 14,
+      "error": null,
+      "closed": false
+    }
+  ]
+}
