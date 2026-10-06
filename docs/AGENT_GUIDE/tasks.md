@@ -244,9 +244,9 @@ Closing the popover without submitting keeps the underlying view open.
 
 Opening a project keeps the Tasks workspace and its navigation. The top bar
 shows the Projects return breadcrumb and the project name, with the same Share
-and side-panel controls as task detail. Choose Overview or Tasks in the
-bubble-tab row below that top bar. In Tasks, an outlined circular search button
-to the right of the tabs expands into a focused `Search in <project name>` field. Close or Escape
+and side-panel controls as task detail. Choose Overview or Tasks in that same
+top bar. In Tasks, an outlined circular search button in the list toolbar
+expands into a focused `Search in <project name>` field. Close or Escape
 clears the query and restores focus to the button. The row stays the same height
 and scrolls horizontally in narrow splits, keeping list controls, Add existing
 tasks, and New task accessible. Opening an associated task extends the breadcrumb trail; choose

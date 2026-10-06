@@ -15,7 +15,8 @@ import {
 import { ShareTrigger } from '@core/component/TopBar/ShareButton';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import StackIcon from '@phosphor/stack.svg';
-import { Button, Tabs } from '@ui';
+import { Button } from '@ui';
+import { Tabs } from '@ui/components/Tabs';
 import { Match, Show, Suspense, Switch } from 'solid-js';
 import { ProjectContentSkeleton } from './components/project-skeletons';
 import {
@@ -139,26 +140,14 @@ function ProjectDetailHost(props: ProjectDetailProps) {
     />
   );
   const loading = () => (
-    <>
-      <Show when={props.route.section === 'overview'}>
-        <div class="min-w-0 shrink-0 overflow-x-auto scrollbar-hidden px-4 py-2">
-          {navigation()}
-        </div>
-      </Show>
-      <div class="min-h-0 flex-1">
-        <ProjectContentSkeleton
-          section={props.route.section}
-          navigation={navigation()}
-        />
-      </div>
-    </>
+    <ProjectContentSkeleton section={props.route.section} />
   );
   return (
     <>
       <Show when={props.breadcrumb}>
         {(breadcrumb) => <ProjectBreadcrumbContent {...breadcrumb()} />}
       </Show>
-      <EntityDetailTopBar>
+      <EntityDetailTopBar navigation={navigation()}>
         <Show when={source.project()}>
           {(project) => (
             <ProjectShareTrigger project={project()} commands={commands} />
@@ -178,7 +167,6 @@ function ProjectDetailHost(props: ProjectDetailProps) {
                   source={source}
                   commands={commands}
                   section={props.route.section}
-                  navigation={navigation()}
                   onDelete={
                     props.onDelete ??
                     (() => navigate({ route: tasksSplitRoute, params: {} }))
@@ -228,7 +216,6 @@ function ProjectDetailHost(props: ProjectDetailProps) {
               )}
             </Match>
             <Match when={true}>
-              <div class="px-4 py-2">{navigation()}</div>
               <div role="alert" class="p-6">
                 <p>
                   Project unavailable. It may have been deleted, or you may no
