@@ -8,7 +8,7 @@ import {
 import { createSignal, type ParentProps } from 'solid-js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { AiFilterOutcome } from './AiFilterInput';
-import { ListFilterDropdown } from './ListDropdowns';
+import { ListFilterCountBadge, ListFilterDropdown } from './ListDropdowns';
 
 // Exercise the actual menus/comboboxes without initializing the app UI barrel.
 vi.mock('@ui', async () => ({
@@ -254,4 +254,16 @@ it('ignores Enter on an empty description and leaves the option rows reachable',
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(screen.getByRole('menuitem', { name: 'Assignee' })).toBeTruthy();
+});
+
+it('shows the applied filter count only while filters are active', () => {
+  const [count, setCount] = createSignal(0);
+  const { container } = render(() => <ListFilterCountBadge count={count()} />);
+  expect(container.textContent).toBe('');
+
+  setCount(2);
+  expect(container.textContent).toBe('2');
+
+  setCount(0);
+  expect(container.textContent).toBe('');
 });

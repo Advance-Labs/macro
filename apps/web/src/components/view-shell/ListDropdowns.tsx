@@ -168,6 +168,21 @@ export type ListFilterDropdownProps<
   contentClass?: string;
 } & ListDropdownOpenProps;
 
+/**
+ * Overlays the number of applied filters on a `ListFilterDropdown` trigger, so
+ * a collapsed menu still reveals that the list is filtered. Render it as a
+ * sibling of the dropdown inside a `relative` wrapper.
+ */
+export function ListFilterCountBadge(props: { count: number }) {
+  return (
+    <Show when={props.count > 0}>
+      <span class="pointer-events-none absolute -top-0.5 right-0 z-10 flex size-4 translate-x-1/2 items-center justify-center rounded-full bg-accent text-xxs font-medium leading-none text-surface">
+        {props.count}
+      </span>
+    </Show>
+  );
+}
+
 export function ListFilterDropdown<
   TGroupId extends string,
   TOptionId extends string,

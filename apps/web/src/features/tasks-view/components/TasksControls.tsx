@@ -1,11 +1,12 @@
 import {
+  ListFilterCountBadge,
   ListFilterDropdown,
   ListGroupDropdown,
   ListSortDropdown,
   useViewControlHotkeys,
 } from '@app/components/view-shell';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
-import { createSignal, Show } from 'solid-js';
+import { createSignal } from 'solid-js';
 import { TASK_GROUP_OPTIONS, TASK_SORT_OPTIONS } from '../constants';
 import { useTaskFilters } from '../filters/use-task-filters';
 import { useTasksView } from '../tasks-view-context';
@@ -83,11 +84,7 @@ export function TasksControls() {
             onSubmit: filters.applyDescription,
           }}
         />
-        <Show when={filters.activeCount() > 0}>
-          <span class="pointer-events-none absolute -top-0.5 right-0 z-10 flex size-4 translate-x-1/2 items-center justify-center rounded-full bg-accent text-xxs font-medium leading-none text-surface">
-            {filters.activeCount()}
-          </span>
-        </Show>
+        <ListFilterCountBadge count={filters.activeCount()} />
       </div>
     </div>
   );
