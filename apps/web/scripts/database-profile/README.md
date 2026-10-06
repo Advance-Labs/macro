@@ -5,6 +5,20 @@ Run the isolated stack with browser telemetry enabled, following
 throughout the audit; `run_local` startup and its quit command rebuild/remove
 instance data. Use the `r` hotkey to rebuild services without replacing data.
 
+For an optimized headless frontend, explicitly set `VITE_ENABLE_DATABASES=true`,
+`VITE_ENABLE_BROWSER_OTEL=true` and
+`VITE_OTEL_EXPORTER_URL=/i/otlp/v1/traces` when building. The static build does not
+inherit the interactive Vite server's tracing configuration. Before recording
+comparisons, verify that a database request carries `traceparent` and its browser
+and backend spans can be retrieved from the local collector.
+
+After a machine restart, follow the existing-instance recovery steps in the local
+running guide. Restore missing LocalStack resources with
+`cargo x localstack-provision --instance <name> --port-base <base>`, then start services
+that exited while their dependencies were unavailable. Check the collaboration
+gateway as well as Postgres and DSS: a stopped gateway can add seconds of DNS or
+connection retries to otherwise fast database writes.
+
 ```sh
 nix develop --command just run_local --no-doppler --instance database-profiling-audit --port-base 21000
 ```
@@ -22,7 +36,7 @@ From `apps/web`, measure without changing data:
 bun scripts/database-profile/measure.mjs \
   --url https://localhost:21009/app/database/UUID \
   --state /tmp/database-profile-auth.json \
-  --table Records --rows 1000 --entries 1000 \
+  --table Records --rows 500 --entries 1000 \
   --output /tmp/database-profile-1000 --repeats 3 \
   --chrome /path/to/google-chrome
 ```

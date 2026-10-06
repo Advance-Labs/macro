@@ -1,6 +1,6 @@
-# Database performance audit — 2026-10-05
+# Database performance audit — 2026-10-05–06
 
-At 100,000 stored records, the table opens in **2.31 seconds cold and 1.29 seconds
+At 100,000 stored records, the table opens in **1.97 seconds cold and 1.16 seconds
 warm**, compared with 33.82 seconds cold and a Chrome crash on warm reload before
 server pagination and virtualization. All 18 final opening samples across three
 views were under 3 seconds. These are local measurements, not a production SLA.
@@ -12,18 +12,23 @@ not wait for all 100,000 records to download. The Soup and engine page limits re
 
 - Profiling PR: <https://github.com/macro-inc/macro/pull/7496>
 - Optimization PR: <https://github.com/macro-inc/macro/pull/7539>
-- Measured code: `8bec61c252` (optimized frontend bundle, development Rust backend).
-- Local app: <https://wolf-macro-google:21009/app/database/01a10d2c-f706-7a9f-89ee-f68d4281746d>
+- Current measured code: `9a4bd03d65` (optimized frontend bundle, development Rust backend).
+- Original optimized measurements: `8bec61c252`, retained below for attribution.
+- Local app: <https://wolf-macro-google:26009/app/database/01a111d0-00e3-7069-bb51-3c8603fcf141>
+- Synthetic login: `database-profiling@macro.local` (local email-code flow).
 
 ## Method and fixture
 
-The isolated `database-profiling-audit` stack uses its own Postgres on port 21000
-and HTTPS proxy on 21009. Tests used a private Playwright Chrome
+The original isolated `database-profiling-audit` stack uses its own Postgres on
+port 21000 and HTTPS proxy on 21009. The current revalidation uses the separate
+`database-profiling-final` stack on 26000/26009. Tests used a private Playwright Chrome
 153.0.8010.52, a 1600×1000 viewport, and a synthetic account. The shared Chrome and
 the other worktree's stack were not used. Existing databases and volumes were kept.
 The host exposes 144 logical Intel Xeon 6985P-C cores and about 283 GiB RAM; it is
-shared with other development work. The frontend is an optimized Vite bundle
-configured for the local backend, not the Vite development server.
+shared with other development work. Both frontends are optimized Vite bundles
+configured for the local backend. The current bundle is staged in Caddy. Its
+build explicitly enables databases and browser telemetry, exporting to the local
+`/i/otlp/v1/traces` endpoint. No Vite development server is used for final timings.
 
 The fixture contains 100,000 Records, 20 Accounts, and nine columns: Name, Amount,
 Bucket, Stage, Active, Due, Website, Notes and Account. Values include text, numbers,
@@ -37,8 +42,15 @@ This is a rendering opportunity, not proof of a physical paint. Polling adds up 
 100 ms uncertainty. Each cold sample starts with a fresh browser context containing
 login state; its warm sample reloads the same context. “Cold” does not mean a cold
 Postgres buffer cache or operating-system filesystem cache. Final results use three
-repetitions per view, with CPU profiling disabled. A TypeScript check overlapped the
-beginning of this final run; frontend/backend builds had finished.
+repetitions per view, with CPU profiling disabled and browser tracing enabled.
+A TypeScript check overlapped the beginning of the original optimized run.
+The current final runs started after seeding, builds and recovery of the local
+collaboration gateway finished.
+
+The new fixture was also grown through all six sizes. Its 1k–25k opening checks
+were preflight runs with browser tracing disabled and are excluded from the final
+comparison table. At 50k, a traced cold/warm pair measured 1.976/1.216 seconds.
+The 100k results below contain three traced cold/warm pairs for each view.
 
 Raw results, traces, SQL plans, profiles and logs are under
 `/home/wolf/tmp/database-profiling/`. Credentials remain outside git. See the
@@ -48,8 +60,22 @@ from `pg_stat_statements`; shared statistics were not reset.
 
 ## Opening results
 
-Final code, 100,000 stored records, first 500 matching records loaded. Values are
+Current code, 100,000 stored records, first 500 matching records loaded. Values are
 seconds, **median [minimum–maximum]**, three samples in each column.
+
+| View | Cold | Warm |
+| --- | --- | --- |
+| All records | **1.975 [1.952–1.988]** | **1.163 [1.079–1.200]** |
+| Bucket 99 | **2.093 [2.084–2.160]** | **1.245 [1.161–1.302]** |
+| Stage + Account | **1.991 [1.986–2.177]** | **1.140 [1.133–1.153]** |
+
+Source: `entity-final/entity-healthy-100000-{all,filtered,indexed}/results.json`.
+All 18 samples mounted exactly 25 rows. This is a fresh-fixture revalidation after
+the upstream entity refactor and local-service recovery; environment and serving
+differences mean the small improvement from the original optimized run is not
+attributable to that merge.
+
+The original optimized build (`8bec61c252`, October 5) measured:
 
 | View | Cold | Warm |
 | --- | --- | --- |
@@ -90,6 +116,22 @@ changes account for the last improvement. These results are preserved in
 
 ## Attribution through the stack
 
+Current median-cold traces confirm browser-to-Postgres propagation and the
+expected 500-row read. Timings below are milliseconds and include child spans.
+
+| View | Trace | Ordered-ID SQL | GraphQL including serialization | Serialization |
+| --- | --- | ---: | ---: | ---: |
+| All records | `fdd5973444d859fb0ef5d3a0a161872f` | 5.11 | 182.00 | 28.81 |
+| Bucket 99 | `83ea75f14d191536a3273270f181e66a` | 127.63 | 314.96 | 29.84 |
+| Stage + Account | `b1f1e26c9baa03afe25ad9a03927cf0c` | 67.18 | 245.60 | 29.86 |
+
+Connection acquisition was about 0.5 ms. For the all-records sample, browser row
+decoding took 20.3 ms, publication took 40.2 ms, and the database query span took
+434.9 ms. App startup and other browser work account for much of the remaining
+1.97-second navigation time.
+
+The following before/after attribution uses the original optimized run so it
+remains paired with the SQL plans and profiles collected during those iterations.
 Representative trace IDs below are query traces, not unrelated bootstrap requests.
 Timings are inclusive; parent and child durations must not be summed.
 
@@ -130,28 +172,51 @@ treated as zero-cost work.
 
 ## Interaction and deep-read checks
 
-Final browser interaction results, milliseconds. Table switches and edits are
-three-sample medians; the picker, insert and view switch are single samples.
+Current-code browser interaction results, milliseconds. Table switches and edits
+are three-sample medians; the picker, insert and view switch are single samples.
 Edits measure the visible optimistic result separately from the HTTP response.
 
 | Action | All records | Stage + Account |
 | --- | ---: | ---: |
-| Cached table switch | 230.1 | 534.2 |
-| Visible edit | 19.5 | 19.6 |
-| Edit HTTP response | 55.9 | 55.6 |
-| First picker open | 66.8 | 140.4 |
-| Insert HTTP response | 138.9 | 131.1 |
-| Switch to numeric filtered view | 133.1 | — |
+| Cached table switch | 466.3 | 512.0 |
+| Visible edit | 15.9 | 24.2 |
+| Edit HTTP response | 50.2 | 52.5 |
+| First picker open | 125.4 | 113.5 |
+| Insert HTTP response | 101.0 | 107.3 |
+| Switch to numeric filtered view | 932.2 | — |
 | Scroll frame interval p50 / p95 | 16.7 / 66.7 | 16.7 / 66.7 |
 
-Scroll uses sixty 800-pixel wheel events, about 16 ms apart. Maximum observed
-frame intervals were 150.1 ms (all) and 99.9 ms (indexed), so this is not a claim of
-smooth 60 fps. Temporary edits and inserted records were restored/deleted; both
-cleanup journals are empty. Sources: `paging-interactions-release` and
-`paging-indexed-interactions-release`.
+The numeric view-switch check waits for Record 099001, proving the new filter's
+membership is visible. The earlier 133.1 ms check waited only for 500 rows; because
+both views have that count, it did not establish completion of the view change.
+Inserted records opened with the exact submitted name, including the saved draft
+that remains editable outside a filtered view. The harness follows the accessible
+record-opening control or the creation notice; a retained draft's UI identity can
+differ from its saved server ID.
 
-The separate deep test explicitly requested all 200 pages, collecting garbage at
-milestones. It reached 100,000 rows in **89.35 seconds**, with **26 mounted rows**,
+Scroll uses sixty 800-pixel wheel events, about 16 ms apart. Maximum observed
+frame intervals were 83.4 ms (all) and 116.7 ms (indexed), so this is not a claim of
+smooth 60 fps. Both runs had no page errors. Temporary edits and inserted records
+were restored/deleted; their cleanup journals are empty. Sources:
+`entity-final/interactions-restored-all` and
+`entity-final/interactions-restored-indexed-verified`.
+
+After the machine restart, LocalStack's temporary resources were missing and the
+collaboration gateway had exited. Writes committed quickly but waited 3–4 seconds
+for failed gateway notifications. Idempotent LocalStack provisioning and restarting
+the existing gateway restored 50–53 ms median write acknowledgement without a code
+change or database reset. All final interaction measurements above use the
+recovered services.
+
+A separate stress run on the current code requested all 200 pages and reached
+100,000 loaded records in **86.31 seconds**, with **26 mounted rows**, **3,710 DOM
+nodes**, and **307.09 MB JavaScript heap after GC**. The last record opened, no page
+errors occurred, and switching to Accounts took **89.9 ms**. Heap immediately after
+that switch was **306.02 MB**. Source: `entity-final/deep-restored`. The fixture
+ended with exactly 100,000 Records and 20 Accounts.
+
+The original optimized deep test also requested all 200 pages, collecting garbage
+at milestones. It reached 100,000 rows in **89.35 seconds**, with **26 mounted rows**,
 **3,701 DOM nodes**, **308.48 MB JavaScript heap after GC**, and no page errors.
 The last record opened successfully. Switching to Accounts afterward took
 **82.8 ms**, compared with **10,130 ms** before the cache-opening fix. Heap just
@@ -195,6 +260,7 @@ journal. Supported row writes continue through database operations.
 | `8bec61c252` | Regenerate dependency unification and closure metadata required by CI. |
 | `73a084633c` | Integrate current main and regenerate the closure after the upstream crate move. |
 | `0025b45ee9` | Preserve cancellation classification during engine opening; build and remove indexes concurrently with safe interrupted-build retries. |
+| `9a4bd03d65` | Integrate the upstream storage/entity split while retaining paged reads, stable virtual rows and optional schema actions. |
 
 API traversal verified all 100,000 unique IDs in manual order, both endpoint
 numeric cohorts (Bucket 0 and Bucket 99, exactly 1,000 each), the 1,667-row indexed
@@ -235,6 +301,23 @@ The engine-open cancellation regression failed before the fix and passed after
 it. All 12 driver tests, seven paged-reader tests, 222 database tests, two migration
 tests, TypeScript, `just check`, and five follow-up QC reviews passed.
 
+The subsequent integration with `main` at `4f83c028f2` introduced the upstream
+`database_entities` boundary. On head `9a4bd03d65`, 604 frontend tests across 84
+files, all five standalone browser tests, TypeScript, `just check`, generated
+dependency verification and five integration reviews passed. Backend revalidation
+passed 226 database tests, 35 database-query service tests, one GraphQL adapter
+test, 59 complete-graph tests, 312 Soup tests with the `all` feature (four ignored),
+and 273 property tests (four ignored). All code and test CI checks passed on that
+head; the optional preview deployment was cancelled to keep runtime work local.
+
+The upstream entity-split migration discards existing database content. It was
+applied only to a new test database and the fresh `database-profiling-final` stack;
+the original 100k fixture was preserved. The hexagonal boundary was checked:
+GraphQL forwards authenticated, typed requests to the domain service; the domain
+owns authorized catalog access and cursor/query policy; the Postgres adapter owns
+SQL and transaction mechanics. Core storage without an app entity stays outside
+app discovery and canonical Soup hydration.
+
 ## Remaining limits
 
 - This achieves the requested opening target on the local table fixture. Broader
@@ -255,7 +338,7 @@ tests, TypeScript, `just check`, and five follow-up QC reviews passed.
 - Aggressive scrolling still has long frames. Cell mounting/paint and cache
   backpressure remain worth profiling separately from opening latency.
 
-The repository automatically published a frontend preview when the PR was opened.
-That preview was removed using the repository cleanup workflow. Runtime testing
+The repository automatically published frontend previews when the PRs were opened.
+Both previews were removed using the repository cleanup workflow. Runtime testing
 and the link above use only the isolated local stack; the PR was not merged and
 no backend release was deployed.
