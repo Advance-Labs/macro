@@ -292,6 +292,15 @@ export const staticFilesBacklog =
   [] as const satisfies readonly (keyof StaticFilesSdk)[];
 
 export const storageExcluded = [
+  // Live phone calls are app session flows (RTC credentials, ringing), and
+  // number assignment is an internal operator endpoint.
+  'answerPhoneCall',
+  'assignPhoneNumber',
+  'dialPhone',
+  'getPhoneSettings',
+  'hangUpPhoneCall',
+  'listIncomingPhoneCalls',
+  'releasePhoneNumber',
   // Slack archive imports are browser-admin workflows, not SDK surface in v1.
   'cancelSlackImport',
   'completeSlackImportUploads',

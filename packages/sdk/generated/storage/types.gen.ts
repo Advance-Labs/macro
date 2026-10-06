@@ -917,6 +917,16 @@ export type ApprovePairingRequest = {
 };
 
 /**
+ * Request body for assigning a phone number to a user.
+ */
+export type AssignPhoneNumberRequest = {
+    /**
+     * The Macro user the number rings and identifies.
+     */
+    userId: string;
+};
+
+/**
  * Attachment changes interpreted by the common command boundary.
  */
 export type AttachmentChange = {
@@ -1822,6 +1832,7 @@ export type CallRecord = {
      * Macro-account participants (both active and historic).
      */
     participants: Array<CallRecordParticipant>;
+    phone?: null | PhoneLeg;
     /**
      * Presigned URL for the call recording preview image, if available.
      */
@@ -3228,6 +3239,16 @@ export type ConferenceProvider = 'google_meet' | 'other';
  * How a group's conditions combine.
  */
 export type Conjunction = 'and' | 'or';
+
+/**
+ * A contact's phone numbers, in E.164, in the order they were entered.
+ */
+export type ContactPhoneNumbersResponse = {
+    /**
+     * The contact's numbers.
+     */
+    phoneNumbers: Array<PhoneNumber>;
+};
 
 /**
  * Source Slack conversation ID (C, G or D prefix); unique only within a source.
@@ -4724,6 +4745,18 @@ export type DeleteUnthreadedAnchorResponse = AnchorId & {
 export type DeleteUnthreadedPdfAnchorRequest = {
     anchorType: 'highlight';
     uuid: string;
+};
+
+/**
+ * Request body for placing a phone call.
+ */
+export type DialPhoneRequest = {
+    /**
+     * The number to call, as typed: E.164, a formatted national number
+     * (North American numbers may omit `+1`), or a `tel:` URI, optionally
+     * with an extension (`ext. 89`).
+     */
+    to: string;
 };
 
 /**
@@ -6409,6 +6442,13 @@ export type GetContactByEmailResponse = {
     contact?: null | CrmContactResponse;
 };
 
+/**
+ * Response from looking up a CRM contact by phone number.
+ */
+export type GetContactByPhoneResponse = {
+    contact?: null | CrmContactResponse;
+};
+
 export type GetDocumentKeyResponse = {
     /**
      * Data to be returned
@@ -7446,6 +7486,36 @@ export type InFlightTurnSummary = {
      * Position in the session's log.
      */
     turn: number;
+};
+
+/**
+ * An inbound phone call ringing for a Macro user.
+ */
+export type IncomingPhoneCall = {
+    /**
+     * The call to answer or decline.
+     */
+    callId: string;
+    contact?: null | PhoneContact;
+    /**
+     * Who is calling.
+     */
+    from: PhoneNumber;
+    /**
+     * When the call started ringing.
+     */
+    startedAt: string;
+    to?: null | PhoneNumber;
+};
+
+/**
+ * Inbound phone calls ringing for the caller, newest first.
+ */
+export type IncomingPhoneCallsResponse = {
+    /**
+     * The ringing calls.
+     */
+    calls: Array<IncomingPhoneCall>;
 };
 
 /**
@@ -9103,6 +9173,102 @@ export type PendingClaimResponse = {
     status: string;
 };
 
+/**
+ * Which side placed a phone call.
+ */
+export type PhoneCallDirection = 'outbound' | 'inbound';
+
+/**
+ * Credentials to join a phone call's room, plus its phone leg.
+ */
+export type PhoneCallJoinResponse = {
+    /**
+     * RTC credentials, shaped like every other call join.
+     */
+    call: CallTokenResponse;
+    /**
+     * The phone leg.
+     */
+    phone: PhoneLeg;
+};
+
+/**
+ * Where a phone leg is in its lifecycle. The first three states are live;
+ * the rest are outcomes and never change once reached.
+ */
+export type PhoneCallStatus = 'dialing' | 'ringing' | 'active' | 'completed' | 'missed' | 'no_answer' | 'busy' | 'declined' | 'failed' | 'cancelled';
+
+/**
+ * The CRM contact on the other end of a phone call, as matched when the
+ * call started.
+ */
+export type PhoneContact = {
+    /**
+     * The CRM contact id.
+     */
+    contactId: string;
+    /**
+     * The contact's name, when the CRM has one.
+     */
+    name?: string | null;
+};
+
+/**
+ * The phone leg of a call: the party on the phone network.
+ */
+export type PhoneLeg = {
+    /**
+     * When the call was answered.
+     */
+    answeredAt?: string | null;
+    contact?: null | PhoneContact;
+    /**
+     * Which side placed the call.
+     */
+    direction: PhoneCallDirection;
+    /**
+     * When the phone leg ended.
+     */
+    endedAt?: string | null;
+    localNumber?: null | PhoneNumber;
+    /**
+     * RTC identity of the phone participant. Transcript segments spoken on
+     * the phone use it as their speaker id.
+     */
+    participantIdentity: string;
+    /**
+     * The external party's number.
+     */
+    remoteNumber: PhoneNumber;
+    /**
+     * Where the leg is in its lifecycle, or how it ended.
+     */
+    status: PhoneCallStatus;
+};
+
+/**
+ * A validated E.164 phone number, such as `+15551234567`.
+ *
+ * Serializes as the E.164 string. Deserialization only accepts E.164; use
+ * [`DialablePhoneNumber::parse`] for numbers typed by people.
+ */
+export type PhoneNumber = string;
+
+/**
+ * What the caller can do with phone calling.
+ */
+export type PhoneSettingsResponse = {
+    callerId?: null | PhoneNumber;
+    /**
+     * Whether this deployment can place outbound calls.
+     */
+    dialingEnabled: boolean;
+    /**
+     * Numbers that ring the caller.
+     */
+    phoneNumbers: Array<PhoneNumber>;
+};
+
 export type PinRequest = {
     /**
      * The type of the pin
@@ -10345,6 +10511,17 @@ export type SetContactNameRequest = {
 };
 
 /**
+ * Request body for replacing a contact's phone numbers.
+ */
+export type SetContactPhoneNumbersRequest = {
+    /**
+     * The complete new list, as typed: E.164, formatted, or North American
+     * national numbers. Duplicates are dropped; an empty list clears them.
+     */
+    phoneNumbers: Array<string>;
+};
+
+/**
  * Request body for setting a document's team-share state.
  */
 export type SetDocumentTeamShareRequest = {
@@ -10927,6 +11104,7 @@ export type SoupCallRecordSoupPropertiesField = {
      * Macro-account participants in the call.
      */
     participants: Array<SoupCallRecordParticipant>;
+    phone?: null | PhoneLeg;
     /**
      * When the call started.
      */
@@ -14360,6 +14538,197 @@ export type MeetingUpdateResponses = {
 
 export type MeetingUpdateResponse = MeetingUpdateResponses[keyof MeetingUpdateResponses];
 
+export type DialPhoneData = {
+    body: DialPhoneRequest;
+    path?: never;
+    query?: never;
+    url: '/call/phone/dial';
+};
+
+export type DialPhoneErrors = {
+    /**
+     * The number cannot or may not be dialed
+     */
+    400: ErrorResponse;
+    401: ErrorResponse;
+    /**
+     * The caller is still in another call
+     */
+    409: ErrorResponse;
+    /**
+     * Phone calling is not set up
+     */
+    503: ErrorResponse;
+};
+
+export type DialPhoneError = DialPhoneErrors[keyof DialPhoneErrors];
+
+export type DialPhoneResponses = {
+    200: PhoneCallJoinResponse;
+};
+
+export type DialPhoneResponse = DialPhoneResponses[keyof DialPhoneResponses];
+
+export type ListIncomingPhoneCallsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/call/phone/incoming';
+};
+
+export type ListIncomingPhoneCallsErrors = {
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type ListIncomingPhoneCallsError = ListIncomingPhoneCallsErrors[keyof ListIncomingPhoneCallsErrors];
+
+export type ListIncomingPhoneCallsResponses = {
+    200: IncomingPhoneCallsResponse;
+};
+
+export type ListIncomingPhoneCallsResponse = ListIncomingPhoneCallsResponses[keyof ListIncomingPhoneCallsResponses];
+
+export type ReleasePhoneNumberData = {
+    body?: never;
+    path: {
+        /**
+         * Phone number, preferably E.164 (URL-encode the +)
+         */
+        phone_number: string;
+    };
+    query?: never;
+    url: '/call/phone/numbers/{phone_number}';
+};
+
+export type ReleasePhoneNumberErrors = {
+    400: ErrorResponse;
+    403: ErrorResponse;
+    /**
+     * The number was not assigned
+     */
+    404: ErrorResponse;
+};
+
+export type ReleasePhoneNumberError = ReleasePhoneNumberErrors[keyof ReleasePhoneNumberErrors];
+
+export type ReleasePhoneNumberResponses = {
+    204: void;
+};
+
+export type ReleasePhoneNumberResponse = ReleasePhoneNumberResponses[keyof ReleasePhoneNumberResponses];
+
+export type AssignPhoneNumberData = {
+    body: AssignPhoneNumberRequest;
+    path: {
+        /**
+         * Phone number, preferably E.164 (URL-encode the +)
+         */
+        phone_number: string;
+    };
+    query?: never;
+    url: '/call/phone/numbers/{phone_number}';
+};
+
+export type AssignPhoneNumberErrors = {
+    400: ErrorResponse;
+    403: ErrorResponse;
+    /**
+     * The user does not exist
+     */
+    404: ErrorResponse;
+};
+
+export type AssignPhoneNumberError = AssignPhoneNumberErrors[keyof AssignPhoneNumberErrors];
+
+export type AssignPhoneNumberResponses = {
+    204: void;
+};
+
+export type AssignPhoneNumberResponse = AssignPhoneNumberResponses[keyof AssignPhoneNumberResponses];
+
+export type GetPhoneSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/call/phone/settings';
+};
+
+export type GetPhoneSettingsErrors = {
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetPhoneSettingsError = GetPhoneSettingsErrors[keyof GetPhoneSettingsErrors];
+
+export type GetPhoneSettingsResponses = {
+    200: PhoneSettingsResponse;
+};
+
+export type GetPhoneSettingsResponse = GetPhoneSettingsResponses[keyof GetPhoneSettingsResponses];
+
+export type AnswerPhoneCallData = {
+    body?: never;
+    path: {
+        /**
+         * Call ID
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/call/phone/{call_id}/answer';
+};
+
+export type AnswerPhoneCallErrors = {
+    401: ErrorResponse;
+    403: ErrorResponse;
+    /**
+     * The call has ended
+     */
+    404: ErrorResponse;
+    /**
+     * The call was already answered
+     */
+    409: ErrorResponse;
+};
+
+export type AnswerPhoneCallError = AnswerPhoneCallErrors[keyof AnswerPhoneCallErrors];
+
+export type AnswerPhoneCallResponses = {
+    200: PhoneCallJoinResponse;
+};
+
+export type AnswerPhoneCallResponse = AnswerPhoneCallResponses[keyof AnswerPhoneCallResponses];
+
+export type HangUpPhoneCallData = {
+    body?: never;
+    path: {
+        /**
+         * Call ID
+         */
+        call_id: string;
+    };
+    query?: never;
+    url: '/call/phone/{call_id}/hang-up';
+};
+
+export type HangUpPhoneCallErrors = {
+    401: ErrorResponse;
+    403: ErrorResponse;
+    /**
+     * The call has ended
+     */
+    404: ErrorResponse;
+};
+
+export type HangUpPhoneCallError = HangUpPhoneCallErrors[keyof HangUpPhoneCallErrors];
+
+export type HangUpPhoneCallResponses = {
+    200: LeaveCallResponse;
+};
+
+export type HangUpPhoneCallResponse = HangUpPhoneCallResponses[keyof HangUpPhoneCallResponses];
+
 export type GetBatchCallRecordPreviewData = {
     body: GetBatchCallRecordPreviewRequest;
     path?: never;
@@ -14706,7 +15075,7 @@ export type IngestTranscriptData = {
     body: TranscriptSegmentRequest;
     path: {
         /**
-         * RTC room name; the transcription agent passes its LiveKit room verbatim
+         * RTC room name; the transcription agent passes its LiveKit room verbatim. Rooms Macro creates are named after the call id; inbound phone calls arrive in rooms the SIP dispatch rule names.
          */
         room_name: string;
     };
@@ -15917,6 +16286,32 @@ export type GetContactByEmailResponses = {
 
 export type GetContactByEmailResponse2 = GetContactByEmailResponses[keyof GetContactByEmailResponses];
 
+export type GetContactByPhoneData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The number to look up, as typed or in E.164.
+         */
+        phone: string;
+    };
+    url: '/crm/contacts/by-phone';
+};
+
+export type GetContactByPhoneErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetContactByPhoneError = GetContactByPhoneErrors[keyof GetContactByPhoneErrors];
+
+export type GetContactByPhoneResponses = {
+    200: GetContactByPhoneResponse;
+};
+
+export type GetContactByPhoneResponse2 = GetContactByPhoneResponses[keyof GetContactByPhoneResponses];
+
 export type GetContactData = {
     body?: never;
     path: {
@@ -15995,6 +16390,62 @@ export type SetCrmContactNameResponses = {
 };
 
 export type SetCrmContactNameResponse = SetCrmContactNameResponses[keyof SetCrmContactNameResponses];
+
+export type GetCrmContactPhoneNumbersData = {
+    body?: never;
+    path: {
+        /**
+         * The CRM contact
+         */
+        contact_id: string;
+    };
+    query?: never;
+    url: '/crm/contacts/{contact_id}/phone-numbers';
+};
+
+export type GetCrmContactPhoneNumbersErrors = {
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetCrmContactPhoneNumbersError = GetCrmContactPhoneNumbersErrors[keyof GetCrmContactPhoneNumbersErrors];
+
+export type GetCrmContactPhoneNumbersResponses = {
+    200: ContactPhoneNumbersResponse;
+};
+
+export type GetCrmContactPhoneNumbersResponse = GetCrmContactPhoneNumbersResponses[keyof GetCrmContactPhoneNumbersResponses];
+
+export type SetCrmContactPhoneNumbersData = {
+    body: SetContactPhoneNumbersRequest;
+    path: {
+        /**
+         * The CRM contact
+         */
+        contact_id: string;
+    };
+    query?: never;
+    url: '/crm/contacts/{contact_id}/phone-numbers';
+};
+
+export type SetCrmContactPhoneNumbersErrors = {
+    /**
+     * A number could not be read
+     */
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type SetCrmContactPhoneNumbersError = SetCrmContactPhoneNumbersErrors[keyof SetCrmContactPhoneNumbersErrors];
+
+export type SetCrmContactPhoneNumbersResponses = {
+    200: ContactPhoneNumbersResponse;
+};
+
+export type SetCrmContactPhoneNumbersResponse = SetCrmContactPhoneNumbersResponses[keyof SetCrmContactPhoneNumbersResponses];
 
 export type GetCrmTeamSettingsData = {
     body?: never;

@@ -82,6 +82,31 @@ export class Contact extends FavoritableEntity<ContactDetail> {
     );
   }
 
+  /** The contact's phone numbers, in E.164, in the order they were entered. */
+  async phoneNumbers(): Promise<string[]> {
+    const { phoneNumbers } = unwrap(
+      await this.client.storage.getCrmContactPhoneNumbers({
+        path: { contact_id: this.id },
+      }),
+    );
+    return phoneNumbers;
+  }
+
+  /**
+   * Replace the contact's phone numbers. Numbers may be typed in any common
+   * format; North American numbers may omit `+1`. Duplicates are dropped and
+   * an empty list clears them. Resolves to the stored E.164 numbers.
+   */
+  async setPhoneNumbers(phoneNumbers: string[]): Promise<string[]> {
+    const response = unwrap(
+      await this.client.storage.setCrmContactPhoneNumbers({
+        path: { contact_id: this.id },
+        body: { phoneNumbers },
+      }),
+    );
+    return response.phoneNumbers;
+  }
+
   /** Rename the contact for the caller's current team. */
   async rename(name: string): Promise<void> {
     await this.mutate((c) =>

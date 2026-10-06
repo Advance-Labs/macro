@@ -1819,6 +1819,399 @@
         }
       }
     },
+    "/call/phone/dial": {
+      "post": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Place a phone call. Returns the caller's join credentials once the call\nis ringing; it is recorded and transcribed like any other call.",
+        "operationId": "dial_phone",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DialPhoneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCallJoinResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The number cannot or may not be dialed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The caller is still in another call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Phone calling is not set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/phone/incoming": {
+      "get": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Inbound phone calls ringing for the caller, newest first.",
+        "operationId": "list_incoming_phone_calls",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomingPhoneCallsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/phone/numbers/{phone_number}": {
+      "put": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Assign a phone number to a user, taking it from any previous owner.\nInternal services only.",
+        "operationId": "assign_phone_number",
+        "parameters": [
+          {
+            "name": "phone_number",
+            "in": "path",
+            "description": "Phone number, preferably E.164 (URL-encode the +)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignPhoneNumberRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Unassign a phone number. Calls to it are then rejected. Internal services\nonly.",
+        "operationId": "release_phone_number",
+        "parameters": [
+          {
+            "name": "phone_number",
+            "in": "path",
+            "description": "Phone number, preferably E.164 (URL-encode the +)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The number was not assigned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/phone/settings": {
+      "get": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Whether the caller can place phone calls, their caller id, and the\nnumbers that ring them.",
+        "operationId": "get_phone_settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/phone/{call_id}/answer": {
+      "post": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Answer an inbound phone call ringing for the caller.",
+        "operationId": "answer_phone_call",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "description": "Call ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCallJoinResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The call has ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The call was already answered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/call/phone/{call_id}/hang-up": {
+      "post": {
+        "tags": ["call::inbound::axum_router::phone"],
+        "summary": "Hang up a phone call for everyone. Declines a ringing inbound call and\ncancels an outbound call that has not connected yet.",
+        "operationId": "hang_up_phone_call",
+        "parameters": [
+          {
+            "name": "call_id",
+            "in": "path",
+            "description": "Call ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaveCallResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The call has ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/call/record/preview": {
       "post": {
         "tags": ["call::inbound::axum_router"],
@@ -2558,11 +2951,10 @@
           {
             "name": "room_name",
             "in": "path",
-            "description": "RTC room name; the transcription agent passes its LiveKit room verbatim",
+            "description": "RTC room name; the transcription agent passes its LiveKit room verbatim. Rooms Macro creates are named after the call id; inbound phone calls arrive in rooms the SIP dispatch rule names.",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -5818,6 +6210,66 @@
         }
       }
     },
+    "/crm/contacts/by-phone": {
+      "get": {
+        "tags": ["crm::inbound::axum_router::contact_phone_numbers"],
+        "summary": "Look up who a phone number belongs to in the caller's team CRM.",
+        "operationId": "get_contact_by_phone",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "query",
+            "description": "The number to look up, as typed or in E.164.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetContactByPhoneResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/crm/contacts/{contact_id}": {
       "get": {
         "tags": ["crm::inbound::axum_router::get_contact"],
@@ -5976,6 +6428,146 @@
           },
           "400": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crm/contacts/{contact_id}/phone-numbers": {
+      "get": {
+        "tags": ["crm::inbound::axum_router::contact_phone_numbers"],
+        "summary": "List a CRM contact's phone numbers.",
+        "operationId": "get_crm_contact_phone_numbers",
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "description": "The CRM contact",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactPhoneNumbersResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["crm::inbound::axum_router::contact_phone_numbers"],
+        "summary": "Replace a CRM contact's phone numbers. Any team member who can see the\ncontact may edit them, like its name.",
+        "operationId": "set_crm_contact_phone_numbers",
+        "parameters": [
+          {
+            "name": "contact_id",
+            "in": "path",
+            "description": "The CRM contact",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetContactPhoneNumbersRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactPhoneNumbersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A number could not be read",
             "content": {
               "application/json": {
                 "schema": {
@@ -17636,6 +18228,17 @@
           }
         }
       },
+      "AssignPhoneNumberRequest": {
+        "type": "object",
+        "description": "Request body for assigning a phone number to a user.",
+        "required": ["userId"],
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The Macro user the number rings and identifies."
+          }
+        }
+      },
       "AttachmentChange": {
         "oneOf": [
           {
@@ -18844,6 +19447,17 @@
               "$ref": "#/components/schemas/CallRecordParticipant"
             },
             "description": "Macro-account participants (both active and historic)."
+          },
+          "phone": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneLeg",
+                "description": "The phone leg, for phone calls: who was on the other end, which way\nthe call went, and how it ended. Transcript segments spoken on the\nphone use its `participantIdentity` as their speaker id."
+              }
+            ]
           },
           "recordingPreviewUrl": {
             "type": ["string", "null"],
@@ -21076,6 +21690,20 @@
         "description": "How a group's conditions combine.",
         "enum": ["and", "or"]
       },
+      "ContactPhoneNumbersResponse": {
+        "type": "object",
+        "description": "A contact's phone numbers, in E.164, in the order they were entered.",
+        "required": ["phoneNumbers"],
+        "properties": {
+          "phoneNumbers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PhoneNumber"
+            },
+            "description": "The contact's numbers."
+          }
+        }
+      },
       "ConversationId": {
         "type": "string",
         "description": "Source Slack conversation ID (C, G or D prefix); unique only within a source."
@@ -23119,6 +23747,17 @@
             }
           }
         ]
+      },
+      "DialPhoneRequest": {
+        "type": "object",
+        "description": "Request body for placing a phone call.",
+        "required": ["to"],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "The number to call, as typed: E.164, a formatted national number\n(North American numbers may omit `+1`), or a `tel:` URI, optionally\nwith an extension (`ext. 89`)."
+          }
+        }
       },
       "DocumentBasic": {
         "type": "object",
@@ -26305,6 +26944,23 @@
           }
         }
       },
+      "GetContactByPhoneResponse": {
+        "type": "object",
+        "description": "Response from looking up a CRM contact by phone number.",
+        "properties": {
+          "contact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CrmContactResponse",
+                "description": "The matching contact, or `null` when none is visible."
+              }
+            ]
+          }
+        }
+      },
       "GetDocumentKeyResponse": {
         "type": "object",
         "required": ["error", "data"],
@@ -27796,6 +28452,63 @@
             "format": "int32",
             "description": "Position in the session's log.",
             "minimum": 0
+          }
+        }
+      },
+      "IncomingPhoneCall": {
+        "type": "object",
+        "description": "An inbound phone call ringing for a Macro user.",
+        "required": ["callId", "from", "startedAt"],
+        "properties": {
+          "callId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The call to answer or decline."
+          },
+          "contact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneContact",
+                "description": "The CRM contact matched to the caller, if any."
+              }
+            ]
+          },
+          "from": {
+            "$ref": "#/components/schemas/PhoneNumber",
+            "description": "Who is calling."
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the call started ringing."
+          },
+          "to": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneNumber",
+                "description": "The Macro number they dialed."
+              }
+            ]
+          }
+        }
+      },
+      "IncomingPhoneCallsResponse": {
+        "type": "object",
+        "description": "Inbound phone calls ringing for the caller, newest first.",
+        "required": ["calls"],
+        "properties": {
+          "calls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IncomingPhoneCall"
+            },
+            "description": "The ringing calls."
           }
         }
       },
@@ -30534,6 +31247,152 @@
           }
         }
       },
+      "PhoneCallDirection": {
+        "type": "string",
+        "description": "Which side placed a phone call.",
+        "enum": ["outbound", "inbound"]
+      },
+      "PhoneCallJoinResponse": {
+        "type": "object",
+        "description": "Credentials to join a phone call's room, plus its phone leg.",
+        "required": ["call", "phone"],
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/CallTokenResponse",
+            "description": "RTC credentials, shaped like every other call join."
+          },
+          "phone": {
+            "$ref": "#/components/schemas/PhoneLeg",
+            "description": "The phone leg."
+          }
+        }
+      },
+      "PhoneCallStatus": {
+        "type": "string",
+        "description": "Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.",
+        "enum": [
+          "dialing",
+          "ringing",
+          "active",
+          "completed",
+          "missed",
+          "no_answer",
+          "busy",
+          "declined",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "PhoneContact": {
+        "type": "object",
+        "description": "The CRM contact on the other end of a phone call, as matched when the\ncall started.",
+        "required": ["contactId"],
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The CRM contact id."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "The contact's name, when the CRM has one."
+          }
+        }
+      },
+      "PhoneLeg": {
+        "type": "object",
+        "description": "The phone leg of a call: the party on the phone network.",
+        "required": [
+          "direction",
+          "remoteNumber",
+          "participantIdentity",
+          "status"
+        ],
+        "properties": {
+          "answeredAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When the call was answered."
+          },
+          "contact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneContact",
+                "description": "The CRM contact matched to the external number, if any."
+              }
+            ]
+          },
+          "direction": {
+            "$ref": "#/components/schemas/PhoneCallDirection",
+            "description": "Which side placed the call."
+          },
+          "endedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When the phone leg ended."
+          },
+          "localNumber": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneNumber",
+                "description": "The Macro number used: the caller id of an outbound call or the\nnumber an inbound caller dialed. `None` when the carrier chose the\ncaller id."
+              }
+            ]
+          },
+          "participantIdentity": {
+            "type": "string",
+            "description": "RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id."
+          },
+          "remoteNumber": {
+            "$ref": "#/components/schemas/PhoneNumber",
+            "description": "The external party's number."
+          },
+          "status": {
+            "$ref": "#/components/schemas/PhoneCallStatus",
+            "description": "Where the leg is in its lifecycle, or how it ended."
+          }
+        }
+      },
+      "PhoneNumber": {
+        "type": "string",
+        "description": "A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.",
+        "example": "+15552345678"
+      },
+      "PhoneSettingsResponse": {
+        "type": "object",
+        "description": "What the caller can do with phone calling.",
+        "required": ["dialingEnabled", "phoneNumbers"],
+        "properties": {
+          "callerId": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PhoneNumber",
+                "description": "The number people see when the caller dials out, when known."
+              }
+            ]
+          },
+          "dialingEnabled": {
+            "type": "boolean",
+            "description": "Whether this deployment can place outbound calls."
+          },
+          "phoneNumbers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PhoneNumber"
+            },
+            "description": "Numbers that ring the caller."
+          }
+        }
+      },
       "PinRequest": {
         "type": "object",
         "required": ["pinType"],
@@ -32576,6 +33435,20 @@
           }
         }
       },
+      "SetContactPhoneNumbersRequest": {
+        "type": "object",
+        "description": "Request body for replacing a contact's phone numbers.",
+        "required": ["phoneNumbers"],
+        "properties": {
+          "phoneNumbers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete new list, as typed: E.164, formatted, or North American\nnational numbers. Duplicates are dropped; an empty list clears them."
+          }
+        }
+      },
       "SetDocumentTeamShareRequest": {
         "type": "object",
         "description": "Request body for setting a document's team-share state.",
@@ -33451,6 +34324,17 @@
                   "$ref": "#/components/schemas/SoupCallRecordParticipant"
                 },
                 "description": "Macro-account participants in the call."
+              },
+              "phone": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PhoneLeg",
+                    "description": "The party on the phone network, for phone calls."
+                  }
+                ]
               },
               "startedAt": {
                 "type": "string",

@@ -34,6 +34,19 @@ export class CrmNamespace {
   }
 
   /**
+   * Resolve the CRM contact a phone number belongs to in the caller's current
+   * team, if any. The number may be typed in any common format.
+   */
+  async contactByPhone(phone: string): Promise<Contact | undefined> {
+    const { contact } = unwrap(
+      await this.client.storage.getContactByPhone({
+        query: { phone },
+      })
+    );
+    return contact ? Contact.from(this.client, contact) : undefined;
+  }
+
+  /**
    * Search the caller's current team's CRM contacts whose email or name
    * contains `query` (case-insensitive), most recently interacted first.
    * An empty query lists the most recent contacts.
