@@ -271,11 +271,11 @@ the shimmer.
   **Recommended** list and a **More models** submenu grouped by model family,
   followed by **Agents** and **Coding agents** sections. Models have readable
   names (for example, **Sonnet 5.5**) and provider or model icons aligned with the
-  agent icons. The in-memory catalog offers the closed Anthropic and OpenAI chat
-  models; Kimi, DeepSeek, Muse, GLM, Qwen, MiniMax, GPT OSS, and Nemotron
-  open-weight models; and Google's **Gemini 3.8 Flash**. The Anthropic models
-  are **Sonnet 5.5**, **Opus 5.5**, and **Haiku 4.5**; older Claude versions
-  (Sonnet 5, Opus 5, Fable 5.1) are not offered.
+  agent icons. The in-memory catalog offers the closed chat models — Anthropic,
+  OpenAI, and Google's **Gemini 3.8 Flash** — plus the Kimi, DeepSeek, Muse,
+  GLM, Qwen, MiniMax, GPT OSS, and Nemotron open-weight models. The Anthropic
+  models are **Sonnet 5.5**, **Opus 5.5**, and **Haiku 4.5**; older Claude
+  versions (Sonnet 5, Opus 5, Fable 5.1) are not offered.
   Selecting a model here selects
   the default runtime and applies that model to the next send, retracting the repository drawer.
   A model chosen from that catalog is remembered in local storage as the
@@ -720,10 +720,10 @@ Desktop composer and conversation body text use 15px type. Mobile keeps its
 existing text sizing.
 
 - Contenteditable composer (placeholder `Ask AI, @mention anything` / `Describe the edit…`).
-- Model picker button showing the current model (e.g. `Haiku 4.5`). Paid plans list
-  `Sonnet 5.5`, `Opus 5.5`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`;
-  in dev, heavy models carry a `2.5× usage` / `5× usage` hint.
-  On the free plan everything but `Haiku 4.5` is
+- Model picker button showing the current model (e.g. `Gemini 3.8 Flash`). Paid plans list
+  `Sonnet 5.5`, `Opus 5.5`, `Haiku 4.5`, `GPT-6 Astra`, `GPT-5.6`, `GPT-5.6 mini`,
+  `Gemini 3.8 Flash`; in dev, heavy models carry a `2.5× usage` / `5× usage` hint.
+  On the free plan everything but `Gemini 3.8 Flash` is
   dimmed with a lock and opens the `Smart models are premium` paywall when clicked.
 - `Send` button (disabled when empty). While streaming it becomes `Stop generating`.
 

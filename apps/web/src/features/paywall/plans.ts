@@ -94,7 +94,7 @@ const PLAN_FEATURE_ROWS: PlanFeature[] = [
   {
     label: 'AI Agent',
     values: {
-      free: 'Haiku',
+      free: 'Gemini Flash',
       premium: 'All models',
       max: 'All models',
     },

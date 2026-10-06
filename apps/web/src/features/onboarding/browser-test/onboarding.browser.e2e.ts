@@ -105,7 +105,7 @@ test('Guest continuation lives in the comparison below the trial offer', async (
   await expect(
     page.getByRole('heading', { name: 'Choose what works for you.' })
   ).toBeInViewport();
-  await expect(page.getByRole('table')).toContainText('Haiku');
+  await expect(page.getByRole('table')).toContainText('Gemini Flash');
   await page.getByRole('button', { name: 'Continue as Guest' }).last().click();
 
   await expectLanded(page, 'Entered Macro at /md/notes');

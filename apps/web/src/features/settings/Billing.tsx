@@ -36,7 +36,7 @@ const BILLING_PLAN_FEATURES: Record<
   (includedAi: string | undefined) => string[]
 > = {
   free: (includedAi) => [
-    'Access to Haiku',
+    'Access to Gemini Flash',
     ...(includedAi ? [`${includedAi} of AI usage at cost each month`] : []),
     'MCP access',
     '5 GB storage',
