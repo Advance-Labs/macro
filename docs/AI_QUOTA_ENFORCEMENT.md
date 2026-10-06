@@ -72,15 +72,17 @@ independent of `ENABLE_AI_USAGE_ENFORCEMENT` and of the deployment environment:
 there is no longer an `Environment::Develop` safeguard, so a true value settles
 in production.
 
-Pricing is four mandatory Doppler values, loaded once at startup by every host that
+Pricing is five mandatory Doppler values, loaded once at startup by every host that
 composes `ai_billing` (see [`config.rs`](../crates/ai_billing/src/config.rs) and
 [`pricing.rs`](../crates/ai_billing/src/domain/pricing.rs)): one allowance per plan,
 measured at provider cost — `AI_USAGE_FREE_INCLUDED_ALLOWANCE_CENTS` (the free plan's
 hard cap, per user per UTC calendar month), `AI_USAGE_INCLUDED_ALLOWANCE_CENTS`
 (Premium, per seat per subscription period), and `AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS`
-(Max, per seat per subscription period) — and `AI_USAGE_OVERAGE_MARKUP_PERCENT`,
+(Max, per seat per subscription period) — `AI_USAGE_OVERAGE_MARKUP_PERCENT`,
 the whole-percent markup over cost applied to paid usage beyond the allowance before
-credits are consumed or overage is charged. There is no default in code: a missing,
+credits are consumed or overage is charged, and `AI_USAGE_PHONE_INCLUDED_MINUTES`,
+the phone minutes included per phone seat per period (see
+[Phone minutes](#phone-minutes)). There is no default in code: a missing,
 malformed, or out-of-range value fails startup and the Doppler CI validator. The values live in `shared_ai` (`lcl`,
 `dev`, `prd`), which every participating service inherits except the authentication
 service, whose `dev` and `prd` configs carry them directly; the no-Doppler local
@@ -93,12 +95,13 @@ and the frontend reads allowances from it
 rosters keep their cost amounts in `ai_billing_period_allowance.included_cost_cents_by_user`;
 rows written before that column existed are priced at the configured allowance.
 
-Only two hosts participate:
+Three hosts participate:
 
 | Host | Gate | When disabled |
 | --- | --- | --- |
 | Authentication service | [`BillingServiceImpl::settle`](../crates/ai_billing/src/domain/service.rs) guards every caller: summary reads, overage changes, credit-purchase webhooks, and the internal settle endpoint | Returns without reading entitlements, consuming credits, or touching Stripe. Credit purchases are still booked and remain unconsumed |
 | Document cognition service | [`SettlingUsageRecorder`](../crates/ai_billing/src/outbound/settling_recorder.rs) requests settlement after counted usage lands | Usage is still recorded and counted; no settlement request is sent |
+| Document storage service (phone minutes) | The same recorder, [composed for phone calls](../services/document_storage_service/src/outbound/phone_billing.rs) when `AUTHENTICATION_SERVICE_SECRET_KEY` is set | Minutes are still recorded and counted; they settle on the payer's next AI request or Billing page view |
 
 Every other host composes admission through
 [`pg_admission_service`](../crates/ai_billing/src/composition.rs), which never
@@ -126,6 +129,52 @@ which defaults on in development builds and follows PostHog elsewhere;
 `VITE_ENABLE_AI_USAGE_BILLING` overrides it locally. Model usage multipliers have
 been removed. The Auto-Reload UI has no balance-triggered backend yet and cannot
 save outside its explicit display-only developer preview.
+
+### Phone minutes
+
+Phone calls are metered through the same ledger. When a phone call is archived,
+the call service records its connected time (answer to hang-up, rounded up to
+whole minutes, at most four hours) as counted `ai_usage` under the `phone_call`
+feature and the `pstn` model, attributed to the call's owner (the caller, or the
+owner of the number that was called). The per-minute cost is the `pstn` row of
+`ai_pricing`, seeded at $0.025 by `20261006131139_phone_billing.sql`; change it
+like any other model price.
+
+Phone minutes are a separate per-seat bucket. The [usage reader](../crates/ai_billing/src/outbound/pg_usage_reader.rs)
+sums AI cost without `phone_call` rows and sums phone seconds and cost on their
+own, so minutes never spend the AI allowance and AI never spends minutes. Each
+phone seat includes `AI_USAGE_PHONE_INCLUDED_MINUTES` per period; the cost of
+minutes past that joins the payer's chargeable cost and is marked up, covered by
+credits, and charged as overage exactly like AI (`SeatAllowance::chargeable_cost_cents`).
+Frozen open-period rosters keep each seat's minutes in
+`ai_billing_period_allowance.included_phone_minutes_by_user` (NULL: no minutes).
+
+Phone seats are every enterprise seat, every Max seat, and Premium seats with the
+**Phone add-on** (`phone_addon_seat`). The add-on is a per-seat Stripe item
+(`STRIPE_PHONE_ADDON_PRICE_ID`, optional on the authentication service; unset
+means it cannot be bought) on the payer's subscription, managed through
+`GET`/`PUT /ai-billing/phone-addon` by the payer only. Turning it on bills the
+rest of the period now; turning it off stops renewal and the seat keeps calling
+until the period it paid for ends (`ends_at`), so it is never credited. The item
+quantity is the number of renewing add-ons on current Premium seats, written to
+Stripe only when it differs from `ai_billing_account.phone_addon_quantity`; it is
+re-synced after subscription webhooks and on summary reads, which also forget
+add-ons of seats that left the payer or moved to Max. The webhook counts only
+seat items, so the add-on item never disturbs seat-period binding.
+
+The phone gate is `AiFeature::PhoneCall` admission, which
+[`BillingAdmissionService`](../crates/ai_billing/src/domain/admission.rs) routes to
+`check_phone_allowance` ([`decide_phone`](../crates/ai_billing/src/domain/ledger.rs)):
+a seat without phone calling is refused with `phone_plan_required`; a phone seat
+may call while it has included minutes left or shared credit/overage headroom,
+and is otherwise refused with `phone_minutes_exhausted` or the shared overage
+codes. Dialing out answers `402` with `{message, code}`; an inbound call its
+owner's plan does not cover is rejected before it rings. A billing outage fails
+dialing closed (`503`) but never drops an inbound caller. Like every other gate,
+phone admission allows everything while `ENABLE_AI_USAGE_ENFORCEMENT` is off, and
+uncounted minutes are never billed. Snapshots report `phone_enabled`,
+`phone_included_minutes`, `phone_used_minutes`, and `phone_blocked_reason`, and
+the plan catalog reports the add-on price and included minutes.
 
 ## Public failure contracts
 
@@ -241,6 +290,7 @@ admission and R. Admission itself never records usage or calls settlement.
 | Scheduled agent targets / session funding policy | [target runner](../services/scheduled_action/src/domain/target_runner.rs) → session/harness admission | Target runtime's recorder, not duplicate scheduler metering | [delegation and typed errors](../services/scheduled_action/src/domain/target_runner/test.rs), [routine error transport](../crates/agent_session/src/inbound/routine_sessions/test.rs) |
 | Memory, projection, call summary, dictation / exempt | [shared admission policy](../crates/ai_billing/src/domain/admission.rs) skips quota; ordinary permissions still apply | DCS/DSS configured recorders; [memory context](../crates/memory/src/context.rs) uses T; DSS independent call-summary/dictation recorders use R | [all exempt features](../crates/ai_usage/src/domain/counting/test.rs), [no billing I/O](../crates/ai_billing/src/domain/admission/test.rs), [configured recording](../crates/ai_billing/src/composition/test.rs) |
 | Existing system task duplicate judge / Automation | [system attribution](../crates/task_dedup/src/outbound/judge.rs), no user quota gate | DSS main, independent R; system events stay uncounted | [system counting](../crates/ai_usage/src/domain/counting/test.rs), [system recorder behavior](../crates/ai_billing/src/outbound/settling_recorder/test.rs) |
+| Phone calls / PhoneCall | [dial and inbound ring](../crates/call/src/domain/service/phone.rs) through the call domain's `PhoneBilling` port | [DSS phone billing](../services/document_storage_service/src/outbound/phone_billing.rs): admission plus R, or the settling recorder when the authentication service key is set; minutes recorded at archive | [gate and metering](../crates/call/src/domain/service/test/phone.rs), [adapter](../services/document_storage_service/src/outbound/phone_billing/test.rs), [phone ledger](../crates/ai_billing/src/domain/ledger/test.rs) |
 | Billing summary (not execution) | [billing service policy](../crates/ai_billing/src/domain/service.rs) | [authentication main](../services/authentication_service/src/main.rs) configures the same flag plus `ENABLE_AI_USAGE_BILLING`, no usage producer | [settlement policy/free/unlimited/settlement](../crates/ai_billing/src/domain/service/test.rs), [authentication configuration](../services/authentication_service/src/config/test.rs) |
 
 ## Limits and operational risks
@@ -296,7 +346,8 @@ procedure. Operators must approve and record each release gate.
    not a quoted JSON string, AWS secret indirection, or a second Pulumi flag.
    The pricing values `AI_USAGE_FREE_INCLUDED_ALLOWANCE_CENTS`,
    `AI_USAGE_INCLUDED_ALLOWANCE_CENTS`, `AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS`,
-   and `AI_USAGE_OVERAGE_MARKUP_PERCENT` are mandatory for these same hosts
+   `AI_USAGE_OVERAGE_MARKUP_PERCENT`, and `AI_USAGE_PHONE_INCLUDED_MINUTES` are
+   mandatory for these same hosts
    whatever the flags say; see [Settlement](#settlement-enable_ai_usage_billing).
    Verify the effective startup value for every replica/worker. Registration and
    hosted access require operator approval; code defaults are not proof of it.

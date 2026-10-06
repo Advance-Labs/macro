@@ -89,6 +89,28 @@ their speaker id. Summaries call that speaker by the contact's name or number.
   record's **Companies** and **Contacts** properties, so phone calls appear on
   company and contact pages.
 
+### Billing
+
+Phone calls are paid for through usage billing; see
+[Phone minutes](AI_QUOTA_ENFORCEMENT.md#phone-minutes) for the ledger.
+
+- **Who can call.** Max and enterprise seats include phone calling. Premium
+  seats need the Phone add-on ($15 per seat per month), which the payer turns on
+  per seat in Settings → Phone. Free seats cannot call.
+- **Minutes.** Every phone seat includes `AI_USAGE_PHONE_INCLUDED_MINUTES` (1,000)
+  minutes per billing period. Minutes past them spend credits or usage billing
+  at the `pstn` rate plus the usage markup. Connected time is billed from answer
+  to hang-up in whole minutes; unanswered calls are free.
+- **Gate.** Dialing a call the plan does not cover answers `402` with a `code`
+  (`phone_plan_required`, `phone_minutes_exhausted`, or a shared overage code)
+  and the dialer links to Phone settings. Inbound calls to such a number are
+  rejected before they ring.
+- **Where.** The call domain's
+  [`PhoneBilling`](../crates/call/src/domain/ports/phone.rs) port admits calls and
+  records minutes when a call is archived; the storage service composes it from
+  AI usage admission and recording
+  ([`phone_billing.rs`](../services/document_storage_service/src/outbound/phone_billing.rs)).
+
 ## Setting up a deployment
 
 Phone calls need a LiveKit Cloud project with SIP and a SIP provider (Twilio
@@ -115,8 +137,13 @@ cannot place them, so outbound calling always needs a provider trunk.
    | `LIVEKIT_SIP_OUTBOUND_TRUNK_ID` | Outbound trunk id. Unset: dialing out is off; inbound still works. |
    | `PHONE_DEFAULT_CALLER_ID` | Optional E.164 caller id for users without a number. |
    | `PHONE_ALLOWED_COUNTRY_CODES` | Comma-separated calling codes users may dial. Defaults to `1`. |
+   | `AUTHENTICATION_SERVICE_SECRET_KEY` | Optional. With `ENABLE_AI_USAGE_BILLING`, minutes past an allowance settle as soon as a call ends; otherwise on the payer's next billing read. |
 
-   Startup fails if any of these is set but unreadable.
+   Startup fails if any of these is set but unreadable. Billing also needs
+   `AI_USAGE_PHONE_INCLUDED_MINUTES` on every billing host (`shared_ai`, and the
+   authentication service's own configs) and, to sell the add-on,
+   `STRIPE_PHONE_ADDON_PRICE_ID` on the authentication service: a recurring
+   monthly per-unit price of $15.
 5. **Assign numbers.** Numbers ring the user they are assigned to, and a user's
    first number is their caller id:
 
@@ -153,4 +180,6 @@ cannot place them, so outbound calling always needs a provider trunk.
 - Missed-call notifications in the inbox.
 - A self-serve number purchase and assignment UI; numbers are assigned through
   the internal API.
+- Per-destination rates: every minute is priced at the one `pstn` rate, so keep
+  `PHONE_ALLOWED_COUNTRY_CODES` to destinations that rate covers.
 - Transfers, holds, and adding a second phone party.

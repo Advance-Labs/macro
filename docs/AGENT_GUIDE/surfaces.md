@@ -1538,8 +1538,10 @@ from a test session.
   (`(555) 234-5678`, `+44 20 7946 0958`, `555-234-5678 ext. 89`) and a keypad;
   `Call` stays disabled until the text has 7–15 digits. Server refusals (for
   example `Calls to this country aren't enabled for your workspace`) appear
-  under the keypad. If you are already on another call, the dialer warns that
-  calling ends it.
+  under the keypad. When your plan doesn't cover the call (no Phone add-on or
+  Max plan, or minutes and usage billing used up) the refusal comes with a
+  `Phone plan` button that opens Settings → Phone. If you are already on
+  another call, the dialer warns that calling ends it.
 - **On a call.** A card docked at the bottom left shows the other party (a CRM
   contact's name opens the contact), `Calling…` until they answer, then the
   elapsed time. It has mute, a keypad that sends tones (for phone menus), and
@@ -1895,10 +1897,16 @@ afterwards in **Settings → Billing**, where Guest users can buy Premium or Max
 
 ### Phone — `/app/settings/phone`
 
-Shown with `enable-phone-calls`. Lists the numbers that ring you (assigned by an
-operator; `No number yet` otherwise), whether outbound calling is set up and the
-caller ID people see, `Open dialer`, and a note that phone calls are recorded
-and transcribed.
+Shown with `enable-phone-calls`. **Plan** says whether phone calling is on for
+your seat, your minutes this period (`120 of 1,000 minutes used`) or why calls
+are refused. Whoever pays for the plan also sees every seat: Max and enterprise
+seats say `Included with your plan`; Premium seats have a switch for the Phone
+add-on ($15/mo), which bills the rest of the period at once. Turning it off
+keeps calling until the period ends. The switch is real billing: do not toggle
+it on a paying account from a test session. Then the numbers that ring you
+(assigned by an operator; `No number yet` otherwise), whether outbound calling
+is set up and the caller ID people see, `Open dialer`, and a note that phone
+calls are recorded and transcribed.
 
 ### Slack archive import
 
