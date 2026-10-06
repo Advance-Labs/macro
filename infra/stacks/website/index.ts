@@ -216,6 +216,13 @@ const cdn = new aws.cloudfront.Distribution(`cdn-${stack}`, {
   enabled: true,
   webAclId,
   tags,
+  // Response-header policies affect browser caches, not CloudFront's error
+  // cache. S3 missing-file responses have no origin Cache-Control header, so
+  // zero TTL lets a retry reach an asset that has since finished uploading.
+  customErrorResponses: [
+    { errorCode: 403, errorCachingMinTtl: 0 },
+    { errorCode: 404, errorCachingMinTtl: 0 },
+  ],
   loggingConfig: {
     bucket: 'macro-cloudfront-logging.s3.amazonaws.com',
     includeCookies: false,

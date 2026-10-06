@@ -24,6 +24,8 @@ The `website-infra` stack owns CloudFront's cache behavior. App file responses
 default to `Cache-Control: no-store`, including errors. A viewer-response
 function enables immutable one-year browser caching only for successful
 content-hashed assets. `index.html` and `sw.js` also bypass CloudFront's cache.
+The distribution's 403/404 error-cache TTL is zero, independently of the
+browser headers, so newly available files can be retried at the origin.
 The service worker retries a 403/404 once with `cache: reload` to recover errors
 stored by the previous CDN policy.
 
