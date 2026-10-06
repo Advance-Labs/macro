@@ -31,10 +31,11 @@ impl<S: SystemPropertiesService> PgCallCrmLinker<S> {
         }
     }
 
-    /// CRM companies (and contacts, when the address is a known contact) that
-    /// the people on a call belong to, in the CRMs of the teams of the Macro
-    /// accounts on the call. A team's own members never match its CRM, and
-    /// hidden records and teams with the CRM disabled are skipped.
+    /// CRM companies (and contacts, when the address or phone number is a
+    /// known contact's) that the people on a call belong to, in the CRMs of
+    /// the teams of the Macro accounts on the call. A team's own members
+    /// never match its CRM by address, and hidden records and teams with the
+    /// CRM disabled are skipped.
     async fn matching_records(
         &self,
         people: &CallPeople,
@@ -52,6 +53,8 @@ impl<S: SystemPropertiesService> PgCallCrmLinker<S> {
             .map(|user_id| user_id.email_str().to_string())
             .chain(people.invitee_emails.iter().cloned())
             .collect();
+        let phone_numbers: Vec<String> =
+            people.phone_numbers.iter().map(ToString::to_string).collect();
 
         let rows = sqlx::query!(
             r#"
@@ -75,15 +78,24 @@ impl<S: SystemPropertiesService> PgCallCrmLinker<S> {
                     WHERE tu.team_id = t.team_id AND LOWER(tu.user_id) = 'macro|' || p.email
                 )
             )
-            SELECT DISTINCT co.id AS company_id, ct.id AS "contact_id?"
+            SELECT DISTINCT co.id AS "company_id!", ct.id AS "contact_id?"
             FROM outsiders o
             JOIN crm_domains d ON d.team_id = o.team_id AND LOWER(d.domain) = o.domain
             JOIN crm_companies co ON co.id = d.company_id AND NOT co.hidden
             LEFT JOIN crm_contacts ct
                 ON ct.company_id = co.id AND LOWER(ct.email) = o.email AND NOT ct.hidden
+            UNION
+            -- The other end of a phone call, by number.
+            SELECT co.id, ct.id
+            FROM teams t
+            JOIN crm_companies co ON co.team_id = t.team_id AND NOT co.hidden
+            JOIN crm_contacts ct ON ct.company_id = co.id AND NOT ct.hidden
+            JOIN crm_contact_phone_numbers p ON p.contact_id = ct.id
+            WHERE p.phone_number = ANY($3)
             "#,
             &user_ids,
             &emails,
+            &phone_numbers,
         )
         .fetch_all(&self.pool)
         .await?;

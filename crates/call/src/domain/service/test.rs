@@ -26,6 +26,7 @@ mod active_meetings;
 mod meeting_invites;
 mod meeting_participants;
 mod meeting_startup;
+mod phone;
 
 use crate::domain::meetings::GuestId;
 use crate::domain::models::{
@@ -216,6 +217,13 @@ impl CallRtcClient for MockRtcClient {
 
     async fn dispatch_transcription_agent(&self, _room_name: &str) -> anyhow::Result<()> {
         Ok(())
+    }
+
+    async fn dial_sip_participant(
+        &self,
+        _request: crate::domain::phone::SipDialRequest,
+    ) -> Result<crate::domain::phone::SipDialAnswered, crate::domain::phone::DialFailure> {
+        unreachable!("dial_sip_participant not exercised by these tests")
     }
 }
 
@@ -981,6 +989,7 @@ fn archived_call_for_event(
 fn egress_ended_rtc_client(egress_id: Option<&str>, file_url: Option<&str>) -> MockCallRtcClient {
     let event = CallWebhookEvent {
         guest_identity: None,
+        sip_participant: None,
         event: "egress_ended".to_string(),
         id: "egress-ended-event-id".to_string(),
         room_name: None,
@@ -1007,6 +1016,7 @@ fn webhook_rtc_client(
 ) -> MockCallRtcClient {
     let event = CallWebhookEvent {
         guest_identity: None,
+        sip_participant: None,
         event: event_type.to_string(),
         id: format!("{event_type}-event-id"),
         room_name: Some(ARCHIVED_EVENT_ROOM_NAME.to_string()),
@@ -1530,6 +1540,7 @@ fn call_record_for_mutation() -> CallRecord {
         user_access_level: None,
         participants: Vec::new(),
         guests: Vec::new(),
+        phone: None,
         transcript: Vec::new(),
     }
 }
@@ -2668,6 +2679,7 @@ fn summarized_call_record(custom_name: Option<&str>) -> CallRecord {
         user_access_level: None,
         participants: Vec::new(),
         guests: Vec::new(),
+        phone: None,
         transcript: vec![CallRecordTranscriptSegment {
             transcript_id: Uuid::from_u128(0x0198a1b2_c3d4_7e5f_8061_728394a5b701),
             segment_id: Some("segment-1".to_string()),
@@ -3755,6 +3767,7 @@ async fn guest_webhook_events_reconcile_join_and_leave() {
             room_name: Some(ARCHIVED_EVENT_ROOM_NAME.to_string()),
             participant_identity: None,
             guest_identity: Some(guest_id),
+            sip_participant: None,
             egress_id: None,
             file_url: None,
             created_at: 0,
@@ -3814,6 +3827,7 @@ async fn mixed_call_archives_only_after_both_users_and_guests_leave() {
         room_name: Some(ARCHIVED_EVENT_ROOM_NAME.to_string()),
         participant_identity: Some(user(ARCHIVED_EVENT_CREATOR).into_owned()),
         guest_identity: None,
+        sip_participant: None,
         egress_id: None,
         file_url: None,
         created_at: 0,
@@ -3987,7 +4001,7 @@ fn summary_uses_guest_name_without_rewriting_account_identity() {
         joined_at: Utc::now(),
         left_at: None,
     }];
-    let transcript = super::summary_transcript(record.transcript.clone(), &guests);
+    let transcript = super::summary_transcript(record.transcript.clone(), &guests, None);
     assert_eq!(transcript[0].speaker_id, "Ada (guest)");
     assert_eq!(record.transcript[0].speaker_id, guest_id.to_string());
 }
@@ -4027,6 +4041,7 @@ async fn call_record_query_service_reads_the_people_on_a_call() {
     let people = CallPeople {
         user_ids: vec![user("rep@ours.com")],
         invitee_emails: vec!["buyer@acme.com".to_string()],
+        phone_numbers: Vec::new(),
     };
     let mut repo = MockCallRepository::new();
     let stored = people.clone();

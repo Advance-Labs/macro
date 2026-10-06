@@ -11,11 +11,12 @@ use livekit_api::access_token::{AccessToken, TokenVerifier, VideoGrants};
 use livekit_api::services::agent_dispatch::AgentDispatchClient;
 use livekit_api::services::egress::{EgressClient, EgressOutput, RoomCompositeOptions, encoding};
 use livekit_api::services::room::{CreateRoomOptions, RoomClient};
+use livekit_api::services::sip::{CreateSIPParticipantOptions, SIPClient};
 use livekit_api::services::{ServiceError, TwirpError, TwirpErrorCode};
 use livekit_api::webhooks::WebhookReceiver;
 use livekit_protocol::{
-    AudioCodec, CreateAgentDispatchRequest, EncodedFileOutput, EncodedFileType, S3Upload,
-    VideoCodec, encoded_file_output,
+    AudioCodec, CreateAgentDispatchRequest, EncodedFileOutput, EncodedFileType, ParticipantInfo,
+    S3Upload, VideoCodec, encoded_file_output, participant_info,
 };
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -25,15 +26,27 @@ use crate::domain::meetings::GuestId;
 use crate::domain::models::{
     CallError, CallWebhookEvent, EgressS3Config, VerifiedRingToken, VoipPushPayloadRequest,
 };
+use crate::domain::phone::{
+    DialFailure, PhoneNumber, SipDialAnswered, SipDialRequest, SipParticipant,
+};
 use crate::domain::ports::CallRtcClient;
 
 const VOIP_TOKEN_MINT_CONCURRENCY: usize = 16;
+/// Participant attributes LiveKit sets on SIP participants.
+const SIP_PHONE_NUMBER_ATTRIBUTE: &str = "sip.phoneNumber";
+const SIP_TRUNK_PHONE_NUMBER_ATTRIBUTE: &str = "sip.trunkPhoneNumber";
+const SIP_CALL_STATUS_ATTRIBUTE: &str = "sip.callStatus";
+const SIP_CALL_ID_ATTRIBUTE: &str = "sip.callID";
+const SIP_RULE_ID_ATTRIBUTE: &str = "sip.ruleID";
+/// Lowest and highest final SIP response codes that describe a failure.
+const SIP_FAILURE_STATUS_RANGE: std::ops::RangeInclusive<u16> = 400..=699;
 
 /// LiveKit implementation of [`CallRtcClient`].
 pub struct LivekitRtcClient {
     room_client: RoomClient,
     egress_client: EgressClient,
     agent_dispatch_client: AgentDispatchClient,
+    sip_client: SIPClient,
     webhook_receiver: WebhookReceiver,
     token_verifier: TokenVerifier,
     api_key: String,
@@ -68,12 +81,14 @@ impl LivekitRtcClient {
         let egress_client = EgressClient::with_api_key(&http_url, &api_key, &api_secret);
         let agent_dispatch_client =
             AgentDispatchClient::with_api_key(&http_url, &api_key, &api_secret);
+        let sip_client = SIPClient::with_api_key(&http_url, &api_key, &api_secret);
         let token_verifier = TokenVerifier::with_api_key(&api_key, &api_secret);
         let webhook_receiver = WebhookReceiver::new(token_verifier.clone());
         Self {
             room_client,
             egress_client,
             agent_dispatch_client,
+            sip_client,
             webhook_receiver,
             token_verifier,
             api_key,
@@ -359,6 +374,50 @@ impl CallRtcClient for LivekitRtcClient {
         Ok(())
     }
 
+    #[tracing::instrument(
+        skip(self, request),
+        fields(room_name = %request.room_name, trunk_id = %request.trunk_id)
+    )]
+    async fn dial_sip_participant(
+        &self,
+        request: SipDialRequest,
+    ) -> Result<SipDialAnswered, DialFailure> {
+        let options = CreateSIPParticipantOptions {
+            participant_identity: request.participant_identity,
+            participant_name: Some(request.participant_name),
+            sip_number: request.caller_id.map(String::from),
+            dtmf: request.dtmf,
+            // Block until the call connects or fails, so failures carry the
+            // SIP status that explains them.
+            wait_until_answered: Some(true),
+            // Let the people already in the room hear the call ring.
+            play_dialtone: Some(true),
+            ringing_timeout: Some(request.ringing_timeout),
+            max_call_duration: Some(request.max_call_duration),
+            ..Default::default()
+        };
+        match self
+            .sip_client
+            .create_sip_participant(
+                request.trunk_id,
+                request.to.to_string(),
+                request.room_name,
+                options,
+                None,
+            )
+            .await
+        {
+            Ok(info) => Ok(SipDialAnswered {
+                sip_call_id: Some(info.sip_call_id).filter(|id| !id.is_empty()),
+            }),
+            Err(error) => {
+                let failure = classify_dial_error(&error);
+                tracing::info!(error=?error, ?failure, "SIP call did not connect");
+                Err(failure)
+            }
+        }
+    }
+
     fn verify_access_token(&self, token: &str) -> anyhow::Result<VerifiedRingToken> {
         let claims = self
             .token_verifier
@@ -394,15 +453,25 @@ impl CallRtcClient for LivekitRtcClient {
             None => (None, None),
         };
 
+        // Phone participants are recognized by their kind, whatever identity
+        // the SIP stack gave them.
+        let sip_participant = event
+            .participant
+            .as_ref()
+            .filter(|p| p.kind == participant_info::Kind::Sip as i32)
+            .map(sip_participant);
+
         // Keep UUID guests separate from Macro users and agent identities.
         let guest_identity = event
             .participant
             .as_ref()
+            .filter(|p| p.kind != participant_info::Kind::Sip as i32)
             .filter(|p| MacroUserIdStr::parse_from_str(&p.identity).is_err())
             .and_then(|p| GuestId::parse_rtc_identity(&p.identity));
 
         Ok(CallWebhookEvent {
             guest_identity,
+            sip_participant,
             event: event.event,
             id: event.id,
             room_name: event.room.map(|r| r.name),
@@ -438,4 +507,53 @@ fn is_not_found(error: &ServiceError) -> bool {
         error,
         ServiceError::Twirp(TwirpError::Twirp(code)) if code.code == TwirpErrorCode::NOT_FOUND
     )
+}
+
+/// Read the SIP facts LiveKit records as participant attributes. Numbers that
+/// are absent or not E.164 (a withheld caller id) come back as `None`.
+fn sip_participant(participant: &ParticipantInfo) -> SipParticipant {
+    let attribute = |key: &str| {
+        participant
+            .attributes
+            .get(key)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+    };
+    let phone_number = |key: &str| attribute(key).and_then(|value| PhoneNumber::from_e164(value).ok());
+    SipParticipant {
+        identity: participant.identity.clone(),
+        phone_number: phone_number(SIP_PHONE_NUMBER_ATTRIBUTE),
+        trunk_phone_number: phone_number(SIP_TRUNK_PHONE_NUMBER_ATTRIBUTE),
+        call_status: attribute(SIP_CALL_STATUS_ATTRIBUTE).and_then(|value| value.parse().ok()),
+        sip_call_id: attribute(SIP_CALL_ID_ATTRIBUTE).map(str::to_string),
+        is_inbound: attribute(SIP_RULE_ID_ATTRIBUTE).is_some(),
+    }
+}
+
+/// Explain why `CreateSIPParticipant` did not connect. LiveKit reports the
+/// final SIP response in the error message (e.g. `486 Busy Here`); the Twirp
+/// code is the fallback when no status is present.
+fn classify_dial_error(error: &ServiceError) -> DialFailure {
+    let ServiceError::Twirp(TwirpError::Twirp(code)) = error else {
+        return DialFailure::Failed;
+    };
+    if let Some(status) = sip_status_in(&code.msg) {
+        return DialFailure::from_sip_status(status);
+    }
+    match code.code.as_str() {
+        TwirpErrorCode::DEADLINE_EXCEEDED => DialFailure::NoAnswer,
+        TwirpErrorCode::RESOURCE_EXHAUSTED => DialFailure::Busy,
+        TwirpErrorCode::PERMISSION_DENIED => DialFailure::Declined,
+        TwirpErrorCode::NOT_FOUND | TwirpErrorCode::INVALID_ARGUMENT => DialFailure::Unreachable,
+        _ => DialFailure::Failed,
+    }
+}
+
+/// The first standalone three-digit SIP failure status in `message`.
+fn sip_status_in(message: &str) -> Option<u16> {
+    message
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|digits| digits.len() == 3)
+        .filter_map(|digits| digits.parse().ok())
+        .find(|status| SIP_FAILURE_STATUS_RANGE.contains(status))
 }

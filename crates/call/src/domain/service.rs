@@ -5,6 +5,7 @@ mod test;
 
 mod meeting_invites;
 mod meetings;
+mod phone;
 mod reconcile;
 
 use connection::domain::ports::ConnectionService;
@@ -57,6 +58,11 @@ use super::models::{
     GetBatchCallRecordPreviewRequest, GetBatchCallRecordPreviewResponse, GetCallRecordsRequest,
     LeaveCallResponse, RingStatus, RingStatusResponse, TranscriptSegmentRequest,
 };
+use super::phone::PhoneDialingConfig;
+use super::ports::phone::{
+    NoOpPhoneCallRepository, NoOpPhoneContactDirectory, PhoneCallRepository,
+    PhoneContactDirectory,
+};
 use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallService, CallSummarizer,
     NoOpVoiceRepository, RecordingStorage, VoiceRepository,
@@ -74,6 +80,8 @@ pub struct CallServiceImpl<
     V: VoipPushSender = (),
     Vr: VoiceRepository = NoOpVoiceRepository,
     B: MacroEventBroker = NoopMacroEventBroker,
+    Ph: PhoneCallRepository = NoOpPhoneCallRepository,
+    Pd: PhoneContactDirectory = NoOpPhoneContactDirectory,
 > {
     repo: R,
     rtc_client: Arc<C>,
@@ -89,6 +97,9 @@ pub struct CallServiceImpl<
     voice_repo: Vr,
     ring_status_base_url: Option<String>,
     event_broker: B,
+    phone_repo: Ph,
+    phone_contacts: Pd,
+    phone_dialing: Option<PhoneDialingConfig>,
 }
 
 impl<
@@ -126,6 +137,9 @@ impl<
             voice_repo: NoOpVoiceRepository,
             ring_status_base_url: None,
             event_broker: NoopMacroEventBroker,
+            phone_repo: NoOpPhoneCallRepository,
+            phone_contacts: NoOpPhoneContactDirectory,
+            phone_dialing: None,
         }
     }
 }
@@ -141,7 +155,9 @@ impl<
     V: VoipPushSender,
     Vr: VoiceRepository,
     B: MacroEventBroker,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+    Ph: PhoneCallRepository,
+    Pd: PhoneContactDirectory,
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 {
     /// Enable auto-recording with the given S3 configuration.
     pub fn with_egress(mut self, s3_config: EgressS3Config) -> Self {
@@ -175,7 +191,7 @@ impl<
     pub fn with_voip_push_sender<V2: VoipPushSender>(
         self,
         sender: V2,
-    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V2, Vr, B> {
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V2, Vr, B, Ph, Pd> {
         CallServiceImpl {
             repo: self.repo,
             rtc_client: self.rtc_client,
@@ -191,6 +207,9 @@ impl<
             voice_repo: self.voice_repo,
             ring_status_base_url: self.ring_status_base_url,
             event_broker: self.event_broker,
+            phone_repo: self.phone_repo,
+            phone_contacts: self.phone_contacts,
+            phone_dialing: self.phone_dialing,
         }
     }
 
@@ -198,7 +217,7 @@ impl<
     pub fn with_voice_repo<Vr2: VoiceRepository>(
         self,
         voice_repo: Vr2,
-    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr2, B> {
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr2, B, Ph, Pd> {
         CallServiceImpl {
             repo: self.repo,
             rtc_client: self.rtc_client,
@@ -214,6 +233,9 @@ impl<
             voice_repo,
             ring_status_base_url: self.ring_status_base_url,
             event_broker: self.event_broker,
+            phone_repo: self.phone_repo,
+            phone_contacts: self.phone_contacts,
+            phone_dialing: self.phone_dialing,
         }
     }
 
@@ -221,7 +243,7 @@ impl<
     pub fn with_event_broker<B2: MacroEventBroker>(
         self,
         event_broker: B2,
-    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B2> {
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B2, Ph, Pd> {
         CallServiceImpl {
             repo: self.repo,
             rtc_client: self.rtc_client,
@@ -237,7 +259,46 @@ impl<
             voice_repo: self.voice_repo,
             ring_status_base_url: self.ring_status_base_url,
             event_broker,
+            phone_repo: self.phone_repo,
+            phone_contacts: self.phone_contacts,
+            phone_dialing: self.phone_dialing,
         }
+    }
+
+    /// Enable phone calls: persistence for numbers and phone legs, and the
+    /// CRM directory that names the people on the other end. Inbound calls
+    /// work once numbers are assigned; dialing out also needs
+    /// [`Self::with_phone_dialing`].
+    pub fn with_phone<Ph2: PhoneCallRepository, Pd2: PhoneContactDirectory>(
+        self,
+        phone_repo: Ph2,
+        phone_contacts: Pd2,
+    ) -> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph2, Pd2> {
+        CallServiceImpl {
+            repo: self.repo,
+            rtc_client: self.rtc_client,
+            connection_service: self.connection_service,
+            entity_access_service: self.entity_access_service,
+            notification_ingress: self.notification_ingress,
+            recording_storage: self.recording_storage,
+            server_url: self.server_url,
+            egress_s3_config: self.egress_s3_config,
+            internal_call_secret: self.internal_call_secret,
+            summarizer: self.summarizer,
+            voip_push_sender: self.voip_push_sender,
+            voice_repo: self.voice_repo,
+            ring_status_base_url: self.ring_status_base_url,
+            event_broker: self.event_broker,
+            phone_repo,
+            phone_contacts,
+            phone_dialing: self.phone_dialing,
+        }
+    }
+
+    /// Enable placing outbound phone calls through a SIP trunk.
+    pub fn with_phone_dialing(mut self, config: PhoneDialingConfig) -> Self {
+        self.phone_dialing = Some(config);
+        self
     }
 
     fn publish_call_event(&self, event: &CallMacroEvent) {
@@ -572,7 +633,9 @@ impl<
     V: VoipPushSender,
     Vr: VoiceRepository + Clone,
     B: MacroEventBroker + Clone,
-> CallService for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+    Ph: PhoneCallRepository + Clone,
+    Pd: PhoneContactDirectory + Clone,
+> CallService for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 {
     async fn prepare_meeting(
         &self,
@@ -1205,6 +1268,9 @@ impl<
                 }
             }
             "participant_joined" => {
+                if let (Some(room), Some(sip)) = (&event.room_name, &event.sip_participant) {
+                    return self.handle_sip_participant_joined(room, sip).await;
+                }
                 if let (Some(room), Some(identity)) = (&event.room_name, &event.guest_identity) {
                     if let Some(call) = self
                         .repo
@@ -1277,6 +1343,9 @@ impl<
                 let Some(room_name) = &event.room_name else {
                     return Ok(());
                 };
+                if let Some(sip) = &event.sip_participant {
+                    return self.handle_sip_participant_left(room_name, sip).await;
+                }
                 if event.participant_identity.is_none() && event.guest_identity.is_none() {
                     return Ok(());
                 }
@@ -1527,7 +1596,7 @@ impl<
     #[tracing::instrument(err, skip(self, segment))]
     async fn ingest_transcript_segment(
         &self,
-        room_name: &Uuid,
+        room_name: &str,
         segment: TranscriptSegmentRequest,
     ) -> Result<(), CallError> {
         if !segment.is_final {
@@ -1536,7 +1605,7 @@ impl<
 
         let call = self
             .repo
-            .get_call_by_room_name(&room_name.to_string())
+            .get_call_by_room_name(room_name)
             .await
             .map_err(|e| CallError::Internal(e.into()))?
             .ok_or_else(|| CallError::NotFound(room_name.to_string()))?;
@@ -1844,7 +1913,7 @@ impl<
         let Some(summary) = summarizer
             .summarize_call(
                 call_id,
-                summary_transcript(record.transcript, &record.guests),
+                summary_transcript(record.transcript, &record.guests, record.phone.as_ref()),
             )
             .await
             .inspect_err(|e| tracing::error!(error=?e, %call_id, "call summarizer failed"))
@@ -1911,6 +1980,54 @@ impl<
             .map_err(|e| CallError::Internal(e.into()))?;
         Ok(voice_id)
     }
+
+    async fn get_phone_settings(
+        &self,
+        actor: MacroUserIdStr<'_>,
+    ) -> Result<super::phone::PhoneSettingsResponse, CallError> {
+        self.phone_settings(actor).await
+    }
+
+    async fn dial_phone(
+        &self,
+        actor: MacroUserIdStr<'_>,
+        request: super::phone::DialPhoneRequest,
+    ) -> Result<super::phone::PhoneCallJoinResponse, CallError> {
+        self.dial(actor, request).await
+    }
+
+    async fn answer_phone_call(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+    ) -> Result<super::phone::PhoneCallJoinResponse, CallError> {
+        self.answer_inbound(receipt).await
+    }
+
+    async fn hang_up_phone_call(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+    ) -> Result<LeaveCallResponse, CallError> {
+        self.hang_up(receipt).await
+    }
+
+    async fn list_incoming_phone_calls(
+        &self,
+        actor: MacroUserIdStr<'_>,
+    ) -> Result<super::phone::IncomingPhoneCallsResponse, CallError> {
+        self.incoming_calls(actor).await
+    }
+
+    async fn assign_phone_number(
+        &self,
+        number: super::phone::PhoneNumber,
+        request: super::phone::AssignPhoneNumberRequest,
+    ) -> Result<(), CallError> {
+        self.assign_number(number, request).await
+    }
+
+    async fn release_phone_number(&self, number: super::phone::PhoneNumber) -> Result<(), CallError> {
+        self.release_number(number).await
+    }
 }
 
 impl<
@@ -1924,7 +2041,9 @@ impl<
     V: VoipPushSender,
     Vr: VoiceRepository + Clone,
     B: MacroEventBroker + Clone,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+    Ph: PhoneCallRepository + Clone,
+    Pd: PhoneContactDirectory + Clone,
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 {
     /// Fire-and-forget spawn of [`CallService::summarize_call`] for `call_id`.
     ///
@@ -1965,7 +2084,7 @@ impl<
             let summary = match summarizer
                 .summarize_call(
                     &call_id,
-                    summary_transcript(record.transcript, &record.guests),
+                    summary_transcript(record.transcript, &record.guests, record.phone.as_ref()),
                 )
                 .await
             {
@@ -2035,19 +2154,26 @@ fn publish_call_event<B: MacroEventBroker>(event_broker: &B, event: &CallMacroEv
     }));
 }
 
-/// Replace guest speaker ids with their display names for the summarizer's
-/// input only; the stored transcript keeps the opaque ids.
+/// Replace guest and phone speaker ids with display names for the
+/// summarizer's input only; the stored transcript keeps the opaque ids.
 fn summary_transcript(
     mut transcript: Vec<CallRecordTranscriptSegment>,
     guests: &[super::models::CallRecordGuest],
+    phone: Option<&super::phone::PhoneLeg>,
 ) -> Vec<CallRecordTranscriptSegment> {
-    let names: HashMap<String, &str> = guests
+    let mut labels: HashMap<String, String> = guests
         .iter()
-        .map(|guest| (guest.id.to_string(), guest.display_name.as_str()))
+        .map(|guest| (guest.id.to_string(), format!("{} (guest)", guest.display_name)))
         .collect();
+    if let Some(phone) = phone {
+        labels.insert(
+            phone.participant_identity.clone(),
+            format!("{} (on the phone)", phone.remote_party_label()),
+        );
+    }
     for segment in &mut transcript {
-        if let Some(name) = names.get(segment.speaker_id.as_str()) {
-            segment.speaker_id = format!("{name} (guest)");
+        if let Some(label) = labels.get(segment.speaker_id.as_str()) {
+            segment.speaker_id = label.clone();
         }
     }
     transcript
@@ -2109,10 +2235,9 @@ where
         .get_enhanced_call_record_transcripts(call_record_id)
         .await
         .map_err(Into::into)?;
-    // Never infer a Macro account identity for a guest speaker.
-    transcripts.retain(|segment| {
-        super::meetings::GuestId::parse_rtc_identity(&segment.speaker_id).is_none()
-    });
+    // Only audio from a Macro account's own connection can be attributed to
+    // Macro users; never infer an account for a guest or a phone party.
+    transcripts.retain(|segment| MacroUserIdStr::parse_from_str(&segment.speaker_id).is_ok());
     if transcripts.is_empty() {
         tracing::info!(%call_record_id, "call has empty archived transcript; skipping custom speaker generation");
         return Ok(());

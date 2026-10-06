@@ -28,6 +28,10 @@ pub mod get_contact;
 /// receive null for hidden rows; admin/owner reach hidden contacts.
 pub mod get_contact_by_email;
 
+/// List and replace a contact's phone numbers, and look a contact up by
+/// phone number in the caller's team.
+pub mod contact_phone_numbers;
+
 /// Search the caller's team's CRM contacts by email or name.
 pub mod search_contacts;
 
@@ -60,7 +64,10 @@ use entity_access::domain::ports::EntityAccessService;
 use macro_authorization::{MacroAuthorizationService, MacroAuthorizationState};
 use model_error_response::ErrorResponse;
 
-use crate::domain::{model::CrmError, service::CrmService, stages::CrmStageService};
+use crate::domain::{
+    contact_phones::CrmContactPhoneService, model::CrmError, service::CrmService,
+    stages::CrmStageService,
+};
 
 /// Router state for the CRM endpoints, including service-backed authorization
 /// for direct user credentials and internal service access.
@@ -123,7 +130,7 @@ impl<C, St, Eas, Auth> Clone for CrmRouterState<C, St, Eas, Auth> {
 /// Build the CRM router with all endpoints.
 pub fn crm_router<C, St, Eas, Auth, S>(state: CrmRouterState<C, St, Eas, Auth>) -> Router<S>
 where
-    C: CrmService,
+    C: CrmService + CrmContactPhoneService,
     St: CrmStageService,
     Eas: EntityAccessService,
     Auth: MacroAuthorizationService,
@@ -162,6 +169,15 @@ where
         .route(
             "/contacts/by-email",
             get(get_contact_by_email::handler::<C, St, Eas, Auth>),
+        )
+        .route(
+            "/contacts/by-phone",
+            get(contact_phone_numbers::by_phone_handler::<C, St, Eas, Auth>),
+        )
+        .route(
+            "/contacts/{contact_id}/phone-numbers",
+            get(contact_phone_numbers::list_handler::<C, St, Eas, Auth>)
+                .put(contact_phone_numbers::set_handler::<C, St, Eas, Auth>),
         )
         .route(
             "/contacts/{contact_id}",

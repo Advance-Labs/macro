@@ -112,7 +112,19 @@ fn people(user_ids: &[&str], invitee_emails: &[&str]) -> CallPeople {
             .map(|id| MacroUserIdStr::parse_from_str(id).unwrap().into_owned())
             .collect(),
         invitee_emails: invitee_emails.iter().map(ToString::to_string).collect(),
+        phone_numbers: Vec::new(),
     }
+}
+
+async fn insert_contact_phone(pool: &PgPool, contact_id: Uuid, phone_number: &str) {
+    sqlx::query(
+        "INSERT INTO crm_contact_phone_numbers (contact_id, phone_number, position) VALUES ($1, $2, 0)",
+    )
+    .bind(contact_id)
+    .bind(phone_number)
+    .execute(pool)
+    .await
+    .unwrap();
 }
 
 /// Entity ids referenced by the call record's value for `property`.
@@ -276,5 +288,55 @@ async fn matches_accounts_and_contacts_regardless_of_case(pool: PgPool) {
     assert_eq!(
         linked_ids(&pool, call_record_id, SystemPropertyKey::Contacts).await,
         vec![grace.to_string()]
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn links_phone_calls_to_the_contact_with_the_number(pool: PgPool) {
+    let team_id = seed_team(&pool, true).await;
+    let acme = insert_company(&pool, team_id, "acme.com", false).await;
+    let ada = insert_contact(&pool, acme, "ada@acme.com").await;
+    insert_contact_phone(&pool, ada, "+15552345678").await;
+    let hidden_company = insert_company(&pool, team_id, "hidden.com", true).await;
+    let hidden = insert_contact(&pool, hidden_company, "x@hidden.com").await;
+    insert_contact_phone(&pool, hidden, "+15552345678").await;
+    let call_record_id = Uuid::now_v7();
+
+    let mut people = people(&[MEMBER], &[]);
+    people.phone_numbers = vec![phone_number::PhoneNumber::from_e164("+15552345678").unwrap()];
+    linker(&pool)
+        .link_call_record(call_record_id, &people)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        linked_ids(&pool, call_record_id, SystemPropertyKey::Companies).await,
+        vec![acme.to_string()]
+    );
+    assert_eq!(
+        linked_ids(&pool, call_record_id, SystemPropertyKey::Contacts).await,
+        vec![ada.to_string()]
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn phone_numbers_only_match_the_crms_of_teams_on_the_call(pool: PgPool) {
+    let team_id = seed_team(&pool, true).await;
+    let acme = insert_company(&pool, team_id, "acme.com", false).await;
+    let ada = insert_contact(&pool, acme, "ada@acme.com").await;
+    insert_contact_phone(&pool, ada, "+15552345678").await;
+    let call_record_id = Uuid::now_v7();
+
+    let mut people = people(&["macro|outsider@elsewhere.com"], &[]);
+    people.phone_numbers = vec![phone_number::PhoneNumber::from_e164("+15552345678").unwrap()];
+    linker(&pool)
+        .link_call_record(call_record_id, &people)
+        .await
+        .unwrap();
+
+    assert!(
+        linked_ids(&pool, call_record_id, SystemPropertyKey::Contacts)
+            .await
+            .is_empty()
     );
 }

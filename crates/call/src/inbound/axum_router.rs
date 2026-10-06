@@ -12,6 +12,8 @@ mod test;
 
 /// Meeting invitation HTTP endpoints.
 pub mod meetings;
+/// Phone call HTTP endpoints.
+pub mod phone;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -108,6 +110,12 @@ impl<S, Svc, Auth> FromRef<CallRouterState<S, Svc, Auth>> for MacroAuthorization
 /// - `DELETE /record/{call_id}` — delete a call record
 /// - `POST /record/{call_id}/share-with-team/toggle` — flip the live call's share-with-team toggle
 /// - `POST /record/preview` — batch-fetch lightweight previews for many call ids
+/// - `GET /phone/settings` — whether the caller can dial out, and their numbers
+/// - `POST /phone/dial` — place a phone call
+/// - `GET /phone/incoming` — inbound phone calls ringing for the caller
+/// - `POST /phone/{call_id}/answer` — answer a ringing inbound phone call
+/// - `POST /phone/{call_id}/hang-up` — end a phone call for everyone
+/// - `PUT|DELETE /phone/numbers/{phone_number}` — assign or release a number (internal)
 pub fn call_router<S, Svc, Auth, T>(state: CallRouterState<S, Svc, Auth>) -> Router<T>
 where
     S: CallService,
@@ -116,6 +124,16 @@ where
     T: Send + Sync,
 {
     Router::new()
+        .route("/phone/settings", get(phone::settings::<S, Svc, Auth>))
+        .route("/phone/dial", post(phone::dial::<S, Svc, Auth>))
+        .route("/phone/incoming", get(phone::incoming::<S, Svc, Auth>))
+        .route("/phone/{call_id}/answer", post(phone::answer::<S, Svc, Auth>))
+        .route("/phone/{call_id}/hang-up", post(phone::hang_up::<S, Svc, Auth>))
+        .route(
+            "/phone/numbers/{phone_number}",
+            axum::routing::put(phone::assign_number::<S, Svc, Auth>)
+                .delete(phone::release_number::<S, Svc, Auth>),
+        )
         .route("/meetings/prepare", post(meetings::prepare::<S, Svc, Auth>))
         .route(
             "/meetings/prepare/{preparation_id}",
@@ -786,7 +804,7 @@ pub async fn ring_status_handler<S: CallService>(
     operation_id = "ingest_transcript",
     path = "/call/{room_name}/transcript",
     params(
-        ("room_name" = Uuid, Path, description = "RTC room name; the transcription agent passes its LiveKit room verbatim"),
+        ("room_name" = String, Path, description = "RTC room name; the transcription agent passes its LiveKit room verbatim. Rooms Macro creates are named after the call id; inbound phone calls arrive in rooms the SIP dispatch rule names."),
     ),
     request_body = TranscriptSegmentRequest,
     responses(
@@ -800,7 +818,7 @@ pub async fn ring_status_handler<S: CallService>(
 pub async fn transcript_handler<S: CallService>(
     State(state): State<InternalCallRouterState<S>>,
     _access: InternalCallAccessExtractor,
-    axum::extract::Path(room_name): axum::extract::Path<Uuid>,
+    axum::extract::Path(room_name): axum::extract::Path<String>,
     Json(segment): Json<TranscriptSegmentRequest>,
 ) -> Result<StatusCode, CallError> {
     state
@@ -825,6 +843,7 @@ impl IntoResponse for CallError {
             CallError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
             CallError::Forbidden(_) => StatusCode::FORBIDDEN,
             CallError::Conflict(_) => StatusCode::CONFLICT,
+            CallError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             CallError::Internal(_) => {
                 tracing::error!(error=?self, "internal server error");
                 StatusCode::INTERNAL_SERVER_ERROR

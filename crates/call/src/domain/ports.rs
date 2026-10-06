@@ -21,6 +21,13 @@ use crate::domain::models::{
     CallPeople, CustomSpeakerAssignment, DeletedCallRecordStorageKeys, EditCallRecordRepoArgs,
     EditCallRecordRequest, EditCallTranscriptRequest,
 };
+use crate::domain::phone::{
+    AssignPhoneNumberRequest, DialFailure, DialPhoneRequest, IncomingPhoneCallsResponse,
+    PhoneCallJoinResponse, PhoneNumber, PhoneSettingsResponse, SipDialAnswered, SipDialRequest,
+};
+
+/// Ports for phone calls.
+pub mod phone;
 
 use super::meetings::{
     ActiveMeeting, CreateMeetingRequest, GuestId, GuestJoinRequest, InviteMeetingUsersRequest,
@@ -750,6 +757,15 @@ pub trait CallRtcClient: Send + Sync + 'static {
         &self,
         room_name: &str,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Dial a phone number into a room as a SIP participant and wait until
+    /// the callee answers. The participant joins the room while the call is
+    /// being placed, so people in the room hear it ring. Errors classify why
+    /// the call did not connect; adapters log the underlying cause.
+    fn dial_sip_participant(
+        &self,
+        request: SipDialRequest,
+    ) -> impl Future<Output = Result<SipDialAnswered, DialFailure>> + Send;
 }
 
 /// Service interface for call operations.
@@ -910,9 +926,11 @@ pub trait CallService: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), CallError>> + Send;
 
     /// Ingest a transcript segment from the LiveKit Agent STT pipeline.
+    /// `room_name` is the RTC room verbatim: the call id for rooms Macro
+    /// creates, or a provider-chosen name for inbound phone calls.
     fn ingest_transcript_segment(
         &self,
-        room_name: &Uuid,
+        room_name: &str,
         segment: TranscriptSegmentRequest,
     ) -> impl Future<Output = Result<(), CallError>> + Send;
 
@@ -1006,6 +1024,64 @@ pub trait CallService: Send + Sync + 'static {
         macro_user_id: &Uuid,
         embedding: &[f32],
     ) -> impl Future<Output = Result<Uuid, CallError>> + Send;
+
+    /// Whether the actor can place phone calls, the caller id people see,
+    /// and the numbers that ring the actor.
+    fn get_phone_settings<'a>(
+        &self,
+        actor: MacroUserIdStr<'a>,
+    ) -> impl Future<Output = Result<PhoneSettingsResponse, CallError>> + Send;
+
+    /// Place a phone call: start a standalone call the actor joins, then dial
+    /// `request.to` into its room. Returns once the call is ringing, with the
+    /// actor's join credentials; the call is recorded and transcribed like
+    /// any other. Fails with [`CallError::Unavailable`] when dialing is not
+    /// set up and [`CallError::InvalidRequest`] for numbers that cannot or
+    /// may not be dialed.
+    fn dial_phone<'a>(
+        &self,
+        actor: MacroUserIdStr<'a>,
+        request: DialPhoneRequest,
+    ) -> impl Future<Output = Result<PhoneCallJoinResponse, CallError>> + Send;
+
+    /// Answer an inbound phone call ringing for the actor and return their
+    /// join credentials. The receipt must authorize `EntityType::Call` for
+    /// the call id; only the owner of the dialed number may answer.
+    fn answer_phone_call(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+    ) -> impl Future<Output = Result<PhoneCallJoinResponse, CallError>> + Send;
+
+    /// Hang up a phone call for everyone: declines a ringing inbound call,
+    /// cancels an outbound call still being placed, and ends a connected
+    /// one. The receipt must authorize `EntityType::Call` for the call id;
+    /// only the call's owner or a participant may hang up.
+    fn hang_up_phone_call(
+        &self,
+        receipt: EntityAccessReceipt<ViewAccessLevel>,
+    ) -> impl Future<Output = Result<LeaveCallResponse, CallError>> + Send;
+
+    /// Inbound phone calls ringing for the actor, newest first.
+    fn list_incoming_phone_calls<'a>(
+        &self,
+        actor: MacroUserIdStr<'a>,
+    ) -> impl Future<Output = Result<IncomingPhoneCallsResponse, CallError>> + Send;
+
+    /// Assign `number` to a user so it rings them and identifies them when
+    /// they dial out. Internal administration only.
+    fn assign_phone_number(
+        &self,
+        number: PhoneNumber,
+        request: AssignPhoneNumberRequest,
+    ) -> impl Future<Output = Result<(), CallError>> + Send;
+
+    /// Unassign `number`; calls to it are then rejected. Internal
+    /// administration only. Fails with [`CallError::NotFound`] when the
+    /// number was not assigned.
+    fn release_phone_number(
+        &self,
+        number: PhoneNumber,
+    ) -> impl Future<Output = Result<(), CallError>> + Send;
 }
 
 /// Lightweight read-only port for querying call records in Soup.

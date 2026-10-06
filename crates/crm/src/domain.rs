@@ -23,6 +23,10 @@ pub mod stages;
 #[cfg(feature = "ports")]
 pub mod auth;
 
+/// Phone numbers of CRM contacts
+#[cfg(feature = "ports")]
+pub mod contact_phones;
+
 /// Links archived calls to the CRM records of the people on them
 #[cfg(feature = "call_link")]
 pub mod call_links;

@@ -1,5 +1,6 @@
 //! Implementation of [`CompaniesRepository`] backed by MacroDB.
 
+mod contact_phones;
 #[cfg(test)]
 pub(crate) mod test;
 

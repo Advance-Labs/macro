@@ -16,6 +16,7 @@ fn people() -> CallPeople {
     CallPeople {
         user_ids: vec![MacroUserIdStr::try_from_email("rep@ours.com").unwrap()],
         invitee_emails: vec!["buyer@acme.com".to_string()],
+        phone_numbers: Vec::new(),
     }
 }
 

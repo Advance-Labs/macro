@@ -18,7 +18,9 @@ impl<
     V: VoipPushSender,
     Vr: VoiceRepository + Clone,
     B: MacroEventBroker + Clone,
-> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+    Ph: PhoneCallRepository + Clone,
+    Pd: PhoneContactDirectory + Clone,
+> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 {
     /// Webhooks can beat the startup API response, especially if a call ends
     /// immediately. Correlate only standalone rooms whose UUID is their call ID.

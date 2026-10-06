@@ -22,6 +22,7 @@ use super::{
 use connection::domain::ports::ConnectionService;
 use notification::domain::{ports::VoipPushSender, service::NotificationIngress};
 
+use crate::domain::ports::phone::{PhoneCallRepository, PhoneContactDirectory};
 use crate::domain::ports::{
     CallRepository, CallRtcClient, CallSummarizer, RecordingStorage, VoiceRepository,
 };
@@ -38,7 +39,9 @@ impl From<CallError> for EntityMutationErrorCode {
             error @ (CallError::AlreadyInCall(_) | CallError::Conflict(_)) => {
                 Self::conflict(rootcause::report!(error))
             }
-            error @ CallError::Internal(_) => Self::internal(rootcause::report!(error)),
+            error @ (CallError::Unavailable(_) | CallError::Internal(_)) => {
+                Self::internal(rootcause::report!(error))
+            }
         }
     }
 }
@@ -79,8 +82,8 @@ async fn require_archived_call<S: CallService>(
     Ok(())
 }
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B> RenameEntity
-    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> RenameEntity
+    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository,
     C: CallRtcClient,
@@ -92,6 +95,8 @@ where
     V: VoipPushSender,
     Vr: VoiceRepository,
     B: MacroEventBroker,
+    Ph: PhoneCallRepository,
+    Pd: PhoneContactDirectory,
     Self: CallService,
 {
     type Receipt = EditAccessLevel;
@@ -116,8 +121,8 @@ where
     }
 }
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B> UpdateEntitySharePolicy
-    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> UpdateEntitySharePolicy
+    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository,
     C: CallRtcClient,
@@ -129,6 +134,8 @@ where
     V: VoipPushSender,
     Vr: VoiceRepository,
     B: MacroEventBroker,
+    Ph: PhoneCallRepository,
+    Pd: PhoneContactDirectory,
     Self: CallService,
 {
     type Receipt = EditAccessLevel;
@@ -153,8 +160,8 @@ where
     }
 }
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B> DeleteEntityPermanently
-    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> DeleteEntityPermanently
+    for CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository,
     C: CallRtcClient,
@@ -166,6 +173,8 @@ where
     V: VoipPushSender,
     Vr: VoiceRepository,
     B: MacroEventBroker,
+    Ph: PhoneCallRepository,
+    Pd: PhoneContactDirectory,
     Self: CallService,
 {
     type Receipt = EditAccessLevel;

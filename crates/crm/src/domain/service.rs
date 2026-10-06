@@ -1,5 +1,6 @@
 //! The CrmService trait and its default implementation.
 
+mod contact_phones;
 #[cfg(test)]
 mod test;
 
@@ -1132,5 +1133,31 @@ impl CrmService for NoOpCrmService {
         _patch: CrmTeamSettingsPatch,
     ) -> Result<CrmTeamSettings, CrmError> {
         unimplemented!("NoOpCrmService.update_team_settings")
+    }
+}
+
+/// Without a CRM no contact has a phone number.
+impl crate::domain::contact_phones::CrmContactPhoneService for NoOpCrmService {
+    async fn list_contact_phone_numbers(
+        &self,
+        _access: &CrmContactReceipt<ViewAccessLevel>,
+    ) -> Result<Vec<phone_number::PhoneNumber>, CrmError> {
+        Err(CrmError::ContactNotFoundForTeam)
+    }
+
+    async fn set_contact_phone_numbers(
+        &self,
+        _access: &CrmContactReceipt<ViewAccessLevel>,
+        _numbers: &[String],
+    ) -> Result<Vec<phone_number::PhoneNumber>, CrmError> {
+        Err(CrmError::ContactNotFoundForTeam)
+    }
+
+    async fn get_contact_by_phone(
+        &self,
+        _access: &CrmTeamReceipt<MemberTeamRole>,
+        _number: &phone_number::PhoneNumber,
+    ) -> Result<Option<CrmContact>, CrmError> {
+        Ok(None)
     }
 }

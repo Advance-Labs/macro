@@ -3,6 +3,7 @@
 mod edit;
 mod lifecycle;
 mod meetings;
+mod phone;
 mod preparations;
 mod property_clauses;
 mod team_share;
@@ -811,6 +812,12 @@ impl CallRepository for PgCallRepo {
             FROM call_records cr
             JOIN call_meetings m ON m.id = cr.meeting_id
             WHERE cr.id = $1
+            UNION
+            -- A phone call belongs to its owner even if they never picked up.
+            SELECT cr.created_by
+            FROM call_records cr
+            JOIN call_record_phone_legs pl ON pl.call_record_id = cr.id
+            WHERE cr.id = $1
             "#,
             call_record_id,
         )
@@ -878,9 +885,12 @@ impl CallRepository for PgCallRepo {
         .fetch_all(&self.pool)
         .await?;
 
+        let phone_numbers = phone::fetch_archived_remote_numbers(&self.pool, call_record_id).await?;
+
         Ok(CallPeople {
             user_ids,
             invitee_emails,
+            phone_numbers,
         })
     }
 
@@ -1306,6 +1316,8 @@ impl CallRepository for PgCallRepo {
             })
             .collect();
 
+            let phone = phone::fetch_live_leg(&mut tx, &active.id).await?;
+
             tx.commit().await?;
             return Ok(Some(CallRecord {
                 call_id: active.id,
@@ -1333,6 +1345,7 @@ impl CallRepository for PgCallRepo {
                 status: None,
                 participants,
                 guests,
+                phone,
                 transcript,
             }));
         }
@@ -1418,6 +1431,8 @@ impl CallRepository for PgCallRepo {
         })
         .collect();
 
+        let phone = phone::fetch_archived_leg(&mut tx, &archived.id).await?;
+
         tx.commit().await?;
         Ok(Some(CallRecord {
             call_id: archived.id,
@@ -1443,6 +1458,7 @@ impl CallRepository for PgCallRepo {
             status: None,
             participants,
             guests,
+            phone,
             transcript,
         }))
     }
@@ -1836,12 +1852,15 @@ impl CallRepository for PgCallRepo {
                 });
         }
 
+        let mut phone_by_call = phone::fetch_legs(&self.pool, &active_ids, &archived_ids).await?;
+
         let mut records = Vec::with_capacity(rows.len());
         for row in rows {
             let participants = participants_by_call
                 .remove(&row.call_id)
                 .unwrap_or_default();
             let guests = guests_by_call.remove(&row.call_id).unwrap_or_default();
+            let phone = phone_by_call.remove(&row.call_id);
 
             records.push(CallRecord {
                 call_id: row.call_id,
@@ -1867,6 +1886,7 @@ impl CallRepository for PgCallRepo {
                 status: Some(call_status_from_sql(&row.status)),
                 participants,
                 guests,
+                phone,
                 transcript: Vec::new(),
             });
         }

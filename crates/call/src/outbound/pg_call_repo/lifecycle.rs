@@ -196,6 +196,8 @@ impl PgCallRepo {
         .execute(tx.as_mut())
         .await?;
 
+        phone::archive_phone_leg(&mut tx, call_id, ended_at).await?;
+
         // Delete the ephemeral call (cascades to call_participants and call_transcripts).
         sqlx::query!(
             r#"

@@ -62,6 +62,9 @@ pub struct CallPeople {
     /// meeting link. External guests join without an account, so this is the
     /// only record of who they are.
     pub invitee_emails: Vec<String>,
+    /// Phone numbers of external parties on the call: the other end of a
+    /// phone call.
+    pub phone_numbers: Vec<super::phone::PhoneNumber>,
 }
 
 /// A participant in an active call.
@@ -238,6 +241,9 @@ pub struct CallWebhookEvent {
     pub participant_identity: Option<MacroUserIdStr<'static>>,
     /// Non-account guest identity, classified separately from Macro users.
     pub guest_identity: Option<super::meetings::GuestId>,
+    /// A participant on the phone network, classified by its RTC kind rather
+    /// than its identity.
+    pub sip_participant: Option<super::phone::SipParticipant>,
     /// Egress ID associated with the event, if any.
     pub egress_id: Option<String>,
     /// File download URL from a completed egress, if any.
@@ -527,6 +533,10 @@ pub struct CallRecord {
     /// Non-account guests (both active and historic). Guests only ever exist
     /// on standalone meeting calls, never on channel calls.
     pub guests: Vec<CallRecordGuest>,
+    /// The phone leg, for phone calls: who was on the other end, which way
+    /// the call went, and how it ended. Transcript segments spoken on the
+    /// phone use its `participantIdentity` as their speaker id.
+    pub phone: Option<super::phone::PhoneLeg>,
     /// Transcript segments ordered by `sequence_num`.
     pub transcript: Vec<CallRecordTranscriptSegment>,
 }
@@ -668,6 +678,10 @@ pub enum CallError {
     /// stale team-share revision); the caller should reload and retry.
     #[error("conflict: {0}")]
     Conflict(String),
+    /// The capability is not set up for this deployment (for example phone
+    /// calling without a SIP trunk).
+    #[error("{0}")]
+    Unavailable(String),
     /// An internal error occurred.
     #[error(transparent)]
     Internal(#[from] anyhow::Error),

@@ -25,6 +25,7 @@ axum = [
   "entity_access/axum",
   "entity_access/inbound",
   "entity_access/ports",
+  "phone_number/schema",
   "ports",
 ]
 # Links archived call records to CRM records from the call topic.
@@ -32,6 +33,8 @@ call_link = [
   "dep:call",
   "dep:kafka_util",
   "dep:macro_event_broker",
+  "dep:macro_user_id",
+  "entity_access/ports",
   "dep:models_properties",
   "dep:rdkafka",
   "dep:rootcause",
@@ -69,6 +72,7 @@ uuid = { workspace = true }
 
 call = { path = "../call", default-features = false, features = ["ports"], optional = true }
 entity_access = { path = "../entity_access", default-features = false }
+phone_number = { path = "../phone_number" }
 kafka_util = { path = "../kafka_util", optional = true }
 macro_event_broker = { path = "../macro_event_broker", default-features = false, optional = true }
 messages = { path = "../messages", default-features = false, features = ["ports"], optional = true }
@@ -101,6 +105,10 @@ unfurl = { path = "../unfurl", features = ["ports"], optional = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]
+entity_access = { path = "../entity_access", default-features = false, features = [
+  "outbound",
+  "ports",
+] }
 macro_db_migrator = { path = "../macro_db_migrator" }
 messages = { path = "../messages", default-features = false, features = ["outbound", "test-utils"] }
 macro_user_id = { path = "../macro_user_id" }

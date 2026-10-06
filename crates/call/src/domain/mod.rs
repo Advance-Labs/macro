@@ -20,3 +20,6 @@ pub mod service;
 
 /// Persistent meeting invitations and guest models.
 pub mod meetings;
+
+/// Phone calls bridged into calls through SIP.
+pub mod phone;

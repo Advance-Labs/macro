@@ -3642,6 +3642,7 @@ dependencies = [
  "models_permissions",
  "notification",
  "pgvector",
+ "phone_number",
  "rate_limit",
  "rootcause",
  "schemars 1.2.1",
@@ -4976,6 +4977,7 @@ dependencies = [
  "messages",
  "model-error-response",
  "models_properties",
+ "phone_number",
  "properties",
  "rdkafka",
  "reqwest 0.13.4",
@@ -14179,6 +14181,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher 1.0.3",
+]
+
+[[package]]
+name = "phone_number"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "utoipa",
+ "workspace-hack",
 ]
 
 [[package]]
