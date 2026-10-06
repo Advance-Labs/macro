@@ -2909,6 +2909,10 @@ export type Column = {
      */
     property_definition_id: string;
     /**
+     * Schema operations reserved by a feature; ordinary edits cannot clear them.
+     */
+    protections?: Array<ColumnProtection>;
+    /**
      * Table the column appears on.
      */
     table_id: string;
@@ -3150,6 +3154,11 @@ export type ColumnKind = {
     table: string;
     type: 'relation';
 };
+
+/**
+ * A schema operation reserved by a feature using a column.
+ */
+export type ColumnProtection = 'delete' | 'change_type';
 
 /**
  * What happened to a column.
@@ -6467,7 +6476,7 @@ export type FormDetail = {
 /**
  * What went wrong with a forms request.
  */
-export type FormErrorCode = 'notFound' | 'forbidden' | 'ownerOnly' | 'signInRequired' | 'closed' | 'tableGone' | 'alreadyResponded' | 'noResponse' | 'unknownQuestion' | 'repeatedAnswer' | 'missingAnswer' | 'invalidAnswer' | 'widgetMismatch' | 'fileUploadNeedsSignIn' | 'invalidLayout' | 'invalidName' | 'invalidSharing' | 'tallyHidden' | 'conflict' | 'internal';
+export type FormErrorCode = 'tableAlreadyHasForm' | 'notFound' | 'forbidden' | 'ownerOnly' | 'signInRequired' | 'closed' | 'tableGone' | 'alreadyResponded' | 'noResponse' | 'unknownQuestion' | 'repeatedAnswer' | 'missingAnswer' | 'invalidAnswer' | 'widgetMismatch' | 'fileUploadNeedsSignIn' | 'invalidLayout' | 'invalidName' | 'invalidSharing' | 'tallyHidden' | 'conflict' | 'internal';
 
 /**
  * Why a forms request was refused or failed.

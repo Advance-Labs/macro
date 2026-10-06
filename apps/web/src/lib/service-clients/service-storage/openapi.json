@@ -21581,6 +21581,13 @@
             "format": "uuid",
             "description": "The bound property definition."
           },
+          "protections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ColumnProtection"
+            },
+            "description": "Schema operations reserved by a feature; ordinary edits cannot clear them."
+          },
           "table_id": {
             "type": "string",
             "format": "uuid",
@@ -22037,6 +22044,11 @@
           }
         ],
         "description": "A type a column can have."
+      },
+      "ColumnProtection": {
+        "type": "string",
+        "description": "A schema operation reserved by a feature using a column.",
+        "enum": ["delete", "change_type"]
       },
       "ColumnResult": {
         "oneOf": [
@@ -27454,6 +27466,7 @@
         "type": "string",
         "description": "What went wrong with a forms request.",
         "enum": [
+          "tableAlreadyHasForm",
           "notFound",
           "forbidden",
           "ownerOnly",

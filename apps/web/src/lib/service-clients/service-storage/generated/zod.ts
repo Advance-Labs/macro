@@ -4836,6 +4836,18 @@ export const getDatabaseResponse = zod
                         property_definition_id: zod
                           .uuid()
                           .describe('The bound property definition.'),
+                        protections: zod
+                          .array(
+                            zod
+                              .enum(['delete', 'change_type'])
+                              .describe(
+                                'A schema operation reserved by a feature using a column.'
+                              )
+                          )
+                          .optional()
+                          .describe(
+                            'Schema operations reserved by a feature; ordinary edits cannot clear them.'
+                          ),
                         table_id: zod
                           .uuid()
                           .describe('Table the column appears on.'),
@@ -9238,6 +9250,18 @@ export const inferDatabaseColumnTypeResponse = zod
             property_definition_id: zod
               .uuid()
               .describe('The bound property definition.'),
+            protections: zod
+              .array(
+                zod
+                  .enum(['delete', 'change_type'])
+                  .describe(
+                    'A schema operation reserved by a feature using a column.'
+                  )
+              )
+              .optional()
+              .describe(
+                'Schema operations reserved by a feature; ordinary edits cannot clear them.'
+              ),
             table_id: zod.uuid().describe('Table the column appears on.'),
           })
           .describe(
