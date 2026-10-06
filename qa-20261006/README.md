@@ -1,6 +1,6 @@
 # Final Forms verification — October 6, 2026
 
-Code: `a253893b51`, rebased on `e5eba0a078` (latest main at push). Local frontend: `app-Brj45bfH.js`, served at https://wolf-macro-google:35109/app/ against preserved local services. CI status is recorded on PR #7478.
+Code: `ef3332618e`, rebased on `f381296fde` (latest main at push). Local frontend: `app-CsdFMqdk.js`, served at https://wolf-macro-google:35109/app/ against preserved local services. CI status is recorded on PR #7478.
 
 ## Review and regression tests
 
@@ -9,6 +9,8 @@ Five final reviews passed with no remaining issues: code quality, simplicity, co
 The changes preserve outline focus during saves and remote edits; keep Build and Share pending writes alive across tabs so Preview waits for publication; insert new questions before a final Booking section; retain drafts during transient background refresh failures while dropping revoked or missing detail; support submission from valid empty/booking-only forms; and retry unreadable existing receipts without another submission. Stopped-submission counts now explain their signed-in ledger scope, Preview completion copy is shorter, and single-vote poll labels use the singular.
 
 The Forms Rust boundary was reviewed: authorization and business policy remain in the domain, inbound adapters consume typed outcomes, and cross-crate database access goes through domain ports/models.
+
+The first full review and browser round used `a253893b51` / `app-Brj45bfH.js`. Main then advanced with agent-session changes. The second rebase changed no Forms source; all local checks and 455 web /222 Rust tests passed again. An additional browser smoke on `ef3332618e` / `app-CsdFMqdk.js` verified Preview, pointer insertion/cancellation, persistence and database navigation with no page errors. The document-storage OpenAPI test binary also compiled successfully locally while investigating an earlier diagnostic-free CI compiler exit.
 
 ## Independent browser coverage
 

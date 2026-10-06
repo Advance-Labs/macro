@@ -64,3 +64,17 @@ Screenshots added:
 - final-race-fixture.png
 
 Limitations unchanged: no real calendar invitation or real submission was created. The booking link already existed; this tested builder ordering, not external calendar delivery. One first-run harness response-inspection callback assumed the wrong JSON layout nesting and crashed its own Node driver after releasing metadata; the entire metadata pause/release scenario was repeated successfully in a fresh driver. This was a test-harness error, not an application error.
+
+# Latest-main integration smoke — ef3332618e
+
+Verified live bundle /app/app-CsdFMqdk.js after final clean rebase onto main f381296fde. Root confirmed Forms sources are byte-identical to the previously audited a253893b51, so this was an integration smoke rather than another exhaustive pass.
+
+- Loaded existing own fixture 01a10fd4-dbfb-730a-a8d0-8b72da518322.
+- Preview opened successfully at respond?preview=true with preview banner.
+- Pointer-dragged Paragraph from palette into first Questions section: count 2 -> 3, renamed to 'Final integration drag question'.
+- Started another palette drag (Link), saw allowed insertion indicator, pressed Escape and released pointer: count stayed 3.
+- Opened linked database, used Forms button and returned to the form; new question persisted.
+- Captured no builder or preview pageerrors.
+- Screenshot: final-integration-ef3332618e.png.
+
+No source edits, backend changes, real submissions or invitations. Own browser/helper cleaned up afterward.
