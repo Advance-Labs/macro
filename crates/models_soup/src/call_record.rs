@@ -1,4 +1,5 @@
 use call::domain::models::{CallRecord, CallRecordParticipant};
+use call::domain::phone::PhoneLeg;
 use chrono::{DateTime, Utc};
 use item_filters::CallStatus;
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,9 @@ pub struct SoupCallRecord<T = ()> {
     pub participants: Vec<SoupCallRecordParticipant>,
     /// Non-account guests in the call.
     pub guests: Vec<SoupCallRecordGuest>,
+    /// The party on the phone network, for phone calls.
+    #[serde(default)]
+    pub phone: Option<PhoneLeg>,
     /// Extra fields passed from above
     #[serde(flatten)]
     pub extra: T,
@@ -123,6 +127,7 @@ impl SoupCallRecord<()> {
                     left_at: g.left_at,
                 })
                 .collect(),
+            phone: record.phone,
             extra: (),
         }
     }

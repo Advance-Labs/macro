@@ -38,7 +38,7 @@ const PREMIUM_RATE_PREFIXES: [&str; 2] = ["1900", "1976"];
 
 /// Which side placed a phone call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PhoneCallDirection {
     /// A Macro user dialed out.
@@ -80,7 +80,7 @@ impl FromStr for PhoneCallDirection {
 /// Where a phone leg is in its lifecycle. The first three states are live;
 /// the rest are outcomes and never change once reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PhoneCallStatus {
     /// An outbound call is being placed.
@@ -223,8 +223,8 @@ impl DialFailure {
 
 /// The CRM contact on the other end of a phone call, as matched when the
 /// call started.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PhoneContact {
     /// The CRM contact id.
@@ -234,8 +234,8 @@ pub struct PhoneContact {
 }
 
 /// The phone leg of a call: the party on the phone network.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PhoneLeg {
     /// Which side placed the call.
@@ -342,7 +342,66 @@ pub struct PhoneDialingConfig {
     pub allowed_country_codes: Vec<String>,
 }
 
+/// A dialing setting that could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum PhoneDialingConfigError {
+    /// The outbound trunk id was blank.
+    #[error("the outbound SIP trunk id is empty")]
+    EmptyTrunkId,
+    /// The default caller id was not a phone number.
+    #[error("the default caller id is not an E.164 number: {0}")]
+    InvalidCallerId(PhoneNumberError),
+    /// An allowed country code was not a 1–3 digit calling code.
+    #[error("{0:?} is not a country calling code (1–3 digits, e.g. `1` or `44`)")]
+    InvalidCountryCode(String),
+}
+
 impl PhoneDialingConfig {
+    /// Countries that may be dialed when a deployment doesn't say: North
+    /// America.
+    pub const DEFAULT_ALLOWED_COUNTRY_CODES: &'static str = "1";
+
+    /// Read dialing settings as configured: a trunk id, an optional E.164
+    /// default caller id, and comma-separated country calling codes
+    /// ([`Self::DEFAULT_ALLOWED_COUNTRY_CODES`] when unset).
+    pub fn from_settings(
+        outbound_trunk_id: &str,
+        default_caller_id: Option<&str>,
+        allowed_country_codes: Option<&str>,
+    ) -> Result<Self, PhoneDialingConfigError> {
+        let outbound_trunk_id = outbound_trunk_id.trim();
+        if outbound_trunk_id.is_empty() {
+            return Err(PhoneDialingConfigError::EmptyTrunkId);
+        }
+        let default_caller_id = default_caller_id
+            .map(str::trim)
+            .filter(|caller_id| !caller_id.is_empty())
+            .map(PhoneNumber::from_e164)
+            .transpose()
+            .map_err(PhoneDialingConfigError::InvalidCallerId)?;
+        let allowed_country_codes = allowed_country_codes
+            .unwrap_or(Self::DEFAULT_ALLOWED_COUNTRY_CODES)
+            .split(',')
+            .map(|code| code.trim().trim_start_matches('+'))
+            .filter(|code| !code.is_empty())
+            .map(|code| {
+                let valid = (1..=3).contains(&code.len())
+                    && code.bytes().all(|byte| byte.is_ascii_digit())
+                    && !code.starts_with('0');
+                if valid {
+                    Ok(code.to_string())
+                } else {
+                    Err(PhoneDialingConfigError::InvalidCountryCode(code.to_string()))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            outbound_trunk_id: outbound_trunk_id.to_string(),
+            default_caller_id,
+            allowed_country_codes,
+        })
+    }
+
     /// Whether `number` may be dialed from this deployment. Premium-rate
     /// numbers are never dialed, whatever the allowed countries.
     pub fn permits(&self, number: &PhoneNumber) -> Result<(), CallError> {

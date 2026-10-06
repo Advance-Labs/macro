@@ -260,6 +260,7 @@ fn call_record(
         participants: Vec::new(),
         guests: Vec::new(),
         transcript: Vec::new(),
+        phone: None,
     }
 }
 

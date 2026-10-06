@@ -809,11 +809,31 @@ async fn run() -> anyhow::Result<()> {
     };
     let call_service_builder = call_service_builder.with_voip_push_sender(voip_sender);
 
-    let call_service = Arc::new(
-        call_service_builder
-            .with_voice_repo(PgVoiceRepo::new(db.clone()))
-            .with_event_broker(macro_event_broker.clone()),
-    );
+    // Phone calls ring for every number assigned to a user; dialing out also
+    // needs an outbound SIP trunk.
+    let mut call_service_builder = call_service_builder
+        .with_voice_repo(PgVoiceRepo::new(db.clone()))
+        .with_event_broker(macro_event_broker.clone())
+        .with_phone(
+            PgCallRepo::new(db.clone()),
+            crm::inbound::phone_contacts::CrmPhoneContacts::new(
+                crm_service.clone(),
+                (*entity_access_service).clone(),
+            ),
+        );
+    match config.phone_dialing()? {
+        Some(phone_dialing) => {
+            tracing::info!(
+                allowed_country_codes = ?phone_dialing.allowed_country_codes,
+                "outbound phone dialing enabled"
+            );
+            call_service_builder = call_service_builder.with_phone_dialing(phone_dialing);
+        }
+        None => {
+            tracing::info!("outbound phone dialing disabled: LIVEKIT_SIP_OUTBOUND_TRUNK_ID not set")
+        }
+    }
+    let call_service = Arc::new(call_service_builder);
 
     consumer_tracker.spawn({
         let service = call_service.clone();

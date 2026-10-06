@@ -468,6 +468,8 @@ pub(crate) type DssCallService = CallServiceImpl<
     DssVoipPushSender,
     call::outbound::pg_voice_repo::PgVoiceRepo,
     DssEventBroker,
+    PgCallRepo,
+    crm::inbound::phone_contacts::CrmPhoneContacts<DssCrmService, EntityAccessService>,
 >;
 
 /// Type alias for the call router state.

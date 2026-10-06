@@ -5301,7 +5301,7 @@ type GraphqlSoupCall implements GraphqlSoupEntity {
 	"""
 	cacheProjection: SoupCacheProjection
 	"""
-	User-visible call name.
+	User-visible call name. Phone calls fall back to the other party.
 	"""
 	displayName: String
 	"""
@@ -5373,6 +5373,10 @@ type GraphqlSoupCall implements GraphqlSoupEntity {
 	"""
 	guests: [GraphqlSoupCallGuest!]!
 	"""
+	The party on the phone network, for phone calls.
+	"""
+	phone: GraphqlSoupCallPhone
+	"""
 	Properties assigned to this entity that the authenticated user may view.
 	"""
 	properties: [GraphqlProperty!]!
@@ -5438,6 +5442,57 @@ type GraphqlSoupCallParticipant {
 	The left timestamp in RFC 3339 format.
 	"""
 	leftAt: String
+}
+
+"""
+GraphQL representation of the phone leg of a phone call: the party on
+the phone network.
+"""
+type GraphqlSoupCallPhone {
+	"""
+	Which side placed the call: `OUTBOUND` or `INBOUND`.
+	"""
+	direction: String!
+	"""
+	Where the leg is or how it ended: `DIALING`, `RINGING`, `ACTIVE`,
+	`COMPLETED`, `MISSED`, `NO_ANSWER`, `BUSY`, `DECLINED`, `FAILED`, or
+	`CANCELLED`.
+	"""
+	status: String!
+	"""
+	The other party's number, in E.164.
+	"""
+	remoteNumber: String!
+	"""
+	The other party as people refer to them: the CRM contact's name when
+	known, otherwise their formatted number.
+	"""
+	remotePartyLabel: String!
+	"""
+	The Macro number used, in E.164, when known.
+	"""
+	localNumber: String
+	"""
+	RTC identity of the phone participant; transcript segments spoken on
+	the phone use it as their speaker id.
+	"""
+	participantIdentity: String!
+	"""
+	The CRM contact matched to the other party, if any.
+	"""
+	contactId: ID
+	"""
+	The matched contact's name, when the CRM has one.
+	"""
+	contactName: String
+	"""
+	The answered timestamp in RFC 3339 format.
+	"""
+	answeredAt: String
+	"""
+	The phone leg's end timestamp in RFC 3339 format.
+	"""
+	endedAt: String
 }
 
 """

@@ -95,6 +95,33 @@ fn dialing_policy_allows_configured_countries_only() {
 }
 
 #[test]
+fn dialing_settings_are_read_from_configuration() {
+    let config = PhoneDialingConfig::from_settings(" ST_out ", Some("+15552345678"), None).unwrap();
+    assert_eq!(config.outbound_trunk_id, "ST_out");
+    assert_eq!(config.default_caller_id, Some(number("+1 555 234 5678")));
+    assert_eq!(config.allowed_country_codes, ["1"]);
+
+    let config = PhoneDialingConfig::from_settings("ST_out", Some(""), Some("1, +44,,61")).unwrap();
+    assert_eq!(config.default_caller_id, None);
+    assert_eq!(config.allowed_country_codes, ["1", "44", "61"]);
+
+    assert!(matches!(
+        PhoneDialingConfig::from_settings("  ", None, None),
+        Err(PhoneDialingConfigError::EmptyTrunkId)
+    ));
+    assert!(matches!(
+        PhoneDialingConfig::from_settings("ST_out", Some("555-234-5678"), None),
+        Err(PhoneDialingConfigError::InvalidCallerId(_))
+    ));
+    for codes in ["1,uk", "1234", "044"] {
+        assert!(matches!(
+            PhoneDialingConfig::from_settings("ST_out", None, Some(codes)),
+            Err(PhoneDialingConfigError::InvalidCountryCode(_))
+        ));
+    }
+}
+
+#[test]
 fn premium_rate_numbers_are_never_dialed() {
     let config = dialing_config(&["1"]);
     assert!(config.permits(&number("+1 900 234 5678")).is_err());

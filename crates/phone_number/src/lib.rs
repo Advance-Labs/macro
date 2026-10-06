@@ -75,6 +75,7 @@ pub enum PhoneNumberError {
 /// [`DialablePhoneNumber::parse`] for numbers typed by people.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[cfg_attr(feature = "schema", schema(example = "+15552345678"))]
 #[serde(try_from = "String", into = "String")]
 pub struct PhoneNumber(String);
 

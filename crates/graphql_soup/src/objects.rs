@@ -2120,6 +2120,61 @@ impl GraphqlSoupCallGuest {
     }
 }
 
+/// GraphQL representation of the phone leg of a phone call: the party on
+/// the phone network.
+#[derive(SimpleObject)]
+pub struct GraphqlSoupCallPhone {
+    /// Which side placed the call: `OUTBOUND` or `INBOUND`.
+    direction: String,
+    /// Where the leg is or how it ended: `DIALING`, `RINGING`, `ACTIVE`,
+    /// `COMPLETED`, `MISSED`, `NO_ANSWER`, `BUSY`, `DECLINED`, `FAILED`, or
+    /// `CANCELLED`.
+    status: String,
+    /// The other party's number, in E.164.
+    remote_number: String,
+    /// The other party as people refer to them: the CRM contact's name when
+    /// known, otherwise their formatted number.
+    remote_party_label: String,
+    /// The Macro number used, in E.164, when known.
+    local_number: Option<String>,
+    /// RTC identity of the phone participant; transcript segments spoken on
+    /// the phone use it as their speaker id.
+    participant_identity: String,
+    /// The CRM contact matched to the other party, if any.
+    contact_id: Option<ID>,
+    /// The matched contact's name, when the CRM has one.
+    contact_name: Option<String>,
+    /// The answered timestamp in RFC 3339 format.
+    answered_at: Option<String>,
+    /// The phone leg's end timestamp in RFC 3339 format.
+    ended_at: Option<String>,
+}
+
+impl GraphqlSoupCallPhone {
+    /// Construct the GraphQL phone leg from the Soup model.
+    pub fn new(value: &SoupCallRecord<()>) -> Option<Self> {
+        let phone = value.phone.as_ref()?;
+        Some(Self {
+            direction: phone.direction.as_str().to_ascii_uppercase(),
+            status: phone.status.as_str().to_ascii_uppercase(),
+            remote_number: phone.remote_number.to_string(),
+            remote_party_label: phone.remote_party_label(),
+            local_number: phone.local_number.as_ref().map(ToString::to_string),
+            participant_identity: phone.participant_identity.clone(),
+            contact_id: phone
+                .contact
+                .as_ref()
+                .map(|contact| ID(contact.contact_id.to_string())),
+            contact_name: phone
+                .contact
+                .as_ref()
+                .and_then(|contact| contact.name.clone()),
+            answered_at: phone.answered_at.map(|ts| ts.to_rfc3339()),
+            ended_at: phone.ended_at.map(|ts| ts.to_rfc3339()),
+        })
+    }
+}
+
 /// GraphQL call entity.
 pub struct GraphqlSoupCall<E: SoupEntityEdges>(SoupCallRecord<()>, E, Option<f64>);
 
@@ -2144,12 +2199,13 @@ where
         None
     }
 
-    /// User-visible call name.
+    /// User-visible call name. Phone calls fall back to the other party.
     async fn display_name(&self) -> Option<String> {
         self.0
             .custom_name
             .clone()
             .or_else(|| self.0.channel_name.clone())
+            .or_else(|| self.0.phone.as_ref().map(|phone| phone.remote_party_label()))
     }
 
     /// Common call metadata.
@@ -2265,6 +2321,11 @@ where
             .iter()
             .map(GraphqlSoupCallGuest::new)
             .collect()
+    }
+
+    /// The party on the phone network, for phone calls.
+    async fn phone(&self) -> Option<GraphqlSoupCallPhone> {
+        GraphqlSoupCallPhone::new(&self.0)
     }
 
     #[graphql(flatten)]

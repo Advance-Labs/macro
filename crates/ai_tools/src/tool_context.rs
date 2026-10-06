@@ -762,6 +762,13 @@ impl CallRtcClient for NoOpCallRtcClient {
     async fn dispatch_transcription_agent(&self, _room_name: &str) -> anyhow::Result<()> {
         Ok(())
     }
+
+    async fn dial_sip_participant(
+        &self,
+        _request: call::domain::phone::SipDialRequest,
+    ) -> Result<call::domain::phone::SipDialAnswered, call::domain::phone::DialFailure> {
+        Err(call::domain::phone::DialFailure::Failed)
+    }
 }
 
 /// No-op notification ingress used by the call tool context — reads never

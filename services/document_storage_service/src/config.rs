@@ -81,6 +81,16 @@ maybe_env_vars! {
     /// Optional Meta test event code — routes events to Meta's test events
     /// view instead of production tracking.
     pub struct MetaTestEventCode;
+    /// LiveKit outbound SIP trunk (`ST_…`) that phone calls are placed
+    /// through. When unset, outbound dialing is off; inbound calls to
+    /// assigned numbers still ring.
+    pub struct LivekitSipOutboundTrunkId;
+    /// E.164 caller id for users without a number of their own. When unset,
+    /// the outbound trunk chooses one.
+    pub struct PhoneDefaultCallerId;
+    /// Comma-separated country calling codes users may dial, e.g. `1,44`.
+    /// Defaults to `1` (North America).
+    pub struct PhoneAllowedCountryCodes;
 }
 
 /// The configuration parameters for the application.
@@ -207,6 +217,9 @@ pub struct Config {
     pub call_recording_s3_access_key: CallRecordingS3AccessKey,
     pub call_recording_s3_secret: CallRecordingS3Secret,
     pub meta_test_event_code: MetaTestEventCode,
+    pub livekit_sip_outbound_trunk_id: LivekitSipOutboundTrunkId,
+    pub phone_default_caller_id: PhoneDefaultCallerId,
+    pub phone_allowed_country_codes: PhoneAllowedCountryCodes,
 }
 
 impl Config {
@@ -230,6 +243,21 @@ impl Config {
             macro_config::ConfigLoader::load::<Config>().context("failed to load config")?;
         config.enable_ai_usage_enforcement = enforcement;
         Ok(config)
+    }
+
+    /// Outbound phone dialing settings, or `None` when no outbound trunk is
+    /// configured. Settings that are present but unreadable fail startup.
+    pub fn phone_dialing(&self) -> anyhow::Result<Option<call::domain::phone::PhoneDialingConfig>> {
+        let Some(trunk_id) = self.livekit_sip_outbound_trunk_id.value() else {
+            return Ok(None);
+        };
+        call::domain::phone::PhoneDialingConfig::from_settings(
+            trunk_id,
+            self.phone_default_caller_id.value(),
+            self.phone_allowed_country_codes.value(),
+        )
+        .map(Some)
+        .context("invalid phone dialing configuration")
     }
 
     pub fn non_user_owners(&self) -> anyhow::Result<NonUserOwners> {

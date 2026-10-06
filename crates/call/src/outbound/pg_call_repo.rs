@@ -1625,6 +1625,11 @@ impl CallRepository for PgCallRepo {
                               AND ccp.user_id = $1
                               AND ccp.left_at IS NULL
                         ) THEN 'MISSED'::text
+                        -- An inbound phone call its owner hasn't picked up.
+                        WHEN c.created_by = $1 AND EXISTS (
+                            SELECT 1 FROM call_phone_legs pl
+                            WHERE pl.call_id = c.id AND pl.direction = 'inbound'
+                        ) THEN 'MISSED'::text
                         ELSE 'UNATTENDED'::text
                     END AS status
                 FROM calls c
@@ -1694,6 +1699,11 @@ impl CallRepository for PgCallRepo {
                             WHERE ccp.channel_id = cr.channel_id
                               AND ccp.user_id = $1
                               AND ccp.left_at IS NULL
+                        ) THEN 'MISSED'::text
+                        -- An inbound phone call its owner never picked up.
+                        WHEN cr.created_by = $1 AND EXISTS (
+                            SELECT 1 FROM call_record_phone_legs pl
+                            WHERE pl.call_record_id = cr.id AND pl.direction = 'inbound'
                         ) THEN 'MISSED'::text
                         ELSE 'UNATTENDED'::text
                     END AS status

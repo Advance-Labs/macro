@@ -16,8 +16,8 @@ inbound = [
   "dep:utoipa",
   "entity_access/inbound",
   "item_filters/schema",
-  "phone_number/schema",
   "ports",
+  "schema",
 ]
 outbound = [
   "dep:agent",
@@ -37,6 +37,7 @@ outbound = [
   "ports",
 ]
 ports = ["dep:entity_access", "dep:tokio"]
+schema = ["dep:utoipa", "phone_number/schema"]
 
 [dependencies]
 activity = { path = "../activity", default-features = false }

@@ -84,6 +84,11 @@ pub async fn get_accessible_call_ids(
                           AND ccp.user_id = $1
                           AND ccp.left_at IS NULL
                     ) THEN 'MISSED'
+                    -- An inbound phone call its owner never picked up.
+                    WHEN cr.created_by = $1 AND EXISTS (
+                        SELECT 1 FROM call_record_phone_legs pl
+                        WHERE pl.call_record_id = cr.id AND pl.direction = 'inbound'
+                    ) THEN 'MISSED'
                     ELSE 'UNATTENDED'
                 END AS status
             FROM call_records cr
@@ -190,9 +195,12 @@ pub async fn get_call_record_search_payload(
             cr.channel_id AS "channel_id?",
             cr.created_by AS "created_by!",
             cr.custom_name AS "custom_name?",
-            cc.name AS "channel_name?"
+            -- Phone calls have no channel; they are found by the party on
+            -- the other end instead.
+            COALESCE(cc.name, pl.contact_name, pl.remote_number) AS "channel_name?"
         FROM call_records cr
         LEFT JOIN comms_channels cc ON cc.id = cr.channel_id
+        LEFT JOIN call_record_phone_legs pl ON pl.call_record_id = cr.id
         WHERE cr.id = $1
         "#,
         call_id,
@@ -281,6 +289,11 @@ pub async fn get_call_records_metadata(
                     WHERE ccp.channel_id = cr.channel_id
                       AND ccp.user_id = $2
                       AND ccp.left_at IS NULL
+                ) THEN 'MISSED'
+                -- An inbound phone call its owner never picked up.
+                WHEN cr.created_by = $2 AND EXISTS (
+                    SELECT 1 FROM call_record_phone_legs pl
+                    WHERE pl.call_record_id = cr.id AND pl.direction = 'inbound'
                 ) THEN 'MISSED'
                 ELSE 'UNATTENDED'
             END AS "status!"
