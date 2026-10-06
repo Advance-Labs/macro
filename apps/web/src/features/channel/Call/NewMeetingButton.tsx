@@ -1,5 +1,10 @@
 import { ManageMeetingsDialog } from '@app/features/meetings/manage-meetings-dialog';
+import {
+  openPhoneDialer,
+  usePhoneDialingAvailable,
+} from '@app/features/phone/phone-actions';
 import CaretDownIcon from '@phosphor/caret-down.svg';
+import PhoneIcon from '@phosphor/phone.svg';
 import UsersIcon from '@phosphor/users.svg';
 import VideoCameraIcon from '@phosphor/video-camera.svg';
 import { Button, Dropdown } from '@ui';
@@ -8,9 +13,11 @@ import { useQuickCallsFlag } from '../../meetings/use-quick-calls-flag';
 
 export function NewMeetingButton(props: { onChannelCall: () => void }) {
   const flag = useQuickCallsFlag();
+  const quickCalls = () => !flag().loading && flag().enabled;
+  const phoneDialing = usePhoneDialingAvailable();
   return (
     <Show
-      when={!flag().loading && flag().enabled}
+      when={quickCalls() || phoneDialing()}
       fallback={
         <Button variant="accent" size="sm" onClick={props.onChannelCall}>
           <VideoCameraIcon class="size-3.5" />
@@ -18,12 +25,20 @@ export function NewMeetingButton(props: { onChannelCall: () => void }) {
         </Button>
       }
     >
-      <NewMeetingMenu onChannelCall={props.onChannelCall} />
+      <NewMeetingMenu
+        onChannelCall={props.onChannelCall}
+        quickCalls={quickCalls()}
+        phoneDialing={phoneDialing()}
+      />
     </Show>
   );
 }
 
-function NewMeetingMenu(props: { onChannelCall: () => void }) {
+function NewMeetingMenu(props: {
+  onChannelCall: () => void;
+  quickCalls: boolean;
+  phoneDialing: boolean;
+}) {
   const [managing, setManaging] = createSignal(false);
   return (
     <>
@@ -43,10 +58,18 @@ function NewMeetingMenu(props: { onChannelCall: () => void }) {
             <UsersIcon class="size-4 shrink-0" />
             <span>Call a channel or contact</span>
           </Dropdown.Item>
-          <Dropdown.Item closeOnSelect onSelect={() => setManaging(true)}>
-            <VideoCameraIcon class="size-4 shrink-0" />
-            <span>Manage call links</span>
-          </Dropdown.Item>
+          <Show when={props.phoneDialing}>
+            <Dropdown.Item closeOnSelect onSelect={() => openPhoneDialer()}>
+              <PhoneIcon class="size-4 shrink-0" />
+              <span>Call a phone number</span>
+            </Dropdown.Item>
+          </Show>
+          <Show when={props.quickCalls}>
+            <Dropdown.Item closeOnSelect onSelect={() => setManaging(true)}>
+              <VideoCameraIcon class="size-4 shrink-0" />
+              <span>Manage call links</span>
+            </Dropdown.Item>
+          </Show>
         </Dropdown.Content>
       </Dropdown>
       <Show when={managing()}>

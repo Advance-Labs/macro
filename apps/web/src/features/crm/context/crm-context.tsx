@@ -12,11 +12,13 @@ import type {
 import type { CrmRecordScope } from '../core/record';
 import type {
   CompanySource,
+  ContactPhoneNumbersSource,
   ContactSource,
   CrmCapabilities,
   CrmEmailScope,
   CrmEmailSignal,
   CrmMutation,
+  CrmPhoneCalling,
   CrmStageInput,
   CrmStagesResult,
   DealStages,
@@ -100,6 +102,15 @@ export type CrmContext = {
   isTeamAdmin: () => Accessor<boolean>;
   createCompanySource(id: Accessor<string>): CompanySource;
   createContactSource(id: Accessor<string>): ContactSource;
+  createContactPhoneNumbersSource(
+    id: Accessor<string>,
+    enabled: Accessor<boolean>
+  ): ContactPhoneNumbersSource;
+  setContactPhoneNumbers(): CrmMutation<
+    { contactId: string; phoneNumbers: string[] },
+    string[]
+  >;
+  createPhoneCalling(): CrmPhoneCalling;
   createTeamSource(): TeamSource;
   createTeamConfigSource(): TeamConfigSource;
   createCapabilities(): CrmCapabilities;

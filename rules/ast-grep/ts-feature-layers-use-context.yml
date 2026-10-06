@@ -109,6 +109,11 @@ files:
   - apps/web/src/features/auth/components/**
   - apps/web/src/features/auth/views/**
   - apps/web/src/features/auth/queries/**
+  - apps/web/src/features/phone/queries/**
+  - apps/web/src/features/phone/primitives/**
+  - apps/web/src/features/phone/components/**
+  - apps/web/src/features/phone/views/**
+  - apps/web/src/features/phone/context/**
 rule:
   kind: string
   regex: ^['"](@service-storage/graphql-soup|@core/context/user|@core/user|@property/hooks|@property/editor/hooks|@core/component/LexicalMarkdown/component/core/BlockLink|@app/lib/analytics/posthog)

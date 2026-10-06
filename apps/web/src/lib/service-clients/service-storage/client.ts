@@ -54,6 +54,7 @@ import {
   type CloudStorageItemType,
   CloudStorageItemType as CloudStorageItemTypeMap,
 } from './generated/schemas/cloudStorageItemType';
+import type { ContactPhoneNumbersResponse } from './generated/schemas/contactPhoneNumbersResponse';
 import type { CreateAgentRequest } from './generated/schemas/createAgentRequest';
 import type { CreateChannelLabelRequest } from './generated/schemas/createChannelLabelRequest';
 import type { CreateChannelRequest } from './generated/schemas/createChannelRequest';
@@ -103,6 +104,7 @@ import type { GetBatchChannelPreviewResponse } from './generated/schemas/getBatc
 import type { GetBatchProjectPreviewResponse } from './generated/schemas/getBatchProjectPreviewResponse';
 import type { GetContactByEmailParams } from './generated/schemas/getContactByEmailParams';
 import type { GetContactByEmailResponse } from './generated/schemas/getContactByEmailResponse';
+import type { GetContactByPhoneResponse } from './generated/schemas/getContactByPhoneResponse';
 import type { GetDocumentPermissionsResponseDataV2 } from './generated/schemas/getDocumentPermissionsResponseDataV2';
 import type { GetDocumentProcessingResultResponse } from './generated/schemas/getDocumentProcessingResultResponse';
 import type { GetDocumentResponseData } from './generated/schemas/getDocumentResponseData';
@@ -159,6 +161,7 @@ import type { SetChannelLabelRequest } from './generated/schemas/setChannelLabel
 import type { SetChannelPictureRequest } from './generated/schemas/setChannelPictureRequest';
 import type { SetCompanyNameRequest } from './generated/schemas/setCompanyNameRequest';
 import type { SetContactNameRequest } from './generated/schemas/setContactNameRequest';
+import type { SetContactPhoneNumbersRequest } from './generated/schemas/setContactPhoneNumbersRequest';
 import type { SharePermissionV2 } from './generated/schemas/sharePermissionV2';
 import type { SlackCompleteRequest } from './generated/schemas/slackCompleteRequest';
 import type { SlackCreateRequest } from './generated/schemas/slackCreateRequest';
@@ -2739,6 +2742,43 @@ export const storageServiceClient = {
       method: 'PUT',
       body: JSON.stringify({ hidden }),
     });
+  },
+  /** A contact's phone numbers, in E.164, in the order they were entered. */
+  async getContactPhoneNumbers({
+    contactId,
+    signal,
+  }: {
+    contactId: string;
+    signal?: AbortSignal;
+  }) {
+    return await dssFetch<ContactPhoneNumbersResponse>(
+      `/crm/contacts/${contactId}/phone-numbers`,
+      { method: 'GET', signal }
+    );
+  },
+  /** Replace a contact's phone numbers; the server parses typed numbers. */
+  async setContactPhoneNumbers({
+    contactId,
+    ...body
+  }: { contactId: string } & SetContactPhoneNumbersRequest) {
+    return await dssFetch<ContactPhoneNumbersResponse>(
+      `/crm/contacts/${contactId}/phone-numbers`,
+      { method: 'PUT', body: JSON.stringify(body) }
+    );
+  },
+  /** The contact a phone number belongs to in the caller's team CRM. */
+  async getContactByPhone({
+    phone,
+    signal,
+  }: {
+    phone: string;
+    signal?: AbortSignal;
+  }) {
+    const query = new URLSearchParams({ phone });
+    return await dssFetch<GetContactByPhoneResponse>(
+      `/crm/contacts/by-phone?${query.toString()}`,
+      { method: 'GET', signal }
+    );
   },
   async setCompanyName({
     companyId,

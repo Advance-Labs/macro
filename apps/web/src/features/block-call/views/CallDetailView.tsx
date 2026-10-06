@@ -32,11 +32,12 @@ import { CallRecordingBody } from '../component/CallRecording/CallRecordingBody'
 import { CallSidePanelSections } from '../component/sidepanel/CallSidePanelSections';
 import { useCallAgain } from '../component/use-call-again';
 import type { CallTranscriptTarget } from '../constants';
+import { callRecordName } from '../utils';
 
 export type CallDetailData = { record: CallRecord; name: string };
 
 function callDetailName(record: CallRecord): string {
-  return record.customName ?? record.channelName ?? 'Call Recording';
+  return callRecordName(record) ?? 'Call Recording';
 }
 
 /** Share the call query without owning either host's header. */
@@ -60,7 +61,8 @@ export function CallDetailActions(props: {
   const panel = useSplitPanelOrThrow();
   const { canCallAgain, callAgain } = useCallAgain(
     () => props.callId,
-    () => props.record.channelId
+    () => props.record.channelId,
+    () => props.record.phone?.remoteNumber
   );
   const openShare = useShareModal(() => ({
     id: props.callId,

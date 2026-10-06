@@ -15,7 +15,7 @@ import {
   Suspense,
 } from 'solid-js';
 import type { CallTranscriptTarget } from '../../constants';
-import { formatCallDuration } from '../../utils';
+import { callRecordName, formatCallDuration } from '../../utils';
 import { CallTranscript } from '../CallTranscript';
 import {
   getActiveTranscriptSequenceNum,
@@ -130,7 +130,7 @@ export function CallRecordingBody(props: {
   );
 
   const callTitle = createMemo(
-    () => record().customName ?? record().channelName ?? 'Call Recording'
+    () => callRecordName(record()) ?? 'Call Recording'
   );
 
   const formattedDate = createMemo(() => {

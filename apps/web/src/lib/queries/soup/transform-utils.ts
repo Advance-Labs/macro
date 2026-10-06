@@ -1,3 +1,4 @@
+import { remotePartyLabel } from '@app/features/phone/core/phone-call';
 import {
   blockNameToDefaultFile,
   itemToSafeName,
@@ -811,6 +812,7 @@ export const mapApiSoupItemToEntity = (
     })
     .with({ tag: 'call' }, (item) => {
       const status = item.data.status;
+      const phone = item.data.phone ?? undefined;
 
       return {
         type: 'call',
@@ -818,6 +820,17 @@ export const mapApiSoupItemToEntity = (
         name:
           item.data.customName ??
           item.data.channelName ??
+          (phone
+            ? remotePartyLabel({
+                contact: phone.contact
+                  ? {
+                      contactId: phone.contact.contactId,
+                      name: phone.contact.name ?? null,
+                    }
+                  : null,
+                remoteNumber: phone.remoteNumber,
+              })
+            : undefined) ??
           blockNameToDefaultFile('call'),
         channelId: item.data.channelId,
         channelName: item.data.channelName ?? undefined,
@@ -833,6 +846,13 @@ export const mapApiSoupItemToEntity = (
         guests: item.data.guests,
         summary: item.data.summary ?? undefined,
         properties: item.data.properties,
+        phone: phone && {
+          direction: phone.direction,
+          status: phone.status,
+          remoteNumber: phone.remoteNumber,
+          contactId: phone.contact?.contactId,
+          contactName: phone.contact?.name ?? undefined,
+        },
       } satisfies CallEntity;
     })
     .with({ tag: 'channelThread' }, (item) => {

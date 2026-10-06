@@ -1,3 +1,7 @@
+import type {
+  PhoneCallDirection,
+  PhoneCallStatus,
+} from '@app/features/phone/core/phone-call';
 import type { DateValue } from '@core/util/date';
 import type { ApiLabel } from '@service-email/generated/schemas';
 import type {
@@ -316,6 +320,16 @@ export type CallGuest = {
   displayName: string;
 };
 
+/** The party on the phone network, for phone calls. */
+export type CallPhone = {
+  direction: PhoneCallDirection;
+  status: PhoneCallStatus;
+  /** E.164. */
+  remoteNumber: string;
+  contactId?: string;
+  contactName?: string;
+};
+
 export type CallEntity = EntityBase & {
   type: 'call';
   channelId?: string | null;
@@ -330,6 +344,8 @@ export type CallEntity = EntityBase & {
   guests?: CallGuest[];
   summary?: string;
   properties?: SoupProperty[];
+  /** Set for phone calls. */
+  phone?: CallPhone;
 };
 
 /**

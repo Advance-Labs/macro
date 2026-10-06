@@ -5,6 +5,7 @@ import { GlobalShareInboxConflictDialog } from '@app/features/inbox/ShareInboxCo
 import { IncomingMeetingInvitationsProvider } from '@app/features/meetings/incoming-meeting-invitations';
 import { MeetingSessionProvider } from '@app/features/meetings/meeting-session-provider';
 import { usePendingNotificationNavigationEffect } from '@app/features/notifications/PendingNotificationNavigationEffect';
+import { PhoneCallsProvider } from '@app/features/phone/phone';
 import { SearchProvider } from '@app/features/soup/search/context';
 import { InteractiveOnboardingModal } from '@app/features/tutorial/InteractiveOnboardingModal';
 import {
@@ -366,13 +367,15 @@ function AppRouteLayout(props: RouteSectionProps) {
       }
     >
       <IncomingMeetingInvitationsProvider>
-        <Show
-          when={!isMeetingPath(location.pathname)}
-          fallback={props.children}
-        >
-          <Layout {...props} />
-          <InitialInteractiveOnboardingModal />
-        </Show>
+        <PhoneCallsProvider>
+          <Show
+            when={!isMeetingPath(location.pathname)}
+            fallback={props.children}
+          >
+            <Layout {...props} />
+            <InitialInteractiveOnboardingModal />
+          </Show>
+        </PhoneCallsProvider>
       </IncomingMeetingInvitationsProvider>
     </Show>
   );

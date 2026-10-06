@@ -1,6 +1,6 @@
 import { SERVER_HOSTS } from '@core/constant/servers';
 import { fetchWithToken } from '@core/util/fetchWithToken';
-import { safeFetch } from '@core/util/safeFetch';
+import { safeFetch, statusError } from '@core/util/safeFetch';
 
 import type { ActiveCallsResponse } from '@service-storage/generated/schemas/activeCallsResponse';
 import type { ActiveMeeting as ApiActiveMeeting } from '@service-storage/generated/schemas/activeMeeting';
@@ -8,15 +8,26 @@ import type { CallActiveResponse } from '@service-storage/generated/schemas/call
 import type { CallRecord } from '@service-storage/generated/schemas/callRecord';
 import type { CallTokenResponse as ApiCallTokenResponse } from '@service-storage/generated/schemas/callTokenResponse';
 import type { CreateMeetingRequest } from '@service-storage/generated/schemas/createMeetingRequest';
+import type { DialPhoneRequest } from '@service-storage/generated/schemas/dialPhoneRequest';
 import type { EditCallRecordRequest } from '@service-storage/generated/schemas/editCallRecordRequest';
+import type { IncomingPhoneCallsResponse } from '@service-storage/generated/schemas/incomingPhoneCallsResponse';
 import type { InviteMeetingUsersRequest } from '@service-storage/generated/schemas/inviteMeetingUsersRequest';
 import type { LeaveCallResponse } from '@service-storage/generated/schemas/leaveCallResponse';
 import type { Meeting as ApiMeeting } from '@service-storage/generated/schemas/meeting';
 import type { MeetingPreparation } from '@service-storage/generated/schemas/meetingPreparation';
+import type { PhoneCallJoinResponse } from '@service-storage/generated/schemas/phoneCallJoinResponse';
+import type { PhoneSettingsResponse } from '@service-storage/generated/schemas/phoneSettingsResponse';
 import type { UpdateMeetingRequest } from '@service-storage/generated/schemas/updateMeetingRequest';
 import type { UpdateSharePermissionRequestV2 } from '@service-storage/generated/schemas/updateSharePermissionRequestV2';
 
-export type { CallRecord, CreateMeetingRequest, UpdateMeetingRequest };
+export type {
+  CallRecord,
+  CreateMeetingRequest,
+  IncomingPhoneCallsResponse,
+  PhoneCallJoinResponse,
+  PhoneSettingsResponse,
+  UpdateMeetingRequest,
+};
 
 // Rust serializes these nullable fields explicitly; Orval marks Option<T> optional.
 export type CallTokenResponse = Required<ApiCallTokenResponse>;
@@ -29,6 +40,31 @@ export type MeetingParticipants = {
 };
 
 const host: string = SERVER_HOSTS['document-storage-service'];
+
+/**
+ * `PHONE_INVALID` — the request was refused as written (an unreadable or
+ * disallowed number, a call that can no longer be answered); `PHONE_UNAVAILABLE`
+ * — phone calling isn't set up for the deployment.
+ */
+export type PhoneErrorCode = 'PHONE_INVALID' | 'PHONE_UNAVAILABLE';
+
+/** Phone endpoints explain refusals in words meant for the person dialing. */
+async function phoneErrorResponse(response: Response) {
+  const failure = statusError(response.status);
+  if (response.status !== 400 && response.status !== 503) return failure;
+  const body: unknown = await response.json().catch(() => undefined);
+  const message =
+    body && typeof body === 'object' && 'message' in body
+      ? body.message
+      : undefined;
+  return {
+    code:
+      response.status === 503
+        ? ('PHONE_UNAVAILABLE' as const)
+        : ('PHONE_INVALID' as const),
+    message: typeof message === 'string' && message ? message : failure.message,
+  };
+}
 
 export const callServiceClient = {
   prepareMeeting() {
@@ -262,5 +298,53 @@ export const callServiceClient = {
         }
       )
     ).map(() => undefined);
+  },
+
+  /** `GET /call/phone/settings`: whether the caller can dial out, and their numbers. */
+  getPhoneSettings() {
+    return fetchWithToken<PhoneSettingsResponse>(`${host}/call/phone/settings`);
+  },
+
+  /**
+   * `POST /call/phone/dial`: place a phone call. `to` is the number as typed;
+   * the server parses it, extensions included. Join the returned call to
+   * hear it ring.
+   */
+  dialPhone(to: string) {
+    const body: DialPhoneRequest = { to };
+    return fetchWithToken<PhoneCallJoinResponse, PhoneErrorCode>(
+      `${host}/call/phone/dial`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+        errorResponseHandler: phoneErrorResponse,
+      }
+    );
+  },
+
+  /** `GET /call/phone/incoming`: phone calls ringing for the caller. */
+  getIncomingPhoneCalls() {
+    return fetchWithToken<IncomingPhoneCallsResponse>(
+      `${host}/call/phone/incoming`
+    );
+  },
+
+  /** `POST /call/phone/{id}/answer`: answer a ringing phone call. */
+  answerPhoneCall(callId: string) {
+    return fetchWithToken<PhoneCallJoinResponse, PhoneErrorCode>(
+      `${host}/call/phone/${encodeURIComponent(callId)}/answer`,
+      { method: 'POST', errorResponseHandler: phoneErrorResponse }
+    );
+  },
+
+  /**
+   * `POST /call/phone/{id}/hang-up`: end a phone call for everyone, or
+   * decline it while it rings.
+   */
+  hangUpPhoneCall(callId: string) {
+    return fetchWithToken<LeaveCallResponse>(
+      `${host}/call/phone/${encodeURIComponent(callId)}/hang-up`,
+      { method: 'POST', keepalive: true }
+    );
   },
 };

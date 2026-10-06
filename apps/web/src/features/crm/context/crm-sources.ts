@@ -39,6 +39,19 @@ export type CompanySource = {
   contacts: Accessor<CrmContact[]>;
 };
 export type ContactSource = CrmQuery<CrmContact>;
+/** A contact's phone numbers, in E.164. */
+export type ContactPhoneNumbersSource = CrmQuery<string[]>;
+/** Phone calling from the CRM, as far as the viewer can use it. */
+export type CrmPhoneCalling = {
+  /** Whether phone numbers are shown and editable at all. */
+  enabled: Accessor<boolean>;
+  /** Whether the viewer can place calls now. */
+  canCall: Accessor<boolean>;
+  /** Call a number, showing the dialer for progress. */
+  call(number: string): void;
+  /** A number as people read it. */
+  format(number: string): string;
+};
 export type TeamSource = CrmQuery<{
   team: { id: string; crm_enabled: boolean };
   members: { user_id: string; role: CrmTeamRole }[];

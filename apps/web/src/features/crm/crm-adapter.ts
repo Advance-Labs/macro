@@ -1,4 +1,10 @@
 import { useQuickAccessCrmCompaniesQuery } from '@app/features/crm/crm-search';
+import { formatPhoneNumber } from '@app/features/phone/core/phone-call';
+import {
+  callPhoneNumber,
+  usePhoneCallsEnabled,
+  usePhoneDialingAvailable,
+} from '@app/features/phone/phone-actions';
 import { withEntityNotifications } from '@app/features/soup/entity-notifications';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
@@ -49,6 +55,10 @@ import {
 } from './queries/companies';
 import { useCompanyEmailsQuery } from './queries/company-emails';
 import { useContactEmailsQuery } from './queries/contact-emails';
+import {
+  useContactPhoneNumbersQuery,
+  useSetContactPhoneNumbersMutation,
+} from './queries/contact-phone-numbers';
 import {
   useContactQuery,
   useSetContactHiddenMutation,
@@ -227,6 +237,15 @@ export function createAppCrmContext(): CrmContext {
     createCompanySource: (...args) => useCompanyQuery(deps, ...args),
     createContactSource: (...args) =>
       withReadyGate(useContactQuery(deps, ...args)),
+    createContactPhoneNumbersSource: (...args) =>
+      withReadyGate(useContactPhoneNumbersQuery(deps, ...args)),
+    setContactPhoneNumbers: () => useSetContactPhoneNumbersMutation(deps),
+    createPhoneCalling: () => ({
+      enabled: usePhoneCallsEnabled(),
+      canCall: usePhoneDialingAvailable(),
+      call: callPhoneNumber,
+      format: formatPhoneNumber,
+    }),
     createTeamSource: useCurrentTeamQuery,
     createTeamConfigSource: createSettings,
     createCapabilities: () =>

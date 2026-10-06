@@ -30,6 +30,7 @@ import PhoneCallIcon from '@phosphor/phone-call.svg';
 import type { CallRecord } from '@service-call/client';
 import { Button } from '@ui';
 import { Show } from 'solid-js';
+import { callRecordName } from '../../utils';
 import { useCallAgain } from '../use-call-again';
 
 export function CallRecordingSplitHeaderLoading() {
@@ -52,7 +53,7 @@ export function CallRecordingSplitHeaderLoading() {
 export function CallRecordingSplitHeader(props: { record: CallRecord }) {
   const record = () => props.record;
   const blockId = useBlockId();
-  const callName = () => record().customName ?? record().channelName ?? 'Call';
+  const callName = () => callRecordName(record()) ?? 'Call';
   const permissions = useGetPermissions();
   const openShare = useShareModal(() => ({
     id: blockId,
@@ -64,7 +65,8 @@ export function CallRecordingSplitHeader(props: { record: CallRecord }) {
   }));
   const { canCallAgain, callAgain } = useCallAgain(
     () => record().callId,
-    () => record().channelId
+    () => record().channelId,
+    () => record().phone?.remoteNumber
   );
 
   const shareTool: BlockTool = {

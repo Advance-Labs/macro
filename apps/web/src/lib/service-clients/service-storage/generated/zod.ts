@@ -2020,6 +2020,339 @@ export const meetingUpdateResponse = zod
   );
 
 /**
+ * @summary Place a phone call. Returns the caller's join credentials once the call
+is ringing; it is recorded and transcribed like any other call.
+ */
+export const dialPhoneBody = zod
+  .object({
+    to: zod
+      .string()
+      .describe(
+        'The number to call, as typed: E.164, a formatted national number\n(North American numbers may omit `+1`), or a `tel:` URI, optionally\nwith an extension (`ext. 89`).'
+      ),
+  })
+  .describe('Request body for placing a phone call.');
+
+export const dialPhoneResponse = zod
+  .object({
+    call: zod
+      .object({
+        callId: zod.uuid().describe('The call identifier.'),
+        channelId: zod
+          .uuid()
+          .nullish()
+          .describe('The channel this call is associated with.'),
+        participantId: zod.string().describe('RTC participant identity.'),
+        roomName: zod.string().describe('The RTC room name.'),
+        serverUrl: zod
+          .string()
+          .describe('The RTC server URL for the frontend SDK to connect to.'),
+        shareToken: zod
+          .string()
+          .nullish()
+          .describe('Meeting link capability, when joined using a link.'),
+        token: zod
+          .string()
+          .describe('The RTC token for connecting to the room.'),
+      })
+      .describe('Response returned when creating or joining a call.'),
+    phone: zod
+      .object({
+        answeredAt: zod.iso
+          .datetime({})
+          .nullish()
+          .describe('When the call was answered.'),
+        contact: zod
+          .union([
+            zod.null(),
+            zod
+              .object({
+                contactId: zod.uuid().describe('The CRM contact id.'),
+                name: zod
+                  .string()
+                  .nullish()
+                  .describe("The contact's name, when the CRM has one."),
+              })
+              .describe(
+                'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+              ),
+          ])
+          .optional(),
+        direction: zod
+          .enum(['outbound', 'inbound'])
+          .describe('Which side placed a phone call.'),
+        endedAt: zod.iso
+          .datetime({})
+          .nullish()
+          .describe('When the phone leg ended.'),
+        localNumber: zod
+          .union([
+            zod.null(),
+            zod
+              .string()
+              .describe(
+                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+              ),
+          ])
+          .optional(),
+        participantIdentity: zod
+          .string()
+          .describe(
+            'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+          ),
+        remoteNumber: zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          ),
+        status: zod
+          .enum([
+            'dialing',
+            'ringing',
+            'active',
+            'completed',
+            'missed',
+            'no_answer',
+            'busy',
+            'declined',
+            'failed',
+            'cancelled',
+          ])
+          .describe(
+            'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+          ),
+      })
+      .describe('The phone leg of a call: the party on the phone network.'),
+  })
+  .describe("Credentials to join a phone call's room, plus its phone leg.");
+
+/**
+ * @summary Inbound phone calls ringing for the caller, newest first.
+ */
+export const listIncomingPhoneCallsResponse = zod
+  .object({
+    calls: zod
+      .array(
+        zod
+          .object({
+            callId: zod.uuid().describe('The call to answer or decline.'),
+            contact: zod
+              .union([
+                zod.null(),
+                zod
+                  .object({
+                    contactId: zod.uuid().describe('The CRM contact id.'),
+                    name: zod
+                      .string()
+                      .nullish()
+                      .describe("The contact's name, when the CRM has one."),
+                  })
+                  .describe(
+                    'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                  ),
+              ])
+              .optional(),
+            from: zod
+              .string()
+              .describe(
+                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+              ),
+            startedAt: zod.iso
+              .datetime({})
+              .describe('When the call started ringing.'),
+            to: zod
+              .union([
+                zod.null(),
+                zod
+                  .string()
+                  .describe(
+                    'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                  ),
+              ])
+              .optional(),
+          })
+          .describe('An inbound phone call ringing for a Macro user.')
+      )
+      .describe('The ringing calls.'),
+  })
+  .describe('Inbound phone calls ringing for the caller, newest first.');
+
+/**
+ * @summary Assign a phone number to a user, taking it from any previous owner.
+Internal services only.
+ */
+export const assignPhoneNumberParams = zod.object({
+  phone_number: zod
+    .string()
+    .describe('Phone number, preferably E.164 (URL-encode the +)'),
+});
+
+export const assignPhoneNumberBody = zod
+  .object({
+    userId: zod
+      .string()
+      .describe('The Macro user the number rings and identifies.'),
+  })
+  .describe('Request body for assigning a phone number to a user.');
+
+/**
+ * @summary Unassign a phone number. Calls to it are then rejected. Internal services
+only.
+ */
+export const releasePhoneNumberParams = zod.object({
+  phone_number: zod
+    .string()
+    .describe('Phone number, preferably E.164 (URL-encode the +)'),
+});
+
+/**
+ * @summary Whether the caller can place phone calls, their caller id, and the
+numbers that ring them.
+ */
+export const getPhoneSettingsResponse = zod
+  .object({
+    callerId: zod
+      .union([
+        zod.null(),
+        zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          ),
+      ])
+      .optional(),
+    dialingEnabled: zod
+      .boolean()
+      .describe('Whether this deployment can place outbound calls.'),
+    phoneNumbers: zod
+      .array(
+        zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          )
+      )
+      .describe('Numbers that ring the caller.'),
+  })
+  .describe('What the caller can do with phone calling.');
+
+/**
+ * @summary Answer an inbound phone call ringing for the caller.
+ */
+export const answerPhoneCallParams = zod.object({
+  call_id: zod.uuid().describe('Call ID'),
+});
+
+export const answerPhoneCallResponse = zod
+  .object({
+    call: zod
+      .object({
+        callId: zod.uuid().describe('The call identifier.'),
+        channelId: zod
+          .uuid()
+          .nullish()
+          .describe('The channel this call is associated with.'),
+        participantId: zod.string().describe('RTC participant identity.'),
+        roomName: zod.string().describe('The RTC room name.'),
+        serverUrl: zod
+          .string()
+          .describe('The RTC server URL for the frontend SDK to connect to.'),
+        shareToken: zod
+          .string()
+          .nullish()
+          .describe('Meeting link capability, when joined using a link.'),
+        token: zod
+          .string()
+          .describe('The RTC token for connecting to the room.'),
+      })
+      .describe('Response returned when creating or joining a call.'),
+    phone: zod
+      .object({
+        answeredAt: zod.iso
+          .datetime({})
+          .nullish()
+          .describe('When the call was answered.'),
+        contact: zod
+          .union([
+            zod.null(),
+            zod
+              .object({
+                contactId: zod.uuid().describe('The CRM contact id.'),
+                name: zod
+                  .string()
+                  .nullish()
+                  .describe("The contact's name, when the CRM has one."),
+              })
+              .describe(
+                'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+              ),
+          ])
+          .optional(),
+        direction: zod
+          .enum(['outbound', 'inbound'])
+          .describe('Which side placed a phone call.'),
+        endedAt: zod.iso
+          .datetime({})
+          .nullish()
+          .describe('When the phone leg ended.'),
+        localNumber: zod
+          .union([
+            zod.null(),
+            zod
+              .string()
+              .describe(
+                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+              ),
+          ])
+          .optional(),
+        participantIdentity: zod
+          .string()
+          .describe(
+            'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+          ),
+        remoteNumber: zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          ),
+        status: zod
+          .enum([
+            'dialing',
+            'ringing',
+            'active',
+            'completed',
+            'missed',
+            'no_answer',
+            'busy',
+            'declined',
+            'failed',
+            'cancelled',
+          ])
+          .describe(
+            'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+          ),
+      })
+      .describe('The phone leg of a call: the party on the phone network.'),
+  })
+  .describe("Credentials to join a phone call's room, plus its phone leg.");
+
+/**
+ * @summary Hang up a phone call for everyone. Declines a ringing inbound call and
+cancels an outbound call that has not connected yet.
+ */
+export const hangUpPhoneCallParams = zod.object({
+  call_id: zod.uuid().describe('Call ID'),
+});
+
+export const hangUpPhoneCallResponse = zod
+  .object({
+    callEnded: zod
+      .boolean()
+      .describe('Whether the entire call was ended (room deleted).'),
+  })
+  .describe('Response for the leave\/end call operation.');
+
+/**
  * Batch-fetches lightweight previews for a list of call ids. Mirrors the
 `POST /documents/preview` endpoint: no per-id access checks, duplicate
 ids are deduplicated server-side, and missing ids come back as
@@ -2189,6 +2522,78 @@ export const getCallRecordResponse = zod
           )
       )
       .describe('Macro-account participants (both active and historic).'),
+    phone: zod
+      .union([
+        zod.null(),
+        zod
+          .object({
+            answeredAt: zod.iso
+              .datetime({})
+              .nullish()
+              .describe('When the call was answered.'),
+            contact: zod
+              .union([
+                zod.null(),
+                zod
+                  .object({
+                    contactId: zod.uuid().describe('The CRM contact id.'),
+                    name: zod
+                      .string()
+                      .nullish()
+                      .describe("The contact's name, when the CRM has one."),
+                  })
+                  .describe(
+                    'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                  ),
+              ])
+              .optional(),
+            direction: zod
+              .enum(['outbound', 'inbound'])
+              .describe('Which side placed a phone call.'),
+            endedAt: zod.iso
+              .datetime({})
+              .nullish()
+              .describe('When the phone leg ended.'),
+            localNumber: zod
+              .union([
+                zod.null(),
+                zod
+                  .string()
+                  .describe(
+                    'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                  ),
+              ])
+              .optional(),
+            participantIdentity: zod
+              .string()
+              .describe(
+                'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+              ),
+            remoteNumber: zod
+              .string()
+              .describe(
+                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+              ),
+            status: zod
+              .enum([
+                'dialing',
+                'ringing',
+                'active',
+                'completed',
+                'missed',
+                'no_answer',
+                'busy',
+                'declined',
+                'failed',
+                'cancelled',
+              ])
+              .describe(
+                'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+              ),
+          })
+          .describe('The phone leg of a call: the party on the phone network.'),
+      ])
+      .optional(),
     recordingPreviewUrl: zod
       .string()
       .nullish()
@@ -2558,9 +2963,9 @@ Duplicate segments (same `segment_id`) are ignored.
  */
 export const ingestTranscriptParams = zod.object({
   room_name: zod
-    .uuid()
+    .string()
     .describe(
-      'RTC room name; the transcription agent passes its LiveKit room verbatim'
+      'RTC room name; the transcription agent passes its LiveKit room verbatim. Rooms Macro creates are named after the call id; inbound phone calls arrive in rooms the SIP dispatch rule names.'
     ),
 });
 
@@ -4338,6 +4743,55 @@ export const getContactByEmailResponse = zod
   .describe('Response from looking up a CRM contact by email.');
 
 /**
+ * @summary Look up who a phone number belongs to in the caller's team CRM.
+ */
+export const getContactByPhoneQueryParams = zod.object({
+  phone: zod.string().describe('The number to look up, as typed or in E.164.'),
+});
+
+export const getContactByPhoneResponse = zod
+  .object({
+    contact: zod
+      .union([
+        zod.null(),
+        zod
+          .object({
+            companyId: zod
+              .uuid()
+              .describe('The id of the company the contact belongs to.'),
+            createdAt: zod.iso
+              .datetime({})
+              .describe('When the contact record was created.'),
+            email: zod.string().describe("The contact's email address."),
+            firstInteraction: zod.iso
+              .datetime({})
+              .describe('Earliest known interaction with this contact.'),
+            hidden: zod
+              .boolean()
+              .describe(
+                'Whether the contact is hidden from CRM listings for the\nrequesting team. Non-admin viewers never see `hidden = true`\nrows (the endpoint filters them out); admin\/owner callers see\nhidden contacts so they can render the right toggle state.'
+              ),
+            id: zod.uuid().describe('The id of the contact record.'),
+            lastInteraction: zod.iso
+              .datetime({})
+              .describe('Most recent known interaction with this contact.'),
+            name: zod
+              .string()
+              .nullish()
+              .describe('Display name observed for the contact, if any.'),
+            updatedAt: zod.iso
+              .datetime({})
+              .describe('When the contact record was last updated.'),
+          })
+          .describe(
+            'A CRM contact as returned by `GET \/crm\/companies\/{company_id}\/contacts`.'
+          ),
+      ])
+      .optional(),
+  })
+  .describe('Response from looking up a CRM contact by phone number.');
+
+/**
  * @summary Fetch a single CRM contact by id. Access is enforced by
 [`CrmContactAccessLevelExtractor`]: the user must be on the team that
 owns the contact's parent company, and hidden contacts are invisible
@@ -4419,6 +4873,63 @@ export const setCrmContactNameBody = zod
       ),
   })
   .describe('Request body for `PUT \/contacts\/{contact_id}\/name`.');
+
+/**
+ * @summary List a CRM contact's phone numbers.
+ */
+export const getCrmContactPhoneNumbersParams = zod.object({
+  contact_id: zod.uuid().describe('The CRM contact'),
+});
+
+export const getCrmContactPhoneNumbersResponse = zod
+  .object({
+    phoneNumbers: zod
+      .array(
+        zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          )
+      )
+      .describe("The contact's numbers."),
+  })
+  .describe(
+    "A contact's phone numbers, in E.164, in the order they were entered."
+  );
+
+/**
+ * @summary Replace a CRM contact's phone numbers. Any team member who can see the
+contact may edit them, like its name.
+ */
+export const setCrmContactPhoneNumbersParams = zod.object({
+  contact_id: zod.uuid().describe('The CRM contact'),
+});
+
+export const setCrmContactPhoneNumbersBody = zod
+  .object({
+    phoneNumbers: zod
+      .array(zod.string())
+      .describe(
+        'The complete new list, as typed: E.164, formatted, or North American\nnational numbers. Duplicates are dropped; an empty list clears them.'
+      ),
+  })
+  .describe("Request body for replacing a contact's phone numbers.");
+
+export const setCrmContactPhoneNumbersResponse = zod
+  .object({
+    phoneNumbers: zod
+      .array(
+        zod
+          .string()
+          .describe(
+            'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+          )
+      )
+      .describe("The contact's numbers."),
+  })
+  .describe(
+    "A contact's phone numbers, in E.164, in the order they were entered."
+  );
 
 /**
  * @summary Read the caller's team CRM configuration. Any team member may read;
@@ -17320,6 +17831,84 @@ export const getItemsSoupResponse = zod
                           )
                       )
                       .describe('Macro-account participants in the call.'),
+                    phone: zod
+                      .union([
+                        zod.null(),
+                        zod
+                          .object({
+                            answeredAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the call was answered.'),
+                            contact: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .object({
+                                    contactId: zod
+                                      .uuid()
+                                      .describe('The CRM contact id.'),
+                                    name: zod
+                                      .string()
+                                      .nullish()
+                                      .describe(
+                                        "The contact's name, when the CRM has one."
+                                      ),
+                                  })
+                                  .describe(
+                                    'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                                  ),
+                              ])
+                              .optional(),
+                            direction: zod
+                              .enum(['outbound', 'inbound'])
+                              .describe('Which side placed a phone call.'),
+                            endedAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the phone leg ended.'),
+                            localNumber: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .string()
+                                  .describe(
+                                    'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                  ),
+                              ])
+                              .optional(),
+                            participantIdentity: zod
+                              .string()
+                              .describe(
+                                'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+                              ),
+                            remoteNumber: zod
+                              .string()
+                              .describe(
+                                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                              ),
+                            status: zod
+                              .enum([
+                                'dialing',
+                                'ringing',
+                                'active',
+                                'completed',
+                                'missed',
+                                'no_answer',
+                                'busy',
+                                'declined',
+                                'failed',
+                                'cancelled',
+                              ])
+                              .describe(
+                                'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+                              ),
+                          })
+                          .describe(
+                            'The phone leg of a call: the party on the phone network.'
+                          ),
+                      ])
+                      .optional(),
                     startedAt: zod.iso
                       .datetime({})
                       .describe('When the call started.'),
@@ -22077,6 +22666,84 @@ export const postItemsSoupResponse = zod
                           )
                       )
                       .describe('Macro-account participants in the call.'),
+                    phone: zod
+                      .union([
+                        zod.null(),
+                        zod
+                          .object({
+                            answeredAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the call was answered.'),
+                            contact: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .object({
+                                    contactId: zod
+                                      .uuid()
+                                      .describe('The CRM contact id.'),
+                                    name: zod
+                                      .string()
+                                      .nullish()
+                                      .describe(
+                                        "The contact's name, when the CRM has one."
+                                      ),
+                                  })
+                                  .describe(
+                                    'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                                  ),
+                              ])
+                              .optional(),
+                            direction: zod
+                              .enum(['outbound', 'inbound'])
+                              .describe('Which side placed a phone call.'),
+                            endedAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the phone leg ended.'),
+                            localNumber: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .string()
+                                  .describe(
+                                    'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                  ),
+                              ])
+                              .optional(),
+                            participantIdentity: zod
+                              .string()
+                              .describe(
+                                'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+                              ),
+                            remoteNumber: zod
+                              .string()
+                              .describe(
+                                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                              ),
+                            status: zod
+                              .enum([
+                                'dialing',
+                                'ringing',
+                                'active',
+                                'completed',
+                                'missed',
+                                'no_answer',
+                                'busy',
+                                'declined',
+                                'failed',
+                                'cancelled',
+                              ])
+                              .describe(
+                                'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+                              ),
+                          })
+                          .describe(
+                            'The phone leg of a call: the party on the phone network.'
+                          ),
+                      ])
+                      .optional(),
                     startedAt: zod.iso
                       .datetime({})
                       .describe('When the call started.'),
@@ -26248,6 +26915,84 @@ export const postItemsSoupAstResponse = zod
                           )
                       )
                       .describe('Macro-account participants in the call.'),
+                    phone: zod
+                      .union([
+                        zod.null(),
+                        zod
+                          .object({
+                            answeredAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the call was answered.'),
+                            contact: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .object({
+                                    contactId: zod
+                                      .uuid()
+                                      .describe('The CRM contact id.'),
+                                    name: zod
+                                      .string()
+                                      .nullish()
+                                      .describe(
+                                        "The contact's name, when the CRM has one."
+                                      ),
+                                  })
+                                  .describe(
+                                    'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                                  ),
+                              ])
+                              .optional(),
+                            direction: zod
+                              .enum(['outbound', 'inbound'])
+                              .describe('Which side placed a phone call.'),
+                            endedAt: zod.iso
+                              .datetime({})
+                              .nullish()
+                              .describe('When the phone leg ended.'),
+                            localNumber: zod
+                              .union([
+                                zod.null(),
+                                zod
+                                  .string()
+                                  .describe(
+                                    'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                  ),
+                              ])
+                              .optional(),
+                            participantIdentity: zod
+                              .string()
+                              .describe(
+                                'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+                              ),
+                            remoteNumber: zod
+                              .string()
+                              .describe(
+                                'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                              ),
+                            status: zod
+                              .enum([
+                                'dialing',
+                                'ringing',
+                                'active',
+                                'completed',
+                                'missed',
+                                'no_answer',
+                                'busy',
+                                'declined',
+                                'failed',
+                                'cancelled',
+                              ])
+                              .describe(
+                                'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+                              ),
+                          })
+                          .describe(
+                            'The phone leg of a call: the party on the phone network.'
+                          ),
+                      ])
+                      .optional(),
                     startedAt: zod.iso
                       .datetime({})
                       .describe('When the call started.'),
@@ -30773,6 +31518,86 @@ export const postItemsSoupAstGroupedResponse = zod
                             .describe(
                               'Macro-account participants in the call.'
                             ),
+                          phone: zod
+                            .union([
+                              zod.null(),
+                              zod
+                                .object({
+                                  answeredAt: zod.iso
+                                    .datetime({})
+                                    .nullish()
+                                    .describe('When the call was answered.'),
+                                  contact: zod
+                                    .union([
+                                      zod.null(),
+                                      zod
+                                        .object({
+                                          contactId: zod
+                                            .uuid()
+                                            .describe('The CRM contact id.'),
+                                          name: zod
+                                            .string()
+                                            .nullish()
+                                            .describe(
+                                              "The contact's name, when the CRM has one."
+                                            ),
+                                        })
+                                        .describe(
+                                          'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                                        ),
+                                    ])
+                                    .optional(),
+                                  direction: zod
+                                    .enum(['outbound', 'inbound'])
+                                    .describe(
+                                      'Which side placed a phone call.'
+                                    ),
+                                  endedAt: zod.iso
+                                    .datetime({})
+                                    .nullish()
+                                    .describe('When the phone leg ended.'),
+                                  localNumber: zod
+                                    .union([
+                                      zod.null(),
+                                      zod
+                                        .string()
+                                        .describe(
+                                          'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                        ),
+                                    ])
+                                    .optional(),
+                                  participantIdentity: zod
+                                    .string()
+                                    .describe(
+                                      'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+                                    ),
+                                  remoteNumber: zod
+                                    .string()
+                                    .describe(
+                                      'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                    ),
+                                  status: zod
+                                    .enum([
+                                      'dialing',
+                                      'ringing',
+                                      'active',
+                                      'completed',
+                                      'missed',
+                                      'no_answer',
+                                      'busy',
+                                      'declined',
+                                      'failed',
+                                      'cancelled',
+                                    ])
+                                    .describe(
+                                      'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+                                    ),
+                                })
+                                .describe(
+                                  'The phone leg of a call: the party on the phone network.'
+                                ),
+                            ])
+                            .optional(),
                           startedAt: zod.iso
                             .datetime({})
                             .describe('When the call started.'),
@@ -34940,6 +35765,86 @@ export const postItemsSoupAstGroupedResponse = zod
                             .describe(
                               'Macro-account participants in the call.'
                             ),
+                          phone: zod
+                            .union([
+                              zod.null(),
+                              zod
+                                .object({
+                                  answeredAt: zod.iso
+                                    .datetime({})
+                                    .nullish()
+                                    .describe('When the call was answered.'),
+                                  contact: zod
+                                    .union([
+                                      zod.null(),
+                                      zod
+                                        .object({
+                                          contactId: zod
+                                            .uuid()
+                                            .describe('The CRM contact id.'),
+                                          name: zod
+                                            .string()
+                                            .nullish()
+                                            .describe(
+                                              "The contact's name, when the CRM has one."
+                                            ),
+                                        })
+                                        .describe(
+                                          'The CRM contact on the other end of a phone call, as matched when the\ncall started.'
+                                        ),
+                                    ])
+                                    .optional(),
+                                  direction: zod
+                                    .enum(['outbound', 'inbound'])
+                                    .describe(
+                                      'Which side placed a phone call.'
+                                    ),
+                                  endedAt: zod.iso
+                                    .datetime({})
+                                    .nullish()
+                                    .describe('When the phone leg ended.'),
+                                  localNumber: zod
+                                    .union([
+                                      zod.null(),
+                                      zod
+                                        .string()
+                                        .describe(
+                                          'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                        ),
+                                    ])
+                                    .optional(),
+                                  participantIdentity: zod
+                                    .string()
+                                    .describe(
+                                      'RTC identity of the phone participant. Transcript segments spoken on\nthe phone use it as their speaker id.'
+                                    ),
+                                  remoteNumber: zod
+                                    .string()
+                                    .describe(
+                                      'A validated E.164 phone number, such as `+15551234567`.\n\nSerializes as the E.164 string. Deserialization only accepts E.164; use\n[`DialablePhoneNumber::parse`] for numbers typed by people.'
+                                    ),
+                                  status: zod
+                                    .enum([
+                                      'dialing',
+                                      'ringing',
+                                      'active',
+                                      'completed',
+                                      'missed',
+                                      'no_answer',
+                                      'busy',
+                                      'declined',
+                                      'failed',
+                                      'cancelled',
+                                    ])
+                                    .describe(
+                                      'Where a phone leg is in its lifecycle. The first three states are live;\nthe rest are outcomes and never change once reached.'
+                                    ),
+                                })
+                                .describe(
+                                  'The phone leg of a call: the party on the phone network.'
+                                ),
+                            ])
+                            .optional(),
                           startedAt: zod.iso
                             .datetime({})
                             .describe('When the call started.'),

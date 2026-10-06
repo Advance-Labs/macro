@@ -10,6 +10,10 @@ import {
   useCreateCommands,
 } from '@app/features/command/Launcher';
 import { openMacroMcpSetupModal } from '@app/features/integrations/mcp-setup/MacroMcpSetupModal';
+import {
+  openPhoneDialer,
+  usePhoneDialingAvailable,
+} from '@app/features/phone/phone-actions';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useSubscribeToKeypress } from '@app/signal/hotkeyRoot';
@@ -33,6 +37,7 @@ import {
   openFolderPicker,
 } from '@core/util/upload';
 import IconGear from '@phosphor/gear.svg';
+import PhoneIcon from '@phosphor/phone.svg';
 import Plus from '@phosphor/plus.svg';
 import LogoutIcon from '@phosphor/sign-out.svg';
 import Upload from '@phosphor/upload.svg';
@@ -360,6 +365,22 @@ export default function GlobalShortcuts() {
     },
     icon: AiInstructionsIcon,
     runWithInputFocused: true,
+  });
+
+  const phoneDialing = usePhoneDialingAvailable();
+  registerHotkey({
+    scopeId: 'global',
+    description: 'Call a phone number',
+    keyDownHandler: () => {
+      if (!phoneDialing()) return false;
+      openPhoneDialer();
+      return true;
+    },
+    condition: phoneDialing,
+    hide: () => !phoneDialing(),
+    icon: PhoneIcon,
+    runWithInputFocused: true,
+    tags: ['phone', 'dial', 'dialer', 'call', 'telephone', 'number'],
   });
 
   registerHotkey({

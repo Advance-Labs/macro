@@ -1,3 +1,7 @@
+import {
+  toPhoneCallDirection,
+  toPhoneCallStatus,
+} from '@app/features/phone/core/phone-call';
 import { toast } from '@core/component/Toast/Toast';
 import {
   ENABLE_BEARER_TOKEN_AUTH,
@@ -1400,6 +1404,45 @@ function mapGraphqlNotifications(
 }
 
 /**
+ * Rebuild the REST phone leg from GraphQL, whose direction and status are the
+ * REST snake_case values upper-cased. An unknown value drops the leg rather
+ * than guessing at it.
+ */
+function mapGraphqlCallPhone(
+  phone:
+    | {
+        direction: string;
+        status: string;
+        remoteNumber: string;
+        localNumber?: string | null;
+        participantIdentity: string;
+        contactId?: string | null;
+        contactName?: string | null;
+        answeredAt?: string | null;
+        endedAt?: string | null;
+      }
+    | null
+    | undefined
+) {
+  if (!phone) return undefined;
+  const direction = toPhoneCallDirection(phone.direction);
+  const status = toPhoneCallStatus(phone.status);
+  if (!direction || !status) return undefined;
+  return {
+    direction,
+    status,
+    remoteNumber: phone.remoteNumber,
+    localNumber: phone.localNumber ?? undefined,
+    participantIdentity: phone.participantIdentity,
+    contact: phone.contactId
+      ? { contactId: phone.contactId, name: phone.contactName ?? undefined }
+      : undefined,
+    answeredAt: phone.answeredAt ?? undefined,
+    endedAt: phone.endedAt ?? undefined,
+  };
+}
+
+/**
  * Both GraphQL entity-type enums are the REST snake_case names upper-cased, so
  * the inverse is a plain lower-case. Kept separate from the notification
  * mapper because the two enums are distinct types with different members.
@@ -1721,6 +1764,7 @@ export function mapGraphqlSoupItem(item: GraphqlSoupItem): SoupApiItem | null {
               joinedAt: guest.joinedAt,
               leftAt: guest.leftAt ?? undefined,
             })),
+            phone: mapGraphqlCallPhone(entity.phone),
             properties: mapGraphqlProperties(entity.properties),
             notifications: mapGraphqlNotifications(entity.notifications),
           },

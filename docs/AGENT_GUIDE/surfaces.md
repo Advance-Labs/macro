@@ -1523,6 +1523,41 @@ If a recording fails to play, reload the page to obtain a fresh recording link,
 or use **Open or download recording**. The playback warning does not assume
 that the failure is caused by an unsupported media format.
 
+### Phone calls
+
+Phone calling needs the PostHog flag `enable-phone-calls` (on in dev; set
+`VITE_ENABLE_PHONE_CALLS` locally) and a deployment with LiveKit SIP configured
+(see [Phone calls](../PHONE_CALLS.md)). Hosted dev has no SIP trunk, so dialing
+there answers 503 and the dialer says phone calling isn't set up; verify the
+UI states with a local stack or a mocked response. Never dial real numbers
+from a test session.
+
+- **Dial out.** `New call` → `Call a phone number` (shown only when your
+  workspace can dial out), the command palette's `Call a phone number`, or
+  Settings → Phone → `Open dialer`. The dialer takes typed numbers
+  (`(555) 234-5678`, `+44 20 7946 0958`, `555-234-5678 ext. 89`) and a keypad;
+  `Call` stays disabled until the text has 7–15 digits. Server refusals (for
+  example `Calls to this country aren't enabled for your workspace`) appear
+  under the keypad. If you are already on another call, the dialer warns that
+  calling ends it.
+- **On a call.** A card docked at the bottom left shows the other party (a CRM
+  contact's name opens the contact), `Calling…` until they answer, then the
+  elapsed time. It has mute, a keypad that sends tones (for phone menus), and
+  hang up. When the call ends the card says how (`Line busy`, `No answer`,
+  `Call declined`, `Call ended`) for a few seconds.
+- **Incoming.** A call to your number rings with a card at the bottom left
+  (`Incoming phone call`, the caller's contact name or number, and the number
+  they dialed), a ringtone, and a system notification. `Answer` joins with the
+  microphone on; `Decline` rejects it. Answering on one device stops the ring
+  on the others.
+- **Calls list.** Phone calls are listed with the others. Until the summary
+  names a call, its name is the contact's name or the formatted number, and a
+  badge shows the direction or outcome (`Missed call`, `Line busy`, …).
+  Unanswered incoming calls appear under `Missed` for the number's owner.
+- **Call detail.** The phone party is listed under Participants (opening the
+  contact when matched), transcript lines spoken on the phone carry their name
+  and a `Phone` label, and **Call Again** dials the number again.
+
 ### Call links and guests — `/app/meet/join/:shareToken`
 
 These routes require `enable-quick-calls` for both signed-in users and guests.
@@ -1705,7 +1740,11 @@ company, including those linked automatically from their participants. The side
 panel keeps Properties and Sharing.
 A contact has the same layout with `Overview`, `Emails`, `Files`, `Tasks` and
 `Calls`: Overview pills show the email, the company (opens it) and `Last
-interacted`. Files and Calls match on the contact's `Contacts` property and, for
+interacted`. With `enable-phone-calls`, they also show the contact's phone
+numbers — clicking one calls it when your workspace can dial out — and an
+`Add phone` pill (a pencil once numbers exist) that edits them one per line.
+Phone calls with a contact's number are linked to the contact and company and
+appear in their Calls tabs. Files and Calls match on the contact's `Contacts` property and, for
 files, attachments of emails with its address. Tasks created from a contact also
 reference its company. The side panel keeps Sharing (admins only).
 
@@ -1853,6 +1892,13 @@ Guest continuation (see [login](login.md#desktop-onboarding)). Plans are chosen
 afterwards in **Settings → Billing**, where Guest users can buy Premium or Max.
 
 ## Settings — `/app/settings/<section>`
+
+### Phone — `/app/settings/phone`
+
+Shown with `enable-phone-calls`. Lists the numbers that ring you (assigned by an
+operator; `No number yet` otherwise), whether outbound calling is set up and the
+caller ID people see, `Open dialer`, and a note that phone calls are recorded
+and transcribed.
 
 ### Slack archive import
 

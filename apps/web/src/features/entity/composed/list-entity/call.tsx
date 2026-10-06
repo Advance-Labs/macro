@@ -9,7 +9,11 @@ import type { EntityReference } from '@property/types';
 import { EntityType } from '@service-properties/generated/schemas/entityType';
 import { HoverCard } from '@ui';
 import { For, Show } from 'solid-js';
-import { CallChannelNameBadge, CallStatusBadge } from '../../components/Badges';
+import {
+  CallChannelNameBadge,
+  CallPhoneBadge,
+  CallStatusBadge,
+} from '../../components/Badges';
 import { CallRecordName } from '../../components/CallRecordName';
 import { Entity } from '../../entity';
 import { HitSnippet } from '../../extractors-search/HitSnippet';
@@ -156,6 +160,11 @@ export function CallNarrowBody(props: {
         <Show when={props.showAttendanceBadge}>
           <CallStatusBadge status={props.entity.status} />
         </Show>
+        <Show when={props.entity.phone}>
+          {(phone) => (
+            <CallPhoneBadge phone={phone()} callName={props.entity.name} />
+          )}
+        </Show>
       </span>
       <Show when={!hit() && props.entity.summary}>
         {(summary) => (
@@ -182,6 +191,11 @@ export function CallWideContent(props: {
       </span>
       <Show when={channelName()}>
         {(name) => <CallChannelNameBadge channelName={name()} />}
+      </Show>
+      <Show when={props.entity.phone}>
+        {(phone) => (
+          <CallPhoneBadge phone={phone()} callName={props.entity.name} />
+        )}
       </Show>
       <Show
         when={hit()}

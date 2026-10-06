@@ -12,6 +12,7 @@ import type { CallRecordEgressId } from './callRecordEgressId';
 import type { CallRecordEndedAt } from './callRecordEndedAt';
 import type { CallRecordGuest } from './callRecordGuest';
 import type { CallRecordParticipant } from './callRecordParticipant';
+import type { CallRecordPhone } from './callRecordPhone';
 import type { CallRecordRecordingPreviewUrl } from './callRecordRecordingPreviewUrl';
 import type { CallRecordRecordingStartedAt } from './callRecordRecordingStartedAt';
 import type { CallRecordRecordingUrl } from './callRecordRecordingUrl';
@@ -50,6 +51,7 @@ on standalone meeting calls, never on channel calls. */
   isActive: boolean;
   /** Macro-account participants (both active and historic). */
   participants: CallRecordParticipant[];
+  phone?: CallRecordPhone;
   /** Presigned URL for the call recording preview image, if available. */
   recordingPreviewUrl?: CallRecordRecordingPreviewUrl;
   /** When the egress recording actually began. `None` until the

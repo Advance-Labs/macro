@@ -3,6 +3,7 @@ import { useSettingsTabAvailable } from '@core/constant/settingsTabsConfig';
 import { Show, Suspense } from 'solid-js';
 import { CalendarSettings } from '../calendar/calendar-settings';
 import { CrmSettings as Crm } from '../crm/crm-settings';
+import { PhoneSettings } from '../phone/phone-settings';
 import { SchedulingSettings } from '../scheduling/scheduling';
 import { Usage } from '../usage/usage';
 import { Account } from './Account';
@@ -82,6 +83,9 @@ export function SettingsTabContent(props: { tab: SettingsTab }) {
       </Show>
       <Show when={isCurrentTab('Mobile App')}>
         <MobileApp />
+      </Show>
+      <Show when={isCurrentTab('Phone')}>
+        <PhoneSettings />
       </Show>
       <Show when={isCurrentTab('Agent')}>
         <Agent />

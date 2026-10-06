@@ -80,3 +80,10 @@ export const useResetCrmStagesMutation = (
 export const useQuickAccessCrmCompaniesQuery = (
   ...args: Parameters<CrmContext['createCompanySuggestions']>
 ) => useCrmContext().createCompanySuggestions(...args);
+export const useContactPhoneNumbersQuery = (
+  ...args: Parameters<CrmContext['createContactPhoneNumbersSource']>
+) => useCrmContext().createContactPhoneNumbersSource(...args);
+export const useSetContactPhoneNumbersMutation = (
+  ...args: Parameters<CrmContext['setContactPhoneNumbers']>
+) => useCrmContext().setContactPhoneNumbers(...args);
+export const useCrmPhoneCalling = () => useCrmContext().createPhoneCalling();

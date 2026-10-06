@@ -8,6 +8,7 @@ import { Avatar, Badge, badgeTriggerClasses, Tooltip } from '@ui';
 import { Show } from 'solid-js';
 import { useCrmContext } from '../context/crm-context';
 import type { CrmContact as CrmContactResponse } from '../core/contact';
+import { ContactPhoneNumbers } from './contact-phone-numbers';
 import { useCompanyQuery, useSetContactNameMutation } from './use-crm';
 
 // Renames overwrite `crm_contacts.name`, which is already team-scoped —
@@ -114,6 +115,7 @@ export function ContactHeader(props: {
               contact={contact()}
               onOpenCompany={props.onOpenCompany}
             />
+            <ContactPhoneNumbers contact={contact()} />
             <Tooltip label={formatDateAndTime(contact().lastInteraction)}>
               <Badge variant="outline" size="sm">
                 <ClockIcon class="size-3" />

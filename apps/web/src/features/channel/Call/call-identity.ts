@@ -15,3 +15,11 @@ export function guestDisplayName(
 ): string | undefined {
   return record?.guests.find((guest) => guest.id === id)?.displayName;
 }
+
+/** Whether a transcript speaker is the party on the phone of a phone call. */
+export function isCallPhoneSpeaker(
+  record: { phone?: { participantIdentity: string } | null } | undefined,
+  speakerId: string
+): boolean {
+  return record?.phone?.participantIdentity === speakerId;
+}

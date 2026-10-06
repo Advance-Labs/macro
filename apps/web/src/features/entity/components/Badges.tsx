@@ -1,6 +1,15 @@
+import {
+  describePhoneCall,
+  formatPhoneNumber,
+  isUnansweredPhoneStatus,
+  remotePartyLabel,
+} from '@app/features/phone/core/phone-call';
 import { formatTimeZoneAbbreviation } from '@core/util/date';
 import ClockIcon from '@phosphor/clock.svg';
 import HashIcon from '@phosphor/hash.svg';
+import PhoneIncomingIcon from '@phosphor/phone-incoming.svg';
+import PhoneOutgoingIcon from '@phosphor/phone-outgoing.svg';
+import PhoneXIcon from '@phosphor/phone-x.svg';
 import UserPlus from '@phosphor/user-plus.svg';
 import { cn, HoverCard } from '@ui';
 import { differenceInCalendarDays } from 'date-fns/differenceInCalendarDays';
@@ -8,9 +17,9 @@ import { format } from 'date-fns/format';
 import { isThisYear } from 'date-fns/isThisYear';
 import { isToday } from 'date-fns/isToday';
 import { isTomorrow } from 'date-fns/isTomorrow';
-import type { ParentProps } from 'solid-js';
+import { type ParentProps, Show } from 'solid-js';
 import { OwnerLabel } from '../owner/owner-display';
-import type { CallStatus } from '../types/entity';
+import type { CallPhone, CallStatus } from '../types/entity';
 
 function Badge(props: ParentProps<{ class?: string; title?: string }>) {
   return (
@@ -157,6 +166,52 @@ export function CallStatusBadge(props: { status: CallStatus }) {
   const config = () => getCallStatusBadgeConfig(props.status);
 
   return <Badge class={config().class}>{config().label}</Badge>;
+}
+
+/**
+ * The other end of a phone call: which way it went, whether it connected,
+ * and who it was with.
+ */
+export function CallPhoneBadge(props: {
+  phone: CallPhone;
+  /** The row's name, so the badge never repeats it. */
+  callName: string;
+}) {
+  const party = () =>
+    remotePartyLabel({
+      contact: props.phone.contactName
+        ? {
+            contactId: props.phone.contactId ?? '',
+            name: props.phone.contactName,
+          }
+        : null,
+      remoteNumber: props.phone.remoteNumber,
+    });
+  const outcome = () => describePhoneCall(props.phone);
+  const unanswered = () => isUnansweredPhoneStatus(props.phone.status);
+  const label = () => (party() === props.callName ? outcome() : party());
+  return (
+    <Badge
+      class={cn(
+        'ph-no-capture max-w-40 min-w-0 shrink-0 normal-case font-sans border-edge-muted px-2',
+        unanswered() ? 'text-warning' : 'text-ink-extra-muted'
+      )}
+      title={`${outcome()} · ${formatPhoneNumber(props.phone.remoteNumber)}`}
+    >
+      <Show
+        when={!unanswered()}
+        fallback={<PhoneXIcon class="size-3 shrink-0" />}
+      >
+        <Show
+          when={props.phone.direction === 'outbound'}
+          fallback={<PhoneIncomingIcon class="size-3 shrink-0" />}
+        >
+          <PhoneOutgoingIcon class="size-3 shrink-0" />
+        </Show>
+      </Show>
+      <span class="truncate">{label()}</span>
+    </Badge>
+  );
 }
 
 export function CallChannelNameBadge(props: { channelName: string }) {

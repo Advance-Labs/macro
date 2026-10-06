@@ -3,6 +3,7 @@ const active = [...root, 'active'] as const;
 const record = [...root, 'record'] as const;
 const meeting = [...root, 'meeting'] as const;
 const link = [...root, 'link'] as const;
+const phone = [...root, 'phone'] as const;
 
 export const callKeys = {
   _def: root,
@@ -45,4 +46,8 @@ export const callKeys = {
     }),
     { _def: record }
   ),
+  /** The viewer's phone calling settings; one per signed-in account. */
+  phoneSettings: (userId: string) => ({
+    queryKey: [...phone, 'settings', userId] as const,
+  }),
 } as const;

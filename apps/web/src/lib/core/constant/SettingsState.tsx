@@ -27,6 +27,7 @@ export type SettingsTab =
   | 'Inbox'
   | 'Shortcuts'
   | 'Mobile App'
+  | 'Phone'
   | 'Agent'
   | 'Agents'
   | 'Harness'

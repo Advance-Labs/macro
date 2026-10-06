@@ -301,6 +301,17 @@ fragment SoupItemPreviewFields on GraphqlSoupEntity {
 			joinedAt
 			leftAt
 		}
+		phone {
+			direction
+			status
+			remoteNumber
+			localNumber
+			participantIdentity
+			contactId
+			contactName
+			answeredAt
+			endedAt
+		}
 		properties {
 			...SoupPropertyFields
 		}

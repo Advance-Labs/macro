@@ -13,6 +13,7 @@ import type { SoupCallRecordSoupPropertiesFieldAllOfTwoChannelName } from './sou
 import type { SoupCallRecordSoupPropertiesFieldAllOfTwoCustomName } from './soupCallRecordSoupPropertiesFieldAllOfTwoCustomName';
 import type { SoupCallRecordSoupPropertiesFieldAllOfTwoDurationMs } from './soupCallRecordSoupPropertiesFieldAllOfTwoDurationMs';
 import type { SoupCallRecordSoupPropertiesFieldAllOfTwoEndedAt } from './soupCallRecordSoupPropertiesFieldAllOfTwoEndedAt';
+import type { SoupCallRecordSoupPropertiesFieldAllOfTwoPhone } from './soupCallRecordSoupPropertiesFieldAllOfTwoPhone';
 import type { SoupCallRecordSoupPropertiesFieldAllOfTwoSummary } from './soupCallRecordSoupPropertiesFieldAllOfTwoSummary';
 
 export type SoupCallRecordSoupPropertiesFieldAllOfTwo = {
@@ -39,6 +40,7 @@ and derived from `status == ATTENDED`. */
   isActive: boolean;
   /** Macro-account participants in the call. */
   participants: SoupCallRecordParticipant[];
+  phone?: SoupCallRecordSoupPropertiesFieldAllOfTwoPhone;
   /** When the call started. */
   startedAt: string;
   /** Viewer-relative call status for the requesting user. */

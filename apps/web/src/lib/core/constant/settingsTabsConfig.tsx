@@ -12,6 +12,7 @@ import HardDrivesIcon from '@phosphor/hard-drives.svg';
 import KeyIcon from '@phosphor/key.svg';
 import KeyboardIcon from '@phosphor/keyboard.svg';
 import LinkIcon from '@phosphor/link.svg';
+import PhoneIcon from '@phosphor/phone.svg';
 import PlugIcon from '@phosphor/plug.svg';
 import PlugsConnectedIcon from '@phosphor/plugs-connected.svg';
 import BotIcon from '@phosphor/robot.svg';
@@ -29,11 +30,13 @@ import {
   botManagement,
   DEV_MODE_ENV,
   ENABLE_APP_STORE_QR_CODE,
+  ENABLE_CALLS,
   ENABLE_EMAIL,
   enableCalendarScheduling,
   enableChatV3Agents,
   enableCrm,
   enableNotificationSettings,
+  enablePhoneCalls,
 } from './featureFlags';
 import { PERMISSION_IDS } from './permissions';
 import type { SettingsTab } from './SettingsState';
@@ -142,6 +145,12 @@ export const SETTINGS_TAB_GROUPS: SettingsTabGroup[] = [
         keywords: ['payment', 'subscription', 'invoice', 'plan'],
       },
       {
+        tab: 'Phone',
+        label: 'Phone',
+        icon: PhoneIcon,
+        keywords: ['phone', 'calling', 'dial', 'number', 'caller id', 'voip'],
+      },
+      {
         tab: 'Mobile App',
         label: 'Mobile App',
         icon: DeviceMobileIcon,
@@ -233,6 +242,7 @@ const SETTINGS_TAB_SLUGS: Record<SettingsTab, string> = {
   Inbox: 'inbox',
   Shortcuts: 'shortcuts',
   'Mobile App': 'mobile-app',
+  Phone: 'phone',
   Agent: 'mcp-server',
   Agents: 'agents',
   Harness: 'runtimes',
@@ -280,6 +290,7 @@ export const useSettingsTabAvailable = () => {
   const botManagementFlag = useFeatureFlag(botManagement);
   const chatV3AgentsFlag = useFeatureFlag(enableChatV3Agents);
   const crmFlag = useFeatureFlag(enableCrm);
+  const phoneCallsFlag = useFeatureFlag(enablePhoneCalls);
   const notificationSettingsFlag = useFeatureFlag(enableNotificationSettings);
   const hasAdminPanel = useHasPermission(PERMISSION_IDS.WRITE_ADMIN_PANEL);
 
@@ -316,6 +327,8 @@ export const useSettingsTabAvailable = () => {
         return !isTouchDevice();
       case 'Mobile App':
         return ENABLE_APP_STORE_QR_CODE && !isNativeMobilePlatform();
+      case 'Phone':
+        return ENABLE_CALLS && phoneCallsFlag().enabled;
       case 'Agent':
         return !isNativeMobilePlatform();
       // Configurable agents are still rolling out; keep both tabs behind the

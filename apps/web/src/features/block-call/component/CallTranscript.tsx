@@ -1,4 +1,8 @@
-import { guestDisplayName, isCallGuestId } from '@channel/Call/call-identity';
+import {
+  guestDisplayName,
+  isCallGuestId,
+  isCallPhoneSpeaker,
+} from '@channel/Call/call-identity';
 import { Message } from '@channel/Message';
 import { Thread } from '@channel/Thread/Thread';
 import { CustomScrollbar } from '@core/component/CustomScrollbar';
@@ -18,6 +22,7 @@ import {
   onCleanup,
   Show,
 } from 'solid-js';
+import { callRecordPhoneParty } from '../utils';
 import { getSegmentVideoSeconds } from './transcript-playback';
 
 // Match the channel message grouping window (5 minutes).
@@ -163,17 +168,21 @@ function GroupedTranscriptSegmentRow(props: {
 /** Standalone calls and external speakers have no channel sender entity. */
 function MeetingTranscriptSegmentRow(props: {
   segment: CallRecordTranscriptSegment;
+  /** A speaker without a Macro account: a guest or the party on the phone. */
   guest: boolean;
   speakerName?: string;
+  /** What kind of non-account speaker this is, shown beside the name. */
+  speakerKind?: string;
   grouped: boolean;
   isActive: boolean;
   timelineStartMs: number | null;
   onSeekToSeconds?: (seconds: number) => void;
 }) {
   const guest = () => props.guest;
+  const kind = () => props.speakerKind ?? 'Guest';
   const name = () =>
     props.speakerName?.trim() ||
-    (guest() ? 'Guest' : idToEmail(props.segment.speakerId));
+    (guest() ? kind() : idToEmail(props.segment.speakerId));
   const videoTimestamp = () =>
     getSegmentVideoSeconds(props.segment, props.timelineStartMs);
   return (
@@ -206,7 +215,7 @@ function MeetingTranscriptSegmentRow(props: {
         <span class="flex min-w-0 items-center gap-2 text-xs">
           <span class="truncate font-medium text-ink">{name()}</span>
           <Show when={guest()}>
-            <span class="text-ink-extra-muted">Guest</span>
+            <span class="text-ink-extra-muted">{kind()}</span>
           </Show>
           <Show when={videoTimestamp() !== null}>
             <span class="ml-auto text-ink-muted tabular-nums">
@@ -226,7 +235,14 @@ export function CallTranscript(props: {
   transcript: CallRecordTranscriptSegment[];
   channelId?: string | null;
   /** Call record carrying the session's guests; guest speakers resolve names from it. */
-  record?: { guests: Array<{ id: string; displayName: string }> };
+  record?: {
+    guests: Array<{ id: string; displayName: string }>;
+    phone?: {
+      participantIdentity: string;
+      remoteNumber: string;
+      contact?: { contactId: string; name?: string | null } | null;
+    } | null;
+  };
   timelineStartMs: number | null;
   activeSequenceNum?: number | null;
   /** Bumps when the user seeks via the native video controls (deduped in CallBlockAdapter). */
@@ -418,19 +434,42 @@ export function CallTranscript(props: {
                   <Show
                     when={
                       !isCallGuestId(props.record, item.segment.speakerId) &&
+                      !isCallPhoneSpeaker(
+                        props.record,
+                        item.segment.speakerId
+                      ) &&
                       props.channelId
                     }
                     fallback={
                       <MeetingTranscriptSegmentRow
                         segment={item.segment}
-                        guest={isCallGuestId(
-                          props.record,
-                          item.segment.speakerId
-                        )}
-                        speakerName={guestDisplayName(
-                          props.record,
-                          item.segment.speakerId
-                        )}
+                        guest={
+                          isCallGuestId(props.record, item.segment.speakerId) ||
+                          isCallPhoneSpeaker(
+                            props.record,
+                            item.segment.speakerId
+                          )
+                        }
+                        speakerName={
+                          guestDisplayName(
+                            props.record,
+                            item.segment.speakerId
+                          ) ??
+                          (isCallPhoneSpeaker(
+                            props.record,
+                            item.segment.speakerId
+                          )
+                            ? props.record && callRecordPhoneParty(props.record)
+                            : undefined)
+                        }
+                        speakerKind={
+                          isCallPhoneSpeaker(
+                            props.record,
+                            item.segment.speakerId
+                          )
+                            ? 'Phone'
+                            : 'Guest'
+                        }
                         grouped={item.groupedWithPrevious}
                         isActive={
                           item.segment.sequenceNum === props.activeSequenceNum

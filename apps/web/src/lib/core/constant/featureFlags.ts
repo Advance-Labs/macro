@@ -424,6 +424,15 @@ export const enableQuickCalls = defineFlag({
   default: true,
 });
 
+// Phone calls over LiveKit SIP: the dialer, incoming phone call ringing, and
+// CRM contact numbers. PostHog-gated with a dev-mode default; override with
+// VITE_ENABLE_PHONE_CALLS.
+export const enablePhoneCalls = defineFlag({
+  key: 'enable-phone-calls',
+  env: 'ENABLE_PHONE_CALLS',
+  default: DEV_MODE_ENV || undefined,
+});
+
 // Email signatures: the settings editor, the compose / reply / AI-chat signature
 // previews, and the per-message include toggle. PostHog-gated with a dev-mode
 // default; override with VITE_ENABLE_EMAIL_SIGNATURES.
