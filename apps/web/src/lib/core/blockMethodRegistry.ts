@@ -30,6 +30,9 @@ export interface BlockMethodRegistry {
   canvas: AssertSpec<CanvasSpec>;
   spreadsheet: EmptySpec;
   pptx: EmptySpec;
+  psd: EmptySpec;
+  fig: EmptySpec;
+  ai: EmptySpec;
   project: EmptySpec;
   start: EmptySpec;
   unknown: EmptySpec;
@@ -40,7 +43,7 @@ export interface BlockMethodRegistry {
   color: EmptySpec;
   component: EmptySpec;
   task: EmptySpec;
-  automation: EmptySpec;
+  routine: EmptySpec;
   pr: EmptySpec;
   agent: EmptySpec;
   initiative: EmptySpec;

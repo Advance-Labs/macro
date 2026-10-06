@@ -288,7 +288,6 @@ fn soup_interface_exposes_the_complete_shared_entity_contract() {
         "GraphqlSoupCall",
         "GraphqlSoupCrmCompany",
         "GraphqlSoupForeignEntity",
-        "GraphqlSoupReminder",
         "GraphqlSoupAgentSession",
         "GraphqlSoupDatabaseRow",
     ] {
@@ -521,12 +520,18 @@ fn scheduled_actions_hang_off_the_authenticated_user() {
     assert_sdl_line(&sdl, "scheduledActions: [GraphqlScheduledAction!]!");
     assert_sdl_line(
         &sdl,
-        "union GraphqlScheduledActionTrigger = GraphqlScheduledActionCronTrigger | GraphqlScheduledActionEventsTrigger",
+        "union GraphqlScheduledActionTrigger = GraphqlScheduledActionCronTrigger | GraphqlScheduledActionEventsTrigger | GraphqlScheduledActionMultipleTrigger",
     );
     assert!(sdl.contains("AI routines the authenticated user can access."));
     for value in [
         "DOCUMENT_CREATED",
         "DOCUMENT_UPDATED",
+        "DOCUMENT_DELETED",
+        "TASK_CREATED",
+        "TASK_STATUS_CHANGED",
+        "TASK_PRIORITY_CHANGED",
+        "TASK_PROPERTY_CHANGED",
+        "EMAIL_MESSAGE_RECEIVED",
         "CHANNEL_CREATED",
         "CHANNEL_MESSAGE_POSTED",
         "CHANNEL_MENTIONED",

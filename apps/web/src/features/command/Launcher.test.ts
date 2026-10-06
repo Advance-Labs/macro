@@ -17,12 +17,15 @@ vi.mock(
   '@app/features/block-spreadsheet/queries/create-spreadsheet',
   () => ({})
 );
+vi.mock('@app/features/block-ai/queries/create-ai', () => ({}));
+vi.mock('@app/features/block-psd/queries/create-psd', () => ({}));
+vi.mock('@app/features/block-fig/queries/create-fig', () => ({}));
 vi.mock('@app/features/block-spreadsheet/queries/spreadsheet-access', () => ({
   isSpreadsheetEnabledForCurrentUser: () => true,
 }));
 vi.mock('@app/features/reminders/reminder-composer', () => ({}));
 vi.mock('@app/lib/analytics/posthog', () => ({}));
-vi.mock('@block-automation/component', () => ({}));
+vi.mock('@app/features/routines', () => ({}));
 vi.mock('@block-md/observability', () => ({}));
 vi.mock('@channel/CreateChannelModal', () => ({}));
 vi.mock('@components/app/split-layout/layout', () => ({}));
@@ -31,9 +34,12 @@ vi.mock('@core/component/EntityIcon', () => ({
   getIconConfig: () => ({ icon: () => null }),
 }));
 vi.mock('@core/constant/featureFlags', () => ({
+  enableAiEditor: 'ai',
   enableChatV3Agents: 'agents',
   enableDatabases: 'databases',
+  enableFigViewer: 'fig',
   enableProjects: 'projects',
+  enablePsdEditor: 'psd',
   enableReminders: 'reminders',
   enableSnippets: 'snippets',
   isFeatureEnabled: (flag: string) => flag !== 'agents' || flags.agents,

@@ -105,7 +105,6 @@ const getEntityRenameData = (
   if (
     entity.type === 'crm_company' ||
     entity.type === 'crm_contact' ||
-    entity.type === 'reminder' ||
     entity.type === 'calendar_event' ||
     entity.type === 'initiative' ||
     entity.type === 'database'
@@ -226,7 +225,7 @@ const renameDssSetData = (
       itemType !== 'email' &&
       itemType !== 'channel_message' &&
       itemType !== 'channel_thread' &&
-      itemType !== 'automation' &&
+      itemType !== 'routine' &&
       itemType !== 'calendar_event' &&
       itemType !== 'foreign' &&
       itemType !== 'database' &&

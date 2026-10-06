@@ -13,11 +13,13 @@ import {
 import { CALENDAR_VIEW_ID } from '@app/features/calendar-view/types';
 import { channelsSearch } from '@app/features/channels-view/channels-route';
 import {
-  REMINDER_DETAIL_COMPONENT_ID,
-  REMINDER_DETAIL_ROUTE_ID,
-  reminderDetailContent,
-  reminderIdFromDetailContent,
-} from '@app/features/reminders/reminder-navigation';
+  ROUTINE_CREATE_ROUTE_ID,
+  ROUTINE_DETAIL_ROUTE_ID,
+  ROUTINES_ROUTE_ID,
+  routineContent,
+  routineIdFromContent,
+  routineLocation,
+} from '@app/features/routines/routine-navigation';
 import {
   canonicalRoute,
   decodePane,
@@ -58,6 +60,8 @@ export function decodeLegacyPair(
 ): SplitContent | undefined {
   if (!type || !id) return;
 
+  if (type === 'routine' || type === 'automation') return routineContent(id);
+
   const agentsRoute = agentsRouteFromSegments(type, id);
   if (agentsRoute) return { type: 'component', id: agentsRoute };
 
@@ -71,7 +75,6 @@ export function decodeLegacyPair(
 
   if (type === 'component') {
     // Reminder list/detail surfaces are native routes only.
-    if (id === 'reminders' || id === REMINDER_DETAIL_COMPONENT_ID) return;
     // Preview Pair placeholders must never reach the view registry.
     return {
       type: 'component',
@@ -100,6 +103,7 @@ export function decodeLegacyPair(
 }
 
 function legacyLocation(type: string, id: string): SplitLocation | undefined {
+  if (type === 'routine' || type === 'automation') return routineLocation(id);
   const agentsRoute = agentsRouteFromSegments(type, id);
   if (agentsRoute) {
     return { route: paneRoute({ id: type, params: { id } }) };
@@ -131,9 +135,16 @@ export function handleLegacySplitPath(
     return [{ route: paneRoute({ id: 'drive', params: {} }) }];
   }
 
+  // The retired Getting Started checklist's own path.
+  if (segments.length === 1 && segments[0] === 'getting-started') {
+    return [{ route: paneRoute({ id: 'view-home', params: {} }) }];
+  }
+
   if (
     context.matchedRouteId &&
     context.matchedRouteId !== 'settings' &&
+    context.matchedRouteId !== ROUTINE_DETAIL_ROUTE_ID &&
+    context.matchedRouteId !== ROUTINE_CREATE_ROUTE_ID &&
     !context.matchedRouteId.startsWith('view-') &&
     context.matchedRouteId !== 'legacy-content'
   ) {
@@ -208,19 +219,23 @@ export function splitLocationFromContent(
   routes: SplitRoutesManifest,
   content: SplitContent
 ): SplitLocation {
-  const reminderId =
-    content.type === 'component' && content.id === REMINDER_DETAIL_COMPONENT_ID
-      ? reminderIdFromDetailContent(content)
-      : undefined;
-  if (reminderId) {
-    return {
-      route: paneRoute({
-        id: REMINDER_DETAIL_ROUTE_ID,
-        params: { reminderId },
-      }),
-    };
+  // Persisted panes can still contain the old block discriminator.
+  if (['routine', 'automation'].includes(content.type))
+    return routineLocation(content.id);
+  if (content.type === 'component' && content.id === 'routines') {
+    return routineLocation(routineIdFromContent(content));
   }
-
+  if (
+    content.type === 'component' &&
+    content.id === 'agents' &&
+    content.params?.agentPage === 'routines'
+  ) {
+    return routineLocation(
+      typeof content.params.routineId === 'string'
+        ? content.params.routineId
+        : undefined
+    );
+  }
   if (
     (content.type === 'component' && content.id === CALENDAR_VIEW_ID) ||
     (content.type === 'calendar' && content.id === CALENDAR_BLOCK_ID)
@@ -357,12 +372,13 @@ export function splitContentFromLocation(
     return { type: 'component', id: NOT_FOUND_ROUTE_ID };
   }
 
-  if (root.id === REMINDER_DETAIL_ROUTE_ID) {
-    const { reminderId } = routeParams(location.route);
-    if (typeof reminderId === 'string' && reminderId.length > 0) {
-      return reminderDetailContent(reminderId);
-    }
-    throw new Error('Invalid reminder detail split route');
+  if (root.id === ROUTINES_ROUTE_ID) return routineContent();
+  if (root.id === ROUTINE_CREATE_ROUTE_ID) return routineContent('new');
+  if (root.id === ROUTINE_DETAIL_ROUTE_ID) {
+    const { routineId } = routeParams(location.route);
+    if (typeof routineId === 'string' && routineId.length > 0)
+      return routineContent(routineId);
+    throw new Error('Invalid routine detail split route');
   }
 
   if (root.id.startsWith('view-'))

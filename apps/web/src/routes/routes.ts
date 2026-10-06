@@ -1,4 +1,3 @@
-import { changesSearch } from '@app/features/agent-changes/changes-search';
 import { agentsRouteSegments } from '@app/features/agents-view/core/route';
 import { agentDetailSearch } from '@app/features/block-agent/agent-route';
 import { SPREADSHEET_COMMENT_PARAMS } from '@app/features/block-spreadsheet/core/spreadsheet-comments';
@@ -9,6 +8,7 @@ import {
   calendarPeriodPath,
 } from '@app/features/calendar-view/calendar-url';
 import { CALENDAR_VIEW_ID } from '@app/features/calendar-view/types';
+import { changesSearch } from '@app/features/changes/changes-search';
 import { driveDetailTrailSchema } from '@app/features/drive-view/primitives/drive-detail-trail';
 import {
   DRIVE_DOCUMENT_TYPES,
@@ -20,11 +20,12 @@ import {
   homeBaseBlockType,
   homePreviewRouteParams,
 } from '@app/features/home/home-route-schema';
-import {
-  HOME_REMINDER_DETAIL_ROUTE_ID,
-  REMINDER_DETAIL_ROUTE_ID,
-} from '@app/features/reminders/reminder-navigation';
 import { reviewsTabSearch } from '@app/features/reviews-view/reviews-tab-search';
+import {
+  ROUTINE_CREATE_ROUTE_ID,
+  ROUTINE_DETAIL_ROUTE_ID,
+  ROUTINES_ROUTE_ID,
+} from '@app/features/routines/routine-navigation';
 import { defineRoute, type Entry, routeParams } from '@app/lib/split-router';
 import { callDetailSearch } from '@block-call/call-route';
 import { URL_PARAMS as CALL_URL_PARAMS } from '@block-call/constants';
@@ -129,13 +130,6 @@ export const mobileEmailSignupRoute = defineRoute({
 export const onboardingRoute = defineRoute({
   id: 'onboarding',
   path: 'onboarding',
-  externalSearch: '*',
-});
-
-/** The retired setup path; it forwards to onboarding with its query (?next deep links). */
-export const setupRoute = defineRoute({
-  id: 'setup',
-  path: 'setup',
   externalSearch: '*',
 });
 
@@ -379,14 +373,6 @@ export const homeDocumentRoute = defineRoute({
     `${homeBaseBlockType(documentType)}:${documentId}`,
 });
 
-export const homeReminderRoute = defineRoute({
-  id: HOME_REMINDER_DETAIL_ROUTE_ID,
-  path: 'reminder/:reminderId',
-  params: z.object({ reminderId: z.string().min(1) }),
-  remountKey: ({ reminderId }) => reminderId,
-  claim: ({ reminderId }) => ({ namespace: 'reminder', id: reminderId }),
-});
-
 export const homePreviewRoute = defineRoute({
   id: 'home-preview',
   path: ':blockType/:previewId',
@@ -429,13 +415,6 @@ export const homeSplitRoute = defineRoute({
   search: '*' as const,
 });
 
-export const gettingStartedRoute = defineRoute({
-  id: 'view-getting-started',
-  path: 'getting-started',
-  search: '*' as const,
-  claim: () => ({ namespace: 'component', id: 'getting-started' }),
-});
-
 export const recentRoute = defineRoute({
   id: 'view-recent',
   path: 'recent',
@@ -450,20 +429,27 @@ export const activityRoute = defineRoute({
   claim: () => ({ namespace: 'component', id: 'activity' }),
 });
 
-/** Lightweight standalone reminder detail at `/app/reminder/:reminderId`. */
-export const reminderDetailRoute = defineRoute({
-  id: REMINDER_DETAIL_ROUTE_ID,
-  path: 'reminder/:reminderId',
-  params: z.object({ reminderId: z.string().min(1) }),
-  remountKey: ({ reminderId }) => reminderId,
-  claim: ({ reminderId }) => ({ namespace: 'reminder', id: reminderId }),
+export const routinesRoute = defineRoute({
+  id: ROUTINES_ROUTE_ID,
+  path: 'routines',
+  claim: () => ({ namespace: 'component', id: 'routines' }),
 });
 
-export const remindersRoute = defineRoute({
-  id: 'view-reminders',
-  path: 'reminders',
-  search: '*' as const,
-  claim: () => ({ namespace: 'component', id: 'reminders' }),
+export const routineCreateRoute = defineRoute({
+  id: ROUTINE_CREATE_ROUTE_ID,
+  path: 'routines/new',
+  aliases: ['routine/new', 'automation/new'],
+  claim: () => ({ namespace: 'component', id: 'routine-compose' }),
+});
+
+export const routineDetailRoute = defineRoute({
+  id: ROUTINE_DETAIL_ROUTE_ID,
+  path: 'routines/:routineId',
+  aliases: ['routine/:routineId', 'automation/:routineId'],
+  params: z.object({ routineId: z.string().min(1) }),
+  remountKey: ({ routineId }) => routineId,
+  claim: ({ routineId }) => ({ namespace: 'routine', id: routineId }),
+  toReference: ({ routineId }) => uuidRouteReference(routineId, 'routine'),
 });
 
 export const agentsViewRoute = defineRoute({
