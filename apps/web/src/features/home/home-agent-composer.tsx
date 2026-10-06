@@ -9,9 +9,6 @@ import { TOKENS } from '@core/hotkey/tokens';
 import { useWarmAgentSessionQuery } from '@queries/agent-session/warm';
 import { createEffect, onCleanup } from 'solid-js';
 import '../agents-view/agents-view.css';
-import { modeForKind } from '../agents-view/core/agent-kind';
-import { kindForBot } from '../agents-view/core/roster';
-import { agentsRouteId } from '../agents-view/core/route';
 import {
   createPersistedComposerDraft,
   HOME_CONVERSATION_DRAFT_KEY,
@@ -23,7 +20,7 @@ import {
 } from '../agents-view/views/NewChatPage';
 import { buildHomeAgentPrompt } from './queries/home-agent-prompt';
 
-/** Home supplies suggestions and navigation to the same composer used by Agents. */
+/** Home supplies suggestions to the same composer used by Agents. */
 export function HomeAgentComposer(props: { autoFocus?: boolean }) {
   const panel = useSplitPanelOrThrow();
   const input = useChatInputContext();
@@ -78,20 +75,13 @@ export function HomeAgentComposer(props: { autoFocus?: boolean }) {
       return true;
     },
   });
+  // Home stays put: the new session joins the Home list once it is created,
+  // and opening it from there picks up the pending create.
   const start = (conversation: StartConversation) => {
-    const id = startPendingSession({
+    startPendingSession({
       ...conversation,
       userId: userId(),
       submitSurface: 'home',
-    });
-    panel.handle.replace({
-      next: {
-        type: 'component',
-        id: agentsRouteId({
-          mode: modeForKind(kindForBot(conversation.botId, roster.roster())),
-          conversation: { type: 'agent_session', id },
-        }),
-      },
     });
   };
   return (

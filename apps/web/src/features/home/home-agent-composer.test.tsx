@@ -78,7 +78,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it('forwards the shared composer selection into the common session flow', () => {
+it('starts the session without leaving Home', () => {
   render(() => <HomeAgentComposer />);
   const start = {
     prompt: 'Build it',
@@ -94,9 +94,8 @@ it('forwards the shared composer selection into the common session flow', () => 
     userId: 'viewer-1',
     submitSurface: 'home',
   });
-  expect(mocks.replace).toHaveBeenCalledWith({
-    next: { type: 'component', id: 'agents-session~agents~pending-session' },
-  });
+  // Home stays open; the session lands in the Home list once created.
+  expect(mocks.replace).not.toHaveBeenCalled();
 });
 
 it('puts suggested context into the shared draft', async () => {

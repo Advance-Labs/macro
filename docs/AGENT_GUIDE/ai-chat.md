@@ -537,7 +537,9 @@ file or a guessed remote revision.
 Home's composer follows the existing `enable-chat-v3-agents` flag: disabled keeps
 legacy chat; enabled mounts the same new-conversation composer as the Agents page.
 The greeting, agent/model selector, coding repository/branch drawer, and send flow
-are shared. Sending opens the new session inside Agents with the matching URL.
+are shared. Sending clears the composer and keeps Home open; the new session
+appears at the top of the Home list once created, and opening it from there
+shows the pending first prompt.
 Home suggestions and document/project context populate this same draft as markdown
 mentions. A failed suggestion conversion preserves the text and shows an error.
 Session creation and prompt delivery use the shared pending-session flow.
