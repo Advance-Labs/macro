@@ -59,7 +59,26 @@ export function EmailRenderCacheProvider(props: ParentProps) {
   onCleanup(unregister);
   onCleanup(registerCacheResetListener(() => invalidateEmailRenders()));
 
-  const cache = createMemo(() => {
+  const enabled = createMemo(() => flag().enabled);
+  const native = isTauri();
+  // Speculative hydration runs in one tab, and only while enabled.
+  const isLeader = createMemo(() =>
+    enabled() && !native && navigator.locks
+      ? createTabLeaderSignal('email-render-cache:preparation')
+      : () => false
+  );
+  let releaseHydration = () => {};
+  function stopHydration() {
+    releaseHydration();
+    releaseHydration = () => {};
+  }
+  createEffect(() => {
+    if (!enabled()) stopHydration();
+  });
+
+  // The session follows the viewer and invalidations, never the flag: a flag
+  // that resolves after mount must not clear persisted artifacts or other tabs.
+  const session = createMemo(() => {
     epoch();
     const identity = viewer();
     if (!identity || !globalThis.crypto?.subtle) {
@@ -68,8 +87,6 @@ export function EmailRenderCacheProvider(props: ParentProps) {
     }
     // Keep namespace/logout ownership even when the feature is disabled: cold
     // artifacts and another tab's enabled cache still belong to this viewer.
-    const enabled = flag().enabled;
-    const native = isTauri();
     const sessionEnded = () =>
       user.isAuthenticated() !== true || user.userId() !== identity;
     const session = createEmailRenderSession({
@@ -77,41 +94,42 @@ export function EmailRenderCacheProvider(props: ParentProps) {
       environment: import.meta.env.MODE,
       profileScope: getOrCreateCacheScope(),
       viewerId: identity,
-      enabled,
+      enabled: untrack(enabled),
       native,
       mobile: untrack(isMobile),
       waitForInvalidation: () => barrier,
       onRemoteInvalidation(ended, clearing) {
         barrier = Promise.allSettled([barrier, clearing]);
-        // End auth before cached source can be reused under a cleared generation.
-        if (ended) {
+        // End auth before cached source can be reused under a cleared
+        // generation. A disabled tab holds no prepared bodies to protect.
+        if (ended && enabled()) {
           setEndedViewer(identity);
           void clearLocalAuthSession();
         } else setEpoch((value) => value + 1);
       },
     });
-    const isLeader =
-      !enabled || native || !navigator.locks
-        ? () => false
-        : createTabLeaderSignal('email-render-cache:preparation');
-    let releaseHydration = () => {};
     onCleanup(
       registerEmailPreparationHints((ids) => {
-        if (!enabled || !isLeader()) return;
-        releaseHydration();
+        stopHydration();
+        if (!enabled() || !isLeader()()) return;
         releaseHydration = prepareEmailThreads(session.cache, ids, 4, true);
       })
     );
 
     resetCurrent = (ended) => session.invalidate(ended || sessionEnded());
     onCleanup(() => {
-      releaseHydration();
+      stopHydration();
       // Account switches and owner disposal clear cold artifacts too. Browser
       // reloads do not run Solid cleanup and therefore retain persistence.
       barrier = Promise.allSettled([barrier, session.dispose(sessionEnded())]);
     });
-    return enabled ? session.cache : undefined;
+    return session;
   });
+  // A flag that turns on after mount opens storage for the current session.
+  createEffect(() => {
+    if (enabled()) session()?.cache.initializeStorage();
+  });
+  const cache = () => (enabled() ? session()?.cache : undefined);
   return (
     <SessionContext.Provider value={cache}>
       {props.children}

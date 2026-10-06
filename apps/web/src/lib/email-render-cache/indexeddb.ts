@@ -1,4 +1,9 @@
-import type { Artifact, ArtifactStore, Association } from './store';
+import {
+  type Artifact,
+  type ArtifactStore,
+  type Association,
+  storageDeadline,
+} from './store';
 
 interface NamespaceState {
   generation: number;
@@ -20,6 +25,24 @@ function complete(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+function databaseName(namespace: string): string {
+  return `macro-email-renders-${namespace}`;
+}
+
+/** False only when the browser lists its databases and this one is absent. */
+export async function artifactDatabaseMayExist(
+  namespace: string
+): Promise<boolean> {
+  const listed = await storageDeadline(
+    Promise.resolve().then(() => indexedDB.databases()),
+    500
+  );
+  return (
+    !listed ||
+    listed.some((database) => database.name === databaseName(namespace))
+  );
+}
+
 function recordBytes(record: Association): number {
   return 2 * JSON.stringify(record).length;
 }
@@ -39,10 +62,7 @@ export class IndexedDbArtifacts implements ArtifactStore {
   private open(): Promise<IDBDatabase> {
     if (this.closed) return Promise.reject(new Error('Artifact store closed'));
     this.database ??= new Promise((resolve, reject) => {
-      const opening = indexedDB.open(
-        `macro-email-renders-${this.namespace}`,
-        1
-      );
+      const opening = indexedDB.open(databaseName(this.namespace), 1);
       let failed = false;
       const timer = setTimeout(() => {
         failed = true;

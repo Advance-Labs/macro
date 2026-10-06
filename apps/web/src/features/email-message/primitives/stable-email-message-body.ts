@@ -15,7 +15,6 @@ import {
   untrack,
 } from 'solid-js';
 import type {
-  EmailPreparation,
   EmailPreparationRequest,
   PreparedEmailLease,
 } from '../context/email-preparation';
@@ -39,6 +38,20 @@ function sameRequest(
     a.options.showQuotedContent === b.options.showQuotedContent &&
     a.options.images?.remote === b.options.images?.remote &&
     a.options.images?.proxyUrl === b.options.images?.proxyUrl
+  );
+}
+
+/** A re-prepared identical body must not rebuild the DOM or reload images. */
+function sameBody(
+  a: PreparedEmailBody | undefined,
+  b: PreparedEmailBody
+): boolean {
+  return (
+    !!a &&
+    a.html === b.html &&
+    a.kind === b.kind &&
+    a.hasTable === b.hasTable &&
+    a.hasHiddenContent === b.hasHiddenContent
   );
 }
 
@@ -104,7 +117,6 @@ export function createStableEmailMessageBody(
       rendered: undefined as PreparedEmailBody | undefined,
       presentation: '',
       disposed: false,
-      preparation: undefined as EmailPreparation | undefined,
     };
     onCleanup(() => {
       current.disposed = true;
@@ -136,15 +148,9 @@ export function createStableEmailMessageBody(
     const current = state();
     if (context.canRender?.() === false) return;
     const selected = request();
+    // A new session cache (invalidation or flag change) re-acquires like any
+    // other request change: the displayed body stays until its replacement.
     const preparation = context.preparation;
-    if (current.preparation !== preparation) {
-      unmount(current);
-      current.setBody(undefined);
-      current.setFullHTML(false);
-      current.lease?.release();
-      current.lease = undefined;
-    }
-    current.preparation = preparation;
     let active = true;
     let lease: PreparedEmailLease | undefined;
     current.setError(false);
@@ -235,7 +241,10 @@ export function createStableEmailMessageBody(
       normalizeFonts,
       attachmentBindings(),
     ]);
-    if (current.rendered === body && current.presentation === presentation)
+    if (
+      sameBody(current.rendered, body) &&
+      current.presentation === presentation
+    )
       return;
     const attachments = untrack(() => props.message.attachments);
     const options = {

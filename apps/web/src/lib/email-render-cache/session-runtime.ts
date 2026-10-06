@@ -1,5 +1,5 @@
 import { createPreparationExecutor } from './executor';
-import { IndexedDbArtifacts } from './indexeddb';
+import { artifactDatabaseMayExist, IndexedDbArtifacts } from './indexeddb';
 import { digest } from './keys';
 import { EmailRenderCache } from './service';
 import { storageDeadline } from './store';
@@ -90,6 +90,17 @@ export function createEmailRenderSession(options: EmailRenderSessionOptions) {
     const name = await namespace;
     await broadcastInvalidation(sessionEnded);
     if (options.native) return;
+    // A session that never opened storage, for a database that was never
+    // created, has nothing to clear. This keeps flag-off invalidations from
+    // creating storage; a stale quarantine has nothing left to protect.
+    if (!store && !(await artifactDatabaseMayExist(name))) {
+      try {
+        localStorage.removeItem(quarantineKey(name));
+      } catch {
+        // Unavailable storage holds no quarantine either.
+      }
+      return;
+    }
     // Failed clears make this namespace ineligible for subsequent sessions.
     try {
       localStorage.setItem(quarantineKey(name), '1');

@@ -1,7 +1,7 @@
 import { useEmailRenderCache } from '@app/lib/email-render-cache/session';
 import { useUserContext } from '@core/context/user';
 import { interceptMailtoLinks } from '@core/util/interceptMailtoLinks';
-import { untrack } from 'solid-js';
+import { createMemo } from 'solid-js';
 import type { EmailRenderingContextValue } from './context/email-rendering-context';
 import { fetchImagesViaPlatform, resolveCidImages } from './image-adapter';
 import { emailImagePolicy } from './rendering-policy';
@@ -10,11 +10,21 @@ import { createEmailTheme } from './theme';
 export function createEmailRenderingContext(): EmailRenderingContextValue {
   const cache = useEmailRenderCache();
   const user = useUserContext();
-  const owner = untrack(user.userId);
+  // The first viewer this surface renders for. A cold start may mount before
+  // user info loads, so adopt the first known id instead of snapshotting.
+  const owner = createMemo<string | undefined>(
+    (first) => first ?? (user.userId() || undefined)
+  );
   const theme = createEmailTheme();
   return {
     theme,
-    canRender: () => user.isAuthenticated() === true && user.userId() === owner,
+    // Revoke only on definitive sign-out or an account switch. An unknown auth
+    // state, such as an offline cold start, keeps rendering cached mail.
+    canRender: () => {
+      if (user.isAuthenticated() === false) return false;
+      const id = user.userId();
+      return !id || id === owner();
+    },
     get preparation() {
       return cache();
     },

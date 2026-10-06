@@ -20,10 +20,7 @@ import {
   markGraphqlEmailThreadSeen,
   markGraphqlEmailThreadUnread,
 } from '@service-storage/graphql-email-read-state';
-import {
-  getGraphqlSoupClient,
-  graphqlCacheEnabled,
-} from '@service-storage/graphql-soup';
+import { getGraphqlSoupClient } from '@service-storage/graphql-soup';
 import {
   type InfiniteData,
   useInfiniteQuery,
@@ -376,9 +373,7 @@ export function useMarkThreadAsSeenMutation(
           params.threadId,
           getActiveGraphqlSoupRevalidations()
         );
-        // The normalized cache already replays the durable revalidations after
-        // commit. Only the uncached transport needs the caller's refresh.
-        if (disposition === 'committed' && !graphqlCacheEnabled())
+        if (disposition === 'committed')
           await refreshActiveGraphqlSoupQueries();
         return;
       }
@@ -461,7 +456,7 @@ export function useMarkThreadAsUnreadMutation(
           params.threadId,
           getActiveGraphqlSoupRevalidations()
         );
-        if (disposition === 'committed' && !graphqlCacheEnabled())
+        if (disposition === 'committed')
           await refreshActiveGraphqlSoupQueries();
         return;
       }

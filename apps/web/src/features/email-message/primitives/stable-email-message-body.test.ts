@@ -348,4 +348,61 @@ describe('stable email host', () => {
       app.dispose();
     }
   });
+  it('keeps the displayed body while a new session cache re-prepares it', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    );
+    const resolveImages = vi.fn(async () => {});
+    const first = new EmailRenderCache({ executor: directExecutor });
+    const second = new EmailRenderCache({ executor: directExecutor });
+    const app = createRoot((dispose) => {
+      const [preparation, setPreparation] = createSignal<
+        EmailPreparation | undefined
+      >(first);
+      const body = createStableEmailMessageBody(
+        {
+          message: message('swap', { body_html_sanitized: '<p>Kept</p>' }),
+          isPersonal: true,
+          isBodyExpanded: () => true,
+          setExpandedMessageBody() {},
+          setFocusedMessageId() {},
+          isFocused: false,
+        },
+        {
+          theme: () => theme,
+          resolveImages,
+          get preparation() {
+            return preparation();
+          },
+        }
+      );
+      return { dispose, body, setPreparation };
+    });
+    try {
+      await vi.waitFor(() => expect(app.body.host()).toBeDefined());
+      const host = app.body.host()!;
+      const paragraph = host.shadowRoot!.querySelector('p');
+      // An invalidation disposes the old cache and provides a new one.
+      first.dispose();
+      app.setPreparation(second);
+      expect(app.body.host()).toBe(host);
+      expect(app.body.isPending()).toBe(true);
+      await vi.waitFor(() => expect(app.body.isPending()).toBe(false));
+      expect(app.body.host()).toBe(host);
+      expect(host.shadowRoot!.querySelector('p')).toBe(paragraph);
+      // Turning the flag off falls back to direct preparation in place.
+      app.setPreparation(undefined);
+      expect(app.body.host()).toBe(host);
+      expect(host.shadowRoot!.querySelector('p')).toBe(paragraph);
+      expect(app.body.isError()).toBe(false);
+      expect(resolveImages).toHaveBeenCalledTimes(1);
+    } finally {
+      app.dispose();
+      second.dispose();
+    }
+  });
 });

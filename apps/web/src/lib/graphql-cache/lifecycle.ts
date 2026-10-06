@@ -37,7 +37,9 @@ export function registerCacheHost(host: CacheHost): () => void {
 
 /** Best-effort reset of each active cache database during logout. */
 export async function clearRegisteredCaches(): Promise<void> {
-  await notifyCacheIdentityReset();
+  // Derived caches clear alongside the hosts; a slow derived store must not
+  // delay the source-cache wipe.
+  const derivedCleared = notifyCacheIdentityReset();
   // Soup cursors live outside the normalized cache. Reset them in the same
   // lifecycle operation so no later login resumes past records wiped below.
   clearExternalCacheState();
@@ -47,4 +49,5 @@ export async function clearRegisteredCaches(): Promise<void> {
   if (results.some((result) => result.status === 'rejected')) {
     await rotateCacheScope();
   }
+  await derivedCleared;
 }

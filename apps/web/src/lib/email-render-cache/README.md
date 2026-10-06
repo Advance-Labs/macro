@@ -40,10 +40,15 @@ tier and retries once, then disables persistence for that service.
 
 Invalidation cancels the old service synchronously. Every write checks its durable
 generation in the same transaction as the commit. Failed clears quarantine the
-namespace in local storage. Other tabs receive invalidation; an ended identity
-cannot repopulate from its previously cached source. Namespace/logout ownership
-remains active when the flag is disabled, so cold artifacts are still cleared.
-Session revocation releases mounted bodies and their resources. The initial invalidation
+namespace in local storage. Other tabs receive invalidation; an enabled tab that
+learns its identity ended clears local auth, so it cannot repopulate from its
+previously cached source. Namespace/logout ownership remains active when the
+flag is disabled, so cold artifacts are still cleared; a session that never
+opened storage skips the clear when the browser lists no artifact database.
+The session follows the viewer and invalidations, not the flag, so a flag that
+resolves after mount never clears storage. Session revocation (sign-out or an
+account switch) releases mounted bodies and their resources; a new session cache
+keeps displayed bodies until their replacements are ready. The initial invalidation
 policy conservatively clears the viewer's whole derived tier on message deletion,
 mailbox removal, access denial, or completed shared-mail revocation reconciliation.
 It preserves source caches and mutation queues, but may cause unrelated bodies to

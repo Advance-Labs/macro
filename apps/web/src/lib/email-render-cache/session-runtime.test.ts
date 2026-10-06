@@ -40,6 +40,19 @@ const options = (): EmailRenderSessionOptions => ({
   onRemoteInvalidation() {},
 });
 
+const namespace = () =>
+  digest(JSON.stringify(['https://mail.example', 'test', 'profile', 'viewer']));
+
+/** Cold artifacts left by an earlier, enabled session. */
+async function seedDatabase() {
+  const store = new IndexedDbArtifacts(await namespace(), 1024);
+  try {
+    await store.generation();
+  } finally {
+    store.close();
+  }
+}
+
 function start(overrides: Partial<EmailRenderSessionOptions> = {}) {
   const session = createEmailRenderSession({ ...options(), ...overrides });
   sessions.push(session);
@@ -69,13 +82,10 @@ afterEach(async () => {
 });
 
 it('clears cold artifacts and broadcasts logout while disabled, without Solid', async () => {
+  await seedDatabase();
   const session = start({ enabled: false });
-  expect(await indexedDB.databases()).toHaveLength(0);
   await session.invalidate(true);
-  const namespace = await digest(
-    JSON.stringify(['https://mail.example', 'test', 'profile', 'viewer'])
-  );
-  const store = new IndexedDbArtifacts(namespace, 1024);
+  const store = new IndexedDbArtifacts(await namespace(), 1024);
   try {
     expect(await store.generation()).toBe(1);
     expect(values.size).toBe(0);
@@ -93,6 +103,7 @@ it('clears cold artifacts and broadcasts logout while disabled, without Solid', 
 });
 
 it('disposes immediately and joins a pending reset when logout overtakes it', async () => {
+  await seedDatabase();
   const pending = Promise.withResolvers<void>();
   const invalidate = vi
     .spyOn(IndexedDbArtifacts.prototype, 'invalidate')
@@ -157,6 +168,7 @@ it('invalidates before reporting another tab logout, without echoing it', async 
 });
 
 it('keeps a failed clear quarantined', async () => {
+  await seedDatabase();
   vi.spyOn(IndexedDbArtifacts.prototype, 'invalidate').mockRejectedValue(
     new Error('Storage denied')
   );
@@ -172,4 +184,23 @@ it('uses no artifact database on native', async () => {
   lease.release();
   await session.invalidate(true);
   expect(await indexedDB.databases()).toHaveLength(0);
+});
+
+it('creates no storage when a disabled session clears a namespace that never had any', async () => {
+  const name = await namespace();
+  values.set(`email-render-quarantine:${name}`, '1');
+  const open = vi.spyOn(indexedDB, 'open');
+  const session = start({ enabled: false });
+  await session.invalidate(true);
+  expect(open).not.toHaveBeenCalled();
+  expect(await indexedDB.databases()).toHaveLength(0);
+  // A stale quarantine has nothing left to protect.
+  expect(values.size).toBe(0);
+  expect(
+    Channel.instances.some((channel) =>
+      channel.postMessage.mock.calls.some(
+        ([message]) => message.sessionEnded === true
+      )
+    )
+  ).toBe(true);
 });

@@ -42,6 +42,7 @@ vi.mock('./service', () => ({
   },
 }));
 vi.mock('./indexeddb', () => ({
+  artifactDatabaseMayExist: async () => true,
   IndexedDbArtifacts: class {
     invalidate = mocks.invalidate;
     close() {}
@@ -58,13 +59,14 @@ class Channel {
   close() {}
 }
 
-function mount(enabled: boolean) {
+function mount(enabled: boolean, loading = false) {
   const [authenticated, setAuthenticated] = createSignal(true);
+  const [flag, setFlag] = createSignal({ enabled, loading });
   mocks.user.mockReturnValue({
     isAuthenticated: authenticated,
     userId: () => 'viewer',
   });
-  mocks.flag.mockReturnValue({ enabled });
+  mocks.flag.mockImplementation(() => flag());
   let current: ReturnType<ReturnType<typeof useEmailRenderCache>>;
   function Capture() {
     const cache = useEmailRenderCache();
@@ -81,7 +83,7 @@ function mount(enabled: boolean) {
     ),
     document.createElement('div')
   );
-  return { dispose, read: () => current, setAuthenticated };
+  return { dispose, read: () => current, setAuthenticated, setFlag };
 }
 
 describe('session ownership', () => {
@@ -159,5 +161,32 @@ describe('session ownership', () => {
     expect(app.read()).toBeUndefined();
     expect(mocks.logout).toHaveBeenCalledOnce();
     expect(mocks.dispose).toHaveBeenCalled();
+  });
+  it('keeps the session and its storage when the flag resolves after mount', async () => {
+    const app = mount(false, true);
+    roots.push(app.dispose);
+    app.setFlag({ enabled: false, loading: false });
+    app.setFlag({ enabled: true, loading: false });
+    expect(app.read()).toBeDefined();
+    expect(mocks.initializeStorage).toHaveBeenCalled();
+    app.setFlag({ enabled: false, loading: false });
+    expect(app.read()).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.dispose).not.toHaveBeenCalled();
+    expect(mocks.invalidate).not.toHaveBeenCalled();
+    expect(mocks.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('leaves local auth alone when another tab ends the session while disabled', async () => {
+    const app = mount(false);
+    roots.push(app.dispose);
+    await vi.waitFor(() =>
+      expect(Channel.instances[0]?.onmessage).toBeDefined()
+    );
+    Channel.instances[0].onmessage?.({
+      data: { kind: 'invalidate', sessionEnded: true },
+    } as MessageEvent);
+    expect(mocks.dispose).toHaveBeenCalled();
+    expect(mocks.logout).not.toHaveBeenCalled();
   });
 });
