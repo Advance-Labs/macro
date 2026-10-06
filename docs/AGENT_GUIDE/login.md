@@ -17,6 +17,10 @@
    guide's `#` example is an inline mention of that same tag. A tag attachment
    failure does not block the remaining content; signup retries repair tags
    without resetting task priorities. The guide waits until its tag IDs resolve.
+   Each starter document also arrives as its own unread Home row, so a new
+   account's Home lists the guide and all three tasks alongside the support
+   channel. Opening a row marks it seen; marking it done removes it from Home.
+   These are in-app notifications only — signup sends no push for them.
 
 ## Temporary open signup in Develop
 
