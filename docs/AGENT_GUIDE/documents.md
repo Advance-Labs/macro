@@ -105,6 +105,9 @@ both requests must reveal the range without rebuilding the grid. Nested cards
 keep keyboard shortcuts local instead of taking over the surrounding editor.
 A failed document load offers **Retry**; unavailable documents keep the normal
 access-error screen. Disabled pilot access must not start a workbook load.
+Embedded cards and hosts without split chrome keep a local **Comments** button
+above the grid. Use it to open the workbook comments panel without selecting an
+annotated cell; the control stays out of the surrounding editor's title bar.
 
 You can also open a native spreadsheet and use the bottom-right **Import and export → Import…** menu to import its sheets. A large workbook shows a progress bar on **Import workbook** while it is written; the page stays responsive, and one undo removes the whole import.
 

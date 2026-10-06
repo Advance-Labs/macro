@@ -70,6 +70,7 @@ export function SpreadsheetComments(props: {
   store: SpreadsheetStore;
   canComment: Accessor<boolean>;
   isOwner: Accessor<boolean>;
+  /** Place comment controls in split chrome, or locally when false. */
   showHeader?: boolean;
   children: (
     location: () => SpreadsheetCommentAnchor | undefined,
@@ -356,23 +357,37 @@ export function SpreadsheetComments(props: {
       }
     )
   );
+  const CommentsButton = () => (
+    <Button
+      size="sm"
+      variant="ghost"
+      onClick={toggle}
+      aria-label="Comments"
+      aria-expanded={open()}
+    >
+      <ChatIcon class="size-4" />
+      <span class="hidden sm:inline">Comments</span>
+      <Show when={count()}>
+        <span class="text-xs">{count()}</span>
+      </Show>
+    </Button>
+  );
   return (
     <StaticMarkdownContext>
-      <Show when={props.showHeader !== false}>
-        <SplitHeaderRight>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={toggle}
-            aria-label="Comments"
-            aria-expanded={open()}
+      <Show
+        when={props.showHeader !== false}
+        fallback={
+          <div
+            role="toolbar"
+            aria-label="Spreadsheet comment controls"
+            class="flex shrink-0 justify-end border-b border-edge-muted px-2 py-1"
           >
-            <ChatIcon class="size-4" />
-            <span class="hidden sm:inline">Comments</span>
-            <Show when={count()}>
-              <span class="text-xs">{count()}</span>
-            </Show>
-          </Button>
+            <CommentsButton />
+          </div>
+        }
+      >
+        <SplitHeaderRight>
+          <CommentsButton />
         </SplitHeaderRight>
       </Show>
       <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
