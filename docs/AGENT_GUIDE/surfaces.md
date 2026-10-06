@@ -1577,7 +1577,14 @@ an error banner with a Retry button; pressing it refetches the PR in place.
 
 ## Calls — `/app/component/calls`
 
-Tabs `All` / `Missed` / `Unattended`; `New call` offers `Call a channel or contact`
+On desktop a collapsible sidebar holds the search field (`Search calls`, `⌘F`),
+the views `All` / `Missed` / `Unattended`, a `Type` section (`Internal` /
+`External`; External means at least one guest without a Macro account joined),
+a `Channels` section listing channels seen in loaded calls, and `Tags`. Choosing
+a type, channel, or tag shows only that one; choosing it again clears it. These
+refinements carry across the three views. Sort, group, filter, and `New call`
+sit in the list's top bar. Phones keep pill tabs and the header search.
+`New call` offers `Call a channel or contact`
 and, with `enable-quick-calls` enabled, `Manage call links`. Create Quick Calls
 with `New Call` beside Calendar's
 `New event`, or with `Create` → `Call` (`C C`). Scheduled calls are created through

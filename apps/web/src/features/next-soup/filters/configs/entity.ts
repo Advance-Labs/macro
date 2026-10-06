@@ -11,7 +11,9 @@ import {
   calendarEventFilter as calendarEventPredicate,
   callsFilter as callsPredicate,
   channelsFilter as channelsPredicate,
+  externalCallFilter as externalCallPredicate,
   filesAndFolderFilter as filesAndFolderPredicate,
+  internalCallFilter as internalCallPredicate,
   projectFilter as projectPredicate,
   searchSupportedFilter as searchSupportedPredicate,
   taskFilter as taskPredicate,
@@ -69,6 +71,19 @@ export const callsFilter = config({
   id: 'calls',
   predicate: callsPredicate,
   query: defineQueryFilters({}, { skipTargets: ['callf'] }),
+});
+
+// Guests are not modeled server-side, so audience narrows loaded calls only.
+export const callExternalFilter = config({
+  id: 'call-external',
+  predicate: externalCallPredicate,
+  query: {},
+});
+
+export const callInternalFilter = config({
+  id: 'call-internal',
+  predicate: internalCallPredicate,
+  query: {},
 });
 
 // Calendar events are searchable by title. Scoping to them alone means

@@ -49,7 +49,11 @@ export const useVisibleViewTabs = () => {
   return (view: TabbedListView): TabItem[] => VIEW_TAB_LISTS[view];
 };
 
-const PRESERVE_FILTERS_ON_TAB_CHANGE: ListView[] = ['documents', 'tasks'];
+const PRESERVE_FILTERS_ON_TAB_CHANGE: ListView[] = [
+  'documents',
+  'tasks',
+  'calls',
+];
 
 export const shouldPreserveFiltersOnTabChange = (view: ListView) =>
   PRESERVE_FILTERS_ON_TAB_CHANGE.includes(view);
@@ -154,6 +158,15 @@ export const useApplyPreset = () => {
         mergedFilters.include.documentOwnerId = currentCreatorIds.length
           ? [...currentCreatorIds]
           : undefined;
+      }
+
+      // A channel chosen in the Calls sidebar is a direct server refinement,
+      // and no tab scopes by channel, so it carries over unchanged.
+      const channelIds = queryFilters.state.include.callChannelId;
+      if (channelIds?.length) {
+        mergedFilters = mergeQuery(mergedFilters, {
+          include: { callChannelId: [...channelIds] },
+        });
       }
 
       nextFilters = mergedFilters;
