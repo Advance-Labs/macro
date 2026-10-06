@@ -53,8 +53,11 @@ impl<S: SystemPropertiesService> PgCallCrmLinker<S> {
             .map(|user_id| user_id.email_str().to_string())
             .chain(people.invitee_emails.iter().cloned())
             .collect();
-        let phone_numbers: Vec<String> =
-            people.phone_numbers.iter().map(ToString::to_string).collect();
+        let phone_numbers: Vec<String> = people
+            .phone_numbers
+            .iter()
+            .map(ToString::to_string)
+            .collect();
 
         let rows = sqlx::query!(
             r#"

@@ -19,9 +19,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{
-    domain::{
-        auth::CrmTeamReceipt, contact_phones::CrmContactPhoneService, model::CrmError,
-    },
+    domain::{auth::CrmTeamReceipt, contact_phones::CrmContactPhoneService, model::CrmError},
     inbound::axum_extractors::CrmContactAccessLevelExtractor,
 };
 

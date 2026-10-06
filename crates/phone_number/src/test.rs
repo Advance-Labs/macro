@@ -83,7 +83,10 @@ fn north_american_service_codes_and_invalid_exchanges_cannot_be_dialed() {
         "(555) 134-5678",
         "+1 555 234 567",
     ] {
-        assert!(PhoneNumber::parse(input).is_err(), "{input} should not parse");
+        assert!(
+            PhoneNumber::parse(input).is_err(),
+            "{input} should not parse"
+        );
     }
     assert_eq!(
         PhoneNumber::parse("+1 911 555 0100"),
@@ -112,7 +115,9 @@ fn extensions_are_split_off_for_dialing() {
         );
     }
     assert_eq!(
-        DialablePhoneNumber::parse("+1 555 234 5678").unwrap().extension,
+        DialablePhoneNumber::parse("+1 555 234 5678")
+            .unwrap()
+            .extension,
         None
     );
 }
@@ -149,10 +154,7 @@ fn serde_round_trips_e164_only() {
     let number = PhoneNumber::parse("(555) 234-5678").unwrap();
     let json = serde_json::to_value(&number).unwrap();
     assert_eq!(json, serde_json::json!("+15552345678"));
-    assert_eq!(
-        serde_json::from_value::<PhoneNumber>(json).unwrap(),
-        number
-    );
+    assert_eq!(serde_json::from_value::<PhoneNumber>(json).unwrap(), number);
     assert!(serde_json::from_value::<PhoneNumber>(serde_json::json!("(555) 234-5678")).is_err());
 }
 

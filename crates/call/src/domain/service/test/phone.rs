@@ -290,7 +290,10 @@ fn leg(direction: PhoneCallDirection, status: PhoneCallStatus) -> PhoneLeg {
     }
 }
 
-fn call_receipt(call_id: Uuid, actor: MacroUserIdStr<'static>) -> EntityAccessReceipt<ViewAccessLevel> {
+fn call_receipt(
+    call_id: Uuid,
+    actor: MacroUserIdStr<'static>,
+) -> EntityAccessReceipt<ViewAccessLevel> {
     EntityAccessReceipt::dangerously_assert_authenticated_user(
         actor,
         &call_id.to_string(),
@@ -330,7 +333,8 @@ fn expect_call_ends(repo: &mut MockCallRepository, rtc: &mut MockCallRtcClient, 
                 }))
             })
         });
-    rtc.expect_delete_room().returning(|_| Box::pin(async { Ok(()) }));
+    rtc.expect_delete_room()
+        .returning(|_| Box::pin(async { Ok(()) }));
 }
 
 #[tokio::test]
@@ -344,7 +348,12 @@ async fn dialing_needs_a_configured_trunk() {
         None,
     );
     let error = service
-        .dial_phone(owner(), DialPhoneRequest { to: CALLEE.to_string() })
+        .dial_phone(
+            owner(),
+            DialPhoneRequest {
+                to: CALLEE.to_string(),
+            },
+        )
         .await
         .unwrap_err();
     assert!(matches!(error, CallError::Unavailable(_)), "{error:?}");
@@ -352,7 +361,12 @@ async fn dialing_needs_a_configured_trunk() {
 
 #[tokio::test]
 async fn dialing_rejects_numbers_that_cannot_or_may_not_be_called() {
-    for to in ["not a number", "911", "+33 1 42 68 53 00", "+1 900 234 5678"] {
+    for to in [
+        "not a number",
+        "911",
+        "+33 1 42 68 53 00",
+        "+1 900 234 5678",
+    ] {
         let service = phone_service(
             MockCallRepository::new(),
             MockCallRtcClient::new(),
@@ -365,7 +379,10 @@ async fn dialing_rejects_numbers_that_cannot_or_may_not_be_called() {
             .dial_phone(owner(), DialPhoneRequest { to: to.to_string() })
             .await
             .unwrap_err();
-        assert!(matches!(error, CallError::InvalidRequest(_)), "{to}: {error:?}");
+        assert!(
+            matches!(error, CallError::InvalidRequest(_)),
+            "{to}: {error:?}"
+        );
     }
 }
 
@@ -374,11 +391,10 @@ async fn dialing_creates_an_owned_call_rings_the_callee_and_records_the_answer()
     let mut repo = MockCallRepository::new();
     no_other_call(&mut repo);
     let mut rtc = MockCallRtcClient::new();
-    rtc.expect_generate_token()
-        .returning(|room, identity| {
-            let token = format!("token:{room}:{identity}");
-            Box::pin(async move { Ok(token) })
-        });
+    rtc.expect_generate_token().returning(|room, identity| {
+        let token = format!("token:{room}:{identity}");
+        Box::pin(async move { Ok(token) })
+    });
     rtc.expect_create_room()
         .times(1)
         .returning(|_| Box::pin(async { Ok(()) }));
@@ -467,7 +483,8 @@ async fn callers_without_a_number_use_the_default_caller_id() {
     let mut rtc = MockCallRtcClient::new();
     rtc.expect_generate_token()
         .returning(|_, _| Box::pin(async { Ok("token".to_string()) }));
-    rtc.expect_create_room().returning(|_| Box::pin(async { Ok(()) }));
+    rtc.expect_create_room()
+        .returning(|_| Box::pin(async { Ok(()) }));
     rtc.expect_dispatch_transcription_agent()
         .returning(|_| Box::pin(async { Ok(()) }));
     rtc.expect_dial_sip_participant()
@@ -481,7 +498,12 @@ async fn callers_without_a_number_use_the_default_caller_id() {
         Some(dialing()),
     );
     let response = service
-        .dial_phone(owner(), DialPhoneRequest { to: CALLEE.to_string() })
+        .dial_phone(
+            owner(),
+            DialPhoneRequest {
+                to: CALLEE.to_string(),
+            },
+        )
         .await
         .unwrap();
     assert_eq!(response.phone.local_number, Some(number(DEFAULT_CALLER_ID)));
@@ -501,7 +523,8 @@ async fn unconnected_dials_record_why_and_end_the_call() {
         let mut rtc = MockCallRtcClient::new();
         rtc.expect_generate_token()
             .returning(|_, _| Box::pin(async { Ok("token".to_string()) }));
-        rtc.expect_create_room().returning(|_| Box::pin(async { Ok(()) }));
+        rtc.expect_create_room()
+            .returning(|_| Box::pin(async { Ok(()) }));
         rtc.expect_dispatch_transcription_agent()
             .returning(|_| Box::pin(async { Ok(()) }));
         rtc.expect_dial_sip_participant()
@@ -523,7 +546,12 @@ async fn unconnected_dials_record_why_and_end_the_call() {
             Some(dialing()),
         );
         let response = service
-            .dial_phone(owner(), DialPhoneRequest { to: CALLEE.to_string() })
+            .dial_phone(
+                owner(),
+                DialPhoneRequest {
+                    to: CALLEE.to_string(),
+                },
+            )
             .await
             .unwrap();
         let call_id = response.call.call_id;
@@ -551,7 +579,8 @@ async fn a_call_that_cannot_be_created_releases_its_room() {
     let mut rtc = MockCallRtcClient::new();
     rtc.expect_generate_token()
         .returning(|_, _| Box::pin(async { Ok("token".to_string()) }));
-    rtc.expect_create_room().returning(|_| Box::pin(async { Ok(()) }));
+    rtc.expect_create_room()
+        .returning(|_| Box::pin(async { Ok(()) }));
     rtc.expect_delete_room()
         .times(1)
         .returning(|_| Box::pin(async { Ok(()) }));
@@ -565,7 +594,12 @@ async fn a_call_that_cannot_be_created_releases_its_room() {
         Some(dialing()),
     );
     let error = service
-        .dial_phone(owner(), DialPhoneRequest { to: CALLEE.to_string() })
+        .dial_phone(
+            owner(),
+            DialPhoneRequest {
+                to: CALLEE.to_string(),
+            },
+        )
         .await
         .unwrap_err();
     assert!(matches!(error, CallError::AlreadyInCall(_)), "{error:?}");
@@ -625,7 +659,10 @@ async fn inbound_callers_ring_the_owner_of_the_number_they_dialed() {
         None,
     );
 
-    service.process_webhook_event("body", "token").await.unwrap();
+    service
+        .process_webhook_event("body", "token")
+        .await
+        .unwrap();
 
     let created = phone_repo.created();
     assert_eq!(created.len(), 1);
@@ -643,7 +680,10 @@ async fn inbound_callers_ring_the_owner_of_the_number_they_dialed() {
     assert_eq!(messages[0].message_type, "phone_call_incoming");
     assert_eq!(messages[0].users, vec![owner().to_string()]);
     assert_eq!(messages[0].message["from"], json!(CALLEE));
-    assert_eq!(messages[0].message["contact"]["name"], json!("Ada Lovelace"));
+    assert_eq!(
+        messages[0].message["contact"]["name"],
+        json!("Ada Lovelace")
+    );
     assert_eq!(
         messages[0].message["callId"],
         json!(call.call_id.to_string())
@@ -676,7 +716,10 @@ async fn inbound_calls_without_an_owner_or_caller_id_are_rejected() {
             FakeContacts::default(),
             None,
         );
-        service.process_webhook_event("body", "token").await.unwrap();
+        service
+            .process_webhook_event("body", "token")
+            .await
+            .unwrap();
         assert!(phone_repo.created().is_empty());
         assert!(connection.messages().is_empty());
     }
@@ -685,11 +728,10 @@ async fn inbound_calls_without_an_owner_or_caller_id_are_rejected() {
 #[tokio::test]
 async fn repeated_inbound_webhooks_do_not_ring_twice() {
     let mut repo = MockCallRepository::new();
-    repo.expect_get_call_by_room_name()
-        .returning(|room| {
-            let call = phone_call(ARCHIVED_EVENT_CALL_ID, room);
-            Box::pin(async move { Ok(Some(call)) })
-        });
+    repo.expect_get_call_by_room_name().returning(|room| {
+        let call = phone_call(ARCHIVED_EVENT_CALL_ID, room);
+        Box::pin(async move { Ok(Some(call)) })
+    });
     let rtc = sip_webhook(
         "participant_joined",
         INBOUND_ROOM,
@@ -705,7 +747,10 @@ async fn repeated_inbound_webhooks_do_not_ring_twice() {
         FakeContacts::default(),
         None,
     );
-    service.process_webhook_event("body", "token").await.unwrap();
+    service
+        .process_webhook_event("body", "token")
+        .await
+        .unwrap();
     assert!(phone_repo.created().is_empty());
     assert!(connection.messages().is_empty());
 }
@@ -730,11 +775,10 @@ async fn answering_joins_the_owner_and_stops_ringing_on_their_other_devices() {
             Box::pin(async move { Ok(participant) })
         });
     let mut rtc = MockCallRtcClient::new();
-    rtc.expect_generate_token()
-        .returning(|room, _| {
-            let token = format!("token:{room}");
-            Box::pin(async move { Ok(token) })
-        });
+    rtc.expect_generate_token().returning(|room, _| {
+        let token = format!("token:{room}");
+        Box::pin(async move { Ok(token) })
+    });
     let connection = RecordingConnectionService::default();
     let phone_repo = FakePhoneRepo::default().with_leg(
         call_id,
@@ -796,7 +840,11 @@ async fn only_the_number_owner_can_answer_a_ringing_call() {
 async fn only_ringing_inbound_calls_can_be_answered() {
     for (direction, status, conflict) in [
         (PhoneCallDirection::Inbound, PhoneCallStatus::Active, true),
-        (PhoneCallDirection::Outbound, PhoneCallStatus::Dialing, false),
+        (
+            PhoneCallDirection::Outbound,
+            PhoneCallStatus::Dialing,
+            false,
+        ),
     ] {
         let call_id = Uuid::now_v7();
         let mut repo = MockCallRepository::new();
@@ -946,7 +994,10 @@ async fn the_call_ends_when_the_person_on_the_phone_hangs_up() {
             FakeContacts::default(),
             None,
         );
-        service.process_webhook_event("body", "token").await.unwrap();
+        service
+            .process_webhook_event("body", "token")
+            .await
+            .unwrap();
         assert_eq!(phone_repo.leg(&call_id).unwrap().status, outcome);
     }
 }
@@ -978,7 +1029,10 @@ async fn unconnected_outbound_calls_are_left_to_their_dial_outcome() {
         FakeContacts::default(),
         None,
     );
-    service.process_webhook_event("body", "token").await.unwrap();
+    service
+        .process_webhook_event("body", "token")
+        .await
+        .unwrap();
     assert_eq!(
         phone_repo.leg(&call_id).unwrap().status,
         PhoneCallStatus::Dialing

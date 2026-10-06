@@ -17,8 +17,8 @@ use model_error_response::ErrorResponse;
 use super::CallRouterState;
 use crate::domain::models::{CallError, LeaveCallResponse};
 use crate::domain::phone::{
-    AssignPhoneNumberRequest, DialPhoneRequest, IncomingPhoneCallsResponse,
-    PhoneCallJoinResponse, PhoneNumber, PhoneSettingsResponse,
+    AssignPhoneNumberRequest, DialPhoneRequest, IncomingPhoneCallsResponse, PhoneCallJoinResponse,
+    PhoneNumber, PhoneSettingsResponse,
 };
 use crate::domain::ports::CallService;
 

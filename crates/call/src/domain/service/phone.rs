@@ -16,8 +16,7 @@ use crate::domain::phone::{
     IncomingPhoneCall, IncomingPhoneCallsResponse, MAX_PHONE_CALL_DURATION, NewPhoneCall,
     NewPhoneLeg, OUTBOUND_RINGING_TIMEOUT, PhoneCallDirection, PhoneCallJoinResponse,
     PhoneCallStatus, PhoneCallUpdated, PhoneContact, PhoneLeg, PhoneLegUpdate, PhoneNumber,
-    PhoneSettingsResponse,
-    SipDialAnswered, SipDialRequest, SipParticipant, extension_dtmf,
+    PhoneSettingsResponse, SipDialAnswered, SipDialRequest, SipParticipant, extension_dtmf,
     outbound_participant_identity,
 };
 
@@ -26,7 +25,8 @@ const PHONE_CALL_INCOMING_EVENT: &str = "phone_call_incoming";
 /// Websocket event telling a phone call's owner its leg changed state.
 const PHONE_CALL_UPDATED_EVENT: &str = "phone_call_updated";
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+    CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository + Clone,
     C: CallRtcClient,
@@ -92,7 +92,8 @@ where
             .generate_token(&room_name, actor.copied())
             .await
             .map_err(CallError::Internal)?;
-        self.leave_other_active_call(actor.copied(), call_id).await?;
+        self.leave_other_active_call(actor.copied(), call_id)
+            .await?;
         self.rtc_client
             .create_room(&room_name)
             .await
@@ -132,7 +133,9 @@ where
                 self.rtc_client
                     .delete_room(&room_name)
                     .await
-                    .inspect_err(|e| tracing::warn!(error=?e, "failed to delete unused phone call room"))
+                    .inspect_err(
+                        |e| tracing::warn!(error=?e, "failed to delete unused phone call room"),
+                    )
                     .ok();
                 return Err(error);
             }
@@ -250,7 +253,8 @@ where
             .generate_token(&call.room_name, actor.copied())
             .await
             .map_err(CallError::Internal)?;
-        self.leave_other_active_call(actor.copied(), call.id).await?;
+        self.leave_other_active_call(actor.copied(), call.id)
+            .await?;
         match self.repo.add_participant(&call.id, actor.copied()).await {
             Ok(_) => {}
             Err(AddParticipantError::UserAlreadyActive) => {
@@ -478,8 +482,7 @@ where
         }
         // An outbound call that never connected is concluded by its dial,
         // which knows why it failed (busy, declined, …) and ends the call.
-        if leg.direction == PhoneCallDirection::Outbound && leg.status == PhoneCallStatus::Dialing
-        {
+        if leg.direction == PhoneCallDirection::Outbound && leg.status == PhoneCallStatus::Dialing {
             return Ok(());
         }
         let updated = self
@@ -569,7 +572,12 @@ where
         }
     }
 
-    async fn send_phone_call_updated(&self, user_id: MacroUserIdStr<'_>, call_id: Uuid, leg: &PhoneLeg) {
+    async fn send_phone_call_updated(
+        &self,
+        user_id: MacroUserIdStr<'_>,
+        call_id: Uuid,
+        leg: &PhoneLeg,
+    ) {
         send_phone_call_updated(self.connection_service.as_ref(), user_id, call_id, leg).await;
     }
 }

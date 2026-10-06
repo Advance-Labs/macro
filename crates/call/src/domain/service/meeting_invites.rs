@@ -9,7 +9,8 @@ fn may_invite(meeting: &Meeting, actor: &MacroUserIdStr<'_>) -> bool {
     meeting.channel_id.is_none() && meeting.user_id == actor.as_ref()
 }
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+    CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository + Clone,
     C: CallRtcClient,

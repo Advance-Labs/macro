@@ -214,7 +214,9 @@ fn receive_sip_participant(
     })
     .to_string();
     let token = sign_webhook(&body);
-    client.receive_webhook(&body, &token).expect("signed webhook")
+    client
+        .receive_webhook(&body, &token)
+        .expect("signed webhook")
 }
 
 #[test]
@@ -284,22 +286,57 @@ fn dial_failures_are_classified_by_sip_status_then_twirp_code() {
     use crate::domain::phone::DialFailure;
 
     for (code, message, expected) in [
-        (TwirpErrorCode::UNAVAILABLE, "INVITE failed: sip status: 486: Busy Here", DialFailure::Busy),
-        (TwirpErrorCode::UNKNOWN, "sip status 603 (Decline)", DialFailure::Declined),
-        (TwirpErrorCode::UNKNOWN, "call failed with 480 Temporarily Unavailable", DialFailure::NoAnswer),
-        (TwirpErrorCode::NOT_FOUND, "sip status: 404 Not Found", DialFailure::Unreachable),
-        (TwirpErrorCode::DEADLINE_EXCEEDED, "ringing timeout", DialFailure::NoAnswer),
-        (TwirpErrorCode::RESOURCE_EXHAUSTED, "busy", DialFailure::Busy),
-        (TwirpErrorCode::INTERNAL, "trunk 200 misconfigured", DialFailure::Failed),
+        (
+            TwirpErrorCode::UNAVAILABLE,
+            "INVITE failed: sip status: 486: Busy Here",
+            DialFailure::Busy,
+        ),
+        (
+            TwirpErrorCode::UNKNOWN,
+            "sip status 603 (Decline)",
+            DialFailure::Declined,
+        ),
+        (
+            TwirpErrorCode::UNKNOWN,
+            "call failed with 480 Temporarily Unavailable",
+            DialFailure::NoAnswer,
+        ),
+        (
+            TwirpErrorCode::NOT_FOUND,
+            "sip status: 404 Not Found",
+            DialFailure::Unreachable,
+        ),
+        (
+            TwirpErrorCode::DEADLINE_EXCEEDED,
+            "ringing timeout",
+            DialFailure::NoAnswer,
+        ),
+        (
+            TwirpErrorCode::RESOURCE_EXHAUSTED,
+            "busy",
+            DialFailure::Busy,
+        ),
+        (
+            TwirpErrorCode::INTERNAL,
+            "trunk 200 misconfigured",
+            DialFailure::Failed,
+        ),
     ] {
-        assert_eq!(classify_dial_error(&twirp(code, message)), expected, "{message}");
+        assert_eq!(
+            classify_dial_error(&twirp(code, message)),
+            expected,
+            "{message}"
+        );
     }
 }
 
 #[test]
 fn sip_statuses_are_whole_three_digit_failure_codes() {
     assert_eq!(sip_status_in("sip status: 486: Busy Here"), Some(486));
-    assert_eq!(sip_status_in("200 OK then 487 Request Terminated"), Some(487));
+    assert_eq!(
+        sip_status_in("200 OK then 487 Request Terminated"),
+        Some(487)
+    );
     assert_eq!(sip_status_in("room 4860 not found"), None);
     assert_eq!(sip_status_in("no status"), None);
 }

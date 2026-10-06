@@ -60,8 +60,8 @@ where
             )
             .await
             .map_err(|error| rootcause::report!(error))?;
-        let receipt =
-            CrmTeamReceipt::from_team_receipt(receipt).map_err(|error| rootcause::report!(error))?;
+        let receipt = CrmTeamReceipt::from_team_receipt(receipt)
+            .map_err(|error| rootcause::report!(error))?;
         Ok(self
             .crm
             .get_contact_by_phone(&receipt, number)

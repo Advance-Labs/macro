@@ -263,7 +263,11 @@ impl PhoneLeg {
     /// How the external party is referred to in transcripts and summaries:
     /// the contact's name when known, otherwise their number.
     pub fn remote_party_label(&self) -> String {
-        match self.contact.as_ref().and_then(|contact| contact.name.as_deref()) {
+        match self
+            .contact
+            .as_ref()
+            .and_then(|contact| contact.name.as_deref())
+        {
             Some(name) => name.to_string(),
             None => self.remote_number.display(),
         }
@@ -391,7 +395,9 @@ impl PhoneDialingConfig {
                 if valid {
                     Ok(code.to_string())
                 } else {
-                    Err(PhoneDialingConfigError::InvalidCountryCode(code.to_string()))
+                    Err(PhoneDialingConfigError::InvalidCountryCode(
+                        code.to_string(),
+                    ))
                 }
             })
             .collect::<Result<Vec<_>, _>>()?;

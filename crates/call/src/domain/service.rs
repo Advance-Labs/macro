@@ -60,8 +60,7 @@ use super::models::{
 };
 use super::phone::PhoneDialingConfig;
 use super::ports::phone::{
-    NoOpPhoneCallRepository, NoOpPhoneContactDirectory, PhoneCallRepository,
-    PhoneContactDirectory,
+    NoOpPhoneCallRepository, NoOpPhoneContactDirectory, PhoneCallRepository, PhoneContactDirectory,
 };
 use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallService, CallSummarizer,
@@ -2025,7 +2024,10 @@ impl<
         self.assign_number(number, request).await
     }
 
-    async fn release_phone_number(&self, number: super::phone::PhoneNumber) -> Result<(), CallError> {
+    async fn release_phone_number(
+        &self,
+        number: super::phone::PhoneNumber,
+    ) -> Result<(), CallError> {
         self.release_number(number).await
     }
 }
@@ -2163,7 +2165,12 @@ fn summary_transcript(
 ) -> Vec<CallRecordTranscriptSegment> {
     let mut labels: HashMap<String, String> = guests
         .iter()
-        .map(|guest| (guest.id.to_string(), format!("{} (guest)", guest.display_name)))
+        .map(|guest| {
+            (
+                guest.id.to_string(),
+                format!("{} (guest)", guest.display_name),
+            )
+        })
         .collect();
     if let Some(phone) = phone {
         labels.insert(

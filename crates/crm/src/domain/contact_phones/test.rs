@@ -6,9 +6,12 @@ fn strings(values: &[&str]) -> Vec<String> {
 
 #[test]
 fn typed_numbers_are_normalized_and_deduplicated_in_order() {
-    let parsed =
-        parse_contact_phone_numbers(&strings(&["(555) 234-5678", "+44 20 7946 0958", "5552345678"]))
-            .unwrap();
+    let parsed = parse_contact_phone_numbers(&strings(&[
+        "(555) 234-5678",
+        "+44 20 7946 0958",
+        "5552345678",
+    ]))
+    .unwrap();
     assert_eq!(
         parsed.iter().map(PhoneNumber::as_str).collect::<Vec<_>>(),
         vec!["+15552345678", "+442079460958"]

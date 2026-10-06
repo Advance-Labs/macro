@@ -91,7 +91,11 @@ fn dialing_policy_allows_configured_countries_only() {
     assert!(config.permits(&number("+1 555 234 5678")).is_ok());
     assert!(config.permits(&number("+44 20 7946 0958")).is_ok());
     assert!(config.permits(&number("+33 1 42 68 53 00")).is_err());
-    assert!(dialing_config(&[]).permits(&number("+1 555 234 5678")).is_err());
+    assert!(
+        dialing_config(&[])
+            .permits(&number("+1 555 234 5678"))
+            .is_err()
+    );
 }
 
 #[test]
@@ -139,7 +143,10 @@ fn outbound_identities_follow_the_inbound_sip_convention() {
 #[test]
 fn extensions_wait_for_the_switchboard_before_dialing() {
     let dialable = DialablePhoneNumber::parse("+1 555 234 5678 x89").unwrap();
-    assert_eq!(extension_dtmf(dialable.extension.as_ref().unwrap()), "wwww89");
+    assert_eq!(
+        extension_dtmf(dialable.extension.as_ref().unwrap()),
+        "wwww89"
+    );
 }
 
 #[test]

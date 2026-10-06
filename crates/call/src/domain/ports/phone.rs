@@ -131,7 +131,9 @@ impl PhoneCallRepository for NoOpPhoneCallRepository {
         _number: &PhoneNumber,
         _user_id: MacroUserIdStr<'_>,
     ) -> Result<(), CallError> {
-        Err(CallError::Unavailable(PHONE_CALLING_UNAVAILABLE.to_string()))
+        Err(CallError::Unavailable(
+            PHONE_CALLING_UNAVAILABLE.to_string(),
+        ))
     }
 
     async fn release_phone_number(&self, _number: &PhoneNumber) -> Result<bool, CallError> {
@@ -139,14 +141,18 @@ impl PhoneCallRepository for NoOpPhoneCallRepository {
     }
 
     async fn create_outbound_phone_call(&self, _call: NewPhoneCall) -> Result<Call, CallError> {
-        Err(CallError::Unavailable(PHONE_CALLING_UNAVAILABLE.to_string()))
+        Err(CallError::Unavailable(
+            PHONE_CALLING_UNAVAILABLE.to_string(),
+        ))
     }
 
     async fn create_inbound_phone_call(
         &self,
         _call: NewPhoneCall,
     ) -> Result<Option<Call>, CallError> {
-        Err(CallError::Unavailable(PHONE_CALLING_UNAVAILABLE.to_string()))
+        Err(CallError::Unavailable(
+            PHONE_CALLING_UNAVAILABLE.to_string(),
+        ))
     }
 
     async fn get_live_phone_leg(&self, _call_id: &Uuid) -> Result<Option<PhoneLeg>, CallError> {

@@ -11,7 +11,8 @@ use crate::domain::meetings::GuestId;
 /// absence from the RTC room is not yet evidence that they left.
 pub(super) const RECONCILE_GRACE: TimeDelta = TimeDelta::minutes(2);
 
-impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd> CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+impl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
+    CallServiceImpl<R, C, Cn, E, N, S, Sm, V, Vr, B, Ph, Pd>
 where
     R: CallRepository + Clone,
     C: CallRtcClient,

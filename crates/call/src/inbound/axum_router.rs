@@ -127,8 +127,14 @@ where
         .route("/phone/settings", get(phone::settings::<S, Svc, Auth>))
         .route("/phone/dial", post(phone::dial::<S, Svc, Auth>))
         .route("/phone/incoming", get(phone::incoming::<S, Svc, Auth>))
-        .route("/phone/{call_id}/answer", post(phone::answer::<S, Svc, Auth>))
-        .route("/phone/{call_id}/hang-up", post(phone::hang_up::<S, Svc, Auth>))
+        .route(
+            "/phone/{call_id}/answer",
+            post(phone::answer::<S, Svc, Auth>),
+        )
+        .route(
+            "/phone/{call_id}/hang-up",
+            post(phone::hang_up::<S, Svc, Auth>),
+        )
         .route(
             "/phone/numbers/{phone_number}",
             axum::routing::put(phone::assign_number::<S, Svc, Auth>)

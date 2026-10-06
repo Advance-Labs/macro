@@ -519,7 +519,8 @@ fn sip_participant(participant: &ParticipantInfo) -> SipParticipant {
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
     };
-    let phone_number = |key: &str| attribute(key).and_then(|value| PhoneNumber::from_e164(value).ok());
+    let phone_number =
+        |key: &str| attribute(key).and_then(|value| PhoneNumber::from_e164(value).ok());
     SipParticipant {
         identity: participant.identity.clone(),
         phone_number: phone_number(SIP_PHONE_NUMBER_ATTRIBUTE),

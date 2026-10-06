@@ -37,7 +37,11 @@ impl PhoneLegRow {
             PhoneLeg {
                 direction: self.direction.parse().map_err(decode_error)?,
                 remote_number: stored_number(&self.remote_number)?,
-                local_number: self.local_number.as_deref().map(stored_number).transpose()?,
+                local_number: self
+                    .local_number
+                    .as_deref()
+                    .map(stored_number)
+                    .transpose()?,
                 participant_identity: self.participant_identity,
                 status: self.status.parse().map_err(decode_error)?,
                 contact: self.crm_contact_id.map(|contact_id| PhoneContact {
@@ -255,7 +259,9 @@ async fn insert_phone_call(
         leg.participant_identity,
         leg.status.as_str(),
         leg.contact.as_ref().map(|contact| contact.contact_id),
-        leg.contact.as_ref().and_then(|contact| contact.name.as_deref()),
+        leg.contact
+            .as_ref()
+            .and_then(|contact| contact.name.as_deref()),
         leg.sip_call_id,
     )
     .execute(tx.as_mut())
@@ -328,7 +334,10 @@ impl PhoneCallRepository for PgCallRepo {
         .execute(&self.pool)
         .await
         .map_err(|error| {
-            if error.as_database_error().and_then(|db| db.code()).as_deref()
+            if error
+                .as_database_error()
+                .and_then(|db| db.code())
+                .as_deref()
                 == Some(FOREIGN_KEY_VIOLATION)
             {
                 CallError::NotFound(format!("user {user_id}"))

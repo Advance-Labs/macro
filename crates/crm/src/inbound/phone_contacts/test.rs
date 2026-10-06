@@ -1,13 +1,15 @@
 use entity_access::{domain::service::EntityAccessServiceImpl, outbound::PgAccessRepository};
-use macro_user_id::cowlike::CowLike;
 use macro_db_migrator::MACRO_DB_MIGRATIONS;
+use macro_user_id::cowlike::CowLike;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::*;
 use crate::{
     domain::service::CrmServiceImpl,
-    outbound::{companies_repo::CompaniesRepositoryImpl, no_op_resolver::NoOpCompanyMetadataResolver},
+    outbound::{
+        companies_repo::CompaniesRepositoryImpl, no_op_resolver::NoOpCompanyMetadataResolver,
+    },
 };
 
 const MEMBER: &str = "macro|rep@ours.com";
@@ -111,7 +113,9 @@ fn directory(
 }
 
 fn user(user_id: &str) -> MacroUserIdStr<'static> {
-    MacroUserIdStr::parse_from_str(user_id).unwrap().into_owned()
+    MacroUserIdStr::parse_from_str(user_id)
+        .unwrap()
+        .into_owned()
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -124,7 +128,10 @@ async fn names_callers_from_the_users_team_crm(pool: PgPool) {
         .await
         .unwrap()
         .expect("the member's CRM knows the number");
-    assert_eq!(contact.contact_id, ada, "a hidden contact is never shown to a member");
+    assert_eq!(
+        contact.contact_id, ada,
+        "a hidden contact is never shown to a member"
+    );
     assert_ne!(contact.contact_id, hidden);
     assert_eq!(contact.name.as_deref(), Some("Ada Lovelace"));
 }
@@ -143,7 +150,10 @@ async fn users_outside_a_team_see_no_contacts(pool: PgPool) {
     );
     assert_eq!(
         directory(&pool)
-            .find_contact(user(MEMBER), &PhoneNumber::from_e164("+15559876543").unwrap())
+            .find_contact(
+                user(MEMBER),
+                &PhoneNumber::from_e164("+15559876543").unwrap()
+            )
             .await
             .unwrap(),
         None

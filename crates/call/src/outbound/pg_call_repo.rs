@@ -885,7 +885,8 @@ impl CallRepository for PgCallRepo {
         .fetch_all(&self.pool)
         .await?;
 
-        let phone_numbers = phone::fetch_archived_remote_numbers(&self.pool, call_record_id).await?;
+        let phone_numbers =
+            phone::fetch_archived_remote_numbers(&self.pool, call_record_id).await?;
 
         Ok(CallPeople {
             user_ids,

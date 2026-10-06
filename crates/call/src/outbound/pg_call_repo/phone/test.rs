@@ -72,7 +72,12 @@ async fn numbers_are_assigned_reassigned_and_released(pool: PgPool) {
     repo.assign_phone_number(&phone_number, user(TEAMMATE))
         .await
         .unwrap();
-    assert!(repo.phone_numbers_for_user(user(OWNER)).await.unwrap().is_empty());
+    assert!(
+        repo.phone_numbers_for_user(user(OWNER))
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         repo.phone_numbers_for_user(user(TEAMMATE)).await.unwrap(),
         vec![phone_number.clone()]
@@ -86,7 +91,10 @@ async fn numbers_are_assigned_reassigned_and_released(pool: PgPool) {
         .assign_phone_number(&phone_number, user("nobody@phone.test"))
         .await
         .unwrap_err();
-    assert!(matches!(missing_user, CallError::NotFound(_)), "{missing_user:?}");
+    assert!(
+        matches!(missing_user, CallError::NotFound(_)),
+        "{missing_user:?}"
+    );
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -218,7 +226,11 @@ async fn leg_updates_never_change_an_outcome(pool: PgPool) {
         .is_none()
     );
     assert_eq!(
-        repo.get_live_phone_leg(&call_id).await.unwrap().unwrap().status,
+        repo.get_live_phone_leg(&call_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
         PhoneCallStatus::Completed
     );
 }

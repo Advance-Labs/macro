@@ -2205,7 +2205,12 @@ where
             .custom_name
             .clone()
             .or_else(|| self.0.channel_name.clone())
-            .or_else(|| self.0.phone.as_ref().map(|phone| phone.remote_party_label()))
+            .or_else(|| {
+                self.0
+                    .phone
+                    .as_ref()
+                    .map(|phone| phone.remote_party_label())
+            })
     }
 
     /// Common call metadata.
