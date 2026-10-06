@@ -1,6 +1,5 @@
 import { ROUTER_BASE, ROUTER_BASE_CONCAT } from '@app/constants/routerBase';
 import { usePendingInviteRedemption } from '@app/features/gtm-invite/usePendingInviteRedemption';
-import { HomePreferencesProvider } from '@app/features/home/home-prefs';
 import { GlobalShareInboxConflictDialog } from '@app/features/inbox/ShareInboxConflictDialog';
 import { IncomingMeetingInvitationsProvider } from '@app/features/meetings/incoming-meeting-invitations';
 import { MeetingSessionProvider } from '@app/features/meetings/meeting-session-provider';
@@ -177,7 +176,6 @@ const ROUTES: RouteDefinition[] = [
 ];
 
 function ConfiguredGlobalAppStateProvider(props: ParentProps) {
-  const userId = useUserId();
   // Initialize global notification helpers
   const notifInterface = usePlatformNotificationState();
   useChatRenameWebsocketSync();
@@ -213,9 +211,7 @@ function ConfiguredGlobalAppStateProvider(props: ParentProps) {
       notificationSource={notificationSource}
       blockOrchestrator={blockOrchestrator}
     >
-      <HomePreferencesProvider userId={userId}>
-        {props.children}
-      </HomePreferencesProvider>
+      {props.children}
     </GlobalAppStateProvider>
   );
 }

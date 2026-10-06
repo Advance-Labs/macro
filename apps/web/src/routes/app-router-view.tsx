@@ -53,7 +53,6 @@ import {
   emailSplitRoute,
   emailThreadRoute,
   foldersRoute,
-  gettingStartedRoute,
   homeCalendarRoute,
   homeChannelRoute,
   homeDocumentRoute,
@@ -159,10 +158,6 @@ const EmailDetailRouteView = lazyNamed(
 const MailRouteView = lazyNamed(
   () => import('@app/features/email-view/route-views'),
   'MailRouteView'
-);
-const GettingStartedRouteView = lazyNamed(
-  () => import('@app/features/getting-started/route-views'),
-  'GettingStartedRouteView'
 );
 const InviteLinksPortal = lazyNamed(
   () => import('@app/features/gtm-invite/InviteLinksPortal'),
@@ -436,10 +431,6 @@ export function AppRouterView() {
             component={HomeDetailRouteView}
           />
         </Route>
-        <Route
-          definition={gettingStartedRoute}
-          component={GettingStartedRouteView}
-        />
         <Route definition={recentRoute} component={RecentRouteView} />
         <Route definition={activityRoute} component={ActivityRouteView} />
         <Route

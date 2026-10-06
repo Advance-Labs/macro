@@ -66,10 +66,6 @@ const MailRouteView = lazyNamed(
   () => import('@app/features/email-view/route-views'),
   'MailRouteView'
 );
-const GettingStartedRouteView = lazyNamed(
-  () => import('@app/features/getting-started/route-views'),
-  'GettingStartedRouteView'
-);
 const CallsRouteView = lazyNamed(
   () => import('@app/features/next-soup/route-views'),
   'CallsRouteView'
@@ -235,6 +231,12 @@ registerComponent('unified-list', () => (
   <RedirectSplit to={{ type: 'component', id: 'home' }} />
 ));
 
+// Retired Getting Started checklist: restored layouts and old
+// `/component/getting-started` links land on Home.
+registerComponent('getting-started', () => (
+  <RedirectSplit to={{ type: 'component', id: 'home' }} />
+));
+
 function DisabledProjectsRoute() {
   const panel = useSplitPanelOrThrow();
   onMount(() => {
@@ -308,7 +310,6 @@ registerComponent(
   () => <HomeRouteView />,
   () => composableLayout(true)
 );
-registerComponent('getting-started', () => <GettingStartedRouteView />);
 registerComponent(NOT_FOUND_ROUTE_ID, () => <NotFound />);
 registerComponent('recent', () => <RecentRouteView />);
 registerComponent('activity', () => <ActivityRouteView />);
