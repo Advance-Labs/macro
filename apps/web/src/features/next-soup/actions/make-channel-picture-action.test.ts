@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const pickFile = vi.fn();
 const remove = vi.fn();
 let isPending = false;
+let cachedPictureId: string | null | undefined;
 
 vi.mock('@channel/channel-picture', () => ({
   useChannelPictureEditor: () => ({
@@ -13,10 +14,9 @@ vi.mock('@channel/channel-picture', () => ({
   }),
 }));
 vi.mock('@queries/channel/picture', () => ({
-  cachedChannelPictureId: vi.fn(),
+  createCachedChannelPicture: () => () => cachedPictureId,
 }));
 
-import { cachedChannelPictureId } from '@queries/channel/picture';
 import { makeChannelPictureAction } from './make-channel-picture-action';
 
 const channel = (
@@ -34,7 +34,7 @@ const channel = (
 beforeEach(() => {
   vi.clearAllMocks();
   isPending = false;
-  vi.mocked(cachedChannelPictureId).mockReturnValue(undefined);
+  cachedPictureId = undefined;
 });
 
 describe('makeChannelPictureAction.canExecute', () => {
@@ -68,14 +68,14 @@ describe('makeChannelPictureAction.canExecute', () => {
 
 describe('makeChannelPictureAction.hasPicture', () => {
   it('reports a picture the cache already knows about', () => {
-    vi.mocked(cachedChannelPictureId).mockReturnValue('picture-1');
+    cachedPictureId = 'picture-1';
     expect(makeChannelPictureAction().hasPicture(channel())).toBe(true);
   });
 
   it('stays quiet for an unknown or absent picture', () => {
     const { hasPicture } = makeChannelPictureAction();
     expect(hasPicture(channel())).toBe(false);
-    vi.mocked(cachedChannelPictureId).mockReturnValue(null);
+    cachedPictureId = null;
     expect(hasPicture(channel())).toBe(false);
   });
 });
@@ -97,7 +97,7 @@ describe('makeChannelPictureAction.execute', () => {
 
 describe('makeChannelPictureAction.remove', () => {
   it('clears a picture the cache knows about', () => {
-    vi.mocked(cachedChannelPictureId).mockReturnValue('picture-1');
+    cachedPictureId = 'picture-1';
     makeChannelPictureAction().remove([channel()]);
     expect(remove).toHaveBeenCalledWith('c1');
   });

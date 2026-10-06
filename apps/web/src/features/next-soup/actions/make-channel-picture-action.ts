@@ -1,6 +1,6 @@
 import { useChannelPictureEditor } from '@channel/channel-picture';
 import { canEditChannelIdentity, type EntityData } from '@entity/types/entity';
-import { cachedChannelPictureId } from '@queries/channel/picture';
+import { createCachedChannelPicture } from '@queries/channel/picture';
 
 /**
  * Set or clear a channel's picture.
@@ -10,17 +10,18 @@ import { cachedChannelPictureId } from '@queries/channel/picture';
  */
 export const makeChannelPictureAction = () => {
   const editor = useChannelPictureEditor();
+  const cachedPictureId = createCachedChannelPicture();
 
   const canExecute = (entity: EntityData): boolean =>
     canEditChannelIdentity(entity) && !editor.isPending();
 
   /**
-   * Whether removal is worth offering. Read from cache so it can answer while
-   * a menu is being built; every surface with this menu already renders the
-   * channel's avatar, which is what populates it.
+   * Whether removal is worth offering. The id comes from cache because a menu
+   * is built synchronously, and the read is tracked, so a menu built before the
+   * channel's avatar resolved gains the item once the picture arrives.
    */
   const hasPicture = (entity: EntityData): boolean =>
-    canExecute(entity) && !!cachedChannelPictureId(entity.id);
+    canExecute(entity) && !!cachedPictureId(entity.id);
 
   // Single entity only: the file picker uploads one image for one channel.
   const execute = (entities: EntityData[]) => {
