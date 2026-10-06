@@ -113,6 +113,8 @@ export function getActionVerb(type: NotificationType): string {
       .with('channel_invite', () => 'invited you')
       .with('invite_to_team', () => 'invited you')
       .with('task_assigned', () => 'assigned you')
+      // Seeded by Macro for the account owner, so there is no actor.
+      .with('starter_document', () => 'getting started')
       .with('github_pr_status_changed', () => 'updated a pull request')
       .with('github_pr_check_run', () => 'completed a check')
       .with('github_review_requested', () => 'requested your review')
@@ -161,6 +163,9 @@ export function getTypeNoun(type: NotificationType, count: number): string {
     .with('channel_invite', () => (count === 1 ? 'invite' : 'invites'))
     .with('invite_to_team', () => (count === 1 ? 'invite' : 'invites'))
     .with('task_assigned', () => (count === 1 ? 'task' : 'tasks'))
+    .with('starter_document', () =>
+      count === 1 ? 'starter document' : 'starter documents'
+    )
     .with('github_pr_status_changed', () =>
       count === 1 ? 'pull request' : 'pull requests'
     )

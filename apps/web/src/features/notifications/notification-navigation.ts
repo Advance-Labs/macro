@@ -12,7 +12,11 @@ import type {
   SplitManager,
 } from '@components/app/split-layout/layoutManager';
 import type { BlockAlias, BlockName } from '@core/block';
-import { resolveBlockAlias } from '@core/constant/allBlocks';
+import {
+  type ItemLike,
+  itemToBlockName,
+  resolveBlockAlias,
+} from '@core/constant/allBlocks';
 import {
   enableCalendarUi,
   enableProjects,
@@ -278,6 +282,23 @@ function getSupportedHandler(
         if (meta.tag !== 'task_assigned') return null;
         return async (lm: SplitManager, newSplit: boolean = false) => {
           openSplitIfNotOpen(lm, 'task', meta.content.taskId, {
+            newSplit,
+            sourceHandle,
+            onApplied,
+          });
+        };
+      })
+      .with('starter_document', () => {
+        const meta = notification.notification_metadata;
+        if (meta.tag !== 'starter_document') return null;
+        // The starter set is a markdown note plus markdown tasks, so the
+        // subtype is what separates the task block from the document block.
+        const blockName = itemToBlockName({
+          type: 'document',
+          subType: entity?.subType ?? meta.content.subType ?? undefined,
+        } as ItemLike);
+        return async (lm: SplitManager, newSplit: boolean = false) => {
+          openSplitIfNotOpen(lm, blockName, meta.content.documentId, {
             newSplit,
             sourceHandle,
             onApplied,

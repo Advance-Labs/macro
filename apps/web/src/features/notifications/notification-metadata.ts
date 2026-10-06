@@ -48,6 +48,9 @@ export function getNotificationAction(n: UnifiedNotification): string {
       .with('new_email', () => 'sent a new email')
       .with('invite_to_team', () => 'invited you to')
       .with('task_assigned', () => 'assigned you a task')
+      // Seeded by Macro for the account owner, so there is no actor: the
+      // sentence reads "Getting started · <doc>", not "<someone> sent you".
+      .with('starter_document', () => 'Getting started')
       // Self-set, so there is no actor — the sentence reads "Reminder about X"
       // rather than "<someone> reminded you about X".
       .with('reminder', () => 'Reminder')
@@ -99,6 +102,7 @@ export function getNotificationTargetName(
       .with({ tag: 'crm_discussion' }, (m) => m.content.recordName)
       .with({ tag: 'invite_to_team' }, (m) => m.content.teamName)
       .with({ tag: 'task_assigned' }, (m) => m.content.taskName ?? undefined)
+      .with({ tag: 'starter_document' }, (m) => m.content.documentName)
       .with(
         { tag: P.union(...GITHUB_EVENT_TYPES) },
         (m) => `${m.content.owner}/${m.content.repo}#${m.content.number}`
@@ -158,6 +162,8 @@ export function getNotificationContent(
       .with({ tag: 'crm_discussion' }, (m) => m.content.text)
       .with({ tag: 'new_email' }, (m) => m.content.subject)
       .with({ tag: 'task_assigned' }, (m) => m.content.taskName ?? undefined)
+      // The name is the target; repeating it as content reads as a duplicate.
+      .with({ tag: 'starter_document' }, () => undefined)
       .with(
         { tag: P.union('github_pr_status_changed', 'github_review_requested') },
         (m) => m.content.title || m.content.displayName
@@ -243,6 +249,7 @@ export function shouldShowNotificationTarget(n: UnifiedNotification): boolean {
       .with({ tag: 'call_started' }, () => true)
       .with({ tag: 'new_email' }, () => false)
       .with({ tag: 'task_assigned' }, () => true)
+      .with({ tag: 'starter_document' }, () => true)
       .with({ tag: P.union(...GITHUB_EVENT_TYPES) }, () => true)
       .with({ tag: 'document_mention' }, () => true)
       .with({ tag: 'mentioned_in_document_comment' }, () => true)

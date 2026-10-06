@@ -236,6 +236,9 @@ const tagBubbleIcon = (tag: NotificationTag) =>
     .with('task_assigned', () => () => (
       <EntityIcon class={AVATAR_GLYPH_CLASS} targetType="task" size="fill" />
     ))
+    .with('starter_document', () => () => (
+      <FilesIcon class={AVATAR_GLYPH_CLASS} />
+    ))
     .with('ai_response', () => () => (
       <EntityIcon class={AVATAR_GLYPH_CLASS} targetType="chat" size="fill" />
     ))

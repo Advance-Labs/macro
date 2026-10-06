@@ -54,6 +54,7 @@ function getNotificationIcon(
     .with('channel_invite', () => UserPlusIcon)
     .with('invite_to_team', () => UserPlusIcon)
     .with('task_assigned', () => CheckIcon)
+    .with('starter_document', () => FilesIcon)
     .with('ai_response', () => ChatIcon)
     .with(
       P.union(

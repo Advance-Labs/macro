@@ -216,6 +216,44 @@ describe('Home data source', () => {
     expect(getDocumentCommentNotification(refreshed)).toEqual(fresh);
   });
 
+  it('admits a seeded starter document with no own activity', () => {
+    // Signup seeds these for the user through the system bot, so the viewer's
+    // activity log gets them only once an asynchronous consumer catches up.
+    // Their notification is what has to carry them onto Home before that.
+    const seeded: UnifiedNotification = {
+      id: 'starter-notification',
+      entity_id: 'guide',
+      entity_type: 'document',
+      sender_id: null,
+      state: 'unseen',
+      created_at: '2026-09-10T11:59:00Z',
+      updated_at: '2026-09-10T11:59:00Z',
+      viewed_at: null,
+      sent: true,
+      notification_event_type: 'starter_document',
+      notification_metadata: {
+        tag: 'starter_document',
+        content: {
+          documentId: 'guide',
+          documentName: 'Macro how to guide',
+        },
+      },
+    };
+    const guide = {
+      type: 'document' as const,
+      id: 'guide',
+      name: 'Macro how to guide',
+      ownerId: 'alice',
+      fileType: 'md',
+      updatedAt: seeded.created_at,
+      notifiedAt: seeded.created_at,
+      notifications: () => [seeded],
+    };
+    const { source } = mount(makeQuery([guide], false), makeQuery([], false));
+    expect(ids(source)).toEqual(['guide']);
+    expect(unreadFilterFn(rows(source)[0])).toBe(true);
+  });
+
   it('excludes Noise and unclassified emails from recent activity, even when important or drafted', () => {
     const activity = makeQuery(
       [

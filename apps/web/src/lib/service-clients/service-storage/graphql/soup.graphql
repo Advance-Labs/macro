@@ -604,6 +604,11 @@ fragment SoupNotificationNavigationMetadataFields on GraphqlNotifEvent {
 		taskAssignedAssignedBy: assignedBy
 		taskAssignedSenderProfilePictureUrl: senderProfilePictureUrl
 	}
+	... on GraphqlStarterDocumentMetadata {
+		starterDocumentDocumentId: documentId
+		starterDocumentDocumentName: documentName
+		starterDocumentSubType: subType
+	}
 	... on GraphqlReminderMetadata {
 		reminderReminderId: reminderId
 		reminderDescription: description

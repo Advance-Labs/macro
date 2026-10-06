@@ -1112,6 +1112,20 @@ function mapGraphqlNotificationMetadata(
         }) satisfies NotifEventMember<'task_assigned'>
     )
     .with(
+      { __typename: 'GraphqlStarterDocumentMetadata' },
+      (metadata) =>
+        ({
+          tag: 'starter_document',
+          content: {
+            documentId: metadata.starterDocumentDocumentId,
+            documentName: metadata.starterDocumentDocumentName,
+            subType: toNotificationDocumentSubType(
+              metadata.starterDocumentSubType
+            ),
+          },
+        }) satisfies NotifEventMember<'starter_document'>
+    )
+    .with(
       { __typename: 'GraphqlReminderMetadata' },
       (metadata) =>
         ({
