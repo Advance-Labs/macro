@@ -14,6 +14,7 @@ export function createDraftSyncStatus(options: {
   drafts: EmailDraftStorage;
   draftId: Accessor<string | undefined>;
   localSaveState: Accessor<'saving' | 'saved' | 'failed'>;
+  inputIdle: Accessor<boolean>;
   retry(): Promise<unknown>;
   discard(): Promise<unknown>;
 }) {
@@ -59,14 +60,17 @@ export function createDraftSyncStatus(options: {
     // Only a newly persisted version restarts the brief acknowledgement.
     // Queue notifications and identity adoption do not count as another save.
     if (!failed) {
-      if (!draft && disk === 'saving') return previous;
-      if (!draft && saved.loading) return previous;
+      if (!draft && (disk === 'saving' || saved.loading))
+        return previous && { ...previous, savedVersion: undefined };
       if (!draft && !saved.latest?.draft) return;
       return {
         message: 'Draft saved',
-        savedVersion: draft
-          ? `${draft.generation}:${draft.revision}`
-          : saved.latest?.draft?.updated_at,
+        savedVersion:
+          disk === 'saved' && options.inputIdle()
+            ? draft
+              ? `${draft.generation}:${draft.revision}`
+              : saved.latest?.draft?.updated_at
+            : undefined,
         failed: false,
         canKeepEditing: false,
       };

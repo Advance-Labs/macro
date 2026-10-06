@@ -1167,6 +1167,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     retryDraft,
     flushLocal: autosave.flushLocal,
     localSaveState: autosave.localSaveState,
+    inputIdle: autosave.inputIdle,
     context: ctxValue,
     editor,
     previewName,

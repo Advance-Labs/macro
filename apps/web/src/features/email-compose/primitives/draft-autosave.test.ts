@@ -8,6 +8,63 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it('keeps input active through continuous edits without delaying local saves', async () => {
+  vi.useFakeTimers();
+  const local = vi.fn(async () => {});
+  const persist = vi.fn(async () => {});
+  const autosave = createRoot((dispose) => {
+    disposers.push(dispose);
+    return createDraftAutosave({
+      capture: () => 'draft',
+      saveLocalSnapshot: local,
+      persist,
+      paused: () => false,
+    });
+  });
+  for (let edit = 0; edit < 3; edit++) {
+    autosave.schedule();
+    await autosave.flushLocal();
+    expect(autosave.localSaveState()).toBe('saved');
+    expect(autosave.inputIdle()).toBe(false);
+    expect(local).toHaveBeenCalledTimes(edit + 1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(autosave.inputIdle()).toBe(false);
+    expect(persist).not.toHaveBeenCalled();
+  }
+  await vi.advanceTimersByTimeAsync(299);
+  expect(autosave.inputIdle()).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(autosave.inputIdle()).toBe(true);
+  await autosave.settled();
+  expect(persist).toHaveBeenCalledOnce();
+
+  autosave.schedule();
+  expect(autosave.inputIdle()).toBe(false);
+  autosave.cancel();
+  expect(autosave.inputIdle()).toBe(true);
+});
+
+it('distinguishes a typing pause from a slow local save', async () => {
+  vi.useFakeTimers();
+  const write = Promise.withResolvers<void>();
+  const autosave = createRoot((dispose) => {
+    disposers.push(dispose);
+    return createDraftAutosave({
+      capture: () => 'draft',
+      saveLocalSnapshot: async () => await write.promise,
+      persist: vi.fn(async () => {}),
+      paused: () => false,
+    });
+  });
+  autosave.schedule();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(autosave.inputIdle()).toBe(true);
+  expect(autosave.localSaveState()).toBe('saving');
+  write.resolve();
+  await autosave.settled();
+  expect(autosave.localSaveState()).toBe('saved');
+});
+
 it('preserves the last edit when navigation disposes the thread supplying its snapshot', async () => {
   vi.useFakeTimers();
   const persist = vi.fn(

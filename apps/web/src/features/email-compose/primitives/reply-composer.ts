@@ -1413,6 +1413,7 @@ export function createReplyComposer(
     retryDraft,
     flushLocal: autosave.flushLocal,
     localSaveState: autosave.localSaveState,
+    inputIdle: autosave.inputIdle,
     onContentChange: handleChange,
     handleUserMention,
     scrollContainer,

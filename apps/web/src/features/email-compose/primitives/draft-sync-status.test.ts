@@ -35,6 +35,7 @@ it('offers retry discard when a crash interrupted deletion before admission', as
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saved',
+      inputIdle: () => true,
       retry: vi.fn(),
       discard,
     });
@@ -60,6 +61,7 @@ it('shows a failed status read without throwing into the composer error boundary
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saved',
+      inputIdle: () => true,
       retry: vi.fn(),
       discard: vi.fn(),
     });
@@ -70,10 +72,11 @@ it('shows a failed status read without throwing into the composer error boundary
   expect(status.state()?.failed).toBe(true);
 });
 
-it('keeps the saved acknowledgement stable through typing and background sync', async () => {
+it('acknowledges saved edits only after input pauses and stays stable through background sync', async () => {
   const context = createComposeContext();
   const [local, setLocal] = createSignal<LocalDraft | undefined>();
   const [disk, setDisk] = createSignal<'saving' | 'saved' | 'failed'>('saving');
+  const [inputIdle, setInputIdle] = createSignal(false);
   let changed = () => {};
   context.drafts.saveLocalDraft = vi.fn();
   context.drafts.readDraft = vi.fn(async () => ({
@@ -91,6 +94,7 @@ it('keeps the saved acknowledgement stable through typing and background sync', 
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: disk,
+      inputIdle,
       retry,
       discard: vi.fn(),
     });
@@ -109,6 +113,18 @@ it('keeps the saved acknowledgement stable through typing and background sync', 
     changed();
     setDisk('saved');
     await vi.waitFor(() => expect(status.state()?.message).toBe('Draft saved'));
+    expect(status.state()?.savedVersion).toBeUndefined();
+    setInputIdle(true);
+    const version = status.state()?.savedVersion;
+    expect(version).toBe('generation:1');
+    changed();
+    await vi.waitFor(() => expect(status.state()?.savedVersion).toBe(version));
+    setDisk('saving');
+    expect(status.state()?.savedVersion).toBeUndefined();
+    setDisk('saved');
+    expect(status.state()?.savedVersion).toBe(version);
+    setInputIdle(false);
+    expect(status.state()?.savedVersion).toBeUndefined();
     setDisk('saving');
     expect(status.state()).toMatchObject({
       message: 'Draft saved',
@@ -135,6 +151,7 @@ it('offers retry for server failures while newer edits remain saved locally', as
       drafts: context.drafts,
       draftId: () => 'draft',
       localSaveState: () => 'saving',
+      inputIdle: () => false,
       retry: vi.fn(),
       discard: vi.fn(),
     });

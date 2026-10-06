@@ -72,7 +72,7 @@ export type DraftAttempt = {
 /** Presentation of local persistence and explicit server recovery. */
 export type DraftSyncViewState = {
   message: string;
-  /** Changes only when another version has been saved, not during sync updates. */
+  /** Identifies a saved version to acknowledge after editing pauses. */
   savedVersion?: string;
   detail?: string;
   failed: boolean;

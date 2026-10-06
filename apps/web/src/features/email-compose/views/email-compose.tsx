@@ -108,6 +108,7 @@ function LoadedEmailComposeView(
     drafts: composeContext.drafts,
     draftId: state.draftId,
     localSaveState: state.localSaveState,
+    inputIdle: state.inputIdle,
     retry: state.retryDraft,
     discard: state.deleteDraftAndReset,
   });

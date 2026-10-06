@@ -677,9 +677,10 @@ With GraphQL draft queuing enabled, working copies and pending attachment bytes
 are saved on this device independently of the mutation queue. A failed server
 save must leave the draft discoverable in **Drafts** (including grouped views)
 and in its reply thread. **Draft saved** sits immediately left of the desktop
-delete button for two seconds after a saved version, then fades out, including
-offline local saves. Further saves restart the timer; background sync updates
-do not. Failures replace it with persistent **Retry** in the same place; hover for details.
+delete button after editing pauses for 500 ms and the latest local save completes,
+then fades out after two seconds, including offline saves. Resuming typing hides
+it immediately; another pause and saved version restart the timer. Background
+sync updates do not. Failures replace it with persistent **Retry** in the same place; hover for details.
 Verify the label does not cycle through saving/syncing text on each edit and
 that retry remains accessible beside the actions on mobile. Editing while failed
 continues saving locally without repeatedly submitting the rejected request.
