@@ -350,7 +350,7 @@ impl<S: AgentSessionRepo> ReviewService<S> {
 impl<S: AgentSessionRepo> Reviews for ReviewService<S> {
     async fn view(&self, access: ReviewAccess, revision: Option<u32>) -> Result<Option<Review>> {
         let (session, _) = self.authorize(access, false, false).await?;
-        let Some(mut review) = self.repo.load(session.id).await? else {
+        let Some(mut review) = self.repo.load_view(session.id, revision).await? else {
             return Ok(None);
         };
         let selected = revision.unwrap_or_else(|| review.revisions.last().map_or(0, |r| r.number));
@@ -410,22 +410,12 @@ impl<S: AgentSessionRepo> Reviews for ReviewService<S> {
 
     async fn file(&self, access: ReviewAccess, revision: u32, path: &str) -> Result<ReviewFile> {
         let (session, _) = self.authorize(access, false, false).await?;
-        let review = self
+        let content = self
             .repo
-            .load(session.id)
+            .file_content(session.id, revision, path)
             .await?
             .ok_or(ReviewError::NotFound)?;
-        self.body_at(
-            &review,
-            revision,
-            &Location {
-                path: path.into(),
-                side: diffd_core::model::Side::New,
-                line: 1,
-                end_line: None,
-            },
-        )
-        .await
+        self.bodies.get(session.id, &content).await
     }
 
     async fn capture(

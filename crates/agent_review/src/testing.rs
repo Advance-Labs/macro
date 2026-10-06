@@ -36,6 +36,38 @@ impl ReviewRepo for MemoryReviewRepo {
             .clone()
             .filter(|r| r.session_id == id.as_uuid()))
     }
+    async fn load_view(&self, id: AgentSessionId, revision: Option<u32>) -> Result<Option<Review>> {
+        let mut review = self.load(id).await?;
+        if let Some(review) = &mut review {
+            let selected = revision.or_else(|| review.revisions.last().map(|r| r.number));
+            for other in &mut review.revisions {
+                if Some(other.number) != selected {
+                    other.files.clear();
+                    other.symbols.clear();
+                    other.tour.clear();
+                    other.annotations.clear();
+                    other.file_groups.clear();
+                }
+            }
+        }
+        Ok(review)
+    }
+    async fn file_content(
+        &self,
+        id: AgentSessionId,
+        revision: u32,
+        path: &str,
+    ) -> Result<Option<String>> {
+        Ok(self
+            .state
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|r| r.session_id == id.as_uuid())
+            .and_then(|r| r.revisions.iter().find(|r| r.number == revision))
+            .and_then(|r| r.files.iter().find(|f| f.path == path))
+            .map(|f| f.content.clone()))
+    }
     async fn save(
         &self,
         review: &Review,
