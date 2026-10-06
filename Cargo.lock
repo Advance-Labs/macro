@@ -3950,6 +3950,7 @@ dependencies = [
  "mockall",
  "model-entity",
  "model-error-response",
+ "model_file_type",
  "model_notifications",
  "model_owner",
  "models_pagination",
