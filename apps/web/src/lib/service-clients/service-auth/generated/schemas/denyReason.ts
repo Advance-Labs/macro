@@ -16,4 +16,6 @@ export const DenyReason = {
   free_allowance_exhausted: 'free_allowance_exhausted',
   overage_limit_reached: 'overage_limit_reached',
   overage_payment_failed: 'overage_payment_failed',
+  phone_plan_required: 'phone_plan_required',
+  phone_minutes_exhausted: 'phone_minutes_exhausted',
 } as const;

@@ -9081,6 +9081,23 @@ export type PatchWebhookRequest = {
     status?: null | WebhookStatus;
 };
 
+/**
+ * Body of a `402 Payment Required` response: the user's plan does not pay
+ * for what they asked.
+ */
+export type PaymentRequiredResponse = {
+    /**
+     * Stable reason code, such as `phone_plan_required`,
+     * `phone_minutes_exhausted`, `overage_limit_reached` or
+     * `overage_payment_failed`.
+     */
+    code: string;
+    /**
+     * User-facing explanation.
+     */
+    message: string;
+};
+
 export type PdfAnchor = (PdfPlaceableCommentAnchor & {
     anchorType: 'placeable';
 }) | (PdfHighlightAnchor & {
@@ -14552,11 +14569,15 @@ export type DialPhoneErrors = {
     400: ErrorResponse;
     401: ErrorResponse;
     /**
+     * The caller's plan does not cover the call
+     */
+    402: PaymentRequiredResponse;
+    /**
      * The caller is still in another call
      */
     409: ErrorResponse;
     /**
-     * Phone calling is not set up
+     * Phone calling is not set up, or the caller's plan could not be checked
      */
     503: ErrorResponse;
 };

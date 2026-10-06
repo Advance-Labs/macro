@@ -15,6 +15,9 @@ free plan this is its monthly hard cap. */
   included_ai_cents_per_seat: number;
   /** Monthly subscription price per seat, cents. */
   monthly_price_cents: number;
+  /** Whether every seat on this plan can make phone calls. Premium seats
+can with the Phone add-on. */
+  phone_included: boolean;
   /** Whether a new purchase or plan move may pick this plan today. */
   purchasable: boolean;
   /** The tier. */

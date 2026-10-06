@@ -7,6 +7,7 @@
 
 import type { PlanTier } from './planTier';
 import type { UsageSnapshotBlockedReason } from './usageSnapshotBlockedReason';
+import type { UsageSnapshotPhoneBlockedReason } from './usageSnapshotPhoneBlockedReason';
 
 /**
  * The payer's current-period position, as shown in Billing settings and used
@@ -36,6 +37,13 @@ export interface UsageSnapshot {
   period_end: string;
   /** Period start. */
   period_start: string;
+  phone_blocked_reason?: UsageSnapshotPhoneBlockedReason;
+  /** Whether this seat may make phone calls. */
+  phone_enabled: boolean;
+  /** Phone minutes included with this seat this period. */
+  phone_included_minutes: number;
+  /** Phone minutes this seat has used this period. */
+  phone_used_minutes: number;
   /** Cost cents of usage this seat may still consume: its remaining allowance
 plus whatever shared credit and overage headroom pays for at the markup.
 0 when blocked. */

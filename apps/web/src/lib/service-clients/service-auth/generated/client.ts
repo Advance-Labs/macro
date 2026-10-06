@@ -67,6 +67,7 @@ import type {
   PatchUserOnboardingRequest,
   PatchUserTutorialRequest,
   Permission,
+  PhoneAddonOverview,
   PlanCatalogResponse,
   PostGetNamesRequestBody,
   ProfilePictures,
@@ -80,6 +81,7 @@ import type {
   SendInviteBody,
   SendMobileWelcomeEmailRequest,
   SendMobileWelcomeEmailResponse,
+  SetPhoneAddonRequest,
   SsoLoginParams,
   SsoRequiredResponse,
   StripeSessionResponse,
@@ -253,6 +255,144 @@ export const updateAiBillingOverage = async (
     status: res.status,
     headers: res.headers,
   } as updateAiBillingOverageResponse;
+};
+
+/**
+ * @summary The Phone add-on for the caller's plan: their own seat and, for the
+payer, every seat they pay for.
+ */
+export type getPhoneAddonResponse200 = {
+  data: PhoneAddonOverview;
+  status: 200;
+};
+
+export type getPhoneAddonResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type getPhoneAddonResponse500 = {
+  data: AiBillingErrorBody;
+  status: 500;
+};
+
+export type getPhoneAddonResponseSuccess = getPhoneAddonResponse200 & {
+  headers: Headers;
+};
+export type getPhoneAddonResponseError = (
+  | getPhoneAddonResponse401
+  | getPhoneAddonResponse500
+) & {
+  headers: Headers;
+};
+
+export type getPhoneAddonResponse =
+  | getPhoneAddonResponseSuccess
+  | getPhoneAddonResponseError;
+
+export const getGetPhoneAddonUrl = () => {
+  return `/ai-billing/phone-addon`;
+};
+
+export const getPhoneAddon = async (
+  options?: RequestInit
+): Promise<getPhoneAddonResponse> => {
+  const res = await fetch(getGetPhoneAddonUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPhoneAddonResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as getPhoneAddonResponse;
+};
+
+/**
+ * @summary Turn the Phone add-on on or off for a Premium seat. Payer only. Turning
+it on bills the rest of the period now; turning it off stops renewal and
+the seat keeps calling until the period ends.
+ */
+export type setPhoneAddonResponse200 = {
+  data: PhoneAddonOverview;
+  status: 200;
+};
+
+export type setPhoneAddonResponse400 = {
+  data: AiBillingErrorBody;
+  status: 400;
+};
+
+export type setPhoneAddonResponse401 = {
+  data: void;
+  status: 401;
+};
+
+export type setPhoneAddonResponse402 = {
+  data: AiBillingErrorBody;
+  status: 402;
+};
+
+export type setPhoneAddonResponse403 = {
+  data: AiBillingErrorBody;
+  status: 403;
+};
+
+export type setPhoneAddonResponse500 = {
+  data: AiBillingErrorBody;
+  status: 500;
+};
+
+export type setPhoneAddonResponse503 = {
+  data: AiBillingErrorBody;
+  status: 503;
+};
+
+export type setPhoneAddonResponseSuccess = setPhoneAddonResponse200 & {
+  headers: Headers;
+};
+export type setPhoneAddonResponseError = (
+  | setPhoneAddonResponse400
+  | setPhoneAddonResponse401
+  | setPhoneAddonResponse402
+  | setPhoneAddonResponse403
+  | setPhoneAddonResponse500
+  | setPhoneAddonResponse503
+) & {
+  headers: Headers;
+};
+
+export type setPhoneAddonResponse =
+  | setPhoneAddonResponseSuccess
+  | setPhoneAddonResponseError;
+
+export const getSetPhoneAddonUrl = () => {
+  return `/ai-billing/phone-addon`;
+};
+
+export const setPhoneAddon = async (
+  setPhoneAddonRequest: SetPhoneAddonRequest,
+  options?: RequestInit
+): Promise<setPhoneAddonResponse> => {
+  const res = await fetch(getSetPhoneAddonUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setPhoneAddonRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setPhoneAddonResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as setPhoneAddonResponse;
 };
 
 /**

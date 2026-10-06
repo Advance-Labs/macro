@@ -1230,6 +1230,7 @@ export * from './patchWebhookRequestFilters';
 export * from './patchWebhookRequestHeaders';
 export * from './patchWebhookRequestName';
 export * from './patchWebhookRequestStatus';
+export * from './paymentRequiredResponse';
 export * from './pdfAnchor';
 export * from './pdfAnchorId';
 export * from './pdfAnchorIdOneOf';

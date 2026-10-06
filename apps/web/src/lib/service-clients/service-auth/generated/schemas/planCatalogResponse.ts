@@ -12,10 +12,15 @@ import type { PlanCatalogEntry } from './planCatalogEntry';
 export interface PlanCatalogResponse {
   /** Credit packs a payer may buy, cents. */
   credit_packs_cents: number[];
+  /** Phone minutes included per phone seat per period. Minutes past them
+are billed as usage. */
+  included_phone_minutes_per_seat: number;
   /** Largest allowed overage cap, cents. */
   overage_limit_max_cents: number;
   /** Smallest allowed overage cap, cents. */
   overage_limit_min_cents: number;
+  /** Monthly price of the Phone add-on per Premium seat, cents. */
+  phone_addon_monthly_price_cents: number;
   /** Every plan, cheapest first. Clients read allowances from here rather
 than hard-coding them; `purchasable` marks the plans a user can buy. */
   plans: PlanCatalogEntry[];

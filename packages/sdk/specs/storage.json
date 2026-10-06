@@ -1865,6 +1865,16 @@
               }
             }
           },
+          "402": {
+            "description": "The caller's plan does not cover the call",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequiredResponse"
+                }
+              }
+            }
+          },
           "409": {
             "description": "The caller is still in another call",
             "content": {
@@ -1876,7 +1886,7 @@
             }
           },
           "503": {
-            "description": "Phone calling is not set up",
+            "description": "Phone calling is not set up, or the caller's plan could not be checked",
             "content": {
               "application/json": {
                 "schema": {
@@ -30891,6 +30901,21 @@
                 "description": "Webhook lifecycle status."
               }
             ]
+          }
+        }
+      },
+      "PaymentRequiredResponse": {
+        "type": "object",
+        "description": "Body of a `402 Payment Required` response: the user's plan does not pay\nfor what they asked.",
+        "required": ["message", "code"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable reason code, such as `phone_plan_required`,\n`phone_minutes_exhausted`, `overage_limit_reached` or\n`overage_payment_failed`."
+          },
+          "message": {
+            "type": "string",
+            "description": "User-facing explanation."
           }
         }
       },

@@ -376,7 +376,7 @@ export type CursorModelsResponse = {
 /**
  * Why a request was refused.
  */
-export type DenyReason = 'allowance_exhausted' | 'free_allowance_exhausted' | 'overage_limit_reached' | 'overage_payment_failed';
+export type DenyReason = 'allowance_exhausted' | 'free_allowance_exhausted' | 'overage_limit_reached' | 'overage_payment_failed' | 'phone_plan_required' | 'phone_minutes_exhausted';
 
 /**
  * Empty response is required due to custom fetch forcing `response.json()`
@@ -1192,6 +1192,63 @@ export type Permission = {
 };
 
 /**
+ * The Phone add-on for the caller's plan.
+ */
+export type PhoneAddonOverview = {
+    /**
+     * Whether the add-on can be bought in this deployment.
+     */
+    available: boolean;
+    /**
+     * Whether the caller pays for the plan and may change the add-on.
+     */
+    can_manage: boolean;
+    /**
+     * Phone minutes included per phone seat per period.
+     */
+    included_minutes_per_seat: number;
+    /**
+     * Monthly price per seat, cents.
+     */
+    monthly_price_cents: number;
+    /**
+     * The caller's own seat, then (for the payer) every other billed seat.
+     */
+    seats: Array<PhoneSeatStatus>;
+};
+
+/**
+ * One billed seat in the Phone add-on overview.
+ */
+export type PhoneSeatStatus = {
+    /**
+     * Whether the seat's Phone add-on renews with the subscription.
+     */
+    addon: boolean;
+    /**
+     * When a turned-off add-on stops.
+     */
+    addon_ends_at?: string | null;
+    /**
+     * Whether the seat can make phone calls now.
+     */
+    phone_enabled: boolean;
+    /**
+     * Whether phone calling comes with the seat's plan (Max or enterprise)
+     * rather than the add-on.
+     */
+    phone_included: boolean;
+    /**
+     * The seat's plan.
+     */
+    tier: PlanTier;
+    /**
+     * The seat's user.
+     */
+    user_id: string;
+};
+
+/**
  * One plan in the catalog.
  */
 export type PlanCatalogEntry = {
@@ -1204,6 +1261,11 @@ export type PlanCatalogEntry = {
      * Monthly subscription price per seat, cents.
      */
     monthly_price_cents: number;
+    /**
+     * Whether every seat on this plan can make phone calls. Premium seats
+     * can with the Phone add-on.
+     */
+    phone_included: boolean;
     /**
      * Whether a new purchase or plan move may pick this plan today.
      */
@@ -1223,6 +1285,11 @@ export type PlanCatalogResponse = {
      */
     credit_packs_cents: Array<number>;
     /**
+     * Phone minutes included per phone seat per period. Minutes past them
+     * are billed as usage.
+     */
+    included_phone_minutes_per_seat: number;
+    /**
      * Largest allowed overage cap, cents.
      */
     overage_limit_max_cents: number;
@@ -1230,6 +1297,10 @@ export type PlanCatalogResponse = {
      * Smallest allowed overage cap, cents.
      */
     overage_limit_min_cents: number;
+    /**
+     * Monthly price of the Phone add-on per Premium seat, cents.
+     */
+    phone_addon_monthly_price_cents: number;
     /**
      * Every plan, cheapest first. Clients read allowances from here rather
      * than hard-coding them; `purchasable` marks the plans a user can buy.
@@ -1350,6 +1421,20 @@ export type SendMobileWelcomeEmailResponse = {
      * Whether the lead was enrolled (false if they were already enrolled previously)
      */
     sent: boolean;
+};
+
+/**
+ * Request body for [`set_phone_addon_handler`].
+ */
+export type SetPhoneAddonRequest = {
+    /**
+     * Whether the seat should have the add-on.
+     */
+    enabled: boolean;
+    /**
+     * The seat to change; the caller's own seat when omitted.
+     */
+    userId?: string | null;
 };
 
 export type SsoRequiredResponse = {
@@ -1578,6 +1663,19 @@ export type UsageSnapshot = {
      * Period start.
      */
     period_start: string;
+    phone_blocked_reason?: null | DenyReason;
+    /**
+     * Whether this seat may make phone calls.
+     */
+    phone_enabled: boolean;
+    /**
+     * Phone minutes included with this seat this period.
+     */
+    phone_included_minutes: number;
+    /**
+     * Phone minutes this seat has used this period.
+     */
+    phone_used_minutes: number;
     /**
      * Cost cents of usage this seat may still consume: its remaining allowance
      * plus whatever shared credit and overage headroom pays for at the markup.
@@ -1756,6 +1854,80 @@ export type UpdateAiBillingOverageResponses = {
 };
 
 export type UpdateAiBillingOverageResponse = UpdateAiBillingOverageResponses[keyof UpdateAiBillingOverageResponses];
+
+export type GetPhoneAddonData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ai-billing/phone-addon';
+};
+
+export type GetPhoneAddonErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Internal server error
+     */
+    500: AiBillingErrorBody;
+};
+
+export type GetPhoneAddonError = GetPhoneAddonErrors[keyof GetPhoneAddonErrors];
+
+export type GetPhoneAddonResponses = {
+    /**
+     * Phone add-on overview
+     */
+    200: PhoneAddonOverview;
+};
+
+export type GetPhoneAddonResponse = GetPhoneAddonResponses[keyof GetPhoneAddonResponses];
+
+export type SetPhoneAddonData = {
+    body: SetPhoneAddonRequest;
+    path?: never;
+    query?: never;
+    url: '/ai-billing/phone-addon';
+};
+
+export type SetPhoneAddonErrors = {
+    /**
+     * The seat cannot have the add-on
+     */
+    400: AiBillingErrorBody;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * A paid plan is required
+     */
+    402: AiBillingErrorBody;
+    /**
+     * Only the payer may change billing
+     */
+    403: AiBillingErrorBody;
+    /**
+     * Internal server error
+     */
+    500: AiBillingErrorBody;
+    /**
+     * The add-on is not sold yet
+     */
+    503: AiBillingErrorBody;
+};
+
+export type SetPhoneAddonError = SetPhoneAddonErrors[keyof SetPhoneAddonErrors];
+
+export type SetPhoneAddonResponses = {
+    /**
+     * Updated overview
+     */
+    200: PhoneAddonOverview;
+};
+
+export type SetPhoneAddonResponse = SetPhoneAddonResponses[keyof SetPhoneAddonResponses];
 
 export type GetAiBillingPlansData = {
     body?: never;
