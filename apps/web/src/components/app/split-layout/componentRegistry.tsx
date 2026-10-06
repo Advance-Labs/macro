@@ -339,6 +339,17 @@ registerComponent('task-compose', (params) => {
   usePageViewTracking('task-compose');
   return <ComposeTask {...params} />;
 });
+registerComponent(
+  'folder-compose',
+  withAuth(
+    lazy(() =>
+      import('@app/features/drive-view/components/create-folder-composer').then(
+        (m) => ({ default: m.CreateFolderComposerView })
+      )
+    )
+  ),
+  { splitPanelLayout: 'composable' }
+);
 // Restore old composer URLs into the shared Agents page.
 registerComponent('agent-session-compose', () => (
   <RedirectSplit to={{ type: 'component', id: 'agents' }} />
