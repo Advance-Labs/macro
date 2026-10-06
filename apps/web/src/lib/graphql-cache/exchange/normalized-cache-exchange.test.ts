@@ -2752,7 +2752,7 @@ describe('normalizedCacheExchange', () => {
         };
         const onCacheError = vi.fn();
         const { forwarded } = harness(host, undefined, { onCacheError });
-        await tick();
+        await vi.waitFor(() => expect(host.commits).toHaveLength(2));
         expect(forwarded.map((op) => op.variables?.input.version)).toEqual([
           'create',
           'edit',
