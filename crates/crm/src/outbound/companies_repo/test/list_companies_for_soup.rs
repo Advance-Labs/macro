@@ -561,6 +561,53 @@ async fn list_for_soup_created_at_orders_by_first_interaction(pool: PgPool) -> a
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn list_for_soup_interaction_sorts_ignore_views(pool: PgPool) -> anyhow::Result<()> {
+    let team = Uuid::now_v7();
+    seed_team(&pool, team, VIEWER).await?;
+    enable_crm_for_team(&pool, team).await?;
+
+    // Viewed and never-viewed companies alternate under both interaction
+    // sorts, one of each tie on both keys, and every view is newer than every
+    // interaction, so sorting a viewed company by its view time misplaces it.
+    let mut by_first = Vec::new();
+    let mut by_last = Vec::new();
+    for (idx, (first_day, last_day, viewed)) in [
+        (1, 20, true),
+        (2, 19, false),
+        (3, 18, true),
+        (3, 18, false),
+        (5, 16, true),
+        (6, 15, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let domain = format!("interaction{idx}.com");
+        let id = insert_company_at(&pool, team, &domain, ts(first_day, 0), ts(last_day, 0)).await?;
+        if viewed {
+            let view_day = 25 + u32::try_from(idx)?;
+            record_history(&pool, VIEWER, CRM_COMPANY, id, ts(view_day, 0)).await?;
+        }
+        by_first.push((ts(first_day, 0), id));
+        by_last.push((ts(last_day, 0), id));
+    }
+
+    let repo = CompaniesRepositoryImpl::new(pool);
+    for (sort, mut want) in [
+        (CrmCompanyListSort::UpdatedAt, by_last),
+        (CrmCompanyListSort::CreatedAt, by_first),
+    ] {
+        want.sort_by(|a, b| b.cmp(a));
+        let expected: Vec<Uuid> = want.into_iter().map(|(_, id)| id).collect();
+        for limit in [1, 2, 100] {
+            let seen = walk(&repo, &team, sort, limit).await?;
+            assert_eq!(seen, expected, "{sort:?} limit {limit}");
+        }
+    }
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
 async fn list_for_soup_viewed_sorts_use_only_this_users_company_views(
     pool: PgPool,
 ) -> anyhow::Result<()> {

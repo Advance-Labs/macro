@@ -1,11 +1,13 @@
--- One branch per sort, each reading its index in sort order and stopping after
--- $3 rows. Branch conditions on parameters alone are checked once per
+-- Each sort reads the companies this user has viewed from their history, and
+-- the rest of the team from an index in the sort's order, stopping after $3
+-- rows either way. Branch conditions on parameters alone are checked once per
 -- execution, so only the requested sort's branches run, also under a cached
 -- generic plan. A single ORDER BY CASE $4 reads and sorts the whole team.
 --
--- Every branch also returns the user's view time. The viewed branch has it from
--- the history row it reads and the unviewed branches know it is NULL, so the
--- final select looks up no history per company.
+-- Viewed companies get their own branch because a generic plan can look up a
+-- company's view time by scanning the user's whole history for each company.
+-- Only the explicit-ids branch, which reads few companies, looks views up per
+-- company.
 WITH limited_companies AS (
     SELECT *
     FROM (
@@ -33,26 +35,61 @@ WITH limited_companies AS (
               AND c.hidden = COALESCE($5::bool, FALSE)
         )
         UNION ALL
+        -- Companies the user has viewed, under every sort. Bounded by the size
+        -- of the user's company history rather than the team.
+        (
+            SELECT *
+            FROM (
+                SELECT
+                    c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
+                    c.first_interaction, c.last_interaction,
+                    CASE $4
+                        WHEN 'created_at' THEN c.first_interaction
+                        WHEN 'updated_at' THEN c.last_interaction
+                        ELSE uh."updatedAt"::timestamptz
+                    END AS sort_ts,
+                    uh."updatedAt"::timestamptz AS viewed_at
+                FROM "UserHistory" uh
+                JOIN crm_companies c ON c.id::text = uh."itemId"
+                WHERE cardinality($2::uuid[]) = 0
+                  AND uh."userId" = $8
+                  AND uh."itemType" = 'crm_company'
+                  AND c.team_id = $1
+                  AND c.hidden = COALESCE($5::bool, FALSE)
+            ) viewed
+            WHERE $6::timestamptz IS NULL OR (sort_ts, id::text) < ($6, $7)
+            ORDER BY sort_ts DESC NULLS LAST, id DESC
+            LIMIT $3
+        )
+        UNION ALL
+        -- The remaining branches read unviewed companies. NOT IN rather than
+        -- NOT EXISTS: "itemId" is NOT NULL, so they are equivalent, and NOT IN
+        -- is planned as one hashed lookup of the user's history instead of a
+        -- scan of it per company.
+        --
         -- The seek bound repeats the keyset's leading column so the index
         -- scan starts at the cursor. Both interaction columns are NOT NULL,
         -- so it drops no rows; the row comparison stays exact.
+        --
+        -- Unviewed companies sort by last_interaction under viewed_updated too.
         (
             SELECT
                 c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
                 c.first_interaction, c.last_interaction,
                 c.last_interaction,
-                uh."updatedAt"::timestamptz
+                NULL::timestamptz
             FROM crm_companies c
-            LEFT JOIN "UserHistory" uh
-                ON uh."itemId" = c.id::text
-               AND uh."itemType" = 'crm_company'
-               AND uh."userId" = $8
             WHERE cardinality($2::uuid[]) = 0
-              AND $4 = 'updated_at'
+              AND $4 IN ('updated_at', 'viewed_updated')
               AND c.team_id = $1
               AND c.hidden = COALESCE($5::bool, FALSE)
               AND c.last_interaction <= COALESCE($6::timestamptz, 'infinity')
               AND ($6::timestamptz IS NULL OR (c.last_interaction, c.id::text) < ($6, $7))
+              AND c.id::text NOT IN (
+                  SELECT uh."itemId" FROM "UserHistory" uh
+                  WHERE uh."userId" = $8
+                    AND uh."itemType" = 'crm_company'
+              )
             ORDER BY c.last_interaction DESC NULLS LAST, c.id DESC
             LIMIT $3
         )
@@ -62,49 +99,25 @@ WITH limited_companies AS (
                 c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
                 c.first_interaction, c.last_interaction,
                 c.first_interaction,
-                uh."updatedAt"::timestamptz
+                NULL::timestamptz
             FROM crm_companies c
-            LEFT JOIN "UserHistory" uh
-                ON uh."itemId" = c.id::text
-               AND uh."itemType" = 'crm_company'
-               AND uh."userId" = $8
             WHERE cardinality($2::uuid[]) = 0
               AND $4 = 'created_at'
               AND c.team_id = $1
               AND c.hidden = COALESCE($5::bool, FALSE)
               AND c.first_interaction <= COALESCE($6::timestamptz, 'infinity')
               AND ($6::timestamptz IS NULL OR (c.first_interaction, c.id::text) < ($6, $7))
+              AND c.id::text NOT IN (
+                  SELECT uh."itemId" FROM "UserHistory" uh
+                  WHERE uh."userId" = $8
+                    AND uh."itemType" = 'crm_company'
+              )
             ORDER BY c.first_interaction DESC NULLS LAST, c.id DESC
-            LIMIT $3
-        )
-        UNION ALL
-        -- Companies the user has viewed, for both viewed sorts. Bounded by the
-        -- size of the user's company history rather than the team.
-        (
-            SELECT
-                c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
-                c.first_interaction, c.last_interaction,
-                uh."updatedAt"::timestamptz AS sort_ts,
-                uh."updatedAt"::timestamptz
-            FROM "UserHistory" uh
-            JOIN crm_companies c ON c.id::text = uh."itemId"
-            WHERE cardinality($2::uuid[]) = 0
-              AND $4 IN ('viewed_at', 'viewed_updated')
-              AND uh."userId" = $8
-              AND uh."itemType" = 'crm_company'
-              AND c.team_id = $1
-              AND c.hidden = COALESCE($5::bool, FALSE)
-              AND ($6::timestamptz IS NULL OR (uh."updatedAt"::timestamptz, c.id::text) < ($6, $7))
-            ORDER BY sort_ts DESC NULLS LAST, c.id DESC
             LIMIT $3
         )
         UNION ALL
         -- Unviewed companies sort as NULL under viewed_at. NULL never passes a
         -- cursor, so they only appear on a first page.
-        --
-        -- NOT IN rather than NOT EXISTS in both unviewed branches: "itemId" is
-        -- NOT NULL, so they are equivalent, and NOT IN is planned as one hashed
-        -- lookup of the user's history instead of a scan of it per company.
         (
             SELECT
                 c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
@@ -123,29 +136,6 @@ WITH limited_companies AS (
                     AND uh."itemType" = 'crm_company'
               )
             ORDER BY c.id DESC
-            LIMIT $3
-        )
-        UNION ALL
-        -- Unviewed companies under viewed_updated fall back to last_interaction.
-        (
-            SELECT
-                c.id, c.team_id, c.custom_name, c.email_sync, c.hidden,
-                c.first_interaction, c.last_interaction,
-                c.last_interaction,
-                NULL::timestamptz
-            FROM crm_companies c
-            WHERE cardinality($2::uuid[]) = 0
-              AND $4 = 'viewed_updated'
-              AND c.team_id = $1
-              AND c.hidden = COALESCE($5::bool, FALSE)
-              AND c.last_interaction <= COALESCE($6::timestamptz, 'infinity')
-              AND ($6::timestamptz IS NULL OR (c.last_interaction, c.id::text) < ($6, $7))
-              AND c.id::text NOT IN (
-                  SELECT uh."itemId" FROM "UserHistory" uh
-                  WHERE uh."userId" = $8
-                    AND uh."itemType" = 'crm_company'
-              )
-            ORDER BY c.last_interaction DESC NULLS LAST, c.id DESC
             LIMIT $3
         )
     ) candidates
