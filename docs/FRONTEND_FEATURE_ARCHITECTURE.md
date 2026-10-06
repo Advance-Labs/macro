@@ -513,6 +513,13 @@ available, or inspect and exercise the import boundary when migrating it.
 See [my-activity.test.ts](../apps/web/src/features/activity/primitives/my-activity.test.ts)
 for source-based primitive coverage. Verify view behavior in the browser.
 
+The same fakes make whole-feature browser tests possible without a backend.
+`features/onboarding` and `features/auth` keep an in-memory fake of their context
+in `tests/` and a `browser-test/` fixture. The fixture mounts the real views over
+that fake, with no module aliasing, and persists the fake in sessionStorage so
+OAuth and checkout round trips are real page loads. CI runs both suites on every
+web PR through `just test-signup-browser`.
+
 For a frontend implementation change, run the relevant tests and checks from
 `apps/web` with dependencies installed:
 
