@@ -110,14 +110,8 @@ async fn aggregates_only_persisted_counted_rows_for_requested_seats(pool: PgPool
     assert_eq!(
         usage,
         vec![
-            SeatUsage {
-                user: first.clone(),
-                used_cents: 400
-            },
-            SeatUsage {
-                user: second,
-                used_cents: 3_300
-            },
+            SeatUsage::ai(first.clone(), 400),
+            SeatUsage::ai(second, 3_300),
         ]
     );
     assert!(
@@ -132,10 +126,7 @@ async fn aggregates_only_persisted_counted_rows_for_requested_seats(pool: PgPool
             .usage_cost_cents_by_user(std::slice::from_ref(&first), current_period())
             .await
             .unwrap(),
-        vec![SeatUsage {
-            user: first,
-            used_cents: 400
-        }]
+        vec![SeatUsage::ai(first, 400)]
     );
 }
 
@@ -169,13 +160,7 @@ async fn billing_period_includes_start_and_excludes_end(pool: PgPool) {
         .usage_cost_cents_by_user(std::slice::from_ref(&user), BillingPeriod { start, end })
         .await
         .unwrap();
-    assert_eq!(
-        usage,
-        vec![SeatUsage {
-            user,
-            used_cents: 200
-        }]
-    );
+    assert_eq!(usage, vec![SeatUsage::ai(user, 200)]);
 }
 
 fn current_period() -> BillingPeriod {
@@ -232,13 +217,7 @@ async fn free_features_are_recorded_but_only_chat_and_editing_are_metered(pool: 
         .await
         .unwrap();
 
-    assert_eq!(
-        usage,
-        vec![SeatUsage {
-            user,
-            used_cents: 600,
-        }]
-    );
+    assert_eq!(usage, vec![SeatUsage::ai(user, 600)]);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -279,13 +258,7 @@ async fn unpriced_free_features_are_excluded_from_fallback_billing(pool: PgPool)
 
     // Chat and editing each fall back to $5 per million input tokens, counted
     // at cost. Unpriced free features add nothing.
-    assert_eq!(
-        usage,
-        vec![SeatUsage {
-            user,
-            used_cents: 1_000,
-        }]
-    );
+    assert_eq!(usage, vec![SeatUsage::ai(user, 1_000)]);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -329,13 +302,7 @@ async fn priced_cache_tokens_count_through_the_stored_total(pool: PgPool) {
         .unwrap();
 
     // $5 input + $0.50 cache read + $6.25 cache write.
-    assert_eq!(
-        usage,
-        vec![SeatUsage {
-            user,
-            used_cents: 1_175,
-        }]
-    );
+    assert_eq!(usage, vec![SeatUsage::ai(user, 1_175)]);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -370,11 +337,53 @@ async fn unpriced_cache_tokens_fall_back_to_the_opus_5_cache_rates(pool: PgPool)
         .unwrap();
 
     // $5 input + $0.50 cache read + $6.25 cache write at the Opus 5 rates.
+    assert_eq!(usage, vec![SeatUsage::ai(user, 1_175)]);
+}
+
+fn phone_minutes(user: MacroUserIdStr<'static>, seconds: u64, priced: bool) -> CompletionUsage {
+    let mut call = completion(user, AiFeature::PhoneCall, 0.0);
+    call.cost.model = "pstn".to_string();
+    call.cost.amount = UsageAmount::Audio {
+        duration: std::time::Duration::from_secs(seconds),
+    };
+    let total = 0.025 * seconds as f32 / 60.0;
+    call.cost.price = priced.then_some(Price {
+        pricing: ModelPricing::Audio { per_minute: 0.025 },
+        total,
+    });
+    call
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn phone_minutes_are_their_own_bucket(pool: PgPool) {
+    let user = MacroUserIdStr::try_from("macro|caller@example.com".to_string()).unwrap();
+    let repo = PgUsageRepo::new(pool.clone());
+    repo.insert_usage(&completion(user.clone(), AiFeature::Chat, 1.0), true)
+        .await
+        .unwrap();
+    // Ten priced minutes and an unpriced two, which fall back to the rate.
+    repo.insert_usage(&phone_minutes(user.clone(), 600, true), true)
+        .await
+        .unwrap();
+    repo.insert_usage(&phone_minutes(user.clone(), 120, false), true)
+        .await
+        .unwrap();
+    // Uncounted minutes are ignored like any other uncounted usage.
+    repo.insert_usage(&phone_minutes(user.clone(), 6_000, true), false)
+        .await
+        .unwrap();
+
+    let usage = PgUsageReader::new(pool)
+        .usage_cost_cents_by_user(std::slice::from_ref(&user), current_period())
+        .await
+        .unwrap();
     assert_eq!(
         usage,
         vec![SeatUsage {
             user,
-            used_cents: 1_175,
+            used_cents: 100,
+            phone_seconds: 720,
+            phone_cost_cents: 30,
         }]
     );
 }

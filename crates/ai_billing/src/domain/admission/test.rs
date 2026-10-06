@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct FakeBilling {
     decision: Option<AllowanceDecision>,
     calls: AtomicUsize,
+    phone_calls: AtomicUsize,
     fail: bool,
 }
 
@@ -15,6 +16,7 @@ impl FakeBilling {
         Arc::new(Self {
             decision,
             calls: AtomicUsize::new(0),
+            phone_calls: AtomicUsize::new(0),
             fail: false,
         })
     }
@@ -29,6 +31,15 @@ impl BillingService for FakeBilling {
                 "private database credentials and diagnostics"
             )));
         }
+        Ok(self.decision.expect("billing must not be called"))
+    }
+
+    async fn check_phone_allowance(
+        &self,
+        user: &MacroUserIdStr<'_>,
+    ) -> BillingResult<AllowanceDecision> {
+        assert_eq!(user.as_ref(), "macro|user@example.com");
+        self.phone_calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.decision.expect("billing must not be called"))
     }
 
@@ -74,6 +85,26 @@ impl BillingService for FakeBilling {
     }
     async fn mark_overage_invoice(&self, _: &str, _: bool) -> BillingResult<()> {
         panic!("admission must not handle invoices")
+    }
+
+    async fn phone_addon(
+        &self,
+        _user: &MacroUserIdStr<'_>,
+    ) -> BillingResult<crate::domain::PhoneAddonOverview> {
+        panic!("admission must not manage the phone add-on")
+    }
+
+    async fn set_phone_addon(
+        &self,
+        _user: &MacroUserIdStr<'_>,
+        _seat: &MacroUserIdStr<'_>,
+        _enabled: bool,
+    ) -> BillingResult<crate::domain::PhoneAddonOverview> {
+        panic!("admission must not manage the phone add-on")
+    }
+
+    async fn sync_phone_addon(&self, _payer: &MacroUserIdStr<'_>) -> BillingResult<()> {
+        panic!("admission must not manage the phone add-on")
     }
 }
 
@@ -143,6 +174,7 @@ async fn billing_errors_fail_closed_without_exposing_reports() {
     let billing = Arc::new(FakeBilling {
         decision: None,
         calls: AtomicUsize::new(0),
+        phone_calls: AtomicUsize::new(0),
         fail: true,
     });
     let admission = BillingAdmissionService::new(billing.clone(), AiUsageEnforcement::Enabled);
@@ -153,4 +185,21 @@ async fn billing_errors_fail_closed_without_exposing_reports() {
     assert!(!error.to_string().contains("private"));
     assert_eq!(format!("{error:?}"), "Unavailable");
     assert_eq!(billing.calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn phone_calls_use_the_phone_gate() {
+    let billing = FakeBilling::new(Some(AllowanceDecision::Deny(DenyReason::PhonePlanRequired)));
+    let admission = BillingAdmissionService::new(billing.clone(), AiUsageEnforcement::Enabled);
+    let error = admission
+        .admit(&user(), AiFeature::PhoneCall)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        AiAdmissionError::Denied(DenyReason::PhonePlanRequired)
+    );
+    assert_eq!(error.code(), "phone_plan_required");
+    assert_eq!(billing.phone_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(billing.calls.load(Ordering::SeqCst), 0);
 }

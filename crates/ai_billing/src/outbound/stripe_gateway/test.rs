@@ -1232,3 +1232,115 @@ fn fill_missing_field(value: &mut Value, field: &str) {
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
+
+const PHONE_PRICE: &str = "price_phone";
+
+fn with_phone_item(mut subscription: stripe::Subscription, quantity: u64) -> stripe::Subscription {
+    subscription.items.data.push(stripe::SubscriptionItem {
+        id: "si_phone".parse().expect("subscription item id"),
+        price: Some(stripe::Price {
+            id: PHONE_PRICE.parse().expect("price id"),
+            ..Default::default()
+        }),
+        quantity: Some(quantity),
+        ..Default::default()
+    });
+    subscription
+}
+
+#[test]
+fn phone_addon_item_adds_updates_or_removes_the_item() {
+    let bare = subscription("sub_team", stripe::SubscriptionStatus::Active, None, None);
+    assert!(phone_addon_item(&bare, PHONE_PRICE, 0).is_none());
+    let added = phone_addon_item(&bare, PHONE_PRICE, 2).unwrap();
+    assert_eq!(
+        (added.id, added.price.as_deref(), added.quantity),
+        (None, Some(PHONE_PRICE), Some(2))
+    );
+
+    let billed = with_phone_item(bare, 2);
+    assert!(phone_addon_item(&billed, PHONE_PRICE, 2).is_none());
+    let updated = phone_addon_item(&billed, PHONE_PRICE, 3).unwrap();
+    assert_eq!(
+        (updated.id.as_deref(), updated.price, updated.quantity),
+        (Some("si_phone"), None, Some(3))
+    );
+    let removed = phone_addon_item(&billed, PHONE_PRICE, 0).unwrap();
+    assert_eq!(
+        (removed.id.as_deref(), removed.deleted),
+        (Some("si_phone"), Some(true))
+    );
+}
+
+#[tokio::test]
+async fn set_phone_addon_quantity_updates_the_subscription_in_scope() {
+    let team_id = TEAM_ID.to_string();
+    let server = MockServer::start().await;
+    mount_subscriptions(
+        &server,
+        subscription_page(
+            vec![
+                stripe_response(&subscription(
+                    "sub_personal",
+                    stripe::SubscriptionStatus::Active,
+                    None,
+                    None,
+                )),
+                stripe_response(&with_phone_item(
+                    subscription(
+                        "sub_team",
+                        stripe::SubscriptionStatus::Active,
+                        None,
+                        Some(&team_id),
+                    ),
+                    1,
+                )),
+            ],
+            false,
+        ),
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/subscriptions/sub_team"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(stripe_response(&subscription(
+                "sub_team",
+                stripe::SubscriptionStatus::Active,
+                None,
+                Some(&team_id),
+            ))),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let unconfigured = gateway(&server);
+    assert!(!unconfigured.phone_addon_available());
+    let request = PhoneAddonQuantity {
+        customer_id: CUSTOMER_ID.to_string(),
+        scope: SubscriptionScope::Team { team_id: TEAM_ID },
+        quantity: 2,
+        prorate: true,
+    };
+    assert!(matches!(
+        unconfigured.set_phone_addon_quantity(request.clone()).await,
+        Err(BillingError::PhoneAddonUnavailable)
+    ));
+
+    let gateway = gateway(&server).with_phone_addon_price(Some(PHONE_PRICE.to_string()));
+    assert!(gateway.phone_addon_available());
+    gateway.set_phone_addon_quantity(request).await.unwrap();
+
+    let requests = server.received_requests().await.expect("recorded requests");
+    let update = requests
+        .iter()
+        .find(|request| request.method.as_str() == "POST")
+        .expect("subscription update");
+    let body = String::from_utf8(update.body.clone())
+        .unwrap()
+        .replace("%5B", "[")
+        .replace("%5D", "]");
+    assert!(body.contains("items[0][id]=si_phone"), "{body}");
+    assert!(body.contains("items[0][quantity]=2"), "{body}");
+    assert!(body.contains("proration_behavior=always_invoice"), "{body}");
+}

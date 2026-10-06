@@ -47,6 +47,7 @@ fn pricing_exposes_every_configured_value() {
             max: IncludedAllowanceCents::new(15_000).unwrap(),
         },
         OverageMarkupPercent::new(12).unwrap(),
+        IncludedPhoneMinutes::new(1_000).unwrap(),
     );
     assert_eq!(pricing.included_allowance_cents_for(PlanTier::Free), 500);
     assert_eq!(
@@ -57,6 +58,7 @@ fn pricing_exposes_every_configured_value() {
     // The unqualified accessor is the default paid plan's.
     assert_eq!(pricing.included_allowance_cents(), 3_500);
     assert_eq!(pricing.overage_markup_percent(), 12);
+    assert_eq!(pricing.included_phone_minutes(), 1_000);
     // A different markup prices the same cost differently.
     assert_eq!(pricing.extra_customer_cents(1_000), 1_120);
     assert_eq!(AiPricing::testing().extra_customer_cents(1_000), 1_050);
@@ -79,6 +81,7 @@ fn zero_markup_charges_cost_exactly() {
     let pricing = AiPricing::new(
         PlanAllowances::uniform(0),
         OverageMarkupPercent::new(0).unwrap(),
+        IncludedPhoneMinutes::new(1_000).unwrap(),
     );
     for cost in [0, 1, 7, 1_000, 123_456] {
         assert_eq!(pricing.extra_customer_cents(cost), cost);
@@ -108,6 +111,7 @@ fn covered_cost_is_the_exact_inverse_of_the_markup() {
         let pricing = AiPricing::new(
             PlanAllowances::uniform(2_000),
             OverageMarkupPercent::new(markup).unwrap(),
+            IncludedPhoneMinutes::new(1_000).unwrap(),
         );
         assert_eq!(pricing.cost_cents_covered_by(0), 0);
         assert_eq!(pricing.cost_cents_covered_by(-1), 0);

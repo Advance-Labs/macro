@@ -195,6 +195,7 @@ fn snapshot_for(
         ledger,
         balance,
         AiPricing::testing(),
+        SeatPhone::default(),
     )
 }
 
@@ -382,6 +383,7 @@ fn unlimited_is_never_blocked() {
         PeriodLedger::default(),
         0,
         AiPricing::testing(),
+        SeatPhone::default(),
     );
     assert_eq!(decide(&s), AllowanceDecision::Allow);
     assert_eq!(s.remaining_cents, i64::MAX);
@@ -397,6 +399,7 @@ fn team_member_is_not_the_payer() {
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner, member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamMember {
             team_id: macro_uuid::generate_uuid_v7(),
         },
@@ -411,6 +414,7 @@ fn team_member_is_not_the_payer() {
         PeriodLedger::default(),
         0,
         AiPricing::testing(),
+        SeatPhone::default(),
     );
     assert!(!s.can_manage_billing);
     assert_eq!(s.seats, 2);
@@ -559,4 +563,187 @@ fn plan_tier_from_roles_prefers_max() {
         PlanTier::from_roles(&HashSet::from([RoleId::TeamSubscriber])),
         PlanTier::Premium
     );
+}
+
+fn phone_snapshot(
+    ent: &Entitlement,
+    settings: BillingSettings,
+    phone: SeatPhone,
+    balance: i64,
+) -> UsageSnapshot {
+    build_snapshot(
+        &ent.payer.clone(),
+        ent,
+        &settings,
+        BillingPeriod::calendar_month(Utc::now()),
+        0,
+        0,
+        PeriodLedger::default(),
+        balance,
+        AiPricing::testing(),
+        phone,
+    )
+}
+
+fn phone(enabled: bool, included_minutes: i64, used_minutes: i64) -> SeatPhone {
+    SeatPhone {
+        enabled,
+        included_minutes,
+        used_seconds: used_minutes * 60,
+    }
+}
+
+#[test]
+fn phone_needs_a_phone_seat() {
+    let ent = Entitlement::personal(user("me@x.com"), PlanTier::Premium);
+    let s = phone_snapshot(&ent, BillingSettings::default(), phone(false, 0, 0), 5_000);
+    assert_eq!(s.phone_blocked_reason, Some(DenyReason::PhonePlanRequired));
+    assert!(!s.phone_enabled);
+    assert_eq!(s.phone_included_minutes, 0);
+    // The AI gate is unaffected.
+    assert_eq!(s.blocked_reason, None);
+}
+
+#[test]
+fn phone_seats_call_within_their_included_minutes() {
+    let ent = Entitlement::personal(user("me@x.com"), PlanTier::Max);
+    let s = phone_snapshot(&ent, BillingSettings::default(), phone(true, 1_000, 999), 0);
+    assert_eq!(s.phone_blocked_reason, None);
+    assert_eq!(
+        (s.phone_included_minutes, s.phone_used_minutes),
+        (1_000, 999)
+    );
+}
+
+#[test]
+fn phone_minutes_past_the_allowance_need_credits_or_overage() {
+    let ent = Entitlement::personal(user("me@x.com"), PlanTier::Max);
+    let exhausted = phone(true, 1_000, 1_000);
+
+    let s = phone_snapshot(&ent, BillingSettings::default(), exhausted, 0);
+    assert_eq!(
+        s.phone_blocked_reason,
+        Some(DenyReason::PhoneMinutesExhausted)
+    );
+
+    // Credits keep calling going.
+    let s = phone_snapshot(&ent, BillingSettings::default(), exhausted, 500);
+    assert_eq!(s.phone_blocked_reason, None);
+
+    // So does usage billing with room under the limit.
+    let overage = BillingSettings {
+        overage_enabled: true,
+        overage_limit_cents: 5_000,
+        ..BillingSettings::default()
+    };
+    let s = phone_snapshot(&ent, overage.clone(), exhausted, 0);
+    assert_eq!(s.phone_blocked_reason, None);
+
+    // A suspended overage reports the payment failure.
+    let suspended = BillingSettings {
+        overage_suspended_at: Some(Utc::now()),
+        ..overage
+    };
+    let s = phone_snapshot(&ent, suspended, exhausted, 0);
+    assert_eq!(
+        s.phone_blocked_reason,
+        Some(DenyReason::OveragePaymentFailed)
+    );
+}
+
+#[test]
+fn enterprise_phone_seats_are_never_metered() {
+    let mut ent = Entitlement::personal(user("me@x.com"), PlanTier::Max);
+    ent.unlimited = true;
+    let s = phone_snapshot(
+        &ent,
+        BillingSettings::default(),
+        phone(true, 1_000, 50_000),
+        0,
+    );
+    assert_eq!(s.phone_blocked_reason, None);
+}
+
+#[test]
+fn partial_minutes_display_rounded_up() {
+    let ent = Entitlement::personal(user("me@x.com"), PlanTier::Max);
+    let s = phone_snapshot(
+        &ent,
+        BillingSettings::default(),
+        SeatPhone {
+            enabled: true,
+            included_minutes: 10,
+            used_seconds: 61,
+        },
+        0,
+    );
+    assert_eq!(s.phone_used_minutes, 2);
+}
+
+#[test]
+fn only_phone_minutes_past_the_included_minutes_are_chargeable() {
+    use crate::domain::models::{SeatAllowance, SeatUsage};
+    let seat = SeatAllowance {
+        user: user("me@x.com"),
+        included_cents: 1_000,
+        included_phone_minutes: 100,
+    };
+    let usage = |used_cents, phone_minutes: i64, phone_cost_cents| SeatUsage {
+        user: user("me@x.com"),
+        used_cents,
+        phone_seconds: phone_minutes * 60,
+        phone_cost_cents,
+    };
+    // Within both buckets.
+    assert_eq!(seat.chargeable_cost_cents(&usage(1_000, 100, 250)), 0);
+    // Phone minutes cannot spend the AI allowance, nor AI the phone minutes.
+    assert_eq!(seat.chargeable_cost_cents(&usage(0, 200, 500)), 250);
+    assert_eq!(seat.chargeable_cost_cents(&usage(1_500, 0, 0)), 500);
+    assert_eq!(seat.chargeable_cost_cents(&usage(1_500, 200, 500)), 750);
+    // The chargeable share is rounded down: 1/3 of 100 cents.
+    assert_eq!(seat.chargeable_cost_cents(&usage(0, 150, 100)), 33);
+    // A seat without phone calling pays for every minute.
+    let no_phone = SeatAllowance {
+        included_phone_minutes: 0,
+        ..seat
+    };
+    assert_eq!(no_phone.chargeable_cost_cents(&usage(0, 3, 8)), 8);
+}
+
+#[test]
+fn phone_comes_with_max_enterprise_and_the_premium_add_on() {
+    let owner = user("owner@x.com");
+    let premium = user("premium@x.com");
+    let addon = user("addon@x.com");
+    let max = user("max@x.com");
+    let mut ent = Entitlement {
+        tier: PlanTier::Premium,
+        seat_tiers: vec![
+            PlanTier::Premium,
+            PlanTier::Premium,
+            PlanTier::Premium,
+            PlanTier::Max,
+        ],
+        unlimited: false,
+        payer: owner.clone(),
+        billed_users: vec![owner.clone(), premium.clone(), addon.clone(), max.clone()],
+        phone_addon: vec![addon.clone()],
+        scope: PayerScope::TeamOwner {
+            team_id: macro_uuid::generate_uuid_v7(),
+        },
+    };
+    assert!(!ent.has_phone(&owner));
+    assert!(!ent.has_phone(&premium));
+    assert!(ent.has_phone(&addon));
+    assert!(ent.has_phone(&max));
+
+    let minutes: Vec<_> = ent
+        .seat_allowances(AiPricing::testing())
+        .into_iter()
+        .map(|seat| seat.included_phone_minutes)
+        .collect();
+    assert_eq!(minutes, vec![0, 0, 1_000, 1_000]);
+
+    ent.unlimited = true;
+    assert!(ent.has_phone(&premium));
 }

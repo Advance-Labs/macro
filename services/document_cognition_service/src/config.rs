@@ -90,6 +90,9 @@ pub struct Config {
     /// Markup on paid AI usage past the allowance, as a whole percent of
     /// provider cost. Mandatory; set in Doppler.
     pub ai_usage_overage_markup_percent: ai_billing::OverageMarkupPercent,
+    /// Phone minutes included per phone seat per period. Mandatory; set in
+    /// Doppler.
+    pub ai_usage_phone_included_minutes: ai_billing::IncludedPhoneMinutes,
     /// The connection URL for the Postgres database this application should use.
     pub database_url: DatabaseUrl,
     /// The port to listen for HTTP requests on.
@@ -176,6 +179,7 @@ impl Config {
                 max: self.ai_usage_max_included_allowance_cents,
             },
             self.ai_usage_overage_markup_percent,
+            self.ai_usage_phone_included_minutes,
         )
     }
 
@@ -209,6 +213,7 @@ impl Config {
             ai_usage_max_included_allowance_cents: ai_billing::IncludedAllowanceCents::new(10_000)
                 .unwrap(),
             ai_usage_overage_markup_percent: ai_billing::OverageMarkupPercent::new(5).unwrap(),
+            ai_usage_phone_included_minutes: ai_billing::IncludedPhoneMinutes::new(1_000).unwrap(),
             environment: Environment::Local,
             database_url: DatabaseUrl::Comptime("DATABASE_URL"),
             port: Default::default(),

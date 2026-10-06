@@ -35,7 +35,7 @@ mod billing;
 mod test;
 use billing::{
     BillingEvent, TeamPlanSync, handle_checkout_session_completed, period_from_timestamps,
-    subscription_periods, sync_personal_billing_period, sync_team_billing_period,
+    seat_subscription_periods, sync_personal_billing_period, sync_team_billing_period,
 };
 
 /// Extracts the previous status from the previous_attributes JSON value.
@@ -330,10 +330,11 @@ async fn handle_payment_event(
         subscription.current_period_start,
         subscription.current_period_end,
     );
-    let verified = subscription_periods(
+    let verified = seat_subscription_periods(
         billing_event,
         &serde_json::to_value(&subscription)?,
         Some(&billing_event.object),
+        ctx.stripe_prices.phone_addon.as_deref(),
     );
 
     if let Some(team_id) = subscription.metadata.get("team_id") {
@@ -550,7 +551,12 @@ async fn handle_customer_subscription_event(
     let period = subscription.items.data.first().and_then(|item| {
         period_from_timestamps(item.current_period_start, item.current_period_end)
     });
-    let verified = subscription_periods(billing_event, &billing_event.object, None);
+    let verified = seat_subscription_periods(
+        billing_event,
+        &billing_event.object,
+        None,
+        ctx.stripe_prices.phone_addon.as_deref(),
+    );
 
     // Get subscription metadata, if this is a team subscription then we need to handle it
     // separately.

@@ -4,7 +4,8 @@
 
 use crate::domain::{
     AiPricing, BillingError, BillingService, CREDIT_PACKS_CENTS, OVERAGE_LIMIT_MAX_CENTS,
-    OVERAGE_LIMIT_MIN_CENTS, PaymentGateway, PlanTier, SubscriptionScope, UsageSnapshot,
+    OVERAGE_LIMIT_MIN_CENTS, PHONE_ADDON_MONTHLY_PRICE_CENTS, PaymentGateway, PhoneAddonOverview,
+    PlanTier, SubscriptionScope, UsageSnapshot,
 };
 use axum::{
     Json, Router,
@@ -44,6 +45,9 @@ pub struct PlanCatalogEntry {
     pub included_ai_cents_per_seat: i64,
     /// Whether a new purchase or plan move may pick this plan today.
     pub purchasable: bool,
+    /// Whether every seat on this plan can make phone calls. Premium seats
+    /// can with the Phone add-on.
+    pub phone_included: bool,
 }
 
 /// The plan catalog and the knobs the billing UI offers.
@@ -58,6 +62,23 @@ pub struct PlanCatalogResponse {
     pub overage_limit_min_cents: i64,
     /// Largest allowed overage cap, cents.
     pub overage_limit_max_cents: i64,
+    /// Monthly price of the Phone add-on per Premium seat, cents.
+    pub phone_addon_monthly_price_cents: i64,
+    /// Phone minutes included per phone seat per period. Minutes past them
+    /// are billed as usage.
+    pub included_phone_minutes_per_seat: i64,
+}
+
+/// Request body for [`set_phone_addon_handler`].
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetPhoneAddonRequest {
+    /// The seat to change; the caller's own seat when omitted.
+    #[serde(default)]
+    #[schema(value_type = Option<String>)]
+    pub user_id: Option<MacroUserIdStr<'static>>,
+    /// Whether the seat should have the add-on.
+    pub enabled: bool,
 }
 
 /// Request body for [`update_overage_handler`].
@@ -262,6 +283,10 @@ where
             post(create_credit_checkout_handler::<B, Auth>),
         )
         .route(
+            "/ai-billing/phone-addon",
+            get(get_phone_addon_handler::<B, Auth>).put(set_phone_addon_handler::<B, Auth>),
+        )
+        .route(
             "/internal/ai-billing/settle",
             post(settle_handler::<B, Auth>),
         )
@@ -278,7 +303,9 @@ fn error_response(e: BillingError) -> Response {
         BillingError::FreePlan => StatusCode::PAYMENT_REQUIRED,
         BillingError::InvalidCreditAmount
         | BillingError::InvalidOverageLimit
-        | BillingError::NoStripeCustomer => StatusCode::BAD_REQUEST,
+        | BillingError::NoStripeCustomer
+        | BillingError::InvalidPhoneAddonSeat(_) => StatusCode::BAD_REQUEST,
+        BillingError::PhoneAddonUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         BillingError::Payment(_) | BillingError::Storage(_) | BillingError::Entitlement(_) => {
             tracing::error!(error = ?e, "ai billing request failed");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -313,6 +340,10 @@ pub async fn get_summary_handler<B: BillingService, Auth: MacroAuthorizationServ
     user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
 ) -> Response {
     let user_id = &user.authorization.user.macro_user_id;
+    if let Err(e) = service.sync_phone_addon(user_id).await {
+        // Seat changes are picked up on the next read; don't fail this one.
+        tracing::warn!(error = ?e, "phone add-on sync before summary failed");
+    }
     if let Err(e) = service.settle(user_id).await {
         // Collection problems show up in the snapshot; don't fail the read.
         tracing::warn!(error = ?e, "settlement before summary failed");
@@ -344,11 +375,14 @@ pub async fn get_plans_handler(State(pricing): State<AiPricing>) -> Json<PlanCat
                 purchasable: SeatPlan::PURCHASABLE
                     .into_iter()
                     .any(|plan| PlanTier::from(plan) == tier),
+                phone_included: tier == PlanTier::Max,
             })
             .collect(),
         credit_packs_cents: CREDIT_PACKS_CENTS.to_vec(),
         overage_limit_min_cents: OVERAGE_LIMIT_MIN_CENTS,
         overage_limit_max_cents: OVERAGE_LIMIT_MAX_CENTS,
+        phone_addon_monthly_price_cents: PHONE_ADDON_MONTHLY_PRICE_CENTS,
+        included_phone_minutes_per_seat: pricing.included_phone_minutes(),
     })
 }
 
@@ -383,6 +417,66 @@ pub async fn update_overage_handler<B: BillingService, Auth: MacroAuthorizationS
         .await
     {
         Ok(snapshot) => Json(snapshot).into_response(),
+        Err(e) => error_response(e),
+    }
+}
+
+/// The Phone add-on for the caller's plan: their own seat and, for the
+/// payer, every seat they pay for.
+#[utoipa::path(
+    get,
+    path = "/ai-billing/phone-addon",
+    operation_id = "get_phone_addon",
+    responses(
+        (status = 200, description = "Phone add-on overview", body = PhoneAddonOverview),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error", body = AiBillingErrorBody),
+    ),
+    tag = "ai_billing"
+)]
+#[tracing::instrument(skip(service, user), fields(user_id = %user.authorization.user.macro_user_id))]
+pub async fn get_phone_addon_handler<B: BillingService, Auth: MacroAuthorizationService>(
+    State(service): State<Arc<B>>,
+    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+) -> Response {
+    match service
+        .phone_addon(&user.authorization.user.macro_user_id)
+        .await
+    {
+        Ok(overview) => Json(overview).into_response(),
+        Err(e) => error_response(e),
+    }
+}
+
+/// Turn the Phone add-on on or off for a Premium seat. Payer only. Turning
+/// it on bills the rest of the period now; turning it off stops renewal and
+/// the seat keeps calling until the period ends.
+#[utoipa::path(
+    put,
+    path = "/ai-billing/phone-addon",
+    operation_id = "set_phone_addon",
+    request_body = SetPhoneAddonRequest,
+    responses(
+        (status = 200, description = "Updated overview", body = PhoneAddonOverview),
+        (status = 400, description = "The seat cannot have the add-on", body = AiBillingErrorBody),
+        (status = 401, description = "Unauthorized"),
+        (status = 402, description = "A paid plan is required", body = AiBillingErrorBody),
+        (status = 403, description = "Only the payer may change billing", body = AiBillingErrorBody),
+        (status = 503, description = "The add-on is not sold yet", body = AiBillingErrorBody),
+        (status = 500, description = "Internal server error", body = AiBillingErrorBody),
+    ),
+    tag = "ai_billing"
+)]
+#[tracing::instrument(skip(service, user), fields(user_id = %user.authorization.user.macro_user_id))]
+pub async fn set_phone_addon_handler<B: BillingService, Auth: MacroAuthorizationService>(
+    State(service): State<Arc<B>>,
+    user: MacroAuthorizationExtractor<Auth, UserOrInternal>,
+    Json(req): Json<SetPhoneAddonRequest>,
+) -> Response {
+    let actor = &user.authorization.user.macro_user_id;
+    let seat = req.user_id.as_ref().unwrap_or(actor);
+    match service.set_phone_addon(actor, seat, req.enabled).await {
+        Ok(overview) => Json(overview).into_response(),
         Err(e) => error_response(e),
     }
 }

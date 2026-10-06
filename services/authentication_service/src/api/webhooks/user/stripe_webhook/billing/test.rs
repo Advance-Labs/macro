@@ -159,3 +159,22 @@ fn newer_invoice_parent_fields_are_matched_by_item_and_price() {
         PeriodEvidence::Renewal
     );
 }
+
+#[test]
+fn the_phone_add_on_item_is_not_a_seat() {
+    let mut sub = subscription();
+    let mut phone = sub["items"]["data"][0].clone();
+    phone["id"] = json!("si_phone");
+    phone["quantity"] = json!(2);
+    phone["price"]["id"] = json!("price_phone");
+    sub["items"]["data"].as_array_mut().unwrap().push(phone);
+
+    let all = subscription_periods(&event(invoice()), &sub, None);
+    assert_eq!(all.len(), 2);
+    assert!(all.iter().all(|facts| facts.item_count == 2));
+
+    let seats = seat_subscription_periods(&event(invoice()), &sub, None, Some("price_phone"));
+    assert_eq!(seats.len(), 1);
+    assert_eq!(seats[0].item_id.as_str(), "si_verified");
+    assert_eq!(seats[0].item_count, 1);
+}

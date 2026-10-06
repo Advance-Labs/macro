@@ -34,6 +34,7 @@ fn config_values() -> serde_json::Value {
     values["AI_USAGE_INCLUDED_ALLOWANCE_CENTS"] = serde_json::json!(2_000);
     values["AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS"] = serde_json::json!(10_000);
     values["AI_USAGE_OVERAGE_MARKUP_PERCENT"] = serde_json::json!(5);
+    values["AI_USAGE_PHONE_INCLUDED_MINUTES"] = serde_json::json!(1_000);
     values
 }
 
@@ -50,12 +51,14 @@ fn ai_pricing_is_mandatory_and_validated() {
     );
     assert_eq!(pricing.included_allowance_cents_for(PlanTier::Max), 10_000);
     assert_eq!(pricing.overage_markup_percent(), 5);
+    assert_eq!(pricing.included_phone_minutes(), 1_000);
 
     for key in [
         "AI_USAGE_FREE_INCLUDED_ALLOWANCE_CENTS",
         "AI_USAGE_INCLUDED_ALLOWANCE_CENTS",
         "AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS",
         "AI_USAGE_OVERAGE_MARKUP_PERCENT",
+        "AI_USAGE_PHONE_INCLUDED_MINUTES",
     ] {
         let mut values = config_values();
         values.as_object_mut().unwrap().remove(key);

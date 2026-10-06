@@ -24,6 +24,14 @@
 //!
 //! Free users have no credits or overage: their `remaining` is only the
 //! unused part of the free allowance, and nothing is ever settled for them.
+//!
+//! Phone minutes are a second per-seat bucket. A seat's minutes past its
+//! included minutes add their cost to `chargeable_cost` beside its AI past the
+//! AI allowance (see [`SeatAllowance::chargeable_cost_cents`]), so one markup,
+//! one ledger and one overage cap cover both. A phone call may start while the
+//! seat has included minutes left or the payer has shared headroom.
+//!
+//! [`SeatAllowance::chargeable_cost_cents`]: super::models::SeatAllowance::chargeable_cost_cents
 
 #[cfg(test)]
 mod test;
@@ -107,10 +115,21 @@ pub fn plan_settlement(state: SettlementState, policy: SettlementPolicy) -> Sett
     }
 }
 
+/// This seat's phone calling for the period.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SeatPhone {
+    /// Whether the seat may make phone calls.
+    pub enabled: bool,
+    /// Minutes included with the seat this period.
+    pub included_minutes: i64,
+    /// Billed seconds the seat has used this period.
+    pub used_seconds: i64,
+}
+
 /// Assemble the API-facing snapshot from the resolved inputs. `used_cost_cents`
-/// is this seat's usage at cost; `shared_chargeable_customer_cents` is the
-/// payer's cumulative usage beyond all seat allowances, already marked up at
-/// `pricing`.
+/// is this seat's AI usage at cost; `shared_chargeable_customer_cents` is the
+/// payer's cumulative usage (AI and phone) beyond all seat allowances, already
+/// marked up at `pricing`.
 #[expect(
     clippy::too_many_arguments,
     reason = "snapshot assembly keeps its resolved billing inputs explicit"
@@ -125,6 +144,7 @@ pub fn build_snapshot(
     ledger: PeriodLedger,
     credit_balance_cents: i64,
     pricing: AiPricing,
+    phone: SeatPhone,
 ) -> UsageSnapshot {
     let included_cents = entitlement.included_ai_cents(pricing);
     let shared_covered = ledger.credits_consumed_cents + ledger.overage_charged_cents;
@@ -135,16 +155,20 @@ pub fn build_snapshot(
         0
     };
     let seat_remaining = (included_cents - used_cost_cents).max(0);
+    let shared_headroom = if entitlement.tier.is_paid() {
+        ((shared_covered - shared_chargeable_customer_cents)
+            + credit_balance_cents.max(0)
+            + overage_room)
+            .max(0)
+    } else {
+        0
+    };
     let remaining_cents = if entitlement.unlimited {
         i64::MAX
     } else if !entitlement.tier.is_paid() {
         // A hard cap: no credits or overage can extend the free allowance.
         seat_remaining
     } else {
-        let shared_headroom = ((shared_covered - shared_chargeable_customer_cents)
-            + credit_balance_cents.max(0)
-            + overage_room)
-            .max(0);
         seat_remaining.saturating_add(pricing.cost_cents_covered_by(shared_headroom))
     };
 
@@ -167,12 +191,54 @@ pub fn build_snapshot(
         uncovered_cents,
         remaining_cents,
         blocked_reason: None,
+        phone_enabled: phone.enabled,
+        phone_included_minutes: if phone.enabled {
+            phone.included_minutes
+        } else {
+            0
+        },
+        phone_used_minutes: (phone.used_seconds.max(0) + 59) / 60,
+        phone_blocked_reason: None,
     };
     snapshot.blocked_reason = match decide(&snapshot) {
         AllowanceDecision::Allow => None,
         AllowanceDecision::Deny(reason) => Some(reason),
     };
+    snapshot.phone_blocked_reason = match decide_phone(&snapshot, phone, shared_headroom) {
+        AllowanceDecision::Allow => None,
+        AllowanceDecision::Deny(reason) => Some(reason),
+    };
     snapshot
+}
+
+/// The phone gate: may this seat start (or take) another phone call?
+///
+/// Only phone seats may call. Enterprise seats are never metered. Everyone
+/// else needs included minutes left, or shared credit and overage headroom to
+/// pay for minutes past them. Like the AI gate, this is a snapshot: a call
+/// already under way is not cut off when the headroom runs out.
+pub fn decide_phone(
+    snapshot: &UsageSnapshot,
+    phone: SeatPhone,
+    shared_headroom_customer_cents: i64,
+) -> AllowanceDecision {
+    if !phone.enabled {
+        return AllowanceDecision::Deny(DenyReason::PhonePlanRequired);
+    }
+    if snapshot.unlimited
+        || phone.used_seconds < phone.included_minutes.saturating_mul(60)
+        || shared_headroom_customer_cents > 0
+    {
+        return AllowanceDecision::Allow;
+    }
+    let reason = if snapshot.overage_suspended {
+        DenyReason::OveragePaymentFailed
+    } else if snapshot.overage_enabled && snapshot.overage_limit_cents > 0 {
+        DenyReason::OverageLimitReached
+    } else {
+        DenyReason::PhoneMinutesExhausted
+    };
+    AllowanceDecision::Deny(reason)
 }
 
 /// The gate: may this user start another AI request?

@@ -22,6 +22,8 @@ env_var!(
         pub AiUsageMaxIncludedAllowanceCents,
         /// Markup on paid AI usage past the allowance, a whole percent of provider cost.
         pub AiUsageOverageMarkupPercent,
+        /// Phone minutes included per phone seat per period.
+        pub AiUsagePhoneIncludedMinutes,
     }
 );
 
@@ -39,6 +41,7 @@ impl Config {
             ai_usage_included_allowance_cents,
             ai_usage_max_included_allowance_cents,
             ai_usage_overage_markup_percent,
+            ai_usage_phone_included_minutes,
         } = env_vars;
         let ai_pricing = ai_billing::config::parse_ai_pricing(
             ai_billing::config::RawPlanAllowances {
@@ -47,6 +50,7 @@ impl Config {
                 max: &ai_usage_max_included_allowance_cents,
             },
             &ai_usage_overage_markup_percent,
+            &ai_usage_phone_included_minutes,
         )
         .map_err(|error| anyhow::anyhow!("{error}"))?;
 

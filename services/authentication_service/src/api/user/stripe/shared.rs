@@ -26,6 +26,8 @@ pub struct StripePrices {
     pub premium: String,
     /// Max seat price, when configured.
     pub max: Option<String>,
+    /// Phone add-on price (per Premium seat), when configured. Not a seat.
+    pub phone_addon: Option<String>,
 }
 
 impl StripePrices {

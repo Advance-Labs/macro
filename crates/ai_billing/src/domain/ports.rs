@@ -5,8 +5,9 @@ use super::financial::FundingPeriod;
 use super::ledger::SettlementPolicy;
 use super::models::{
     AllowanceDecision, AllowanceStore, BillingPeriod, BillingSettings, Entitlement,
-    OpenPeriodStart, OverageChargeStatus, PeriodAllowance, PeriodLedger, Result, SeatAllowance,
-    SeatGeneration, SeatUsage, SubscriptionScope, UsageSnapshot,
+    OpenPeriodStart, OverageChargeStatus, PeriodAllowance, PeriodLedger, PhoneAddonOverview,
+    PhoneAddonSeat, Result, SeatAllowance, SeatGeneration, SeatUsage, SubscriptionScope,
+    UsageSnapshot,
 };
 use super::policy::UsageAllocation;
 use ai_usage::domain::financial::{
@@ -109,6 +110,56 @@ pub struct SettlementOutcome {
 
 /// The billing tables.
 pub trait BillingRepo: Send + Sync + 'static {
+    /// Every Phone add-on row `payer` bought, including ones that are ending.
+    fn phone_addon_rows(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<Vec<PhoneAddonSeat>>> + Send;
+
+    /// Buy (or keep renewing) the add-on for `user`'s seat.
+    fn start_phone_addon(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Stop renewing `user`'s add-on; it stays active until `ends_at`.
+    fn end_phone_addon(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+        ends_at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Forget `payer`'s add-on rows for `users` (seats that left the payer,
+    /// changed plan, or whose add-on ended).
+    fn delete_phone_addon_rows(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// The add-on quantity last written to `payer`'s subscription.
+    fn phone_addon_quantity(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<i64>> + Send;
+
+    /// Remember the add-on quantity written to `payer`'s subscription.
+    fn store_phone_addon_quantity(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        quantity: i64,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Of `users`, the ones whose Premium seat has the Phone add-on bought
+    /// by `payer`, active now (renewing, or turned off but not yet ended).
+    fn phone_addon_seats(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> impl Future<Output = Result<Vec<MacroUserIdStr<'static>>>> + Send;
+
     /// Exclude recorded V1 seats from legacy analytics/settlement for this period.
     /// A mixed-policy payer must retain only its legacy seats on this path.
     fn legacy_seats(
@@ -282,6 +333,21 @@ pub struct CreditCheckoutRequest {
     pub cancel_url: String,
 }
 
+/// How many Phone add-on seats a subscription should bill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhoneAddonQuantity {
+    /// The payer's Stripe customer.
+    pub customer_id: String,
+    /// Which of the customer's subscriptions carries the add-on.
+    pub scope: SubscriptionScope,
+    /// Seats to bill; zero removes the add-on item.
+    pub quantity: i64,
+    /// Charge the prorated difference now. Off for reductions, which take
+    /// effect at renewal: a seat turned off keeps calling until the period
+    /// it paid for ends, so it is not credited.
+    pub prorate: bool,
+}
+
 /// An overage chunk to invoice.
 #[derive(Debug, Clone)]
 pub struct OverageChargeRequest {
@@ -338,6 +404,21 @@ pub trait PaymentGateway: Send + Sync + 'static {
         scope: SubscriptionScope,
     ) -> impl Future<Output = Result<bool>> + Send;
 
+    /// Whether [`Self::set_phone_addon_quantity`] can bill the add-on.
+    fn phone_addon_available(&self) -> bool {
+        false
+    }
+
+    /// Set the Phone add-on item on the customer's active or trialing
+    /// subscription in `request.scope` to `request.quantity`, adding or
+    /// removing the item as needed.
+    fn set_phone_addon_quantity(
+        &self,
+        _request: PhoneAddonQuantity,
+    ) -> impl Future<Output = Result<()>> + Send {
+        async { Err(super::BillingError::PhoneAddonUnavailable) }
+    }
+
     /// The current period of the customer's subscription in `scope`. Active or
     /// trialing subscriptions win over past-due or unpaid ones. `Ok(None)` when
     /// no non-canceled subscription exists or the gateway cannot read
@@ -383,6 +464,14 @@ pub trait BillingService: Send + Sync + 'static {
     /// cap by that much. Reserving capacity per request would need a second
     /// ledger write on every completion; the gate deliberately does not.
     fn check_allowance(
+        &self,
+        user: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<AllowanceDecision>> + Send;
+
+    /// May `user` start or take a phone call? Phone seats need included
+    /// minutes left or shared headroom; other seats are refused. Allows
+    /// everything while quota enforcement is disabled.
+    fn check_phone_allowance(
         &self,
         user: &MacroUserIdStr<'_>,
     ) -> impl Future<Output = Result<AllowanceDecision>> + Send;
@@ -443,5 +532,32 @@ pub trait BillingService: Send + Sync + 'static {
         &self,
         stripe_invoice_id: &str,
         paid: bool,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// The Phone add-on for `user`'s plan: their own seat and, for the
+    /// payer, every other billed seat.
+    fn phone_addon(
+        &self,
+        user: &MacroUserIdStr<'_>,
+    ) -> impl Future<Output = Result<PhoneAddonOverview>> + Send;
+
+    /// Turn the Phone add-on on or off for `seat`. Only the payer may, and
+    /// only for a Premium seat they pay for. Turning it on bills the rest of
+    /// the period now; turning it off stops renewal, and the seat keeps
+    /// calling until the period ends.
+    fn set_phone_addon(
+        &self,
+        user: &MacroUserIdStr<'_>,
+        seat: &MacroUserIdStr<'_>,
+        enabled: bool,
+    ) -> impl Future<Output = Result<PhoneAddonOverview>> + Send;
+
+    /// Bring `payer`'s add-on item in line with their seats: forget add-ons
+    /// of seats that left or are no longer Premium, and bill only the seats
+    /// whose add-on renews. Hosts that collect payment call this after plan
+    /// and seat changes; it is idempotent.
+    fn sync_phone_addon(
+        &self,
+        payer: &MacroUserIdStr<'_>,
     ) -> impl Future<Output = Result<()>> + Send;
 }

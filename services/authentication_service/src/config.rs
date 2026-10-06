@@ -74,6 +74,10 @@ maybe_env_vars! {
     /// deploy before the price exists in Stripe; until it is set, Max checkout
     /// and plan changes answer 400 and every subscription maps to Premium.
     pub struct StripeMaxPriceId;
+    /// Stripe price id for the Phone add-on, a monthly per-seat price for
+    /// Premium seats. Optional: until it is set, the add-on cannot be bought;
+    /// Max and enterprise seats can still call.
+    pub struct StripePhoneAddonPriceId;
 }
 
 /// The configuration parameters for the application.
@@ -107,6 +111,9 @@ pub struct Config {
     /// Markup on paid AI usage past the allowance, as a whole percent of
     /// provider cost. Mandatory; set in Doppler.
     pub ai_usage_overage_markup_percent: ai_billing::OverageMarkupPercent,
+    /// Phone minutes included per phone seat per period. Mandatory; set in
+    /// Doppler.
+    pub ai_usage_phone_included_minutes: ai_billing::IncludedPhoneMinutes,
     #[allow(dead_code)]
     pub base_url: BaseUrl,
     /// The connection URL for the Postgres database this application should use.
@@ -194,6 +201,9 @@ pub struct Config {
     /// The stripe price id for the Max plan seat (optional, see
     /// [`StripeMaxPriceId`])
     pub stripe_max_price_id: StripeMaxPriceId,
+    /// The stripe price id for the Phone add-on (optional, see
+    /// [`StripePhoneAddonPriceId`])
+    pub stripe_phone_addon_price_id: StripePhoneAddonPriceId,
     /// The internal api key
     pub internal_api_key: InternalApiKey,
     /// Comma-separated Kafka bootstrap servers for the macro event broker.
@@ -224,6 +234,7 @@ impl Config {
                 max: self.ai_usage_max_included_allowance_cents,
             },
             self.ai_usage_overage_markup_percent,
+            self.ai_usage_phone_included_minutes,
         )
     }
 

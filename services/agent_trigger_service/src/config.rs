@@ -28,6 +28,9 @@ pub struct Config {
     /// Markup on paid AI usage past the allowance, as a whole percent of
     /// provider cost. Mandatory; set in Doppler.
     pub ai_usage_overage_markup_percent: ai_billing::OverageMarkupPercent,
+    /// Phone minutes included per phone seat per period. Mandatory; set in
+    /// Doppler.
+    pub ai_usage_phone_included_minutes: ai_billing::IncludedPhoneMinutes,
     /// MacroDB connection URL.
     pub database_url: DatabaseUrl,
     /// Kafka bootstrap servers.
@@ -49,6 +52,7 @@ impl Config {
                 max: self.ai_usage_max_included_allowance_cents,
             },
             self.ai_usage_overage_markup_percent,
+            self.ai_usage_phone_included_minutes,
         )
     }
 

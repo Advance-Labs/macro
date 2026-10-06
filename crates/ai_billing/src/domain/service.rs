@@ -4,18 +4,19 @@
 #[cfg(test)]
 mod test;
 
-use super::ledger::{SettlementPolicy, build_snapshot, decide};
+use super::ledger::{SeatPhone, SettlementPolicy, build_snapshot, decide};
 use super::models::{
     AiUsageBilling, AllowanceDecision, AllowanceStore, BillingError, BillingPeriod,
     BillingSettings, CREDIT_PACKS_CENTS, Entitlement, OVERAGE_CHARGE_THRESHOLD_CENTS,
-    OVERAGE_LIMIT_MAX_CENTS, OVERAGE_LIMIT_MIN_CENTS, OverageChargeStatus, PayerScope,
-    PeriodAllowance, PeriodLedger, Result, SeatAllowance, SeatUsage, SubscriptionScope,
+    OVERAGE_LIMIT_MAX_CENTS, OVERAGE_LIMIT_MIN_CENTS, OverageChargeStatus,
+    PHONE_ADDON_MONTHLY_PRICE_CENTS, PayerScope, PeriodAllowance, PeriodLedger, PhoneAddonOverview,
+    PhoneAddonSeat, PhoneSeatStatus, PlanTier, Result, SeatAllowance, SeatUsage, SubscriptionScope,
     UsageSnapshot,
 };
 use super::period::{PeriodSync, SubscriptionPeriod};
 use super::ports::{
     BillingRepo, BillingService, CreditCheckoutRequest, EntitlementSource, OverageChargeRequest,
-    PaymentGateway, PendingCharge, UsageReader,
+    PaymentGateway, PendingCharge, PhoneAddonQuantity, UsageReader,
 };
 use super::pricing::AiPricing;
 use ai_usage::AiUsageEnforcement;
@@ -101,33 +102,46 @@ struct Position {
     period: BillingPeriod,
 }
 
-fn usage_for(user: &MacroUserIdStr<'_>, usage: &[SeatUsage]) -> i64 {
+fn usage_for(user: &MacroUserIdStr<'_>, usage: &[SeatUsage]) -> SeatUsage {
     usage
         .iter()
         .find(|entry| entry.user.as_ref() == user.as_ref())
-        .map(|entry| entry.used_cents)
-        .unwrap_or(0)
+        .cloned()
+        .unwrap_or_else(|| SeatUsage::ai(user.clone().into_owned(), 0))
 }
 
-/// Cost cents of usage beyond each seat's own allowance, summed for the payer.
+/// Cost cents of usage beyond each seat's own allowances (AI and phone
+/// minutes), summed for the payer.
 fn chargeable_cost_cents(seats: &[SeatAllowance], usage: &[SeatUsage]) -> i64 {
     seats
         .iter()
-        .map(|seat| (usage_for(&seat.user, usage) - seat.included_cents).max(0))
-        .sum()
+        .map(|seat| seat.chargeable_cost_cents(&usage_for(&seat.user, usage)))
+        .fold(0, i64::saturating_add)
 }
 
 fn same_seat_pairs(left: &[SeatAllowance], right: &[SeatAllowance]) -> bool {
     if left.len() != right.len() {
         return false;
     }
-    let mut left_pairs: Vec<(&str, i64)> = left
+    let mut left_pairs: Vec<(&str, i64, i64)> = left
         .iter()
-        .map(|seat| (seat.user.as_ref(), seat.included_cents))
+        .map(|seat| {
+            (
+                seat.user.as_ref(),
+                seat.included_cents,
+                seat.included_phone_minutes,
+            )
+        })
         .collect();
-    let mut right_pairs: Vec<(&str, i64)> = right
+    let mut right_pairs: Vec<(&str, i64, i64)> = right
         .iter()
-        .map(|seat| (seat.user.as_ref(), seat.included_cents))
+        .map(|seat| {
+            (
+                seat.user.as_ref(),
+                seat.included_cents,
+                seat.included_phone_minutes,
+            )
+        })
         .collect();
     left_pairs.sort_unstable();
     right_pairs.sort_unstable();
@@ -141,8 +155,20 @@ where
     R: BillingRepo,
     P: PaymentGateway,
 {
+    /// The user's entitlement, with the billed seats that have the Phone add-on.
+    async fn entitlement(&self, user: &MacroUserIdStr<'_>) -> Result<Entitlement> {
+        let mut entitlement = self.entitlements.entitlement(user).await?;
+        if entitlement.tier.is_paid() && !entitlement.unlimited {
+            entitlement.phone_addon = self
+                .repo
+                .phone_addon_seats(&entitlement.payer, &entitlement.billed_users)
+                .await?;
+        }
+        Ok(entitlement)
+    }
+
     async fn position(&self, user: &MacroUserIdStr<'_>, now: DateTime<Utc>) -> Result<Position> {
-        let first = self.entitlements.entitlement(user).await?;
+        let first = self.entitlement(user).await?;
         let settings = self.repo.settings(&first.payer).await?;
         let period = self.usage_period(&first, settings.period_anchor, now).await;
         if !first.is_metered() {
@@ -176,7 +202,7 @@ where
         let entitlement = match &first.scope {
             PayerScope::Personal => first.clone(),
             PayerScope::TeamOwner { .. } | PayerScope::TeamMember { .. } => {
-                self.entitlements.entitlement(user).await?
+                self.entitlement(user).await?
             }
         };
         if entitlement.payer.as_ref() != first.payer.as_ref() {
@@ -320,7 +346,7 @@ where
         let anchor = settings.period_anchor;
         let period = match BillingPeriod::covering(anchor, now) {
             Some(period) => period,
-            None => match self.entitlements.entitlement(&payer).await {
+            None => match self.entitlement(&payer).await {
                 Ok(entitlement) => self.usage_period(&entitlement, anchor, now).await,
                 Err(e) => {
                     tracing::warn!(
@@ -347,7 +373,8 @@ where
             settings,
             period,
         } = position;
-        let (used_cents, chargeable_customer_cents, ledger, credit_balance_cents) =
+        let phone_enabled = entitlement.has_phone(user);
+        let (used, chargeable_customer_cents, ledger, credit_balance_cents, included_phone) =
             if entitlement.tier.is_paid() {
                 let seats = entitlement.seat_allowances(self.pricing);
                 let users: Vec<_> = seats.iter().map(|seat| seat.user.clone()).collect();
@@ -356,11 +383,15 @@ where
                     .repo
                     .legacy_seats(&entitlement.payer, *period, seats)
                     .await?;
-                let used = if seats.iter().any(|seat| seat.user.as_ref() == user.as_ref()) {
+                let own_seat = seats
+                    .iter()
+                    .find(|seat| seat.user.as_ref() == user.as_ref());
+                let used = if own_seat.is_some() {
                     usage_for(user, &usage)
                 } else {
-                    0
+                    SeatUsage::ai(user.clone().into_owned(), 0)
                 };
+                let included_phone = own_seat.map_or(0, |seat| seat.included_phone_minutes);
                 let chargeable = self
                     .pricing
                     .extra_customer_cents(chargeable_cost_cents(&seats, &usage));
@@ -369,26 +400,37 @@ where
                     .period_ledger(&entitlement.payer, period.start)
                     .await?;
                 let balance = self.repo.credit_balance_cents(&entitlement.payer).await?;
-                (used, chargeable, ledger, balance)
+                (used, chargeable, ledger, balance, included_phone)
             } else if entitlement.unlimited {
-                Default::default()
+                (
+                    SeatUsage::ai(user.clone().into_owned(), 0),
+                    0,
+                    PeriodLedger::default(),
+                    0,
+                    0,
+                )
             } else {
                 // Free users are hard-capped at their own allowance: only their
                 // usage matters, and there is no ledger, credit, or overage to read.
                 let users = [user.clone().into_owned()];
                 let usage = self.usage.usage_cost_cents_by_user(&users, *period).await?;
-                (usage_for(user, &usage), 0, PeriodLedger::default(), 0)
+                (usage_for(user, &usage), 0, PeriodLedger::default(), 0, 0)
             };
         Ok(build_snapshot(
             user,
             entitlement,
             settings,
             *period,
-            used_cents,
+            used.used_cents,
             chargeable_customer_cents,
             ledger,
             credit_balance_cents,
             self.pricing,
+            SeatPhone {
+                enabled: phone_enabled,
+                included_minutes: included_phone,
+                used_seconds: used.phone_seconds,
+            },
         ))
     }
 
@@ -592,6 +634,87 @@ where
         self.repo.suspend_overage(payer).await
     }
 
+    /// The add-on overview `user` sees under `entitlement`.
+    async fn phone_addon_overview(
+        &self,
+        user: &MacroUserIdStr<'_>,
+        entitlement: &Entitlement,
+    ) -> Result<PhoneAddonOverview> {
+        let can_manage = entitlement.is_payer(user) && entitlement.tier.is_paid();
+        let rows = if entitlement.tier.is_paid() && !entitlement.unlimited {
+            self.repo.phone_addon_rows(&entitlement.payer).await?
+        } else {
+            Vec::new()
+        };
+        let now = Utc::now();
+        let status = |seat: &MacroUserIdStr<'_>, tier: PlanTier| {
+            let row = rows.iter().find(|row| row.user.as_ref() == seat.as_ref());
+            let phone_included = tier.is_paid() && (entitlement.unlimited || tier == PlanTier::Max);
+            let addon = !phone_included && tier == PlanTier::Premium;
+            PhoneSeatStatus {
+                user_id: seat.clone().into_owned(),
+                tier,
+                phone_enabled: entitlement.has_phone(seat),
+                phone_included,
+                addon: addon && row.is_some_and(PhoneAddonSeat::renews),
+                addon_ends_at: row
+                    .filter(|row| addon && row.active_at(now))
+                    .and_then(|row| row.ends_at),
+            }
+        };
+        let mut seats = vec![status(
+            user,
+            entitlement.seat_tier(user).unwrap_or(entitlement.tier),
+        )];
+        if can_manage {
+            seats.extend(
+                entitlement
+                    .billed_users
+                    .iter()
+                    .filter(|seat| seat.as_ref() != user.as_ref())
+                    .map(|seat| {
+                        status(
+                            seat,
+                            entitlement.seat_tier(seat).unwrap_or(entitlement.tier),
+                        )
+                    }),
+            );
+        }
+        Ok(PhoneAddonOverview {
+            can_manage,
+            available: self.payments.phone_addon_available(),
+            monthly_price_cents: PHONE_ADDON_MONTHLY_PRICE_CENTS,
+            included_minutes_per_seat: self.pricing.included_phone_minutes(),
+            seats,
+        })
+    }
+
+    /// Write `quantity` add-on seats to the payer's subscription, then
+    /// remember it.
+    async fn bill_phone_addon(
+        &self,
+        entitlement: &Entitlement,
+        quantity: i64,
+        prorate: bool,
+    ) -> Result<()> {
+        let customer_id = self
+            .entitlements
+            .stripe_customer_id(&entitlement.payer)
+            .await?
+            .ok_or(BillingError::NoStripeCustomer)?;
+        self.payments
+            .set_phone_addon_quantity(PhoneAddonQuantity {
+                customer_id,
+                scope: SubscriptionScope::from(&entitlement.scope),
+                quantity,
+                prorate,
+            })
+            .await?;
+        self.repo
+            .store_phone_addon_quantity(&entitlement.payer, quantity)
+            .await
+    }
+
     fn require_payer(entitlement: &Entitlement, user: &MacroUserIdStr<'_>) -> Result<()> {
         if !entitlement.is_payer(user) {
             return Err(BillingError::NotPayer);
@@ -639,12 +762,26 @@ where
     }
 
     #[tracing::instrument(skip(self), err)]
+    async fn check_phone_allowance(&self, user: &MacroUserIdStr<'_>) -> Result<AllowanceDecision> {
+        if !self.enforcement.is_enabled() {
+            return Ok(AllowanceDecision::Allow);
+        }
+        let position = self.position(user, Utc::now()).await?;
+        let snapshot = self.snapshot_at(user, &position).await?;
+        Ok(match snapshot.phone_blocked_reason {
+            Some(reason) => AllowanceDecision::Deny(reason),
+            None => AllowanceDecision::Allow,
+        })
+    }
+
+    #[tracing::instrument(skip(self), err)]
     async fn snapshot(&self, user: &MacroUserIdStr<'_>) -> Result<UsageSnapshot> {
         let position = self.position(user, Utc::now()).await?;
         let mut snapshot = self.snapshot_at(user, &position).await?;
-        // Keep the summary consistent with the configured allowance gate.
+        // Keep the summary consistent with the configured allowance gates.
         if !self.enforcement.is_enabled() {
             snapshot.blocked_reason = None;
+            snapshot.phone_blocked_reason = None;
         }
         Ok(snapshot)
     }
@@ -677,7 +814,7 @@ where
         enabled: bool,
         limit_cents: i64,
     ) -> Result<UsageSnapshot> {
-        let entitlement = self.entitlements.entitlement(user).await?;
+        let entitlement = self.entitlement(user).await?;
         Self::require_payer(&entitlement, user)?;
         if enabled && !(OVERAGE_LIMIT_MIN_CENTS..=OVERAGE_LIMIT_MAX_CENTS).contains(&limit_cents) {
             return Err(BillingError::InvalidOverageLimit);
@@ -704,7 +841,7 @@ where
         success_url: String,
         cancel_url: String,
     ) -> Result<String> {
-        let entitlement = self.entitlements.entitlement(user).await?;
+        let entitlement = self.entitlement(user).await?;
         Self::require_payer(&entitlement, user)?;
         if !CREDIT_PACKS_CENTS.contains(&amount_cents) {
             return Err(BillingError::InvalidCreditAmount);
@@ -800,5 +937,131 @@ where
             Some(OverageChargeStatus::Failed) => self.repo.suspend_overage(&payer).await,
             Some(OverageChargeStatus::Pending) | None => Ok(()),
         }
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn phone_addon(&self, user: &MacroUserIdStr<'_>) -> Result<PhoneAddonOverview> {
+        let entitlement = self.entitlement(user).await?;
+        self.phone_addon_overview(user, &entitlement).await
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn set_phone_addon(
+        &self,
+        user: &MacroUserIdStr<'_>,
+        seat: &MacroUserIdStr<'_>,
+        enabled: bool,
+    ) -> Result<PhoneAddonOverview> {
+        let entitlement = self.entitlement(user).await?;
+        Self::require_payer(&entitlement, user)?;
+        if !self.payments.phone_addon_available() {
+            return Err(BillingError::PhoneAddonUnavailable);
+        }
+        if entitlement.unlimited {
+            return Err(BillingError::InvalidPhoneAddonSeat(
+                "Phone calling is already included with your plan",
+            ));
+        }
+        match entitlement.seat_tier(seat) {
+            None => {
+                return Err(BillingError::InvalidPhoneAddonSeat(
+                    "That person isn't on a seat you pay for",
+                ));
+            }
+            Some(PlanTier::Premium) => {}
+            Some(PlanTier::Max) => {
+                return Err(BillingError::InvalidPhoneAddonSeat(
+                    "Phone calling is already included with Max",
+                ));
+            }
+            Some(PlanTier::Free) => {
+                return Err(BillingError::InvalidPhoneAddonSeat(
+                    "The Phone add-on needs a paid seat",
+                ));
+            }
+        }
+
+        let premium = entitlement.premium_seats();
+        let rows = self.repo.phone_addon_rows(&entitlement.payer).await?;
+        let row = rows.iter().find(|row| row.user.as_ref() == seat.as_ref());
+        let renewing_others = rows
+            .iter()
+            .filter(|row| {
+                row.renews()
+                    && row.user.as_ref() != seat.as_ref()
+                    && premium
+                        .iter()
+                        .any(|user| user.as_ref() == row.user.as_ref())
+            })
+            .count() as i64;
+        let now = Utc::now();
+        match (enabled, row) {
+            (true, Some(row)) if row.renews() => {}
+            (true, row) => {
+                // An add-on turned off this period was paid through its end:
+                // renew it without charging for the rest of the period again.
+                let prorate = !row.is_some_and(|row| row.active_at(now));
+                self.bill_phone_addon(&entitlement, renewing_others + 1, prorate)
+                    .await?;
+                self.repo
+                    .start_phone_addon(&entitlement.payer, seat)
+                    .await?;
+            }
+            (false, Some(row)) if row.renews() => {
+                let period = self.position(user, now).await?.period;
+                self.bill_phone_addon(&entitlement, renewing_others, false)
+                    .await?;
+                self.repo
+                    .end_phone_addon(&entitlement.payer, seat, period.end)
+                    .await?;
+            }
+            (false, _) => {}
+        }
+        let entitlement = self.entitlement(user).await?;
+        self.phone_addon_overview(user, &entitlement).await
+    }
+
+    #[tracing::instrument(skip(self), err)]
+    async fn sync_phone_addon(&self, payer: &MacroUserIdStr<'_>) -> Result<()> {
+        let entitlement = self.entitlement(payer).await?;
+        if !entitlement.is_payer(payer) {
+            return Ok(());
+        }
+        let rows = self.repo.phone_addon_rows(payer).await?;
+        let premium = if entitlement.tier.is_paid() && !entitlement.unlimited {
+            entitlement.premium_seats()
+        } else {
+            Vec::new()
+        };
+        let is_premium = |row: &PhoneAddonSeat| {
+            premium
+                .iter()
+                .any(|user| user.as_ref() == row.user.as_ref())
+        };
+        let now = Utc::now();
+        let stale: Vec<_> = rows
+            .iter()
+            .filter(|row| !is_premium(row) || !row.active_at(now))
+            .map(|row| row.user.clone())
+            .collect();
+        if !stale.is_empty() {
+            self.repo.delete_phone_addon_rows(payer, &stale).await?;
+        }
+        let desired = rows
+            .iter()
+            .filter(|row| is_premium(row) && row.renews())
+            .count() as i64;
+        if desired == self.repo.phone_addon_quantity(payer).await? {
+            return Ok(());
+        }
+        if !entitlement.tier.is_paid() {
+            // The subscription is gone, and its add-on item with it.
+            return self.repo.store_phone_addon_quantity(payer, desired).await;
+        }
+        if !self.payments.phone_addon_available() {
+            return Ok(());
+        }
+        // Reductions take effect at renewal: no credit for the paid period.
+        self.bill_phone_addon(&entitlement, desired, false).await
     }
 }

@@ -93,7 +93,14 @@ impl<B: BillingService> AiAdmissionService for BillingAdmissionService<B> {
             return Box::pin(async { Ok(()) });
         }
         Box::pin(async move {
-            match self.billing.check_allowance(user).await {
+            // Phone minutes are their own per-seat bucket with their own gate;
+            // every other feature spends the AI allowance.
+            let decision = if feature == AiFeature::PhoneCall {
+                self.billing.check_phone_allowance(user).await
+            } else {
+                self.billing.check_allowance(user).await
+            };
+            match decision {
                 Ok(AllowanceDecision::Allow) => Ok(()),
                 Ok(AllowanceDecision::Deny(reason)) => Err(AiAdmissionError::Denied(reason)),
                 Err(error) => {

@@ -1,7 +1,8 @@
 use super::*;
 use crate::domain::{
     AiPricing, AllowanceDecision, BillingPeriod, BillingSettings, Entitlement, PlanTier, Result,
-    UsageSnapshot, ledger::build_snapshot,
+    UsageSnapshot,
+    ledger::{SeatPhone, build_snapshot},
 };
 use ai_usage::domain::{Result as UsageResult, UsageError};
 use ai_usage::{
@@ -62,6 +63,10 @@ impl BillingService for FakeBilling {
         unreachable!()
     }
 
+    async fn check_phone_allowance(&self, _user: &MacroUserIdStr<'_>) -> Result<AllowanceDecision> {
+        unreachable!()
+    }
+
     async fn settle(&self, _user: &MacroUserIdStr<'_>) -> Result<()> {
         unreachable!("the recorder must use the settlement trigger")
     }
@@ -105,6 +110,26 @@ impl BillingService for FakeBilling {
     }
 
     async fn mark_overage_invoice(&self, _stripe_invoice_id: &str, _paid: bool) -> Result<()> {
+        unreachable!()
+    }
+
+    async fn phone_addon(
+        &self,
+        _user: &MacroUserIdStr<'_>,
+    ) -> Result<crate::domain::PhoneAddonOverview> {
+        unreachable!()
+    }
+
+    async fn set_phone_addon(
+        &self,
+        _user: &MacroUserIdStr<'_>,
+        _seat: &MacroUserIdStr<'_>,
+        _enabled: bool,
+    ) -> Result<crate::domain::PhoneAddonOverview> {
+        unreachable!()
+    }
+
+    async fn sync_phone_addon(&self, _payer: &MacroUserIdStr<'_>) -> Result<()> {
         unreachable!()
     }
 }
@@ -165,6 +190,7 @@ async fn record_with_policy(
             Default::default(),
             0,
             AiPricing::testing(),
+            SeatPhone::default(),
         ),
     });
     let trigger = FakeTrigger::default();

@@ -732,6 +732,7 @@ impl BootStubEnv {
             "15000".into(),
         );
         env.insert("AI_USAGE_OVERAGE_MARKUP_PERCENT".into(), "25".into());
+        env.insert("AI_USAGE_PHONE_INCLUDED_MINUTES".into(), "1000".into());
         // macro_auth's `JwtValidationArgs` (used by every service that mounts
         // the auth middleware) reads these at boot. The keys are only parsed
         // when a Macro API token is actually validated — normal local auth

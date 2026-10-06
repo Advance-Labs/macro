@@ -1,4 +1,4 @@
-//! Reads prospectively counted AI usage from `ai_usage` at provider cost.
+//! Reads prospectively counted AI and phone usage from `ai_usage` at provider cost.
 
 #[cfg(test)]
 mod test;
@@ -20,6 +20,13 @@ const FALLBACK_PRICE_PER_MILLION_IN: f64 = 5.0;
 const FALLBACK_PRICE_PER_MILLION_OUT: f64 = 25.0;
 const FALLBACK_PRICE_PER_MILLION_CACHE_READ: f64 = 0.5;
 const FALLBACK_PRICE_PER_MILLION_CACHE_WRITE: f64 = 6.25;
+
+/// The `ai_usage.feature` phone calls are recorded under.
+const PHONE_FEATURE: &str = "phone_call";
+/// A counted phone row with a NULL total (its `pstn` rate was missing) is
+/// priced at the per-minute rate `20261006131139_phone_billing.sql` seeds.
+/// Keep it in step with that seed.
+const FALLBACK_PHONE_PRICE_PER_MINUTE: f64 = 0.025;
 
 /// Postgres-backed [`UsageReader`] over the `ai_usage` table.
 #[derive(Clone)]
@@ -44,17 +51,26 @@ impl UsageReader for PgUsageReader {
             return Ok(Vec::new());
         }
         let ids: Vec<String> = users.iter().map(|u| u.as_ref().to_string()).collect();
+        // Phone calls are a separate per-seat bucket: AI cost excludes them,
+        // and their seconds and cost are summed on their own. An unpriced phone
+        // row is priced at the seeded per-minute rate rather than for free.
         let rows = sqlx::query!(
             r#"
-            SELECT user_id, COALESCE(SUM(
-                COALESCE(
-                    total::float8,
-                    (input_tokens::float8 / 1000000.0) * $4
-                        + (output_tokens::float8 / 1000000.0) * $5
-                        + (cache_read_input_tokens::float8 / 1000000.0) * $6
-                        + (cache_write_input_tokens::float8 / 1000000.0) * $7
-                )
-            ), 0)::float8 AS "usd!"
+            SELECT user_id,
+                COALESCE(SUM(
+                    COALESCE(
+                        total::float8,
+                        (input_tokens::float8 / 1000000.0) * $4
+                            + (output_tokens::float8 / 1000000.0) * $5
+                            + (cache_read_input_tokens::float8 / 1000000.0) * $6
+                            + (cache_write_input_tokens::float8 / 1000000.0) * $7
+                    )
+                ) FILTER (WHERE feature <> $8), 0)::float8 AS "usd!",
+                COALESCE(SUM(
+                    COALESCE(total::float8, COALESCE(audio_seconds, 0) / 60.0 * $9)
+                ) FILTER (WHERE feature = $8), 0)::float8 AS "phone_usd!",
+                COALESCE(SUM(COALESCE(audio_seconds, 0)) FILTER (WHERE feature = $8), 0)::float8
+                    AS "phone_seconds!"
             FROM ai_usage
             WHERE user_id = ANY($1)
               AND created_at >= $2
@@ -69,6 +85,8 @@ impl UsageReader for PgUsageReader {
             FALLBACK_PRICE_PER_MILLION_OUT,
             FALLBACK_PRICE_PER_MILLION_CACHE_READ,
             FALLBACK_PRICE_PER_MILLION_CACHE_WRITE,
+            PHONE_FEATURE,
+            FALLBACK_PHONE_PRICE_PER_MINUTE,
         )
         .fetch_all(&self.pool)
         .await
@@ -80,6 +98,8 @@ impl UsageReader for PgUsageReader {
                 Ok(SeatUsage {
                     user,
                     used_cents: cost_cents(row.usd),
+                    phone_seconds: row.phone_seconds.max(0.0).ceil() as i64,
+                    phone_cost_cents: cost_cents(row.phone_usd),
                 })
             })
             .collect()

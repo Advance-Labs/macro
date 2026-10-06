@@ -202,6 +202,7 @@ where
             unlimited: team.enterprise(),
             payer: owner,
             billed_users,
+            phone_addon: Vec::new(),
             scope: if is_owner {
                 PayerScope::TeamOwner {
                     team_id: *team.id(),

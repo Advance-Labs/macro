@@ -48,6 +48,11 @@ pub enum UsagePolicy {
 /// One-off credit packs a payer may buy, in customer cents.
 pub const CREDIT_PACKS_CENTS: [i64; 4] = [1_000, 2_500, 5_000, 10_000];
 
+/// Monthly price of the Phone add-on for one Premium seat, in customer
+/// cents. Keep it in step with the Stripe price configured as
+/// `STRIPE_PHONE_ADDON_PRICE_ID`; Stripe's price is what is charged.
+pub const PHONE_ADDON_MONTHLY_PRICE_CENTS: i64 = 1_500;
+
 /// Smallest per-period overage cap a payer may set.
 pub const OVERAGE_LIMIT_MIN_CENTS: i64 = 500;
 /// Largest per-period overage cap a payer may set.
@@ -332,6 +337,31 @@ pub struct SeatAllowance {
     pub user: MacroUserIdStr<'static>,
     /// Included AI for this seat, in cents at provider cost.
     pub included_cents: i64,
+    /// Included phone minutes for this seat; 0 for a seat without phone calling.
+    pub included_phone_minutes: i64,
+}
+
+impl SeatAllowance {
+    /// Cost cents of `usage` beyond this seat's own allowances: AI past the AI
+    /// allowance, plus phone minutes past the included minutes.
+    ///
+    /// Phone minutes can be recorded at different rates (repricing, future
+    /// destinations), so the included minutes cover the same share of the
+    /// phone cost as of the phone seconds, rounded in the payer's favour.
+    pub fn chargeable_cost_cents(&self, usage: &SeatUsage) -> i64 {
+        let ai = (usage.used_cents - self.included_cents).max(0);
+        let included_seconds = self.included_phone_minutes.saturating_mul(60);
+        let phone = if usage.phone_seconds <= included_seconds || usage.phone_cost_cents <= 0 {
+            0
+        } else {
+            let extra_seconds = i128::from(usage.phone_seconds - included_seconds);
+            // Floor: the included share is rounded up, the chargeable share down.
+            let extra = i128::from(usage.phone_cost_cents) * extra_seconds
+                / i128::from(usage.phone_seconds);
+            i64::try_from(extra).unwrap_or(i64::MAX)
+        };
+        ai.saturating_add(phone)
+    }
 }
 
 /// AI usage attributed to one billed seat in a period.
@@ -339,8 +369,29 @@ pub struct SeatAllowance {
 pub struct SeatUsage {
     /// The user occupying the seat.
     pub user: MacroUserIdStr<'static>,
-    /// Usage in cents at provider cost.
+    /// AI usage in cents at provider cost. Excludes phone calls.
     pub used_cents: i64,
+    /// Billed seconds on phone calls (each call rounded up to whole minutes).
+    pub phone_seconds: i64,
+    /// Phone calls at provider cost, in cents.
+    pub phone_cost_cents: i64,
+}
+
+impl SeatUsage {
+    /// A seat with AI usage only.
+    pub fn ai(user: MacroUserIdStr<'static>, used_cents: i64) -> Self {
+        Self {
+            user,
+            used_cents,
+            phone_seconds: 0,
+            phone_cost_cents: 0,
+        }
+    }
+
+    /// Whole phone minutes used: billed seconds are already whole minutes.
+    pub fn phone_minutes(&self) -> i64 {
+        (self.phone_seconds.max(0) + 59) / 60
+    }
 }
 
 /// A user's resolved plan and payer.
@@ -361,6 +412,9 @@ pub struct Entitlement {
     pub billed_users: Vec<MacroUserIdStr<'static>>,
     /// How the payer relates to the user.
     pub scope: PayerScope,
+    /// Billed users whose Premium seat has the Phone add-on. Resolved by the
+    /// billing service from its own records, not by the entitlement source.
+    pub phone_addon: Vec<MacroUserIdStr<'static>>,
 }
 
 impl Entitlement {
@@ -373,7 +427,48 @@ impl Entitlement {
             payer: user.clone(),
             billed_users: vec![user],
             scope: PayerScope::Personal,
+            phone_addon: Vec::new(),
         }
+    }
+
+    /// The plan of `user`'s seat, if they are billed to this payer.
+    pub fn seat_tier(&self, user: &MacroUserIdStr<'_>) -> Option<PlanTier> {
+        self.billed_users
+            .iter()
+            .position(|billed| billed.as_ref() == user.as_ref())
+            .map(|index| self.seat_tiers.get(index).copied().unwrap_or(self.tier))
+    }
+
+    /// Whether a seat on `tier` held by `user` may make phone calls: every
+    /// enterprise seat, every Max seat, and Premium seats with the add-on.
+    fn tier_has_phone(&self, user: &MacroUserIdStr<'_>, tier: PlanTier) -> bool {
+        self.unlimited
+            || match tier {
+                PlanTier::Free => false,
+                PlanTier::Max => true,
+                PlanTier::Premium => self
+                    .phone_addon
+                    .iter()
+                    .any(|addon| addon.as_ref() == user.as_ref()),
+            }
+    }
+
+    /// Whether `user`'s own seat includes phone calling.
+    pub fn has_phone(&self, user: &MacroUserIdStr<'_>) -> bool {
+        let tier = self.seat_tier(user).unwrap_or(self.tier);
+        self.tier_has_phone(user, tier)
+    }
+
+    /// Billed Premium seats: the ones the Phone add-on can be bought for.
+    pub fn premium_seats(&self) -> Vec<MacroUserIdStr<'static>> {
+        self.billed_users
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                self.seat_tiers.get(*index).copied().unwrap_or(self.tier) == PlanTier::Premium
+            })
+            .map(|(_, user)| user.clone())
+            .collect()
     }
 
     /// Seats billed to the payer.
@@ -397,6 +492,11 @@ impl Entitlement {
                 SeatAllowance {
                     user: user.clone(),
                     included_cents: tier.included_ai_cents_per_seat(pricing),
+                    included_phone_minutes: if self.tier_has_phone(user, tier) {
+                        pricing.included_phone_minutes()
+                    } else {
+                        0
+                    },
                 }
             })
             .collect()
@@ -486,6 +586,11 @@ pub enum DenyReason {
     OverageLimitReached,
     /// An overage charge failed; overage is paused until the payer re-enables it.
     OveragePaymentFailed,
+    /// Phone calling needs a Max seat, or a Premium seat with the Phone add-on.
+    PhonePlanRequired,
+    /// The seat's included phone minutes are used up and no credits or
+    /// overage remain.
+    PhoneMinutesExhausted,
 }
 
 impl DenyReason {
@@ -496,6 +601,8 @@ impl DenyReason {
             DenyReason::FreeAllowanceExhausted => "ai_free_allowance_exhausted",
             DenyReason::OverageLimitReached => "ai_overage_limit_reached",
             DenyReason::OveragePaymentFailed => "ai_overage_payment_failed",
+            DenyReason::PhonePlanRequired => "phone_plan_required",
+            DenyReason::PhoneMinutesExhausted => "phone_minutes_exhausted",
         }
     }
 
@@ -513,6 +620,10 @@ impl DenyReason {
             }
             DenyReason::OveragePaymentFailed => {
                 "Your last AI usage charge didn't go through. Update your payment method and re-enable usage billing."
+            }
+            DenyReason::PhonePlanRequired => "Phone calls need the Phone add-on or a Max plan.",
+            DenyReason::PhoneMinutesExhausted => {
+                "You've used this period's included phone minutes. Add credits or turn on usage billing to keep calling."
             }
         }
     }
@@ -573,6 +684,15 @@ pub struct UsageSnapshot {
     /// Why requests are refused right now, if they are.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<DenyReason>,
+    /// Whether this seat may make phone calls.
+    pub phone_enabled: bool,
+    /// Phone minutes included with this seat this period.
+    pub phone_included_minutes: i64,
+    /// Phone minutes this seat has used this period.
+    pub phone_used_minutes: i64,
+    /// Why phone calls are refused right now, if they are.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone_blocked_reason: Option<DenyReason>,
 }
 
 /// Errors raised by the billing domain.
@@ -602,6 +722,68 @@ pub enum BillingError {
     /// Entitlement lookup failed.
     #[error("entitlement lookup failed: {0}")]
     Entitlement(anyhow::Error),
+    /// The Phone add-on cannot be bought in this deployment.
+    #[error("the Phone add-on isn't available yet")]
+    PhoneAddonUnavailable,
+    /// The add-on cannot be changed for this seat.
+    #[error("{0}")]
+    InvalidPhoneAddonSeat(&'static str),
+}
+
+/// A seat's Phone add-on as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhoneAddonSeat {
+    /// The seat's user.
+    pub user: MacroUserIdStr<'static>,
+    /// When a turned-off add-on stops; `None` while it renews.
+    pub ends_at: Option<DateTime<Utc>>,
+}
+
+impl PhoneAddonSeat {
+    /// Whether the add-on renews with the subscription.
+    pub fn renews(&self) -> bool {
+        self.ends_at.is_none()
+    }
+
+    /// Whether the seat has phone calling at `now`.
+    pub fn active_at(&self, now: DateTime<Utc>) -> bool {
+        self.ends_at.is_none_or(|ends_at| now < ends_at)
+    }
+}
+
+/// One billed seat in the Phone add-on overview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PhoneSeatStatus {
+    /// The seat's user.
+    #[schema(value_type = String)]
+    pub user_id: MacroUserIdStr<'static>,
+    /// The seat's plan.
+    pub tier: PlanTier,
+    /// Whether the seat can make phone calls now.
+    pub phone_enabled: bool,
+    /// Whether phone calling comes with the seat's plan (Max or enterprise)
+    /// rather than the add-on.
+    pub phone_included: bool,
+    /// Whether the seat's Phone add-on renews with the subscription.
+    pub addon: bool,
+    /// When a turned-off add-on stops.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addon_ends_at: Option<DateTime<Utc>>,
+}
+
+/// The Phone add-on for the caller's plan.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct PhoneAddonOverview {
+    /// Whether the caller pays for the plan and may change the add-on.
+    pub can_manage: bool,
+    /// Whether the add-on can be bought in this deployment.
+    pub available: bool,
+    /// Monthly price per seat, cents.
+    pub monthly_price_cents: i64,
+    /// Phone minutes included per phone seat per period.
+    pub included_minutes_per_seat: i64,
+    /// The caller's own seat, then (for the payer) every other billed seat.
+    pub seats: Vec<PhoneSeatStatus>,
 }
 
 /// Convenience result alias for the crate.

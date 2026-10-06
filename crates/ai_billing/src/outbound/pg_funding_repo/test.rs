@@ -240,10 +240,12 @@ async fn activation_exceptions_are_durable_and_mixed_policy_seats_stay_separate(
                 SeatAllowance {
                     user: user("seat"),
                     included_cents: 4000,
+                    included_phone_minutes: 0,
                 },
                 SeatAllowance {
                     user: user("max"),
                     included_cents: 20000,
+                    included_phone_minutes: 0,
                 },
             ],
         )
@@ -308,6 +310,7 @@ async fn delayed_renewal_does_not_convert_a_legacy_period_already_in_use(pool: P
     let seats = vec![SeatAllowance {
         user: user("seat"),
         included_cents: 4000,
+        included_phone_minutes: 0,
     }];
     billing
         .store_open_allowance(
@@ -915,10 +918,12 @@ async fn mixed_policy_seats_and_immutable_period_binding(pool: PgPool) {
         SeatAllowance {
             user: user("seat"),
             included_cents: 2_000,
+            included_phone_minutes: 0,
         },
         SeatAllowance {
             user: user("legacy"),
             included_cents: 2_000,
+            included_phone_minutes: 0,
         },
     ];
     let legacy = billing

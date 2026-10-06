@@ -32,6 +32,9 @@ pub enum PricingError {
     /// The markup must be a whole percent from 0 to 99.
     #[error("overage markup must be a whole percent from 0 to 99, got {0}")]
     MarkupOutOfRange(i64),
+    /// Included phone minutes must be zero or more.
+    #[error("included phone minutes must be at least 0, got {0}")]
+    NegativePhoneMinutes(i64),
 }
 
 /// In-plan AI allowance per seat per billing period for one plan, in cents at
@@ -79,6 +82,32 @@ impl OverageMarkupPercent {
     }
 }
 
+/// Phone minutes included per phone seat per billing period: every Max seat,
+/// every Premium seat with the Phone add-on, and every enterprise seat.
+///
+/// Phone usage is a separate bucket from the AI allowance: unused minutes never
+/// pay for AI and unused AI never pays for minutes. Minutes beyond the bucket
+/// join the payer's chargeable usage at their recorded cost and the same
+/// markup, so credits, the overage cap and Stripe collection cover both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IncludedPhoneMinutes(i64);
+
+impl IncludedPhoneMinutes {
+    /// Validate a number of minutes: zero or more.
+    pub const fn new(minutes: i64) -> Result<Self, PricingError> {
+        if minutes < 0 {
+            Err(PricingError::NegativePhoneMinutes(minutes))
+        } else {
+            Ok(Self(minutes))
+        }
+    }
+
+    /// The included minutes.
+    pub const fn minutes(self) -> i64 {
+        self.0
+    }
+}
+
 /// The in-plan allowance of every plan, so no component can be composed with
 /// one tier's allowance and not another's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,17 +138,28 @@ impl PlanAllowances {
 pub struct AiPricing {
     allowances: PlanAllowances,
     overage_markup: OverageMarkupPercent,
+    phone_minutes: IncludedPhoneMinutes,
 }
 
 const PERCENT: i64 = 100;
 
 impl AiPricing {
     /// Combine the validated values.
-    pub const fn new(allowances: PlanAllowances, overage_markup: OverageMarkupPercent) -> Self {
+    pub const fn new(
+        allowances: PlanAllowances,
+        overage_markup: OverageMarkupPercent,
+        phone_minutes: IncludedPhoneMinutes,
+    ) -> Self {
         Self {
             allowances,
             overage_markup,
+            phone_minutes,
         }
+    }
+
+    /// Phone minutes included per phone seat per period.
+    pub const fn included_phone_minutes(self) -> i64 {
+        self.phone_minutes.minutes()
     }
 
     /// Every plan's allowance.
@@ -182,12 +222,13 @@ pub fn cost_cents(provider_cost_usd: f64) -> i64 {
 
 #[cfg(test)]
 impl AiPricing {
-    /// The $5 free cap, $20 Premium and $100 Max allowances, and 5% markup
-    /// the crate's tests assume.
+    /// The $5 free cap, $20 Premium and $100 Max allowances, 5% markup and
+    /// 1,000 phone minutes the crate's tests assume.
     pub(crate) fn testing() -> Self {
         Self::new(
             PlanAllowances::testing(),
             OverageMarkupPercent::new(5).unwrap(),
+            IncludedPhoneMinutes::new(1_000).unwrap(),
         )
     }
 }

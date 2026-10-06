@@ -486,10 +486,12 @@ async fn period_allowance_roundtrips_and_upserts_per_period(pool: PgPool) {
         SeatAllowance {
             user: payer.clone(),
             included_cents: 2_000,
+            included_phone_minutes: 0,
         },
         SeatAllowance {
             user: member.clone(),
             included_cents: 1_000,
+            included_phone_minutes: 0,
         },
     ];
 
@@ -523,6 +525,7 @@ async fn period_allowance_roundtrips_and_upserts_per_period(pool: PgPool) {
     let max_payer = vec![SeatAllowance {
         user: payer.clone(),
         included_cents: 2_500,
+        included_phone_minutes: 0,
     }];
     assert_eq!(
         repo.store_open_allowance(&payer, open, &max_payer, SeatGeneration::from_raw(0))
@@ -751,24 +754,29 @@ async fn store_open_allowance_does_not_write_a_stale_generation(pool: PgPool) {
         SeatAllowance {
             user: payer(),
             included_cents: 100,
+            included_phone_minutes: 0,
         },
         SeatAllowance {
             user: alice.clone(),
             included_cents: 100,
+            included_phone_minutes: 0,
         },
         SeatAllowance {
             user: bob.clone(),
             included_cents: 300,
+            included_phone_minutes: 0,
         },
     ];
     let after = vec![
         SeatAllowance {
             user: payer(),
             included_cents: 100,
+            included_phone_minutes: 0,
         },
         SeatAllowance {
             user: bob,
             included_cents: 300,
+            included_phone_minutes: 0,
         },
     ];
     assert_eq!(
@@ -844,6 +852,7 @@ async fn release_open_seat_without_an_allowance_row_bumps_generation(pool: PgPoo
             &[SeatAllowance {
                 user: member.clone(),
                 included_cents: 2_000,
+                included_phone_minutes: 0
             }],
             SeatGeneration::from_raw(0),
         )
@@ -915,10 +924,12 @@ async fn rows_frozen_before_the_cost_column_read_as_the_current_allowance(pool: 
                 SeatAllowance {
                     user: payer.clone(),
                     included_cents: AiPricing::testing().included_allowance_cents(),
+                    included_phone_minutes: 0
                 },
                 SeatAllowance {
                     user: member.clone(),
                     included_cents: AiPricing::testing().included_allowance_cents(),
+                    included_phone_minutes: 0
                 },
             ]
         );
@@ -939,4 +950,147 @@ async fn rows_frozen_before_the_cost_column_read_as_the_current_allowance(pool: 
     assert_eq!(raw.billed_users, vec![payer.as_ref().to_string()]);
     assert_eq!(raw.included_cents_by_user, vec![4_000]);
     assert_eq!(raw.included_cost_cents_by_user, None);
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn phone_minutes_freeze_with_the_allowance_and_leave_with_the_seat(pool: PgPool) {
+    let repo = PgBillingRepo::new(pool.clone(), AiPricing::testing());
+    let payer = payer();
+    let now = Utc::now()
+        .duration_trunc(chrono::Duration::microseconds(1))
+        .unwrap();
+    let open = BillingPeriod {
+        start: now - chrono::Duration::days(1),
+        end: now + chrono::Duration::days(29),
+    }
+    .open_start(now)
+    .unwrap();
+    let caller = MacroUserIdStr::try_from("macro|caller@example.com".to_string()).unwrap();
+    let quiet = MacroUserIdStr::try_from("macro|quiet@example.com".to_string()).unwrap();
+    let seats = vec![
+        SeatAllowance {
+            user: payer.clone(),
+            included_cents: 2_000,
+            included_phone_minutes: 0,
+        },
+        SeatAllowance {
+            user: caller.clone(),
+            included_cents: 2_000,
+            included_phone_minutes: 1_000,
+        },
+        SeatAllowance {
+            user: quiet.clone(),
+            included_cents: 2_000,
+            included_phone_minutes: 0,
+        },
+    ];
+    repo.store_open_allowance(&payer, open, &seats, SeatGeneration::from_raw(0))
+        .await
+        .unwrap();
+    assert_eq!(
+        repo.period_allowance(&payer, open.start())
+            .await
+            .unwrap()
+            .unwrap()
+            .seats,
+        seats
+    );
+
+    // Buying the add-on mid-period refreshes the frozen minutes.
+    let mut with_addon = seats.clone();
+    with_addon[2].included_phone_minutes = 1_000;
+    assert_eq!(
+        repo.store_open_allowance(&payer, open, &with_addon, SeatGeneration::from_raw(0))
+            .await
+            .unwrap(),
+        AllowanceStore::Stored
+    );
+
+    repo.release_open_seat(&payer, open, &caller).await.unwrap();
+    assert_eq!(
+        repo.period_allowance(&payer, open.start())
+            .await
+            .unwrap()
+            .unwrap()
+            .seats,
+        vec![with_addon[0].clone(), with_addon[2].clone()]
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn phone_addon_seats_are_scoped_to_the_payer(pool: PgPool) {
+    let repo = PgBillingRepo::new(pool.clone(), AiPricing::testing());
+    let payer = payer();
+    let other = MacroUserIdStr::try_from("macro|other@example.com".to_string()).unwrap();
+    let mine = MacroUserIdStr::try_from("macro|mine@example.com".to_string()).unwrap();
+    let theirs = MacroUserIdStr::try_from("macro|theirs@example.com".to_string()).unwrap();
+    let without = MacroUserIdStr::try_from("macro|without@example.com".to_string()).unwrap();
+    for (user, payer) in [(&mine, &payer), (&theirs, &other)] {
+        sqlx::query!(
+            "INSERT INTO phone_addon_seat (user_id, payer_id) VALUES ($1, $2)",
+            user.as_ref(),
+            payer.as_ref(),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let seats = repo
+        .phone_addon_seats(&payer, &[mine.clone(), theirs, without])
+        .await
+        .unwrap();
+    assert_eq!(seats, vec![mine]);
+    assert!(
+        repo.phone_addon_seats(&payer, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn phone_addon_rows_start_end_and_remember_their_quantity(pool: PgPool) {
+    let repo = PgBillingRepo::new(pool.clone(), AiPricing::testing());
+    let payer = payer();
+    let seat = MacroUserIdStr::try_from("macro|seat@example.com".to_string()).unwrap();
+    let ended = MacroUserIdStr::try_from("macro|ended@example.com".to_string()).unwrap();
+
+    assert_eq!(repo.phone_addon_quantity(&payer).await.unwrap(), 0);
+    repo.start_phone_addon(&payer, &seat).await.unwrap();
+    repo.start_phone_addon(&payer, &ended).await.unwrap();
+    let past = Utc::now() - chrono::Duration::days(1);
+    let future = (Utc::now() + chrono::Duration::days(10))
+        .duration_trunc(chrono::Duration::microseconds(1))
+        .unwrap();
+    repo.end_phone_addon(&payer, &ended, past).await.unwrap();
+    repo.end_phone_addon(&payer, &seat, future).await.unwrap();
+    // Ending an add-on that is already ending keeps its first end.
+    repo.end_phone_addon(&payer, &seat, past).await.unwrap();
+
+    let rows = repo.phone_addon_rows(&payer).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    let row = rows.iter().find(|row| row.user == seat).unwrap();
+    assert_eq!(row.ends_at, Some(future));
+    // Only add-ons that have not ended give phone calling.
+    assert_eq!(
+        repo.phone_addon_seats(&payer, &[seat.clone(), ended.clone()])
+            .await
+            .unwrap(),
+        vec![seat.clone()]
+    );
+
+    // Turning it back on renews it.
+    repo.start_phone_addon(&payer, &seat).await.unwrap();
+    let rows = repo.phone_addon_rows(&payer).await.unwrap();
+    assert!(rows.iter().find(|row| row.user == seat).unwrap().renews());
+
+    repo.delete_phone_addon_rows(&payer, &[ended])
+        .await
+        .unwrap();
+    assert_eq!(repo.phone_addon_rows(&payer).await.unwrap().len(), 1);
+
+    repo.store_phone_addon_quantity(&payer, 3).await.unwrap();
+    assert_eq!(repo.phone_addon_quantity(&payer).await.unwrap(), 3);
+    // The account row keeps its defaults.
+    assert!(!repo.settings(&payer).await.unwrap().overage_enabled);
 }

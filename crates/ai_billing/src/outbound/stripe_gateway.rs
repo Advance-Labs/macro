@@ -6,7 +6,7 @@ mod test;
 
 use crate::domain::{
     BillingError, BillingPeriod, CreditCheckoutRequest, OverageChargeRequest, PaymentGateway,
-    Result, SubscriptionScope,
+    PhoneAddonQuantity, Result, SubscriptionScope,
 };
 use chrono::{DateTime, Utc};
 use macro_uuid::Uuid;
@@ -20,7 +20,8 @@ use stripe::{
     CreateInvoice, CreateInvoiceItem, Currency, Customer, CustomerId, Expandable,
     FinalizeInvoiceParams, Invoice, InvoiceId, InvoiceItem, InvoicePendingInvoiceItemsBehavior,
     InvoiceStatus, ListSubscriptions, PaymentMethodId, RequestStrategy, Subscription,
-    SubscriptionStatus,
+    SubscriptionStatus, UpdateSubscription, UpdateSubscriptionItems,
+    generated::billing::subscription::SubscriptionProrationBehavior,
 };
 
 /// Metadata key stamped on every Stripe object this crate creates.
@@ -41,12 +42,23 @@ const TEAM_ID_METADATA_KEY: &str = "team_id";
 #[derive(Clone)]
 pub struct StripePaymentGateway {
     client: Arc<stripe::Client>,
+    phone_addon_price: Option<String>,
 }
 
 impl StripePaymentGateway {
     /// Wrap a configured Stripe client.
     pub fn new(client: Arc<stripe::Client>) -> Self {
-        Self { client }
+        Self {
+            client,
+            phone_addon_price: None,
+        }
+    }
+
+    /// Sell the Phone add-on as a per-seat item on `price`. Without it the
+    /// add-on cannot be bought.
+    pub fn with_phone_addon_price(mut self, price: Option<String>) -> Self {
+        self.phone_addon_price = price;
+        self
     }
 
     /// A client that sends `key` as the idempotency key on its next request,
@@ -521,6 +533,82 @@ impl PaymentGateway for StripePaymentGateway {
         let customer = parse_customer(customer_id)?;
         let subscriptions = self.non_canceled_subscriptions(&customer).await?;
         scoped_period(&subscriptions, scope)
+    }
+
+    fn phone_addon_available(&self) -> bool {
+        self.phone_addon_price.is_some()
+    }
+
+    async fn set_phone_addon_quantity(&self, request: PhoneAddonQuantity) -> Result<()> {
+        let price = self
+            .phone_addon_price
+            .as_deref()
+            .ok_or(BillingError::PhoneAddonUnavailable)?;
+        let quantity = u64::try_from(request.quantity).map_err(|_| {
+            BillingError::Payment(anyhow::anyhow!("negative phone add-on quantity"))
+        })?;
+        let customer = parse_customer(&request.customer_id)?;
+        let subscriptions = self.non_canceled_subscriptions(&customer).await?;
+        let mut billable_in_scope = subscriptions
+            .iter()
+            .filter(|subscription| in_scope(subscription, request.scope) && billable(subscription));
+        let subscription = billable_in_scope
+            .next()
+            .ok_or_else(no_matching_subscription)?;
+        if billable_in_scope.next().is_some() {
+            return Err(BillingError::Payment(anyhow::anyhow!(
+                "more than one subscription matches the billing scope"
+            )));
+        }
+        let Some(item) = phone_addon_item(subscription, price, quantity) else {
+            return Ok(());
+        };
+        let params = UpdateSubscription {
+            items: Some(vec![item]),
+            proration_behavior: Some(if request.prorate {
+                SubscriptionProrationBehavior::AlwaysInvoice
+            } else {
+                SubscriptionProrationBehavior::None
+            }),
+            ..Default::default()
+        };
+        Subscription::update(&self.client, &subscription.id, params)
+            .await
+            .map_err(payment)?;
+        Ok(())
+    }
+}
+
+/// The item change that bills `quantity` Phone add-on seats on `price`, or
+/// `None` when the subscription already does.
+fn phone_addon_item(
+    subscription: &Subscription,
+    price: &str,
+    quantity: u64,
+) -> Option<UpdateSubscriptionItems> {
+    let existing = subscription.items.data.iter().find(|item| {
+        item.price
+            .as_ref()
+            .is_some_and(|item_price| item_price.id.as_str() == price)
+    });
+    match existing {
+        None if quantity == 0 => None,
+        None => Some(UpdateSubscriptionItems {
+            price: Some(price.to_owned()),
+            quantity: Some(quantity),
+            ..Default::default()
+        }),
+        Some(item) if item.quantity == Some(quantity) => None,
+        Some(item) if quantity == 0 => Some(UpdateSubscriptionItems {
+            id: Some(item.id.to_string()),
+            deleted: Some(true),
+            ..Default::default()
+        }),
+        Some(item) => Some(UpdateSubscriptionItems {
+            id: Some(item.id.to_string()),
+            quantity: Some(quantity),
+            ..Default::default()
+        }),
     }
 }
 

@@ -63,7 +63,7 @@ fn raw_pricing_values_parse_and_validate() {
     use crate::domain::PlanTier;
 
     let raw = |free, premium, max| RawPlanAllowances { free, premium, max };
-    let pricing = parse_ai_pricing(raw("500", " 2000 ", "10000"), "5").unwrap();
+    let pricing = parse_ai_pricing(raw("500", " 2000 ", "10000"), "5", " 1000 ").unwrap();
     assert_eq!(pricing.included_allowance_cents_for(PlanTier::Free), 500);
     assert_eq!(
         pricing.included_allowance_cents_for(PlanTier::Premium),
@@ -71,6 +71,7 @@ fn raw_pricing_values_parse_and_validate() {
     );
     assert_eq!(pricing.included_allowance_cents_for(PlanTier::Max), 10_000);
     assert_eq!(pricing.overage_markup_percent(), 5);
+    assert_eq!(pricing.included_phone_minutes(), 1_000);
 
     for (allowances, markup, named) in [
         (
@@ -129,10 +130,45 @@ fn raw_pricing_values_parse_and_validate() {
             AI_USAGE_OVERAGE_MARKUP_PERCENT,
         ),
     ] {
-        let error = parse_ai_pricing(allowances, markup).unwrap_err();
+        let error = parse_ai_pricing(allowances, markup, "1000").unwrap_err();
         assert!(
             format!("{error:?}").contains(named),
             "{allowances:?}/{markup:?}: {error:?}"
         );
+    }
+}
+
+#[test]
+fn included_phone_minutes_parse_and_validate() {
+    let raw = RawPlanAllowances {
+        free: "500",
+        premium: "2000",
+        max: "10000",
+    };
+    assert_eq!(
+        parse_ai_pricing(raw, "5", "0")
+            .unwrap()
+            .included_phone_minutes(),
+        0
+    );
+    for minutes in ["", "-1", "1,000", "16.5"] {
+        let error = parse_ai_pricing(raw, "5", minutes).unwrap_err();
+        assert!(
+            format!("{error:?}").contains(AI_USAGE_PHONE_INCLUDED_MINUTES),
+            "{minutes:?}: {error:?}"
+        );
+    }
+
+    let minutes: IncludedPhoneMinutes = serde_json::from_value(serde_json::json!(1_000)).unwrap();
+    assert_eq!(minutes.minutes(), 1_000);
+    let negative = serde_json::from_value::<IncludedPhoneMinutes>(serde_json::json!(-5))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        negative.contains(AI_USAGE_PHONE_INCLUDED_MINUTES),
+        "{negative}"
+    );
+    for value in [serde_json::json!(null), serde_json::json!("1000")] {
+        assert!(serde_json::from_value::<IncludedPhoneMinutes>(value).is_err());
     }
 }

@@ -2,8 +2,9 @@ use super::*;
 use crate::domain::ledger::plan_settlement;
 use crate::domain::models::{
     AllowanceStore, DenyReason, OpenPeriodStart, PayerScope, PeriodAllowance, PeriodLedger,
-    PlanTier, SeatGeneration,
+    PhoneAddonSeat, PlanTier, SeatGeneration,
 };
+use crate::domain::ports::PhoneAddonQuantity;
 use crate::domain::ports::SettlementOutcome;
 use chrono::TimeZone;
 use macro_user_id::cowlike::CowLike;
@@ -132,11 +133,11 @@ impl UsageReader for FakeUsage {
         totals
             .into_iter()
             .map(|(user, used_cents)| {
-                Ok(SeatUsage {
-                    user: MacroUserIdStr::try_from(user)
+                Ok(SeatUsage::ai(
+                    MacroUserIdStr::try_from(user)
                         .map_err(|error| BillingError::Storage(error.into()))?,
                     used_cents,
-                })
+                ))
             })
             .collect()
     }
@@ -165,6 +166,8 @@ struct RepoState {
     releases: Vec<(String, DateTime<Utc>, String)>,
     activated_seats: Vec<String>,
     period_writes: Vec<(String, DateTime<Utc>, DateTime<Utc>)>,
+    phone_addon: Vec<PhoneAddonSeat>,
+    phone_quantity: i64,
 }
 
 impl RepoState {
@@ -218,6 +221,85 @@ impl FakeRepo {
 }
 
 impl BillingRepo for FakeRepo {
+    async fn phone_addon_seats(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> Result<Vec<MacroUserIdStr<'static>>> {
+        let state = self.state.lock().unwrap();
+        let now = Utc::now();
+        Ok(users
+            .iter()
+            .filter(|user| {
+                state
+                    .phone_addon
+                    .iter()
+                    .any(|seat| seat.user.as_ref() == user.as_ref() && seat.active_at(now))
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn phone_addon_rows(&self, _payer: &MacroUserIdStr<'_>) -> Result<Vec<PhoneAddonSeat>> {
+        Ok(self.state.lock().unwrap().phone_addon.clone())
+    }
+
+    async fn start_phone_addon(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+    ) -> Result<()> {
+        let mut state = self.state.lock().unwrap();
+        state
+            .phone_addon
+            .retain(|seat| seat.user.as_ref() != user.as_ref());
+        state.phone_addon.push(PhoneAddonSeat {
+            user: user.clone().into_owned(),
+            ends_at: None,
+        });
+        Ok(())
+    }
+
+    async fn end_phone_addon(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+        ends_at: DateTime<Utc>,
+    ) -> Result<()> {
+        for seat in &mut self.state.lock().unwrap().phone_addon {
+            if seat.user.as_ref() == user.as_ref() && seat.ends_at.is_none() {
+                seat.ends_at = Some(ends_at);
+            }
+        }
+        Ok(())
+    }
+
+    async fn delete_phone_addon_rows(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> Result<()> {
+        self.state
+            .lock()
+            .unwrap()
+            .phone_addon
+            .retain(|seat| !users.iter().any(|user| user.as_ref() == seat.user.as_ref()));
+        Ok(())
+    }
+
+    async fn phone_addon_quantity(&self, _payer: &MacroUserIdStr<'_>) -> Result<i64> {
+        Ok(self.state.lock().unwrap().phone_quantity)
+    }
+
+    async fn store_phone_addon_quantity(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        quantity: i64,
+    ) -> Result<()> {
+        self.state.lock().unwrap().phone_quantity = quantity;
+        Ok(())
+    }
+
     async fn legacy_seats(
         &self,
         _payer: &MacroUserIdStr<'_>,
@@ -495,6 +577,8 @@ struct FakePayments {
     payments: Arc<Mutex<Vec<(Uuid, String)>>>,
     period_reply: Arc<Mutex<PeriodReply>>,
     period_requests: Arc<Mutex<Vec<(String, SubscriptionScope)>>>,
+    sells_phone: bool,
+    phone_requests: Arc<Mutex<Vec<PhoneAddonQuantity>>>,
 }
 
 impl FakePayments {
@@ -516,6 +600,13 @@ impl FakePayments {
 }
 
 impl PaymentGateway for FakePayments {
+    fn phone_addon_available(&self) -> bool {
+        self.sells_phone
+    }
+    async fn set_phone_addon_quantity(&self, request: PhoneAddonQuantity) -> Result<()> {
+        self.phone_requests.lock().unwrap().push(request);
+        Ok(())
+    }
     async fn create_credit_checkout(&self, request: CreditCheckoutRequest) -> Result<String> {
         self.checkouts.lock().unwrap().push(request);
         Ok("https://checkout.stripe.test/session".to_string())
@@ -734,10 +825,7 @@ async fn policy_activation_during_analytics_read_cannot_double_bill() {
                 users.iter().map(ToString::to_string).collect();
             Ok(users
                 .iter()
-                .map(|user| SeatUsage {
-                    user: user.clone(),
-                    used_cents: 100_000,
-                })
+                .map(|user| SeatUsage::ai(user.clone(), 100_000))
                 .collect())
         }
     }
@@ -1229,6 +1317,7 @@ async fn only_the_payer_manages_billing_and_needs_a_paid_plan() {
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner {
             team_id: macro_uuid::generate_uuid_v7(),
         },
@@ -1293,6 +1382,7 @@ async fn team_seats_keep_allowances_separate_and_share_credits() {
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner {
             team_id: macro_uuid::generate_uuid_v7(),
         },
@@ -1499,6 +1589,7 @@ async fn snapshot_freezes_the_open_period_allowance_and_refreshes_it() {
         vec![SeatAllowance {
             user: payer.clone(),
             included_cents: 2_000,
+            included_phone_minutes: 0
         }]
     );
 
@@ -1510,6 +1601,7 @@ async fn snapshot_freezes_the_open_period_allowance_and_refreshes_it() {
         unlimited: false,
         payer: payer.clone(),
         billed_users: vec![payer.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner {
             team_id: macro_uuid::generate_uuid_v7(),
         },
@@ -1524,10 +1616,12 @@ async fn snapshot_freezes_the_open_period_allowance_and_refreshes_it() {
             SeatAllowance {
                 user: payer.clone(),
                 included_cents: 2_000,
+                included_phone_minutes: 0
             },
             SeatAllowance {
                 user: member,
                 included_cents: 2_000,
+                included_phone_minutes: 0
             },
         ]
     );
@@ -1546,6 +1640,7 @@ async fn previous_period_overage_uses_the_frozen_allowance_not_the_live_one() {
             seats: vec![SeatAllowance {
                 user: payer.clone(),
                 included_cents: 1_000,
+                included_phone_minutes: 0,
             }],
         },
     );
@@ -1583,6 +1678,7 @@ async fn previous_period_does_not_charge_usage_its_frozen_allowance_included() {
             seats: vec![SeatAllowance {
                 user: payer.clone(),
                 included_cents: 5_000,
+                included_phone_minutes: 0,
             }],
         },
     );
@@ -1608,6 +1704,7 @@ async fn previous_period_usage_uses_the_frozen_billed_users() {
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member_a.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner { team_id },
     };
     let new_team = Entitlement {
@@ -1645,10 +1742,12 @@ async fn previous_period_usage_uses_the_frozen_billed_users() {
                 SeatAllowance {
                     user: owner.clone(),
                     included_cents: 2_000,
+                    included_phone_minutes: 0,
                 },
                 SeatAllowance {
                     user: member_a.clone(),
                     included_cents: 2_000,
+                    included_phone_minutes: 0,
                 },
             ],
         },
@@ -1686,6 +1785,7 @@ async fn current_period_uses_the_live_allowance_not_a_stale_freeze() {
             seats: vec![SeatAllowance {
                 user: payer.clone(),
                 included_cents: 1_000,
+                included_phone_minutes: 0,
             }],
         },
     );
@@ -1757,6 +1857,7 @@ async fn release_missing_team_leaves_allowances_unchanged() {
             seats: vec![SeatAllowance {
                 user: member.clone(),
                 included_cents: 2_000,
+                included_phone_minutes: 0,
             }],
         },
     );
@@ -1777,6 +1878,7 @@ async fn release_missing_team_leaves_allowances_unchanged() {
         vec![SeatAllowance {
             user: member,
             included_cents: 2_000,
+            included_phone_minutes: 0
         }]
     );
 }
@@ -1795,6 +1897,7 @@ async fn release_refuses_to_remove_the_payer() {
             seats: vec![SeatAllowance {
                 user: owner.clone(),
                 included_cents: 2_000,
+                included_phone_minutes: 0,
             }],
         },
     );
@@ -1816,6 +1919,7 @@ async fn release_refuses_to_remove_the_payer() {
         vec![SeatAllowance {
             user: owner,
             included_cents: 2_000,
+            included_phone_minutes: 0
         }]
     );
 }
@@ -1833,6 +1937,7 @@ async fn position_keeps_matching_pairs_in_their_stored_order() {
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner { team_id },
     };
     // The same seat/allowance pairs as the live entitlement, in another order.
@@ -1840,10 +1945,12 @@ async fn position_keeps_matching_pairs_in_their_stored_order() {
         SeatAllowance {
             user: member.clone(),
             included_cents: 10_000,
+            included_phone_minutes: 1_000,
         },
         SeatAllowance {
             user: owner.clone(),
             included_cents: 2_000,
+            included_phone_minutes: 0,
         },
     ];
     let repo = FakeRepo::default();
@@ -1882,6 +1989,7 @@ async fn position_does_not_restore_a_member_released_between_entitlement_reads()
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner { team_id },
     };
     let after = Entitlement {
@@ -1898,14 +2006,17 @@ async fn position_does_not_restore_a_member_released_between_entitlement_reads()
                 SeatAllowance {
                     user: owner.clone(),
                     included_cents: 100,
+                    included_phone_minutes: 0,
                 },
                 SeatAllowance {
                     user: member.clone(),
                     included_cents: 100,
+                    included_phone_minutes: 0,
                 },
                 SeatAllowance {
                     user: bob.clone(),
                     included_cents: 300,
+                    included_phone_minutes: 0,
                 },
             ],
         },
@@ -1936,10 +2047,12 @@ async fn position_does_not_restore_a_member_released_between_entitlement_reads()
             SeatAllowance {
                 user: owner,
                 included_cents: 100,
+                included_phone_minutes: 0
             },
             SeatAllowance {
                 user: bob,
                 included_cents: 300,
+                included_phone_minutes: 0
             },
         ]
     );
@@ -1999,6 +2112,7 @@ fn premium_team(
         unlimited: false,
         payer: owner.clone(),
         billed_users: vec![owner.clone(), member.clone()],
+        phone_addon: Vec::new(),
         scope: PayerScope::TeamOwner { team_id },
     }
 }
@@ -2551,4 +2665,178 @@ async fn release_rolls_an_ended_anchor_when_the_entitlement_read_fails() {
             "macro|member@x.com".to_string()
         )]
     );
+}
+
+fn phone_team() -> (
+    Service,
+    FakeRepo,
+    FakePayments,
+    FakeEntitlements,
+    [MacroUserIdStr<'static>; 3],
+) {
+    let owner = user("owner@x.com");
+    let member = user("member@x.com");
+    let maxer = user("max@x.com");
+    let team = Entitlement {
+        tier: PlanTier::Premium,
+        seat_tiers: vec![PlanTier::Premium, PlanTier::Premium, PlanTier::Max],
+        unlimited: false,
+        payer: owner.clone(),
+        billed_users: vec![owner.clone(), member.clone(), maxer.clone()],
+        phone_addon: Vec::new(),
+        scope: PayerScope::TeamOwner {
+            team_id: Uuid::from_u128(42),
+        },
+    };
+    let ents = FakeEntitlements::default()
+        .with(team)
+        .with_customer(&owner, "cus_owner");
+    let repo = FakeRepo::default();
+    let payments = FakePayments {
+        sells_phone: true,
+        ..Default::default()
+    };
+    let svc = BillingServiceImpl::new(
+        ents.clone(),
+        FakeUsage::default(),
+        repo.clone(),
+        payments.clone(),
+        AiPricing::testing(),
+    )
+    .with_enforcement(AiUsageEnforcement::Enabled);
+    (svc, repo, payments, ents, [owner, member, maxer])
+}
+
+fn phone_requests(payments: &FakePayments) -> Vec<(i64, bool)> {
+    payments
+        .phone_requests
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|request| (request.quantity, request.prorate))
+        .collect()
+}
+
+#[tokio::test]
+async fn the_payer_buys_the_phone_add_on_for_premium_seats() {
+    let (svc, repo, payments, _, [owner, member, maxer]) = phone_team();
+
+    assert!(matches!(
+        svc.set_phone_addon(&member, &member, true).await,
+        Err(BillingError::NotPayer)
+    ));
+    assert!(matches!(
+        svc.set_phone_addon(&owner, &maxer, true).await,
+        Err(BillingError::InvalidPhoneAddonSeat(_))
+    ));
+    assert!(matches!(
+        svc.set_phone_addon(&owner, &user("stranger@x.com"), true)
+            .await,
+        Err(BillingError::InvalidPhoneAddonSeat(_))
+    ));
+    assert_eq!(
+        svc.check_phone_allowance(&member).await.unwrap(),
+        AllowanceDecision::Deny(DenyReason::PhonePlanRequired)
+    );
+
+    let overview = svc.set_phone_addon(&owner, &member, true).await.unwrap();
+    assert!(overview.can_manage);
+    assert!(overview.available);
+    let seat = |id: &MacroUserIdStr<'_>| {
+        overview
+            .seats
+            .iter()
+            .find(|seat| seat.user_id.as_ref() == id.as_ref())
+            .cloned()
+            .unwrap()
+    };
+    assert!(seat(&member).addon && seat(&member).phone_enabled);
+    assert!(!seat(&owner).phone_enabled);
+    assert!(seat(&maxer).phone_included && seat(&maxer).phone_enabled);
+    assert_eq!(phone_requests(&payments), vec![(1, true)]);
+    assert_eq!(repo.state.lock().unwrap().phone_quantity, 1);
+    assert_eq!(
+        svc.check_phone_allowance(&member).await.unwrap(),
+        AllowanceDecision::Allow
+    );
+    let snapshot = svc.snapshot(&member).await.unwrap();
+    assert!(snapshot.phone_enabled);
+    assert_eq!(snapshot.phone_included_minutes, 1_000);
+
+    // Asking again changes nothing.
+    svc.set_phone_addon(&owner, &member, true).await.unwrap();
+    assert_eq!(phone_requests(&payments), vec![(1, true)]);
+}
+
+#[tokio::test]
+async fn a_turned_off_add_on_lasts_the_paid_period_and_renews_without_a_new_charge() {
+    let (svc, repo, payments, _, [owner, member, _]) = phone_team();
+    svc.set_phone_addon(&owner, &member, true).await.unwrap();
+
+    let overview = svc.set_phone_addon(&owner, &member, false).await.unwrap();
+    let seat = overview
+        .seats
+        .iter()
+        .find(|seat| seat.user_id.as_ref() == member.as_ref())
+        .unwrap();
+    assert!(!seat.addon);
+    assert!(seat.phone_enabled, "the paid period is not cut short");
+    assert!(
+        seat.addon_ends_at
+            .is_some_and(|ends_at| ends_at > Utc::now())
+    );
+    assert_eq!(phone_requests(&payments), vec![(1, true), (0, false)]);
+    assert_eq!(repo.state.lock().unwrap().phone_quantity, 0);
+
+    svc.set_phone_addon(&owner, &member, true).await.unwrap();
+    assert_eq!(
+        phone_requests(&payments),
+        vec![(1, true), (0, false), (1, false)]
+    );
+}
+
+#[tokio::test]
+async fn sync_forgets_add_ons_of_seats_that_left_and_bills_the_rest() {
+    let (svc, repo, payments, ents, [owner, member, maxer]) = phone_team();
+    svc.set_phone_addon(&owner, &owner, true).await.unwrap();
+    svc.set_phone_addon(&owner, &member, true).await.unwrap();
+    assert_eq!(repo.state.lock().unwrap().phone_quantity, 2);
+
+    // Nothing changed: no Stripe call.
+    svc.sync_phone_addon(&owner).await.unwrap();
+    assert_eq!(phone_requests(&payments).len(), 2);
+
+    // The member left the team.
+    ents.set(Entitlement {
+        tier: PlanTier::Premium,
+        seat_tiers: vec![PlanTier::Premium, PlanTier::Max],
+        unlimited: false,
+        payer: owner.clone(),
+        billed_users: vec![owner.clone(), maxer],
+        phone_addon: Vec::new(),
+        scope: PayerScope::TeamOwner {
+            team_id: Uuid::from_u128(42),
+        },
+    });
+    svc.sync_phone_addon(&owner).await.unwrap();
+    assert_eq!(phone_requests(&payments).last(), Some(&(1, false)));
+    let rows = repo.state.lock().unwrap().phone_addon.clone();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].user.as_ref(), owner.as_ref());
+    // Only the payer syncs its own add-on.
+    svc.sync_phone_addon(&member).await.unwrap();
+}
+
+#[tokio::test]
+async fn the_add_on_needs_a_configured_price() {
+    let payer = user("payer@x.com");
+    let (svc, _, _, _) = premium_service(0);
+    assert!(matches!(
+        svc.set_phone_addon(&payer, &payer, true).await,
+        Err(BillingError::PhoneAddonUnavailable)
+    ));
+    let overview = svc.phone_addon(&payer).await.unwrap();
+    assert!(!overview.available);
+    assert_eq!(overview.seats.len(), 1);
+    assert_eq!(overview.monthly_price_cents, 1_500);
 }

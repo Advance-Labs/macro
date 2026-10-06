@@ -15,8 +15,9 @@ use super::pg_funding_repo::{credit_commitments, lock_payer, postpaid_commitment
 use crate::domain::financial::legacy_cap_remaining;
 use crate::domain::{
     AiPricing, AllowanceStore, BillingError, BillingRepo, BillingSettings, OpenPeriodStart,
-    OverageChargeStatus, PendingCharge, PeriodAllowance, PeriodLedger, Result, SeatAllowance,
-    SeatGeneration, SettlementOutcome, SettlementPolicy, SettlementState, plan_settlement,
+    OverageChargeStatus, PendingCharge, PeriodAllowance, PeriodLedger, PhoneAddonSeat, Result,
+    SeatAllowance, SeatGeneration, SettlementOutcome, SettlementPolicy, SettlementState,
+    plan_settlement,
 };
 use chrono::{DateTime, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
@@ -48,6 +49,163 @@ fn funding_storage(e: ai_usage::domain::financial::FinancialError) -> BillingErr
 }
 
 impl BillingRepo for PgBillingRepo {
+    async fn phone_addon_seats(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> Result<Vec<MacroUserIdStr<'static>>> {
+        if users.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<String> = users.iter().map(|user| user.as_ref().to_owned()).collect();
+        let rows = sqlx::query_scalar!(
+            r#"
+            SELECT user_id FROM phone_addon_seat
+            WHERE payer_id = $1 AND user_id = ANY($2)
+              AND (ends_at IS NULL OR ends_at > NOW())
+            ORDER BY user_id
+            "#,
+            payer.as_ref(),
+            &ids,
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage)?;
+        rows.into_iter()
+            .map(|id| {
+                MacroUserIdStr::try_from(id).map_err(|e| {
+                    BillingError::Storage(anyhow::anyhow!("invalid phone add-on user id: {e}"))
+                })
+            })
+            .collect()
+    }
+
+    async fn phone_addon_rows(&self, payer: &MacroUserIdStr<'_>) -> Result<Vec<PhoneAddonSeat>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT user_id, ends_at FROM phone_addon_seat
+            WHERE payer_id = $1
+            ORDER BY created_at, user_id
+            "#,
+            payer.as_ref(),
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage)?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(PhoneAddonSeat {
+                    user: MacroUserIdStr::try_from(row.user_id).map_err(|e| {
+                        BillingError::Storage(anyhow::anyhow!("invalid phone add-on user id: {e}"))
+                    })?,
+                    ends_at: row.ends_at,
+                })
+            })
+            .collect()
+    }
+
+    async fn start_phone_addon(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+    ) -> Result<()> {
+        // A seat that moved to another payer starts over with this one.
+        sqlx::query!(
+            r#"
+            INSERT INTO phone_addon_seat (user_id, payer_id)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE
+            SET payer_id = EXCLUDED.payer_id,
+                ends_at = NULL,
+                created_at = CASE
+                    WHEN phone_addon_seat.payer_id = EXCLUDED.payer_id
+                        THEN phone_addon_seat.created_at
+                    ELSE NOW()
+                END
+            "#,
+            user.as_ref(),
+            payer.as_ref(),
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn end_phone_addon(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        user: &MacroUserIdStr<'_>,
+        ends_at: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE phone_addon_seat SET ends_at = $3
+            WHERE user_id = $1 AND payer_id = $2 AND ends_at IS NULL
+            "#,
+            user.as_ref(),
+            payer.as_ref(),
+            ends_at,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn delete_phone_addon_rows(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        users: &[MacroUserIdStr<'static>],
+    ) -> Result<()> {
+        let ids: Vec<String> = users.iter().map(|user| user.as_ref().to_owned()).collect();
+        sqlx::query!(
+            "DELETE FROM phone_addon_seat WHERE payer_id = $1 AND user_id = ANY($2)",
+            payer.as_ref(),
+            &ids,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
+    async fn phone_addon_quantity(&self, payer: &MacroUserIdStr<'_>) -> Result<i64> {
+        let quantity = sqlx::query_scalar!(
+            "SELECT phone_addon_quantity FROM ai_billing_account WHERE user_id = $1",
+            payer.as_ref(),
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage)?;
+        Ok(quantity.map_or(0, i64::from))
+    }
+
+    async fn store_phone_addon_quantity(
+        &self,
+        payer: &MacroUserIdStr<'_>,
+        quantity: i64,
+    ) -> Result<()> {
+        let quantity = i32::try_from(quantity).map_err(|_| {
+            BillingError::Storage(anyhow::anyhow!("phone add-on quantity out of range"))
+        })?;
+        sqlx::query!(
+            r#"
+            INSERT INTO ai_billing_account (user_id, phone_addon_quantity)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE
+            SET phone_addon_quantity = EXCLUDED.phone_addon_quantity,
+                updated_at = NOW()
+            "#,
+            payer.as_ref(),
+            quantity,
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(storage)?;
+        Ok(())
+    }
+
     async fn legacy_seats(
         &self,
         _payer: &MacroUserIdStr<'_>,
@@ -219,7 +377,8 @@ impl BillingRepo for PgBillingRepo {
         let row = sqlx::query!(
             r#"
             SELECT billed_users as "billed_users!",
-                   included_cost_cents_by_user
+                   included_cost_cents_by_user,
+                   included_phone_minutes_by_user
             FROM ai_billing_period_allowance
             WHERE user_id = $1 AND period_start = $2
             "#,
@@ -234,6 +393,7 @@ impl BillingRepo for PgBillingRepo {
                 seats: parse_seat_allowances(
                     r.billed_users,
                     r.included_cost_cents_by_user,
+                    r.included_phone_minutes_by_user,
                     self.pricing,
                 )?,
             })
@@ -254,6 +414,10 @@ impl BillingRepo for PgBillingRepo {
             .collect();
         let included_cents_by_user: Vec<i64> =
             seats.iter().map(|seat| seat.included_cents).collect();
+        let included_phone_minutes_by_user: Vec<i64> = seats
+            .iter()
+            .map(|seat| seat.included_phone_minutes)
+            .collect();
         let payer = payer.as_ref();
         let mut tx = self.pool.begin().await.map_err(storage)?;
 
@@ -292,23 +456,27 @@ impl BillingRepo for PgBillingRepo {
             r#"
             INSERT INTO ai_billing_period_allowance (
                 user_id, period_start, billed_users, included_cents_by_user,
-                included_cost_cents_by_user
+                included_cost_cents_by_user, included_phone_minutes_by_user
             )
-            VALUES ($1, $2, $3, $4, $4)
+            VALUES ($1, $2, $3, $4, $4, $5)
             ON CONFLICT (user_id, period_start) DO UPDATE
             SET billed_users = EXCLUDED.billed_users,
                 included_cents_by_user = EXCLUDED.included_cents_by_user,
                 included_cost_cents_by_user = EXCLUDED.included_cost_cents_by_user,
+                included_phone_minutes_by_user = EXCLUDED.included_phone_minutes_by_user,
                 updated_at = NOW()
             WHERE ai_billing_period_allowance.billed_users
                   IS DISTINCT FROM EXCLUDED.billed_users
                OR ai_billing_period_allowance.included_cost_cents_by_user
                   IS DISTINCT FROM EXCLUDED.included_cost_cents_by_user
+               OR ai_billing_period_allowance.included_phone_minutes_by_user
+                  IS DISTINCT FROM EXCLUDED.included_phone_minutes_by_user
             "#,
             payer,
             period.start(),
             &billed_users,
             &included_cents_by_user,
+            &included_phone_minutes_by_user,
         )
         .execute(&mut *tx)
         .await
@@ -341,8 +509,9 @@ impl BillingRepo for PgBillingRepo {
         .await
         .map_err(storage)?;
 
-        // A cost array that is missing or out of step with the roster (an older
-        // binary refreshed the row) is dropped rather than excised positionally.
+        // A cost or phone array that is missing or out of step with the roster
+        // (an older binary refreshed the row) is dropped rather than excised
+        // positionally.
         sqlx::query!(
             r#"
             UPDATE ai_billing_period_allowance AS allowance
@@ -352,6 +521,11 @@ impl BillingRepo for PgBillingRepo {
                     WHEN cardinality(allowance.included_cost_cents_by_user)
                          = cardinality(allowance.billed_users)
                     THEN excised.cost_cents
+                END,
+                included_phone_minutes_by_user = CASE
+                    WHEN cardinality(allowance.included_phone_minutes_by_user)
+                         = cardinality(allowance.billed_users)
+                    THEN excised.phone_minutes
                 END,
                 updated_at = NOW()
             FROM (
@@ -370,11 +544,18 @@ impl BillingRepo for PgBillingRepo {
                         array_agg(seat.cost_cents ORDER BY seat.ordinality)
                             FILTER (WHERE seat.billed_user IS DISTINCT FROM $3),
                         ARRAY[]::bigint[]
-                    )::bigint[] AS cost_cents
+                    )::bigint[] AS cost_cents,
+                    COALESCE(
+                        array_agg(seat.phone_minutes ORDER BY seat.ordinality)
+                            FILTER (WHERE seat.billed_user IS DISTINCT FROM $3),
+                        ARRAY[]::bigint[]
+                    )::bigint[] AS phone_minutes
                 FROM ai_billing_period_allowance AS src
                 CROSS JOIN LATERAL unnest(
-                    src.billed_users, src.included_cents_by_user, src.included_cost_cents_by_user
-                ) WITH ORDINALITY AS seat(billed_user, included_cents, cost_cents, ordinality)
+                    src.billed_users, src.included_cents_by_user, src.included_cost_cents_by_user,
+                    src.included_phone_minutes_by_user
+                ) WITH ORDINALITY
+                    AS seat(billed_user, included_cents, cost_cents, phone_minutes, ordinality)
                 WHERE src.user_id = $1
                   AND src.period_start = $2
             ) AS excised
@@ -737,22 +918,31 @@ async fn read_period_ledger(
 fn parse_seat_allowances(
     billed_users: Vec<String>,
     included_cost_cents_by_user: Option<Vec<i64>>,
+    included_phone_minutes_by_user: Option<Vec<i64>>,
     pricing: AiPricing,
 ) -> Result<Vec<SeatAllowance>> {
     let included_cents_by_user = match included_cost_cents_by_user {
         Some(cents) if cents.len() == billed_users.len() => cents,
         _ => vec![pricing.included_allowance_cents(); billed_users.len()],
     };
+    // Rows frozen before phone billing include no phone minutes; there was no
+    // phone usage to cover then.
+    let included_phone_minutes_by_user = match included_phone_minutes_by_user {
+        Some(minutes) if minutes.len() == billed_users.len() => minutes,
+        _ => vec![0; billed_users.len()],
+    };
     billed_users
         .into_iter()
         .zip(included_cents_by_user)
-        .map(|(id, included_cents)| {
+        .zip(included_phone_minutes_by_user)
+        .map(|((id, included_cents), included_phone_minutes)| {
             let user = MacroUserIdStr::try_from(id).map_err(|e| {
                 BillingError::Storage(anyhow::anyhow!("invalid billed user id: {e}"))
             })?;
             Ok(SeatAllowance {
                 user,
                 included_cents,
+                included_phone_minutes,
             })
         })
         .collect()

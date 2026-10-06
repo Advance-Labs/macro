@@ -124,12 +124,25 @@ fn invoice_evidence(
     }
 }
 
-/// Translate complete verified subscription/item/price facts. Unknown fields or
-/// missing boundaries remain activation exceptions, never calendar fallbacks.
+/// [`seat_subscription_periods`] for a subscription with seat items only.
+#[cfg(test)]
 pub(super) fn subscription_periods(
     event: &BillingEvent,
     subscription: &Value,
     invoice: Option<&Value>,
+) -> Vec<SubscriptionPeriod> {
+    seat_subscription_periods(event, subscription, invoice, None)
+}
+
+/// Translate complete verified subscription/item/price facts for the seat
+/// items. Unknown fields or missing boundaries remain activation exceptions,
+/// never calendar fallbacks. The Phone add-on item on `phone_addon_price` is
+/// not a seat and is not counted among the items.
+pub(super) fn seat_subscription_periods(
+    event: &BillingEvent,
+    subscription: &Value,
+    invoice: Option<&Value>,
+    phone_addon_price: Option<&str>,
 ) -> Vec<SubscriptionPeriod> {
     if subscription["items"]["has_more"].as_bool() != Some(false) {
         return vec![];
@@ -137,6 +150,12 @@ pub(super) fn subscription_periods(
     let Some(items) = subscription["items"]["data"].as_array() else {
         return vec![];
     };
+    let items: Vec<&Value> = items
+        .iter()
+        .filter(|item| {
+            phone_addon_price.is_none_or(|price| object_id(&item["price"]) != Some(price))
+        })
+        .collect();
     items
         .iter()
         .filter_map(|item| {
@@ -254,6 +273,14 @@ async fn sync_periods(
             .sync_period(payer, facts.period.start, facts.period.end, Some(facts))
             .await
             .context("failed to sync verified usage policy period")?;
+    }
+    // Seats and plans may have changed: keep the Phone add-on item in step.
+    // The summary read retries a failure.
+    if let Err(error) = ctx.ai_billing_service.sync_phone_addon(payer).await {
+        tracing::warn!(
+            ?error,
+            "failed to sync the phone add-on after a subscription event"
+        );
     }
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! Startup configuration for AI usage settlement and pricing.
 //!
-//! Pricing is four mandatory Doppler values, read once at startup by every
+//! Pricing is five mandatory Doppler values, read once at startup by every
 //! host that composes this crate:
 //!
 //! | Key | Meaning |
@@ -9,15 +9,18 @@
 //! | `AI_USAGE_INCLUDED_ALLOWANCE_CENTS` | In-plan AI per Premium seat per period, cents at provider cost |
 //! | `AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS` | In-plan AI per Max seat per period, cents at provider cost |
 //! | `AI_USAGE_OVERAGE_MARKUP_PERCENT` | Markup on paid usage past the allowance, a whole percent (0-99) |
+//! | `AI_USAGE_PHONE_INCLUDED_MINUTES` | Phone minutes included per phone seat per period |
 //!
 //! Hosts on MacroConfig declare them as required fields of their `Config`
-//! using [`IncludedAllowanceCents`] and [`OverageMarkupPercent`] directly, so a
+//! using [`IncludedAllowanceCents`], [`OverageMarkupPercent`] and
+//! [`IncludedPhoneMinutes`] directly, so a
 //! missing, malformed or out-of-range value fails config loading (and the
 //! Doppler CI validator) rather than a request. Hosts reading plain env vars
 //! parse the raw strings with [`parse_ai_pricing`].
 
 use crate::domain::{
-    AiPricing, AiUsageBilling, IncludedAllowanceCents, OverageMarkupPercent, PlanAllowances,
+    AiPricing, AiUsageBilling, IncludedAllowanceCents, IncludedPhoneMinutes, OverageMarkupPercent,
+    PlanAllowances,
 };
 use rootcause::prelude::ResultExt as _;
 use serde::de::Error as _;
@@ -33,6 +36,8 @@ pub const AI_USAGE_INCLUDED_ALLOWANCE_CENTS: &str = "AI_USAGE_INCLUDED_ALLOWANCE
 pub const AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS: &str = "AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS";
 /// Doppler key for the overage markup.
 pub const AI_USAGE_OVERAGE_MARKUP_PERCENT: &str = "AI_USAGE_OVERAGE_MARKUP_PERCENT";
+/// Doppler key for the phone minutes included per phone seat.
+pub const AI_USAGE_PHONE_INCLUDED_MINUTES: &str = "AI_USAGE_PHONE_INCLUDED_MINUTES";
 
 /// The raw allowance values a host read itself, one per plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +83,15 @@ impl<'de> serde::Deserialize<'de> for OverageMarkupPercent {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for IncludedPhoneMinutes {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let minutes = i64::deserialize(deserializer)?;
+        Self::new(minutes).map_err(|error| {
+            D::Error::custom(format!("{AI_USAGE_PHONE_INCLUDED_MINUTES}: {error}"))
+        })
+    }
+}
+
 fn parse_allowance(
     key: &'static str,
     raw: &str,
@@ -89,14 +103,15 @@ fn parse_allowance(
     Ok(IncludedAllowanceCents::new(cents).context(key)?)
 }
 
-/// Build the pricing from the raw allowance and
-/// `AI_USAGE_OVERAGE_MARKUP_PERCENT` values a host read itself. Hosts on
+/// Build the pricing from the raw allowance, `AI_USAGE_OVERAGE_MARKUP_PERCENT`
+/// and `AI_USAGE_PHONE_INCLUDED_MINUTES` values a host read itself. Hosts on
 /// MacroConfig declare the typed fields instead and need no parsing.
 ///
 /// Every value is mandatory; the host must propagate an error to fail startup.
 pub fn parse_ai_pricing(
     allowances: RawPlanAllowances<'_>,
     overage_markup_percent: &str,
+    phone_included_minutes: &str,
 ) -> Result<AiPricing, rootcause::Report> {
     let allowances = PlanAllowances {
         free: parse_allowance(AI_USAGE_FREE_INCLUDED_ALLOWANCE_CENTS, allowances.free)?,
@@ -110,7 +125,15 @@ pub fn parse_ai_pricing(
             "{AI_USAGE_OVERAGE_MARKUP_PERCENT} must be a whole percent"
         ))?;
     let markup = OverageMarkupPercent::new(percent).context(AI_USAGE_OVERAGE_MARKUP_PERCENT)?;
-    Ok(AiPricing::new(allowances, markup))
+    let minutes = phone_included_minutes
+        .trim()
+        .parse::<i64>()
+        .context(format!(
+            "{AI_USAGE_PHONE_INCLUDED_MINUTES} must be a whole number of minutes"
+        ))?;
+    let phone_minutes =
+        IncludedPhoneMinutes::new(minutes).context(AI_USAGE_PHONE_INCLUDED_MINUTES)?;
+    Ok(AiPricing::new(allowances, markup, phone_minutes))
 }
 
 /// Load `ENABLE_AI_USAGE_BILLING` once at service startup.

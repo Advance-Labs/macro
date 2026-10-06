@@ -58,6 +58,7 @@ pub const fn is_billable_feature(feature: AiFeature) -> bool {
         | AiFeature::Import
         | AiFeature::AgentSession
         | AiFeature::AgentRepositoryChoice
-        | AiFeature::ImageGeneration => true,
+        | AiFeature::ImageGeneration
+        | AiFeature::PhoneCall => true,
     }
 }

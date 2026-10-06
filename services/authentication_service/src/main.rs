@@ -359,9 +359,17 @@ async fn main() -> anyhow::Result<()> {
             .value()
             .filter(|id| !id.trim().is_empty())
             .map(str::to_owned),
+        phone_addon: config
+            .stripe_phone_addon_price_id
+            .value()
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_owned),
     };
     if stripe_prices.max.is_none() {
         tracing::warn!("STRIPE_MAX_PRICE_ID is not set; the Max plan cannot be sold");
+    }
+    if stripe_prices.phone_addon.is_none() {
+        tracing::warn!("STRIPE_PHONE_ADDON_PRICE_ID is not set; the Phone add-on cannot be sold");
     }
 
     let teams_repo_impl = TeamRepositoryImpl::new(db.clone());
@@ -517,7 +525,8 @@ async fn main() -> anyhow::Result<()> {
             ),
         ),
     );
-    let ai_payment_gateway = ai_billing::outbound::StripePaymentGateway::new(stripe_client.clone());
+    let ai_payment_gateway = ai_billing::outbound::StripePaymentGateway::new(stripe_client.clone())
+        .with_phone_addon_price(stripe_prices.phone_addon.clone());
     let ai_pricing = config.ai_pricing();
     let ai_billing_service = Arc::new(
         ai_billing::domain::BillingServiceImpl::new(

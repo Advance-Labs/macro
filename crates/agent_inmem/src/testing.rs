@@ -106,6 +106,33 @@ impl ai_billing::domain::BillingService for UnavailableBilling {
     async fn mark_overage_invoice(&self, _: &str, _: bool) -> ai_billing::domain::Result<()> {
         panic!("admission must not handle invoices")
     }
+
+    async fn check_phone_allowance(
+        &self,
+        _: &MacroUserIdStr<'_>,
+    ) -> ai_billing::domain::Result<ai_billing::domain::AllowanceDecision> {
+        panic!("disabled policy must not contact unavailable billing")
+    }
+
+    async fn phone_addon(
+        &self,
+        _: &MacroUserIdStr<'_>,
+    ) -> ai_billing::domain::Result<ai_billing::domain::PhoneAddonOverview> {
+        panic!("admission must not read the phone add-on")
+    }
+
+    async fn set_phone_addon(
+        &self,
+        _: &MacroUserIdStr<'_>,
+        _: &MacroUserIdStr<'_>,
+        _: bool,
+    ) -> ai_billing::domain::Result<ai_billing::domain::PhoneAddonOverview> {
+        panic!("admission must not change the phone add-on")
+    }
+
+    async fn sync_phone_addon(&self, _: &MacroUserIdStr<'_>) -> ai_billing::domain::Result<()> {
+        panic!("admission must not sync the phone add-on")
+    }
 }
 
 /// Models advertised by shared test engines.
