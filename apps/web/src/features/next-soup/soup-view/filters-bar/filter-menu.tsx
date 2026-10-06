@@ -5,7 +5,7 @@ import {
   type Accessor,
   createEffect,
   createSignal,
-  For,
+  Index,
   type JSX,
   onCleanup,
   Show,
@@ -116,19 +116,22 @@ export function FilterSubmenu<TId extends string>(props: {
           <Show
             when={props.selectionMode === 'single'}
             fallback={
-              <For each={props.options}>
+              // Indexed rather than keyed: callers rebuild their option arrays
+              // whenever an upstream query or flag settles, and disposing a row
+              // mid-press would swallow the selection.
+              <Index each={props.options}>
                 {(option) => (
                   <FilterOptionItem
-                    label={option.label}
-                    icon={option.icon}
-                    content={option.content}
-                    disabled={option.disabled}
-                    active={props.isSelected(option.id)}
-                    onSelect={() => props.onSelect(option.id)}
+                    label={option().label}
+                    icon={option().icon}
+                    content={option().content}
+                    disabled={option().disabled}
+                    active={props.isSelected(option().id)}
+                    onSelect={() => props.onSelect(option().id)}
                     closeOnSelect={props.closeOnSelect}
                   />
                 )}
-              </For>
+              </Index>
             }
           >
             <Dropdown.RadioGroup
@@ -140,27 +143,27 @@ export function FilterSubmenu<TId extends string>(props: {
                 if (option) props.onSelect(option.id);
               }}
             >
-              <For each={props.options}>
+              <Index each={props.options}>
                 {(option) => (
                   <Dropdown.RadioItem
-                    value={option.id}
-                    disabled={option.disabled}
+                    value={option().id}
+                    disabled={option().disabled}
                     closeOnSelect={props.closeOnSelect}
                   >
-                    <Show when={option.icon}>
+                    <Show when={option().icon}>
                       <span class="size-4 flex items-center justify-center shrink-0">
-                        {option.icon?.()}
+                        {option().icon?.()}
                       </span>
                     </Show>
                     <span class="flex-1">
-                      {option.content?.() ?? option.label}
+                      {option().content?.() ?? option().label}
                     </span>
                     <Dropdown.ItemIndicator>
                       <CheckIcon class="size-3.5 text-accent" />
                     </Dropdown.ItemIndicator>
                   </Dropdown.RadioItem>
                 )}
-              </For>
+              </Index>
             </Dropdown.RadioGroup>
           </Show>
         </Dropdown.Group>

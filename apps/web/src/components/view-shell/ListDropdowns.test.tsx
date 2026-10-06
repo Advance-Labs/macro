@@ -85,6 +85,14 @@ function selectOption(element: HTMLElement) {
   fireEvent(element, new MouseEvent('pointerup', { button: 0, bubbles: true }));
 }
 
+function pressOption(element: HTMLElement) {
+  fireEvent(
+    element,
+    new MouseEvent('pointerdown', { button: 0, bubbles: true })
+  );
+  selectOption(element);
+}
+
 async function openSubmenu() {
   const trigger = await screen.findByRole('menuitem', { name: 'Assignee' });
   await waitFor(() => expect(document.activeElement).toBe(trigger));
@@ -254,6 +262,49 @@ it('ignores Enter on an empty description and leaves the option rows reachable',
   fireEvent.keyDown(input, { key: 'Enter' });
   expect(onSubmit).not.toHaveBeenCalled();
   expect(screen.getByRole('menuitem', { name: 'Assignee' })).toBeTruthy();
+});
+
+it('keeps an option selectable when the group list is rebuilt mid-press', async () => {
+  const [selected, setSelected] = createSignal<string[]>([]);
+  const [revision, setRevision] = createSignal(0);
+  const [open, setOpen] = createSignal(true);
+  // Callers derive groups from queries and flags, so an unrelated settle can
+  // hand the menu an equivalent-but-new array at any point in a press.
+  const groups = () => {
+    void revision();
+
+    return [
+      {
+        id: 'people',
+        label: 'Assignee',
+        options: [
+          { id: 'alice', label: 'Alice' },
+          { id: 'bob', label: 'Bob' },
+        ],
+      },
+    ];
+  };
+  render(() => (
+    <ListFilterDropdown
+      label="Filter tasks"
+      open={open()}
+      onOpenChange={setOpen}
+      groups={groups()}
+      isSelected={(_, id) => selected().includes(id)}
+      onSelectionChange={(_, id, checked) =>
+        setSelected((ids) =>
+          checked ? [...ids, id] : ids.filter((value) => value !== id)
+        )
+      }
+    />
+  ));
+  await openSubmenu();
+  const option = await screen.findByRole('menuitemcheckbox', { name: 'Alice' });
+  option.addEventListener('pointerdown', () => setRevision((n) => n + 1));
+
+  pressOption(option);
+  expect(selected()).toEqual(['alice']);
+  expect(open()).toBe(true);
 });
 
 it('shows the applied filter count only while filters are active', () => {

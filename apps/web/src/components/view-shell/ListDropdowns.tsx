@@ -7,7 +7,7 @@ import FilterIcon from '@phosphor/funnel-simple.svg';
 import SortIcon from '@phosphor/sort-ascending.svg';
 import GroupIcon from '@phosphor/stack.svg';
 import { cn, Dropdown } from '@ui';
-import { batch, createSignal, For, type JSX, Show } from 'solid-js';
+import { batch, createSignal, For, Index, type JSX, Show } from 'solid-js';
 import { AiFilterInput, type AiFilterInputProps } from './AiFilterInput';
 
 export type ListControlOption<TId extends string> = {
@@ -253,48 +253,56 @@ export function ListFilterDropdown<
           )}
         </Show>
         <Dropdown.Group>
-          <For each={props.groups}>
+          {/*
+           * Indexed rather than keyed: callers derive their groups from
+           * queries and flags, so an equivalent-but-new array can arrive
+           * mid-interaction. Keying by reference would dispose the row and its
+           * open submenu portal instead of updating them in place.
+           */}
+          <Index each={props.groups}>
             {(group) => (
               <Show
-                when={group.searchPlaceholder}
+                when={group().searchPlaceholder}
                 fallback={
                   <FilterSubmenu
-                    label={group.label}
-                    selectionMode={group.selectionMode}
-                    active={isGroupActive(group)}
-                    options={group.options}
-                    isSelected={(id) => props.isSelected(group.id, id)}
+                    label={group().label}
+                    selectionMode={group().selectionMode}
+                    active={isGroupActive(group())}
+                    options={group().options}
+                    isSelected={(id) => props.isSelected(group().id, id)}
                     onSelect={(id) =>
                       props.onSelectionChange(
-                        group.id,
+                        group().id,
                         id,
-                        group.selectionMode === 'single' ||
-                          !props.isSelected(group.id, id)
+                        group().selectionMode === 'single' ||
+                          !props.isSelected(group().id, id)
                       )
                     }
-                    closeOnSelect={group.selectionMode === 'single'}
-                    contentClass={group.contentClass}
+                    closeOnSelect={group().selectionMode === 'single'}
+                    contentClass={group().contentClass}
                   />
                 }
               >
                 <SearchableFilterSubmenu
-                  label={group.label}
-                  active={isGroupActive(group)}
-                  options={() => group.options}
+                  label={group().label}
+                  active={isGroupActive(group())}
+                  options={() => group().options}
                   activeIds={() =>
-                    group.options
-                      .filter((option) => props.isSelected(group.id, option.id))
+                    group()
+                      .options.filter((option) =>
+                        props.isSelected(group().id, option.id)
+                      )
                       .map((option) => option.id)
                   }
                   onChange={(ids) =>
                     batch(() => {
-                      for (const option of group.options) {
+                      for (const option of group().options) {
                         const selected = ids.includes(option.id);
                         if (
-                          selected !== props.isSelected(group.id, option.id)
+                          selected !== props.isSelected(group().id, option.id)
                         ) {
                           props.onSelectionChange(
-                            group.id,
+                            group().id,
                             option.id,
                             selected
                           );
@@ -302,11 +310,11 @@ export function ListFilterDropdown<
                       }
                     })
                   }
-                  placeholder={group.searchPlaceholder}
+                  placeholder={group().searchPlaceholder}
                 />
               </Show>
             )}
-          </For>
+          </Index>
         </Dropdown.Group>
         <Show when={props.onClear}>
           {(onClear) => (
