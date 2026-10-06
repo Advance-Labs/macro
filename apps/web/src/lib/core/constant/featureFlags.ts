@@ -91,6 +91,13 @@ export function defineFlag(config: RemoteFlagConfig | EnvFlagConfig): Flag {
   };
 }
 
+/** Opt-in versioned canvas documents. Unset overrides defer to PostHog. */
+export const enableCanvasNext = defineFlag({
+  key: 'enable-canvas-next',
+  env: 'ENABLE_CANVAS_NEXT',
+  default: LOCAL_ONLY ? false : undefined,
+});
+
 /**
  * Imperative snapshot. Env/`default` override wins. Otherwise PostHog,
  * or `false` if flags have not loaded or the key is unknown.
