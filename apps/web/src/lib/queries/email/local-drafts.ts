@@ -193,6 +193,8 @@ async function copyFile(file: File): Promise<Blob> {
 }
 
 export type LocalDraftInput = SaveEmailDraft & {
+  expectedRevision?: number;
+  expectedGeneration?: string;
   attachments: readonly DraftFormAttachment[];
   senderEmail?: string;
 };
@@ -259,9 +261,12 @@ async function persistLocalDraft(input: LocalDraftInput): Promise<LocalDraft> {
     owner,
     {
       key,
+      expectedRevision: input.expectedRevision ?? previous?.revision ?? 0,
       accountId: owner.accountId,
       generation:
-        previous?.generation ?? (await localDraftStore.generation(owner, key)),
+        input.expectedGeneration ??
+        previous?.generation ??
+        (await localDraftStore.generation(owner, key)),
       draftId: previous?.draftId ?? id,
       threadId:
         previous?.threadId ??
@@ -569,6 +574,7 @@ export function localDraftQueueLifecycle(
           photo_url: text(entry.photoUrl),
         }));
       draft = await localDraftStore.save(owner, {
+        expectedRevision: draft?.revision ?? 0,
         key: draft?.key ?? id,
         accountId: owner.accountId,
         generation: draft?.generation ?? crypto.randomUUID(),

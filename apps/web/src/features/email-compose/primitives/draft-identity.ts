@@ -134,14 +134,15 @@ function observeAvailableDraftIdentity(
         notices.reportError(
           new Error('The server rejected the queued draft save')
         );
+        // Durable drafts expose recovery beside the composer actions.
+        if (durableRecovery) return;
         rejectionNotice = notices.feedback.failure('Draft could not be saved', {
-          subtext: durableRecovery
-            ? 'Your edits are saved on this device. Retry to save them to the server.'
-            : 'Your edits are still in this editor. Save them as a new draft before closing.',
+          subtext:
+            'Your edits are still in this editor. Save them as a new draft before closing.',
           persistent: true,
           actions: [
             {
-              label: durableRecovery ? 'Retry' : 'Save as new draft',
+              label: 'Save as new draft',
               onClick: () => {
                 if (
                   disposed ||

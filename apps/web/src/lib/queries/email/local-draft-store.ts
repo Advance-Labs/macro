@@ -234,16 +234,16 @@ export function createLocalDraftStore(
         )
       );
     },
-    /** Revision allocation and file references commit together; the last transaction wins. */
+    /** Compare the snapshot revision and commit its content and files atomically. */
     async save(
       session: Session,
       input: Omit<
         LocalDraft,
         'revision' | 'acknowledgedRevision' | 'updatedAt'
-      >,
+      > & { expectedRevision: number },
       files: ReadonlyMap<string, Blob> = new Map()
     ): Promise<LocalDraft> {
-      const result = await transaction<LocalDraft | undefined>(
+      const result = await transaction<LocalDraft | Error | undefined>(
         'readwrite',
         (tx, finish) =>
           withSession(
@@ -274,8 +274,18 @@ export function createLocalDraftStore(
                     finish(undefined);
                     return;
                   }
+                  if ((previous?.revision ?? 0) !== input.expectedRevision) {
+                    finish(
+                      new Error(
+                        'This draft changed while saving. Reopen it to use the latest version.'
+                      )
+                    );
+                    return;
+                  }
+                  const { expectedRevision: _expectedRevision, ...snapshot } =
+                    input;
                   const draft: StoredDraft = {
-                    ...input,
+                    ...snapshot,
                     epoch: session.epoch,
                     latestAttemptId: previous?.latestAttemptId,
                     queuedAttemptId: previous?.queuedAttemptId,
@@ -339,6 +349,7 @@ export function createLocalDraftStore(
             undefined
           )
       );
+      if (result instanceof Error) throw result;
       if (!result) throw new Error('This draft session is no longer active');
       return result;
     },
@@ -381,11 +392,24 @@ export function createLocalDraftStore(
               const next = change(previous);
               if (next) drafts.put({ ...next, epoch: session.epoch }, key);
               else {
-                tx.objectStore('meta').put(true, [
-                  'retired',
+                // A reopened editor may know only the server ID. Retire every
+                // identity in this transaction so it cannot recreate the copy
+                // under a different key after the content has been removed.
+                const meta = tx.objectStore('meta');
+                for (const id of new Set([
                   key,
-                  previous.generation,
-                ]);
+                  previous.draftId,
+                  previous.serverDraftId,
+                ])) {
+                  if (!id) continue;
+                  const generation = meta.get(['generation', id]);
+                  generation.onsuccess = () => {
+                    if (generation.result)
+                      meta.put(true, ['retired', id, generation.result]);
+                    meta.put(previous.generation, ['generation', id]);
+                    meta.put(true, ['retired', id, previous.generation]);
+                  };
+                }
                 drafts.delete(key);
                 for (const attachment of previous.attachments)
                   if (attachment.type === 'local')

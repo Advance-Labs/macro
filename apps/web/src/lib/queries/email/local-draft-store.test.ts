@@ -11,8 +11,12 @@ const open = (name = crypto.randomUUID()) => {
   return store;
 };
 const snapshot = (
-  subject = 'Keep this draft'
-): Omit<LocalDraft, 'revision' | 'acknowledgedRevision' | 'updatedAt'> => ({
+  subject = 'Keep this draft',
+  expectedRevision = 0
+): Omit<LocalDraft, 'revision' | 'acknowledgedRevision' | 'updatedAt'> & {
+  expectedRevision: number;
+} => ({
+  expectedRevision,
   key: 'local',
   accountId: 'owner',
   generation: 'generation',
@@ -39,7 +43,7 @@ describe('durable email working copies', () => {
       status: 'failed',
       errorCode: 'INTERNAL',
     }));
-    await first.save(session, snapshot('Edited after rejection'));
+    await first.save(session, snapshot('Edited after rejection', 1));
     await first.close();
     const second = open(name);
     expect(
@@ -77,23 +81,32 @@ describe('durable email working copies', () => {
     expect(await (await second.file(session, 'local', 'file'))?.text()).toBe(
       'hello'
     );
-    await second.save(session, snapshot());
+    await second.save(session, snapshot('Keep this draft', 1));
     expect(await second.file(session, 'local', 'file')).toBeUndefined();
   });
-  it('allocates revisions transactionally across tabs with last-write-wins', async () => {
+  it('rejects stale snapshots inside the transaction across tabs', async () => {
     const name = crypto.randomUUID();
     const first = open(name);
     const second = open(name);
     const owner = await first.activate('owner');
     await second.activate('owner');
-    await Promise.all([
-      first.save(owner, snapshot('first')),
-      second.save(owner, snapshot('second')),
-    ]);
+    await first.save(owner, snapshot('Original'));
+    const stale = snapshot('Slow older edit', 1);
+    await second.save(owner, snapshot('Newer edit', 1));
+    await expect(
+      first.save(
+        owner,
+        stale,
+        new Map([['stale-file', new NodeBlob(['stale']) as unknown as Blob]])
+      )
+    ).rejects.toThrow('changed while saving');
     expect(await first.read(owner, 'local')).toMatchObject({
       revision: 2,
-      content: { subject: 'second' },
+      content: { subject: 'Newer edit' },
     });
+    expect(await first.file(owner, 'local', 'stale-file')).toBeUndefined();
+    await first.save(owner, snapshot('Edit based on latest', 2));
+    expect((await second.read(owner, 'local'))?.revision).toBe(3);
   });
   it('fences callbacks after discard and account changes', async () => {
     const store = open();
@@ -177,7 +190,7 @@ describe('working-copy concurrency fences', () => {
         { ...input.attachments[0], attachmentId: 'uploaded', uploaded: true },
       ],
     }));
-    await store.save(owner, input);
+    await store.save(owner, { ...input, expectedRevision: 1 });
     expect((await store.read(owner, 'local'))?.attachments[0]).toMatchObject({
       attachmentId: 'uploaded',
       uploaded: true,
@@ -203,7 +216,7 @@ describe('working-copy concurrency fences', () => {
     if (input.attachments[0].type !== 'local')
       throw new Error('Expected local fixture');
     input.attachments[0] = { ...input.attachments[0], uploaded: true };
-    await store.save(owner, input);
+    await store.save(owner, { ...input, expectedRevision: 1 });
     expect((await store.read(owner, 'local'))?.attachments[0]).toMatchObject({
       attachmentId: 'uploaded',
       uploaded: true,
@@ -226,6 +239,52 @@ describe('working-copy concurrency fences', () => {
     });
     await expect(store.save(owner, original)).rejects.toThrow();
     expect((await store.read(owner, 'local'))?.content.subject).toBe('Undo');
+  });
+  it('retires a server alias and removes attachment bytes across tabs on discard', async () => {
+    const name = crypto.randomUUID();
+    const first = open(name);
+    const second = open(name);
+    const owner = await first.activate('owner');
+    await second.activate('owner');
+    // Another tab began a save through the server ID before discard.
+    const aliasGeneration = await second.generation(owner, 'server');
+    const original = {
+      ...snapshot(),
+      serverDraftId: 'server',
+      attachments: [
+        {
+          type: 'local' as const,
+          id: 'file',
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          size: 5,
+          lastModified: 0,
+          uploaded: false,
+        },
+      ],
+    };
+    await first.save(
+      owner,
+      original,
+      new Map([['file', new NodeBlob(['hello']) as unknown as Blob]])
+    );
+    await first.update(owner, 'local', () => undefined);
+    expect(await second.read(owner, 'server')).toBeUndefined();
+    expect(await second.file(owner, 'local', 'file')).toBeUndefined();
+    for (const generation of [
+      aliasGeneration,
+      await second.generation(owner, 'server'),
+    ]) {
+      await expect(
+        second.save(owner, {
+          ...snapshot('Late server edit'),
+          key: 'server',
+          draftId: 'server',
+          generation,
+        })
+      ).rejects.toThrow('no longer active');
+    }
+    expect(await second.list(owner)).toEqual([]);
   });
 });
 

@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
   onCacheChanged: vi.fn(),
   onMutationSettled: vi.fn(),
   client: undefined as Client | undefined,
+  queueBlocked: false,
+  cacheEnabled: true,
+  assertQueueAvailable: vi.fn(),
 }));
 vi.mock('@core/component/Toast/Toast', () => ({ toast: { failure: vi.fn() } }));
 vi.mock('@core/constant/featureFlags', () => ({
@@ -29,13 +32,15 @@ vi.mock('@macro-inc/observability', () => ({
   Telemetry: { error: vi.fn() },
 }));
 vi.mock('@service-storage/graphql-soup', () => ({
+  assertEmailDraftQueueAvailable: mocks.assertQueueAvailable,
+  graphqlDraftQueueBlocked: () => mocks.queueBlocked,
   getGraphqlCacheHost: () => ({
     readRecordsByKeys: mocks.readRecordsByKeys,
     onCacheChanged: mocks.onCacheChanged,
     onMutationSettled: mocks.onMutationSettled,
   }),
   getGraphqlSoupClient: () => mocks.client,
-  graphqlCacheEnabled: () => true,
+  graphqlCacheEnabled: () => mocks.cacheEnabled,
 }));
 vi.mock('../client', () => ({ queryClient: { invalidateQueries: vi.fn() } }));
 vi.mock('../soup/cache', () => ({
@@ -48,6 +53,7 @@ vi.mock('./thread', () => ({ fetchAndCacheThread: vi.fn() }));
 
 import {
   deleteEmailDraftQueued,
+  draftQueueActive,
   readEmailDraft,
   saveEmailDraftQueued,
   watchEmailDrafts,
@@ -72,6 +78,8 @@ const args: GraphqlSaveEmailDraftArgs = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.queueBlocked = false;
+  mocks.cacheEnabled = true;
 });
 
 async function setup() {
@@ -143,6 +151,32 @@ async function setup() {
   );
   return { operations, local, draftResult, threadResult };
 }
+
+it.each(['save', 'delete'] as const)(
+  'blocks an uncached fallback %s before changing local intent or sending a request',
+  async (operation) => {
+    const { operations } = await setup();
+    mocks.assertQueueAvailable.mockImplementation(() => {
+      throw new Error('Queued drafts are preserved');
+    });
+    await expect(
+      operation === 'save'
+        ? saveEmailDraftQueued({ args })
+        : deleteEmailDraftQueued({ draftId: handle, threadId: 'local-thread' })
+    ).rejects.toThrow('Queued drafts are preserved');
+    expect(operations).toEqual([]);
+    expect(readLocalDraft).not.toHaveBeenCalled();
+  }
+);
+
+it('keeps local persistence enabled for GraphQL drafts while the queue is unavailable', () => {
+  mocks.cacheEnabled = false;
+  mocks.queueBlocked = true;
+  expect(draftQueueActive('graphql')).toBe(true);
+  expect(draftQueueActive('rest')).toBe(false);
+  mocks.queueBlocked = false;
+  expect(draftQueueActive('graphql')).toBe(false);
+});
 
 it('uses resolved IDs for an old-handle save without duplicating the cached draft', async () => {
   const { operations } = await setup();

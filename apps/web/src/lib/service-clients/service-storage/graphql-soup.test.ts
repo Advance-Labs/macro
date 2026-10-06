@@ -931,7 +931,40 @@ describe('GraphQL Soup browser cache session gate', () => {
     expect(soup.graphqlCacheEnabled()).toBe(false);
     expect(soup.getGraphqlSoupClient()).not.toBe(cached);
     expect(mocks.host.dispose).toHaveBeenCalledOnce();
+    expect(() => soup.assertEmailDraftQueueAvailable()).toThrow(
+      'queued changes are preserved'
+    );
   });
+
+  it.each([
+    ['SaveEmailDraft', 'saveEmailDraft'],
+    ['DeleteEmailDraft', 'deleteEmailDraft'],
+  ])(
+    'prevents %s from overtaking preserved mutations through fallback transport',
+    async (name, field) => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const soup = await import('./graphql-soup');
+      soup.getGraphqlSoupClient();
+      // Initialization may fail after callers have already captured a client.
+      mocks.failInitialization();
+      await expect(
+        soup.dssGraphqlFetch('https://dss.test/graphql', {
+          method: 'POST',
+          body: JSON.stringify({
+            query: `mutation ${name} { ${field}(input: { draftId: "draft" }) { __typename } }`,
+          }),
+        })
+      ).rejects.toThrow('queued changes are preserved');
+      expect(mocks.platformFetch).not.toHaveBeenCalled();
+
+      mocks.platformFetch.mockResolvedValueOnce(new Response('{}'));
+      await soup.dssGraphqlFetch('https://dss.test/graphql', {
+        method: 'POST',
+        body: JSON.stringify({ query: 'query Read { user { id } }' }),
+      });
+      expect(mocks.platformFetch).toHaveBeenCalledOnce();
+    }
+  );
 
   it('falls back quietly while another context holds the database', async () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {});

@@ -1,6 +1,7 @@
 import {
   type Accessor,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   onCleanup,
@@ -37,30 +38,44 @@ export function createDraftSyncStatus(options: {
     (local()?.status === 'deleting' &&
       (!local()?.queuedAttemptId ||
         local()?.queuedAttemptId !== local()?.latestAttemptId));
-  const state = (): DraftSyncViewState | undefined => {
-    if (!options.drafts.saveLocalDraft) return;
+  const state = createMemo<DraftSyncViewState | undefined>((previous) => {
+    if (!options.drafts.saveLocalDraft || !options.draftId()) return;
     const disk = options.localSaveState();
     const draft = local();
-    if (saved.error && disk === 'saved')
+    if (saved.error)
       return {
         message: 'Unable to read local draft status.',
-        detail: 'Reopen the draft to try again.',
+        detail: 'Retry to check the saved draft.',
         failed: true,
-        canDiscard: false,
+        action: 'retry',
         canKeepEditing: false,
       };
-    if (disk === 'saved' && (!draft || draft.status === 'synced')) return;
     const failed =
       disk === 'failed' ||
-      ['failed', 'unconfirmed', 'delete-failed'].includes(draft?.status ?? '');
-    const recoverable = failed || draft?.status === 'dirty' || deletePending();
+      ['failed', 'unconfirmed', 'delete-failed'].includes(
+        draft?.status ?? ''
+      ) ||
+      deletePending();
+    // Only a newly persisted version restarts the brief acknowledgement.
+    // Queue notifications and identity adoption do not count as another save.
+    if (!failed) {
+      if (!draft && disk === 'saving') return previous;
+      if (!draft && saved.loading) return previous;
+      if (!draft && !saved.latest?.draft) return;
+      return {
+        message: 'Draft saved',
+        savedVersion: draft
+          ? `${draft.generation}:${draft.revision}`
+          : saved.latest?.draft?.updated_at,
+        failed: false,
+        canKeepEditing: false,
+      };
+    }
     return {
       message:
-        disk === 'saving'
-          ? 'Saving on this device…'
-          : disk === 'failed'
-            ? 'Changes could not be saved on this device'
-            : `Saved on this device · ${draft?.status === 'queued' ? 'Syncing' : 'Not synced'}`,
+        disk === 'failed'
+          ? 'Changes could not be saved on this device'
+          : 'Draft could not be synced',
       detail:
         disk === 'failed'
           ? 'Keep this editor open until saving succeeds.'
@@ -72,17 +87,10 @@ export function createDraftSyncStatus(options: {
                 ? 'The server could not save this draft.'
                 : undefined,
       failed,
-      action: recoverable
-        ? deletePending()
-          ? 'retry-discard'
-          : draft?.status === 'dirty'
-            ? 'save'
-            : 'retry'
-        : undefined,
-      canDiscard: recoverable && !deletePending(),
+      action: deletePending() ? 'retry-discard' : 'retry',
       canKeepEditing: deletePending(),
     };
-  };
+  });
   const run = async (action: () => Promise<unknown>) => {
     if (busy()) return;
     setBusy(true);
@@ -102,13 +110,18 @@ export function createDraftSyncStatus(options: {
     error: () =>
       actionError() ??
       (saved.error
-        ? 'Unable to read local draft status. Reopen the draft to try again.'
+        ? 'Unable to read local draft status. Retry to check the saved draft.'
         : undefined),
     retry: () => {
-      void run(deletePending() ? options.discard : options.retry);
-    },
-    discard: () => {
-      void run(options.discard);
+      void run(
+        saved.error
+          ? async () => {
+              await refetch();
+            }
+          : deletePending()
+            ? options.discard
+            : options.retry
+      );
     },
     keepEditing: () => {
       void run(options.retry);

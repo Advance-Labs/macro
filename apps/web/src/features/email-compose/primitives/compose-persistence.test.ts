@@ -1132,6 +1132,53 @@ function localSnapshot(
 }
 
 it.each(['standalone', 'reply'] as const)(
+  'keeps the %s editor revision after adopting its server ID',
+  async (surface) => {
+    const context = createComposeContext();
+    let revision = 0;
+    const saveLocalDraft = vi.fn(
+      async (
+        input: Parameters<NonNullable<EmailDraftStorage['saveLocalDraft']>>[0]
+      ) => {
+        if (
+          input.expectedRevision !== undefined &&
+          input.expectedRevision !== revision
+        )
+          throw new Error('Draft changed in another tab');
+        return { ...localSnapshot(input), revision: ++revision };
+      }
+    );
+    context.drafts.saveLocalDraft = saveLocalDraft;
+    const root =
+      surface === 'standalone'
+        ? mountEmailComposer(context)
+        : mountReplyComposer(context);
+    try {
+      root.edit('First save');
+      await vi.advanceTimersByTimeAsync(600);
+      const editorRevision = revision;
+      expect(context.drafts.saveDraft).toHaveBeenCalledOnce();
+      revision += 1; // Another tab commits after the server ID is adopted.
+      root.edit('Stale editor edit');
+      await vi.advanceTimersByTimeAsync(600);
+      expect(saveLocalDraft.mock.lastCall?.[0].expectedRevision).toBe(
+        editorRevision
+      );
+      expect(saveLocalDraft.mock.lastCall?.[0].expectedGeneration).toBe(
+        'generation'
+      );
+      expect(context.drafts.saveDraft).toHaveBeenCalledOnce();
+      expect(context.notices.feedback.failure).toHaveBeenCalledWith(
+        'Draft could not be saved on this device',
+        expect.anything()
+      );
+    } finally {
+      root.dispose();
+    }
+  }
+);
+
+it.each(['standalone', 'reply'] as const)(
   'waits for the first durable %s snapshot before discarding it',
   async (surface) => {
     const context = createComposeContext();

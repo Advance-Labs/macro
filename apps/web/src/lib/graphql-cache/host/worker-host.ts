@@ -951,6 +951,7 @@ export function createWorkerCacheHost(options: WorkerHostOptions): CacheHost {
               msg.kind === 'read-records-by-keys' ||
               msg.kind === 'search' ||
               msg.kind === 'entity-filter' ||
+              msg.kind === 'inspect-mutations' ||
               msg.kind === 'inspect-query' ||
               msg.kind === 'inspect-query-variants'
             ? requestTimeoutMs

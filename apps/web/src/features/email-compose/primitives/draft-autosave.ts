@@ -11,7 +11,7 @@ export function createDraftAutosave<Snapshot, Result>(options: {
   onError?(error: unknown): void;
   onLocalError?(error: unknown): void;
 }) {
-  let pending = false;
+  let pending: { snapshot: Snapshot } | undefined;
   let queue: Promise<Result | undefined> = Promise.resolve(undefined);
   let localWrites: Promise<void> = Promise.resolve();
   let newestSnapshot = 0;
@@ -47,11 +47,9 @@ export function createDraftAutosave<Snapshot, Result>(options: {
   };
   const cancel = () => {
     scheduled.clear();
-    pending = false;
+    pending = undefined;
   };
-  const save = (snapshot = options.capture()) => {
-    cancel();
-    const local = saveLocally(snapshot);
+  const enqueue = (snapshot: Snapshot, local: Promise<void>) => {
     const write = async () => {
       await local;
       return await options.persist(snapshot);
@@ -59,14 +57,23 @@ export function createDraftAutosave<Snapshot, Result>(options: {
     queue = queue.then(write, write);
     return queue;
   };
+  const save = (snapshot = options.capture()) => {
+    cancel();
+    return enqueue(snapshot, saveLocally(snapshot));
+  };
   const scheduled = debounce(() => {
     if (options.paused()) return;
     void save().catch((error) => options.onError?.(error));
   }, 500);
   onCleanup(() => {
-    const flush = pending && !options.paused();
+    const flush = pending;
     cancel();
-    if (flush) void save().catch((error) => options.onError?.(error));
+    // Reading the live thread/editor here can reenter Solid's disposal of
+    // that same view. The last edit already captured and queued its local copy.
+    if (flush && !options.paused())
+      void enqueue(flush.snapshot, flushLocal()).catch((error) =>
+        options.onError?.(error)
+      );
   });
   return {
     save,
@@ -76,10 +83,9 @@ export function createDraftAutosave<Snapshot, Result>(options: {
     localSaveState,
     schedule() {
       if (options.paused()) return;
-      pending = true;
-      void saveLocally(options.capture()).catch((error) =>
-        options.onError?.(error)
-      );
+      const snapshot = options.capture();
+      pending = { snapshot };
+      void saveLocally(snapshot).catch((error) => options.onError?.(error));
       scheduled();
     },
   };

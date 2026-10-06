@@ -656,8 +656,15 @@ or the latest message when none is selected. `F` opens a forward and focuses To.
 While an editable field is focused, Escape is handled by that field before the
 close-reply shortcut.
 An edited reply remains a draft when navigating away and returning. Standalone
-compose also flushes pending edits when leaving through app navigation. During
-send or discard, its sender and scheduling controls cannot change the operation.
+compose also flushes pending edits when leaving through app navigation. Switch
+views immediately after typing, before the 500 ms autosave debounce: the old
+thread must close, further navigation must work, and reopening must retain the
+last edit. Repeat with an existing draft and a new reply. During
+mobile Save Draft navigation, a failed local flush is reported and keeps the
+back menu and editor open with their contents intact. After another edit saves
+successfully, Save Draft can leave the composer. Reopen an existing reply after
+clearing its body: the saved empty body must not restore the original quoted HTML.
+During send or discard, its sender and scheduling controls cannot change the operation.
 Attachments that can be opened are buttons named by their filename; Tab to one
 and press Enter or Space. Removal is a separate button named `Remove <filename>`.
 Removing a forwarded file keeps the received original.
@@ -669,7 +676,12 @@ is not required to save the body.
 With GraphQL draft queuing enabled, working copies and pending attachment bytes
 are saved on this device independently of the mutation queue. A failed server
 save must leave the draft discoverable in **Drafts** (including grouped views)
-and in its reply thread. **Not synced** offers **Retry**; editing while failed
+and in its reply thread. **Draft saved** sits immediately left of the desktop
+delete button for two seconds after a saved version, then fades out, including
+offline local saves. Further saves restart the timer; background sync updates
+do not. Failures replace it with persistent **Retry** in the same place; hover for details.
+Verify the label does not cycle through saving/syncing text on each edit and
+that retry remains accessible beside the actions on mobile. Editing while failed
 continues saving locally without repeatedly submitting the rejected request.
 Retry preserves the original draft handle. An already-sent rejection drops the
 local copy rather than recreating the sent message. The REST compose path keeps
@@ -679,6 +691,10 @@ Native draft recovery requires a full app update containing queue inspection and
 durable mutation metadata support. An older app receiving an OTA bundle shows
 **Macro update required** and uses the existing uncached fallback. Its old queue
 must remain intact, with no new claims or queued writes, until the native update.
+When the cache becomes unavailable, draft saves and discards must not bypass its
+preserved queue through GraphQL or REST fallback. Local editing stays durable;
+reload or update the app to resume server sync. Verify this after a native
+upgrade-required error and a worker initialization failure; ordinary reads still work.
 
 For recovery verification, reject a draft save with a GraphQL error (including
 legacy `retryable: true` metadata), then perform an unrelated queued action: the
@@ -691,9 +707,28 @@ an unmigrated legacy edit can be lost if the queue held its only durable copy.
 Verify that an unrelated queued action still completes in both cases.
 Repeat with two tabs, a save response arriving after a newer
 edit, an attachment upload completing during another local save, and Discard
-while an attachment snapshot is still being saved. Latest committed local edits
-win across tabs; a completed discard must not resurrect on reload. A clean,
+while an attachment snapshot is still being saved. A snapshot based on an older
+local revision must fail without replacing newer content or files, including
+when another tab saves first. Reopen the draft to use the latest version.
+A completed discard must not resurrect on reload. A clean,
 fully synchronized local copy must not hide newer server edits or sent state.
+While online, create a disposable reply, wait for its server identity, discard
+it, then leave and reopen the thread and reload. Its local body and attachment
+bytes must be gone and the server draft must stay deleted. Repeat with a second
+tab holding the same draft under its server ID: a delayed save from that tab must
+not recreate the discarded working copy. Repeat after Undo revives the draft:
+the old tab must not overwrite the restored copy even when revisions match.
+A newly composed reply still saves.
+
+For offline replies, use a received email so recipients come from its contacts.
+Type a reply, leave the thread, and reopen it while still offline; repeat both
+immediately after typing and after waiting for autosave. The reply body and
+recipients must remain, including after reload. Delay local draft discovery while
+the cached thread is available: the reply editor must wait for the recovered
+draft before it can accept edits. When several local replies target the same
+message, reopen the most recently edited draft. This exercises the real form-to-
+storage boundary as well as queued saves; plain hand-built save inputs alone
+do not cover it.
 
 Explicit sign-out warns before removing unsynchronized local drafts and files.
 Cancel must retain them; confirm must clear them and fence in-flight work so the
@@ -732,7 +767,7 @@ A successful save response with an invalid cache identity binding still commits
 its normalizable server data and reports a cache diagnostic without replaying
 the mutation or asking the user to save again. If that response also cannot be
 normalized, the attempt stops retrying and reports a permanent cache failure.
-If a queued GraphQL save is permanently rejected after reconnect, **Not synced**
+If a queued GraphQL save is permanently rejected after reconnect, the draft status
 offers **Retry** using the original draft handle and latest locally saved content.
 Further typing saves locally without retrying the rejected write. Verify that
 pending attachment bytes survive reopening and that a reply stays in its

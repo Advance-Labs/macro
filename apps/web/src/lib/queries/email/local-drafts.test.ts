@@ -8,11 +8,14 @@ import type { OperationResult } from '@urql/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({ user: { authenticated: true, id: 'owner' } }));
+const stagedUpload = vi.hoisted(() =>
+  vi.fn<() => { previewSrc: string; size: number } | undefined>()
+);
 vi.mock('../client', () => ({
   queryClient: { getQueryData: () => auth.user },
 }));
 vi.mock('@core/mobile/nativeStagedUpload', () => ({
-  getNativeStagedUpload: () => undefined,
+  getNativeStagedUpload: stagedUpload,
 }));
 let runtime: typeof import('./local-drafts');
 const input = (subject = 'Draft') => ({
@@ -46,14 +49,125 @@ beforeEach(async () => {
   localStorage.clear();
   queue.length = 0;
   auth.user = { authenticated: true, id: 'owner' };
+  stagedUpload.mockReset();
   runtime = await import('./local-drafts');
   await runtime.localDraftStore.clear();
 });
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await runtime.localDraftStore.close();
 });
 
 describe('draft queue recovery', () => {
+  it('rejects an old editor generation after discard and Undo reuse the server identity', async () => {
+    const serverInput = (subject: string) => ({
+      draft: { db_id: 'server', subject },
+      attachments: [],
+    });
+    const original = await runtime.saveLocalDraft(serverInput('Original'));
+    await runtime.forgetLocalDraft('server');
+    await runtime.reviveLocalDraft('server');
+    const revived = await runtime.saveLocalDraft(serverInput('Explicit undo'));
+    expect(revived.revision).toBe(original.revision);
+    expect(revived.generation).not.toBe(original.generation);
+
+    await expect(
+      runtime.saveLocalDraft({
+        ...serverInput('Stale editor'),
+        expectedRevision: original.revision,
+        expectedGeneration: original.generation,
+      })
+    ).rejects.toThrow();
+    expect(await runtime.readLocalDraft('server')).toMatchObject({
+      generation: revived.generation,
+      revision: revived.revision,
+      content: { subject: 'Explicit undo' },
+    });
+    await expect(
+      runtime.saveLocalDraft({
+        ...serverInput('Edited after undo'),
+        expectedRevision: revived.revision,
+        expectedGeneration: revived.generation,
+      })
+    ).resolves.toMatchObject({
+      generation: revived.generation,
+      revision: revived.revision + 1,
+      content: { subject: 'Edited after undo' },
+    });
+  });
+  it('does not rebase an old editor snapshot onto a newer stored revision', async () => {
+    const original = await runtime.saveLocalDraft(input('Original'));
+    const latest = await runtime.saveLocalDraft(input('Other tab edited'));
+    await expect(
+      runtime.saveLocalDraft({
+        ...input('Old editor snapshot'),
+        expectedRevision: original.revision,
+      })
+    ).rejects.toThrow('changed while saving');
+    expect(await runtime.readLocalDraft('local')).toMatchObject({
+      revision: latest.revision,
+      content: { subject: 'Other tab edited' },
+    });
+  });
+  it('rejects an older snapshot whose file copy finishes after a newer save', async () => {
+    await runtime.saveLocalDraft(input('Original'));
+    const started = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    stagedUpload.mockReturnValueOnce({ previewSrc: '/staged-file', size: 5 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        started.resolve();
+        return response.promise;
+      })
+    );
+    const older = runtime.saveLocalDraft({
+      ...input('Older snapshot'),
+      attachments: [{ type: 'local', file: new File(['hello'], 'note.txt') }],
+    });
+    const rejected = expect(older).rejects.toThrow('changed while saving');
+    await started.promise;
+    const newer = await runtime.saveLocalDraft(input('Newer snapshot'));
+    response.resolve(new Response('hello'));
+    await rejected;
+    expect(await runtime.readLocalDraft('local')).toMatchObject({
+      revision: newer.revision,
+      content: { subject: 'Newer snapshot' },
+      attachments: [],
+    });
+  });
+  it('wipes a discarded working copy and rejects stale saves through either identity', async () => {
+    const draft = await runtime.saveLocalDraft(input());
+    const saving = await runtime.beginDraftAttempt(draft, 'save');
+    const lifecycle = runtime.localDraftQueueLifecycle(host);
+    await lifecycle.onMutationAttemptResult!(claimed(saving), success, false);
+    const saved = (await runtime.readLocalDraft('server'))!;
+    const deleting = await runtime.beginDraftAttempt(saved, 'delete');
+    await lifecycle.onMutationAttemptResult!(
+      claimed(deleting),
+      { data: { deleteEmailDraft: { deleted: true } } } as OperationResult,
+      false
+    );
+    expect(await runtime.listLocalDrafts()).toEqual([]);
+    await expect(
+      runtime.saveLocalDraft(input('Stale handle'))
+    ).rejects.toThrow();
+    await expect(
+      runtime.saveLocalDraft({
+        draft: { db_id: 'server', subject: 'Stale server identity' },
+        attachments: [],
+      })
+    ).rejects.toThrow();
+    expect(await runtime.listLocalDrafts()).toEqual([]);
+    await runtime.reviveLocalDraft('server');
+    await runtime.saveLocalDraft({
+      draft: { db_id: 'server', subject: 'Explicit undo' },
+      attachments: [],
+    });
+    expect((await runtime.readLocalDraft('server'))?.content.subject).toBe(
+      'Explicit undo'
+    );
+  });
   it('keeps modern correlation in the queue without an ever-growing attempt journal', async () => {
     const draft = await runtime.saveLocalDraft(input());
     await runtime.beginDraftAttempt(draft, 'save');
@@ -183,7 +297,12 @@ describe('draft queue recovery', () => {
     await expect(
       runtime.saveLocalDraft(input('Late old editor'))
     ).rejects.toThrow('no longer active');
-    await expect(runtime.localDraftStore.save(owner, prior)).rejects.toThrow();
+    await expect(
+      runtime.localDraftStore.save(owner, {
+        ...prior,
+        expectedRevision: prior.revision,
+      })
+    ).rejects.toThrow();
   });
   it('reconciles again after a recovery failure without mutation metadata', async () => {
     const lifecycle = runtime.localDraftQueueLifecycle(host);

@@ -13,9 +13,11 @@ import {
   EmailThreadMessageFieldsFragmentDoc,
 } from '@service-storage/graphql/generated/graphql';
 import {
+  assertEmailDraftQueueAvailable,
   getGraphqlCacheHost,
   getGraphqlSoupClient,
   graphqlCacheEnabled,
+  graphqlDraftQueueBlocked,
 } from '@service-storage/graphql-soup';
 import { queryClient } from '../client';
 import {
@@ -43,6 +45,8 @@ import {
   restoreLocalAttachments,
 } from './local-drafts';
 import { fetchAndCacheThread, type ThreadQueryTransport } from './thread';
+
+export { assertEmailDraftQueueAvailable };
 
 /** Read content and persistence state together, including resolved local handles. */
 export async function readEmailDraft(
@@ -163,7 +167,7 @@ export function watchEmailDrafts(
 export function draftQueueActive(
   threadTransport?: ThreadQueryTransport
 ): boolean {
-  if (!graphqlCacheEnabled()) return false;
+  if (!graphqlCacheEnabled() && !graphqlDraftQueueBlocked()) return false;
   return threadTransport
     ? threadTransport === 'graphql'
     : isFeatureEnabled(enableGraphqlSoup);
@@ -263,6 +267,8 @@ export async function saveEmailDraftQueued(input: {
   completingThread?: boolean;
   previousThreadId?: string;
 }): Promise<QueuedDraftSave> {
+  getGraphqlSoupClient();
+  assertEmailDraftQueueAvailable();
   const local = await readLocalDraft(String(input.args.draftId));
   if (local && draftSyncPaused(local))
     return { kind: 'rejected', code: draftFailureCode(local.errorCode) };
@@ -276,7 +282,9 @@ export async function saveEmailDraftQueued(input: {
     String(input.args.draftId),
     input.args.threadDbId
   );
-  const outcome = await executeGraphqlSaveEmailDraft(getGraphqlSoupClient(), {
+  const client = getGraphqlSoupClient();
+  assertEmailDraftQueueAvailable();
+  const outcome = await executeGraphqlSaveEmailDraft(client, {
     ...input.args,
     ...cached,
     ...(local ? { draftId: local.draftId, clientMetadata: attempt } : {}),
@@ -339,10 +347,14 @@ export async function deleteEmailDraftQueued(input: {
   threadId: string;
   completingThread?: boolean;
 }): Promise<QueuedDraftDelete> {
+  getGraphqlSoupClient();
+  assertEmailDraftQueueAvailable();
   const local = await readLocalDraft(input.draftId);
   const attempt = local ? await beginDraftAttempt(local, 'delete') : undefined;
   const cached = await readCachedDraftAndThread(input.draftId, input.threadId);
-  const outcome = await executeGraphqlDeleteEmailDraft(getGraphqlSoupClient(), {
+  const client = getGraphqlSoupClient();
+  assertEmailDraftQueueAvailable();
+  const outcome = await executeGraphqlDeleteEmailDraft(client, {
     existingThread: cached.existingThread,
     mutationUuid: cached.mutationUuid ?? input.draftId,
     draftId: local?.draftId ?? String(cached.draftId),

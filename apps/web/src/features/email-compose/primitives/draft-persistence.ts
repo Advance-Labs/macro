@@ -70,6 +70,8 @@ export function createDraftPersistence(options: {
   let localGeneration = options.localDraft?.generation;
   const mint = (draft: EmailDraft) => {
     if (session.draftId()) return;
+    localRevision = undefined;
+    localGeneration = undefined;
     session.dispatch({
       type: 'minted',
       draftId: uuidv7(),
@@ -110,6 +112,8 @@ export function createDraftPersistence(options: {
       if (identity.kind === 'none') return;
       const epoch = session.epoch();
       const local = await options.drafts.saveLocalDraft({
+        expectedRevision: localRevision,
+        expectedGeneration: localGeneration,
         draft: {
           ...draft,
           db_id: identity.kind === 'server' ? identity.draftId : undefined,

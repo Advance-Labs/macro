@@ -49,6 +49,7 @@ import {
   normalizedCacheResultMetadata,
 } from './normalized-cache-exchange';
 import {
+  executeOptimisticMutation,
   optimisticContextOf,
   optimisticMutationDispositionOf,
 } from './optimistic';
@@ -2405,6 +2406,50 @@ describe('normalizedCacheExchange', () => {
 
   describe('mutations', () => {
     const optimistic = { setEntityProperty: { id: 'prop-1' } };
+
+    it('carries submitted client metadata through queue admission and settlement', async () => {
+      const enqueue = vi.spyOn(host, 'enqueueOptimisticMutation');
+      const metadata = {
+        kind: 'email-draft',
+        id: 'discard-attempt',
+        revision: 7,
+      };
+      const beforeMutationAttempt = vi.fn(
+        async (mutation: ClaimedMutation) =>
+          mutation.clientMetadata?.id === metadata.id
+      );
+      const onMutationAttemptResult = vi.fn(async () => {});
+      const { client, forwarded } = harness(host, undefined, {
+        beforeMutationAttempt,
+        onMutationAttemptResult,
+      });
+      await executeOptimisticMutation(
+        client,
+        MUTATION,
+        { input: {} },
+        optimistic,
+        {
+          uuid: crypto.randomUUID(),
+          clientMetadata: metadata,
+        }
+      ).toPromise();
+      await tick();
+      expect(enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ clientMetadata: metadata }),
+        expect.anything()
+      );
+      expect(beforeMutationAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ clientMetadata: metadata })
+      );
+      expect(forwarded).toHaveLength(1);
+      expect(forwarded[0].variables).toEqual({ input: {} });
+      expect(onMutationAttemptResult).toHaveBeenCalledWith(
+        expect.objectContaining({ clientMetadata: metadata }),
+        expect.anything(),
+        false
+      );
+      expect(host.commits).toHaveLength(1);
+    });
 
     it.each([false, true])(
       'rolls back rejected favorites rather than committing list patches (replay=%s)',

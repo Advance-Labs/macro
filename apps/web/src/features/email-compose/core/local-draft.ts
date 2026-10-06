@@ -72,10 +72,11 @@ export type DraftAttempt = {
 /** Presentation of local persistence and explicit server recovery. */
 export type DraftSyncViewState = {
   message: string;
+  /** Changes only when another version has been saved, not during sync updates. */
+  savedVersion?: string;
   detail?: string;
   failed: boolean;
-  action?: 'save' | 'retry' | 'retry-discard';
-  canDiscard: boolean;
+  action?: 'retry' | 'retry-discard';
   canKeepEditing: boolean;
 };
 

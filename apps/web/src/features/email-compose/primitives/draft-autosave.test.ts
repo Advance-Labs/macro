@@ -1,4 +1,4 @@
-import { createRoot } from 'solid-js';
+import { createMemo, createRoot, createSignal, onCleanup } from 'solid-js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createDraftAutosave } from './draft-autosave';
 
@@ -6,6 +6,54 @@ const disposers: (() => void)[] = [];
 afterEach(() => {
   disposers.splice(0).forEach((dispose) => dispose());
   vi.useRealTimers();
+});
+
+it('preserves the last edit when navigation disposes the thread supplying its snapshot', async () => {
+  vi.useFakeTimers();
+  const persist = vi.fn(
+    async (_snapshot: { body: string; thread?: string }) => {}
+  );
+  const saveLocalSnapshot = vi.fn(async () => {});
+  const cleaned = vi.fn();
+  let body = 'first';
+  const root = createRoot((dispose) => {
+    disposers.push(dispose);
+    const [route, navigate] = createSignal<string>();
+    const session = createMemo(() => {
+      const id = route();
+      if (!id) return;
+      onCleanup(cleaned);
+      return {
+        id,
+        autosave: createDraftAutosave({
+          capture: () => ({ body, thread: thread() }),
+          persist,
+          saveLocalSnapshot,
+          paused: () => false,
+        }),
+      };
+    });
+    const thread = createMemo((): string | undefined => session()?.id);
+    return { navigate, session };
+  });
+  root.navigate('original-thread');
+  const autosave = root.session()!.autosave;
+  autosave.schedule();
+  body = 'last-second edit';
+  autosave.schedule();
+  await autosave.flushLocal();
+  const localWrites = saveLocalSnapshot.mock.calls.length;
+
+  expect(() => root.navigate(undefined)).not.toThrow();
+  expect(root.session()).toBeUndefined();
+  expect(cleaned).toHaveBeenCalledOnce();
+  await autosave.settled();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(persist).toHaveBeenCalledExactlyOnceWith({
+    body: 'last-second edit',
+    thread: 'original-thread',
+  });
+  expect(saveLocalSnapshot).toHaveBeenCalledTimes(localWrites);
 });
 
 it('coalesces local snapshots behind a slow write and reports durability only after the newest completes', async () => {

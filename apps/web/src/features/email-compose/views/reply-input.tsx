@@ -32,6 +32,7 @@ import { SignaturePreview } from '../components/signature-preview';
 import type { EmailComposeContext } from '../context/compose-capabilities';
 import { getOrInitEmailFormContext } from '../context/email-form-context';
 import { decodeBase64Utf8 } from '../core/decode-base64';
+import { plainTextToHtml } from '../core/plain-text-to-html';
 import { createDraftSyncStatus } from '../primitives/draft-sync-status';
 import { registerToggleAppendedThread } from '../primitives/prepare-email-body';
 import { ReplyEnvelope } from './reply-envelope';
@@ -70,6 +71,13 @@ export function ReplyInputView(props: ReplyInputViewProps) {
     () => read && initialId,
     async (id) => await read!(id)
   );
+  const restoredHtml = () => {
+    const draft = saved()?.draft;
+    if (!draft) return props.preloadedHtml;
+    if (draft.body_html_sanitized != null)
+      return decodeBase64Utf8(draft.body_html_sanitized);
+    return draft.body_text ? plainTextToHtml(draft.body_text) : '';
+  };
   return (
     <Show
       when={!saved.loading}
@@ -89,12 +97,7 @@ export function ReplyInputView(props: ReplyInputViewProps) {
           draft={saved()?.draft ?? props.draft}
           localDraft={saved()?.local}
           localAttachments={saved()?.attachments}
-          preloadedHtml={
-            saved()?.draft?.body_html_sanitized
-              ? (decodeBase64Utf8(saved()!.draft!.body_html_sanitized!) ??
-                undefined)
-              : props.preloadedHtml
-          }
+          preloadedHtml={restoredHtml()}
         />
       </Show>
     </Show>
@@ -376,16 +379,18 @@ function LoadedReplyInputView(props: ReplyInputViewProps) {
     </Button>
   );
 
+  const SyncStatus = () => (
+    <DraftSyncStatus
+      state={sync.state()}
+      busy={sync.busy()}
+      error={sync.error()}
+      onRetry={sync.retry}
+      onKeepEditing={sync.keepEditing}
+    />
+  );
+
   return (
     <>
-      <DraftSyncStatus
-        state={sync.state()}
-        busy={sync.busy()}
-        error={sync.error()}
-        onRetry={sync.retry}
-        onDiscard={sync.discard}
-        onKeepEditing={sync.keepEditing}
-      />
       <Surface
         class={cn(
           'relative flex flex-col flex-1 max-w-full min-h-0',
@@ -404,6 +409,7 @@ function LoadedReplyInputView(props: ReplyInputViewProps) {
       >
         <Show when={isMobileDrawer()}>
           <MobileReplyToolbar
+            status={<SyncStatus />}
             discardLabel={savedDraftId() ? 'Delete draft' : 'Discard draft'}
             onDiscard={deleteDraftAndReset}
             attachRef={(element) =>
@@ -656,6 +662,7 @@ function LoadedReplyInputView(props: ReplyInputViewProps) {
               class="shrink-0 flex min-w-0 justify-end pt-1.5"
             >
               <div class="flex shrink-0 items-center gap-1">
+                <SyncStatus />
                 <Button
                   onClick={deleteDraftAndReset}
                   tooltip={savedDraftId() ? 'Delete draft' : 'Discard'}

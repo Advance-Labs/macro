@@ -183,21 +183,28 @@ function LoadedEmailComposeView(
   }
 
   const leaveCompose = async () => {
-    await state.flushLocal();
+    try {
+      await state.flushLocal();
+    } catch (error) {
+      composeContext.notices.reportError(error);
+      return;
+    }
     setDraftBackMenuOpen(false);
     props.host?.goBack?.();
   };
 
+  const SyncStatus = () => (
+    <DraftSyncStatus
+      state={sync.state()}
+      busy={sync.busy()}
+      error={sync.error()}
+      onRetry={sync.retry}
+      onKeepEditing={sync.keepEditing}
+    />
+  );
+
   return (
     <ComposeProvider value={ctxValue}>
-      <DraftSyncStatus
-        state={sync.state()}
-        busy={sync.busy()}
-        error={sync.error()}
-        onRetry={sync.retry}
-        onDiscard={sync.discard}
-        onKeepEditing={sync.keepEditing}
-      />
       <Show when={!composeContext.presentation.isMobile()}>
         <SplitHeaderLeft>
           <StaticSplitLabel
@@ -242,7 +249,9 @@ function LoadedEmailComposeView(
             )}
           >
             <ComposeLayout
-              toolbar={<EmailComposeToolbar editor={editor} />}
+              toolbar={
+                <EmailComposeToolbar editor={editor} status={<SyncStatus />} />
+              }
               notice={hasInboxError() ? <EmailPermissionsBanner /> : undefined}
               class="size-full p-4 touch:bg-surface max-h-full touch:max-h-none overflow-hidden flex flex-col min-h-0 touch:min-h-full"
             />

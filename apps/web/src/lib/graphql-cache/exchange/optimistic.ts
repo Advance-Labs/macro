@@ -521,6 +521,7 @@ export function optimisticContextOf(
     }
     return {
       uuid: context.uuid,
+      clientMetadata: context.clientMetadata,
       optimisticResponse: context.optimisticResponse,
       identityBindings: context.identityBindings,
       linkPatches: Array.isArray(context.linkPatches)

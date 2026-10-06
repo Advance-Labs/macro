@@ -1,4 +1,4 @@
-import { createRoot } from 'solid-js';
+import { createRoot, createSignal } from 'solid-js';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { LocalDraft } from '../core/local-draft';
 import { createComposeContext } from '../tests/capabilities';
@@ -68,4 +68,78 @@ it('shows a failed status read without throwing into the composer error boundary
     expect(status.state()?.message).toBe('Unable to read local draft status.')
   );
   expect(status.state()?.failed).toBe(true);
+});
+
+it('keeps the saved acknowledgement stable through typing and background sync', async () => {
+  const context = createComposeContext();
+  const [local, setLocal] = createSignal<LocalDraft | undefined>();
+  const [disk, setDisk] = createSignal<'saving' | 'saved' | 'failed'>('saving');
+  let changed = () => {};
+  context.drafts.saveLocalDraft = vi.fn();
+  context.drafts.readDraft = vi.fn(async () => ({
+    local: local(),
+    persistence: 'queued' as const,
+  }));
+  context.drafts.watchDrafts = (callback) => {
+    changed = callback;
+    return () => {};
+  };
+  const retry = vi.fn(async () => {});
+  const status = createRoot((dispose) => {
+    disposers.push(dispose);
+    return createDraftSyncStatus({
+      drafts: context.drafts,
+      draftId: () => 'draft',
+      localSaveState: disk,
+      retry,
+      discard: vi.fn(),
+    });
+  });
+  await vi.waitFor(() => expect(context.drafts.readDraft).toHaveBeenCalled());
+  expect(status.state()).toBeUndefined();
+  for (const phase of [
+    'dirty',
+    'queued',
+    'synced',
+    'dirty',
+    'queued',
+    'synced',
+  ] as const) {
+    setLocal({ ...draft, status: phase });
+    changed();
+    setDisk('saved');
+    await vi.waitFor(() => expect(status.state()?.message).toBe('Draft saved'));
+    setDisk('saving');
+    expect(status.state()).toMatchObject({
+      message: 'Draft saved',
+      failed: false,
+    });
+    expect(status.state()?.action).toBeUndefined();
+  }
+  setDisk('failed');
+  expect(status.state()).toMatchObject({ failed: true, action: 'retry' });
+  status.retry();
+  await vi.waitFor(() => expect(retry).toHaveBeenCalledOnce());
+});
+
+it('offers retry for server failures while newer edits remain saved locally', async () => {
+  const context = createComposeContext();
+  context.drafts.saveLocalDraft = vi.fn();
+  context.drafts.readDraft = vi.fn(async () => ({
+    local: { ...draft, status: 'failed' as const },
+    persistence: 'queued' as const,
+  }));
+  const status = createRoot((dispose) => {
+    disposers.push(dispose);
+    return createDraftSyncStatus({
+      drafts: context.drafts,
+      draftId: () => 'draft',
+      localSaveState: () => 'saving',
+      retry: vi.fn(),
+      discard: vi.fn(),
+    });
+  });
+  await vi.waitFor(() =>
+    expect(status.state()).toMatchObject({ failed: true, action: 'retry' })
+  );
 });

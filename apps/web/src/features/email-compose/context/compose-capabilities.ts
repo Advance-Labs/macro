@@ -101,7 +101,11 @@ export interface EmailAttachmentChange {
 export interface EmailDraftStorage {
   /** Local acceptance is separate from remote autosave and continues after rejection. */
   saveLocalDraft?(
-    input: SaveEmailDraft & { attachments: readonly DraftFormAttachment[] }
+    input: SaveEmailDraft & {
+      attachments: readonly DraftFormAttachment[];
+      expectedRevision?: number;
+      expectedGeneration?: string;
+    }
   ): Promise<LocalDraft>;
   retryDraft?(draftId: string): Promise<void>;
   /** Resolve durable local drafts before mounting an editor. */

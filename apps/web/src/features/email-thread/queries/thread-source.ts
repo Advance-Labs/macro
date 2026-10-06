@@ -123,9 +123,13 @@ export function createEmailThreadSource(
     }
   );
   const local = createLocalDraftSource(() => query.transport === 'graphql');
+  const discoveringDrafts = () =>
+    query.transport === 'graphql' && !local.ready();
   const thread = () => {
     const base = snapshot().thread;
     if (query.transport !== 'graphql') return base;
+    // Establish the recovered draft before a reply editor can latch its seed.
+    if (discoveringDrafts()) return undefined;
     const requested = threadId();
     const copies = local
       .drafts()
@@ -212,7 +216,8 @@ export function createEmailThreadSource(
     isError: () =>
       query.isError && (query.transport !== 'graphql' || !thread()),
     isLoading: () =>
-      query.isLoading && (query.transport !== 'graphql' || !thread()),
+      discoveringDrafts() ||
+      (query.isLoading && (query.transport !== 'graphql' || !thread())),
     isFetching: () => query.isFetching,
     isFetchingOlder: () => query.isFetchingNextPage,
     hasMore: () => query.hasNextPage,

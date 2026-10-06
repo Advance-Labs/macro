@@ -38,6 +38,7 @@ import {
 } from '@queries/email/draft';
 import { markThreadDraftSaved } from '@queries/email/draft-cache';
 import {
+  assertEmailDraftQueueAvailable,
   deleteEmailDraftQueued,
   draftQueueActive,
   readEmailDraft,
@@ -304,6 +305,7 @@ export function createEmailComposeContext(
         inboxId,
         ...input
       }) {
+        assertEmailDraftQueueAvailable();
         const handles = queueHandles(input);
         if (handles) {
           if (!(await readLocalDraft(handles.draftId)))
@@ -384,6 +386,7 @@ export function createEmailComposeContext(
         };
       },
       async deleteDraft({ completingThread, inboxId, ...input }) {
+        assertEmailDraftQueueAvailable();
         if (input.threadId && queueActive()) {
           const outcome = await deleteEmailDraftQueued({
             draftId: input.draftId,
