@@ -24,7 +24,6 @@ pub const ROUTED_MODELS: &[(&str, &str)] = &[
         "fireworks/nemotron-lightning-3p5-30b-a3b",
         "Nemotron Lightning 3.5 30B A3B",
     ),
-    ("google/gemini-3.8-flash", "Gemini 3.8 Flash"),
 ];
 
 /// House name for an advertised id, or the id itself when the catalog has

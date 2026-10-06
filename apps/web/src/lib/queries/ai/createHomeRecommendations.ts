@@ -18,7 +18,7 @@ import { createAIProjection } from './projection';
 // `provider/model` id routed by the projection generator. Must stay in the
 // backend's free-tier allowlist (ai_projections FREE_TIER_MODELS). The smart
 // projection omits the model and uses the server default (the smart tier).
-const FAST_MODEL = 'anthropic/claude-haiku-4-5';
+const FAST_MODEL = 'google/gemini-3.8-flash';
 
 /**
  * Fast + smart recommendation projections. The static prompt instructs the
@@ -26,9 +26,9 @@ const FAST_MODEL = 'anthropic/claude-haiku-4-5';
  * ListEntities, which preserves each entity type's canonical inbox semantics.
  *
  * Two projections share one prompt and schema and differ only in model: the
- * fast one (Haiku, free tier) generates inline for immediate paint; the smart
- * one (server default, premium-gated) replaces it when it lands, and is
- * skipped entirely for users without professional features.
+ * fast one (Gemini Flash, free tier) generates inline for immediate paint;
+ * the smart one (server default, premium-gated) replaces it when it lands,
+ * and is skipped entirely for users without professional features.
  *
  * Result selection is pure and lives in `homeRecommendations.ts`; this hook
  * only wires it to the projections.

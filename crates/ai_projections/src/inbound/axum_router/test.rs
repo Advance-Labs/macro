@@ -185,7 +185,7 @@ async fn upsert_projection_allows_free_tier_models_without_professional_features
     let app = build_router(false);
 
     let response = app
-        .oneshot(post_request_with_model(Some("anthropic/claude-haiku-4-5")))
+        .oneshot(post_request_with_model(Some("google/gemini-3.8-flash")))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);

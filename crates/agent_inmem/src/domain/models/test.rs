@@ -32,11 +32,25 @@ fn routed_models_have_house_names() {
         display_name("fireworks/nemotron-lightning-3p5-30b-a3b"),
         "Nemotron Lightning 3.5 30B A3B"
     );
-    assert_eq!(display_name("google/gemini-3.8-flash"), "Gemini 3.8 Flash");
     assert_eq!(
         display_name("anthropic/claude-sonnet-5-5"),
         "anthropic/claude-sonnet-5-5"
     );
+    assert_eq!(
+        display_name("google/gemini-3.8-flash"),
+        "google/gemini-3.8-flash"
+    );
+}
+
+/// A chat model must not also be a routed extra, or the picker lists it twice.
+#[test]
+fn routed_models_do_not_repeat_the_chat_catalog() {
+    for (model, _) in ROUTED_MODELS {
+        assert!(
+            !CHAT_MODELS.contains(model),
+            "{model} is already a chat model"
+        );
+    }
 }
 
 /// Every advertised id must carry a provider segment the router registers,

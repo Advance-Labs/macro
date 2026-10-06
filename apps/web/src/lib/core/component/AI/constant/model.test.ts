@@ -29,11 +29,12 @@ describe('modelsForPlan / defaultModelForPlan', () => {
   it('gives free users only the free model, defaulted to it', () => {
     const free = modelsForPlan(false);
     expect(free).toEqual([FREE_DEFAULT_MODEL]);
-    expect(FREE_DEFAULT_MODEL).toBe(Model.haiku45);
+    expect(FREE_DEFAULT_MODEL).toBe(Model.gemini38Flash);
     expect(defaultModelForPlan(false)).toBe(FREE_DEFAULT_MODEL);
     // The premium models are *not* in a free user's selectable set.
     expect(free).not.toContain(Model.sonnet55);
     expect(free).not.toContain(Model.opus55);
+    expect(free).not.toContain(Model.haiku45);
     expect(free).not.toContain(Model.gpt56);
     expect(free).not.toContain(Model.gpt6Astra);
   });
@@ -53,8 +54,9 @@ describe('databaseModelForPlan', () => {
     expect(databaseModelForPlan(true)).toBe(DATABASE_MODEL);
   });
 
-  it('asks a free plan for its own model, which the service allows', () => {
-    expect(databaseModelForPlan(false)).toBe(FREE_DEFAULT_MODEL);
+  it('asks a free plan for it too, since it is also the free model', () => {
+    expect(DATABASE_MODEL).toBe(FREE_DEFAULT_MODEL);
+    expect(databaseModelForPlan(false)).toBe(DATABASE_MODEL);
   });
 });
 
