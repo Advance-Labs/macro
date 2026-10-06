@@ -49,3 +49,13 @@ Artifacts: results.json (socket token query strings removed), demo-builder.png, 
 
 ![public-response](public-response.png)
 
+
+## Choice controls — 2026-10-06
+
+Verified parent commit aa9f8d4da0 in the local Forms stack: single-choice cards show circular markers in both editing and collapsed views; multi-select cards show square markers. Native respondent radios support ArrowDown selection and checkboxes support Space. No JavaScript page errors. Seven focused UI tests and format/Kafka/just-check gates passed. QA used a separate form and preserved the public playground.
+
+![Choice editor](choice-edit-after.png)
+
+![Checkbox editor](checkbox-edit-after.png)
+
+![Respondent keyboard controls](choice-respondent-keyboard-after.png)
