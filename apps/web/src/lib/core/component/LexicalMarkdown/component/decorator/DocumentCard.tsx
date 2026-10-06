@@ -1,4 +1,5 @@
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
+import { DirectBlock, isDirectBlockName } from '@components/app/DirectBlock';
 import { isInBlock, type PreviewState, useMaybeBlockName } from '@core/block';
 import { useItemPreviewData } from '@core/component/ItemPreview';
 import { toast } from '@core/component/Toast/Toast';
@@ -230,18 +231,29 @@ function DocumentCardInner(props: DocumentCardDecoratorProps) {
     if (shouldCreateBlockPreview) {
       const i = item();
       if (!i || i.loading) return;
+      const blockType = resolveBlockAlias(verifyBlockName(props.blockName));
+      if (isDirectBlockName(blockType)) {
+        getElement = () => (
+          <DirectBlock
+            type={blockType}
+            id={i.id}
+            params={previewData()}
+            nested
+          />
+        );
+      } else {
+        const preview = createBlockInstance(
+          resolveBlockAlias(verifyBlockName(props.blockName)),
+          i.id,
+          {
+            params: previewData(),
+            nested: { parentContext: previewContext() },
+          }
+        );
+        if (!preview) return;
 
-      const preview = createBlockInstance(
-        resolveBlockAlias(verifyBlockName(props.blockName)),
-        i.id,
-        {
-          params: previewData(),
-          nested: { parentContext: previewContext() },
-        }
-      );
-      if (!preview) return;
-
-      getElement = () => preview.element();
+        getElement = () => preview.element();
+      }
     } else {
       getElement = () => (
         <div class="p-2">

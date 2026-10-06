@@ -49,10 +49,6 @@ vi.mock('@solidjs/router', () => ({
   ],
 }));
 vi.mock('@core/context/user', () => ({ useUserId: () => () => 'me' }));
-vi.mock('@core/signal/permissions', () => ({
-  useCanComment: () => () => mocks.canComment,
-  useIsDocumentOwner: () => () => false,
-}));
 vi.mock('@core/util/url', () => ({ buildSimpleEntityUrl: () => 'link' }));
 vi.mock('@ui/components/Button', () => ({
   Button: (p: JSX.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...p} />,
@@ -161,7 +157,12 @@ function mount() {
     } as unknown as SpreadsheetStore;
     return (
       <ParamsProvider state={params}>
-        <SpreadsheetComments documentId="doc" store={store}>
+        <SpreadsheetComments
+          documentId="doc"
+          store={store}
+          canComment={() => mocks.canComment}
+          isOwner={() => false}
+        >
           {(location, comments) => {
             cap = comments;
             let cell!: HTMLButtonElement;

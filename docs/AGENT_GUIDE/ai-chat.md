@@ -418,6 +418,17 @@ show **Run unavailable** without a link, including failed preparation that creat
 no resource. Live pending rows remain neutral; persisted unsuccessful runs keep
 the failure-colored timestamp even when their transcript is still available.
 
+## Existing chat detail panes
+
+Existing chats use the same conversation view in standalone routes, Home and
+Agents detail panes, and embedded cards. Reopening a chat restores its draft,
+attachments, and model; switching chats must not mix their drafts or messages.
+A message target requested while loading applies when the transcript is ready.
+Activating the same message target again scrolls and highlights it again without
+reloading the chat. View-only or signed-out access must not show an editable
+composer. A failed load offers **Retry**; inaccessible or deleted chats show the
+normal access-error screen.
+
 ## Start a standalone chat
 
 While an answer streams, resolved mention pills should keep their names and

@@ -1,14 +1,10 @@
 import { showAiUsageLimit } from '@app/features/paywall/ai-usage-limit-handling';
 import type { SendBuilder } from '@block-chat/blockClient';
 import { TopBar } from '@block-chat/component/TopBar';
-import type { ChatData } from '@block-chat/definition';
-import { pendingLocationParamsSignal } from '@block-chat/signal/pendingLocationParams';
 import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
 import { useCanAutofocusSplitContent } from '@components/app/split-layout/layoutUtils';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
-import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useHasPaidAccess } from '@core/auth/license';
-import { useBlockId, useIsNestedBlock } from '@core/block';
 import { DragDropWrapper } from '@core/component/AI/component/DragDrop';
 import { buildChatEditor } from '@core/component/AI/component/input/buildChatEditor';
 import type { ChatSendInput } from '@core/component/AI/component/input/buildRequest';
@@ -43,25 +39,42 @@ import {
   storeChatState,
 } from '@core/component/AI/util/storage';
 import { CustomScrollbar } from '@core/component/CustomScrollbar';
+import type { Permissions } from '@core/component/SharePermissions';
 import { usePaywallState } from '@core/constant/PaywallState';
+import { lastExecutedCommand } from '@core/hotkey/state';
 import { TOKENS } from '@core/hotkey/tokens';
 import { registerScopeSignalHotkey } from '@core/hotkey/utils';
+import type { OwnedBlockHandle } from '@core/orchestrator';
 import { createMethodRegistration } from '@core/orchestrator';
-import {
-  blockElementSignal,
-  blockHotkeyScopeSignal,
-} from '@core/signal/blockElement';
-import { blockHandleSignal } from '@core/signal/load';
-import { useCanEdit } from '@core/signal/permissions';
 import { markMessageSent } from '@core/util/message-send-motion';
 import { createRenameDssEntityMutation } from '@entity';
 import { invalidateUserQuota } from '@queries/auth';
 import { cognitionApiServiceClient } from '@service-cognition/client';
+import type { GetChatResponse } from '@service-cognition/generated/schemas/getChatResponse';
 import { createCallback } from '@solid-primitives/rootless';
+import type { Accessor, Setter } from 'solid-js';
 import { createEffect, createSignal, getOwner, Show, Suspense } from 'solid-js';
 
-export function Chat(props: { data: ChatData }) {
-  const loadedState = getChatInputStoredState(props.data.chat.id);
+export type ChatProps = {
+  data: GetChatResponse;
+  chatId: string;
+  scopeId: string;
+  handle?: OwnedBlockHandle<
+    import('@core/blockMethodRegistry').BlockMethodsFor<'chat'>
+  >;
+  canEdit: Accessor<boolean>;
+  nested?: boolean;
+  showHeader?: boolean;
+  name: Accessor<string>;
+  permissions: Accessor<Permissions>;
+  pendingLocation: Accessor<Record<string, string> | undefined>;
+  setPendingLocation: Setter<Record<string, string> | undefined>;
+  navigate: (params: Record<string, string>) => void;
+};
+
+export function Chat(props: ChatProps) {
+  const data = props.data;
+  const loadedState = getChatInputStoredState(data.chat.id);
 
   // Seed the model selector, highest priority first:
   //  1. peekPendingSend — the model the user just sent with in the soup chat
@@ -74,17 +87,14 @@ export function Chat(props: { data: ChatData }) {
   // to this one.
   const initialModel =
     peekPendingSend()?.model ??
-    resolveChatInputModel(props.data.chat.model, loadedState.model);
+    resolveChatInputModel(data.chat.model, loadedState.model);
 
   return (
     <ChatInputProvider
       initialAttachments={loadedState.attachments}
       model={initialModel}
     >
-      <ChatWithController
-        data={props.data}
-        loadedInputText={loadedState.input}
-      />
+      <ChatWithController {...props} loadedInputText={loadedState.input} />
     </ChatInputProvider>
   );
 }
@@ -94,10 +104,11 @@ export function Chat(props: { data: ChatData }) {
  * state — specifically, so a provider-outage error toast can switch the chat
  * to a model from a different provider.
  */
-function ChatWithController(props: {
-  data: ChatData;
-  loadedInputText: string | undefined;
-}) {
+function ChatWithController(
+  props: {
+    loadedInputText: string | undefined;
+  } & ChatProps
+) {
   const { showPaywall } = usePaywallState();
   const input = useChatInputContext();
   const hasPaidAccess = useHasPaidAccess();
@@ -134,23 +145,34 @@ function ChatWithController(props: {
         hasAlternateModel: () => nextModel() !== undefined,
       }}
     >
-      <ChatInner data={props.data} loadedInputText={props.loadedInputText} />
+      <ChatInner {...props} />
     </ChatProvider>
   );
 }
 
-function ChatInner(props: {
-  data: ChatData;
-  loadedInputText: string | undefined;
-}) {
+function ChatInner(
+  props: {
+    loadedInputText: string | undefined;
+  } & ChatProps
+) {
   const owner = getOwner();
   const input = useChatInputContext();
   const chat = useChatContext();
-  const canEdit = useCanEdit();
-  const disabled = () => !canEdit();
-  const scopeId = blockHotkeyScopeSignal.get;
-  const blockElement = blockElementSignal.get;
-  const { navigatedFromJK } = useNavigatedFromJK();
+  const disabled = () => !props.canEdit();
+  const scopeId = () => props.scopeId;
+  const [blockElement, setBlockElement] = createSignal<HTMLElement>();
+  const navigatedFromJK = () => {
+    if (!props.scopeId) return false;
+    if (document.documentElement.getAttribute('data-modality') !== 'keyboard')
+      return false;
+    const token = lastExecutedCommand()?.hotkeyToken;
+    return (
+      token === TOKENS.entity.step.end ||
+      token === TOKENS.entity.step.start ||
+      token === TOKENS.entity.select.end ||
+      token === TOKENS.entity.select.start
+    );
+  };
   const canAutofocusSplitContent = useCanAutofocusSplitContent();
   const [scrollRef, setScrollRef] = createSignal<HTMLElement>();
   const [showStreamDebug, setShowStreamDebug] = createSignal(false);
@@ -177,10 +199,8 @@ function ChatInner(props: {
     if (chat.isGenerating()) invalidateUserQuota();
   });
 
-  const blockHandle = blockHandleSignal.get;
-
   // Entity drag-and-drop support
-  const chatId = useBlockId();
+  const chatId = props.chatId;
   const { droppable, isDraggingOver } = useEntityDropAttachment(
     'chat-input-' + chatId,
     input.attachments,
@@ -262,9 +282,7 @@ function ChatInner(props: {
     saveChatState({ attachments: attached, input: inputText, model: model_ });
   });
 
-  const setPendingLocation = pendingLocationParamsSignal.set;
-
-  createMethodRegistration(blockHandle, {
+  createMethodRegistration<'chat'>(() => props.handle, {
     sendMessage: async (sendRequest: SendBuilder) => {
       onSend({
         content: sendRequest.userRequest,
@@ -274,7 +292,8 @@ function ChatInner(props: {
       });
     },
     goToLocationFromParams: (params: Record<string, string>) => {
-      setPendingLocation(params);
+      props.setPendingLocation(params);
+      props.navigate(params);
     },
   });
 
@@ -316,23 +335,28 @@ function ChatInner(props: {
   let hasRun = false;
   createEffect(() => {
     if (hasRun) return;
-    if (!canAutofocusSplitContent) return;
+    if (!canAutofocusSplitContent || props.nested) return;
     if (!blockElement()) return;
     if (!navigatedFromJK()) return;
     blockElement()?.focus();
     hasRun = true;
   });
 
-  const isNestedBlock = useIsNestedBlock();
-
   return (
     <DragDropWrapper
       class="size-full overscroll-none overflow-hidden flex flex-col"
+      ref={setBlockElement}
+      tabIndex={-1}
       isEntityDraggingOver={isDraggingOver}
     >
-      <Show when={!isNestedBlock}>
+      <Show when={!props.nested && props.showHeader !== false}>
         <Suspense>
           <TopBar
+            chatId={props.chatId}
+            name={props.name}
+            permissions={props.permissions}
+            owner={props.data.chat.userId}
+            scopeId={scopeId()}
             showStreamDebug={showStreamDebug}
             toggleStreamDebug={() => setShowStreamDebug((p) => !p)}
           />
@@ -360,7 +384,7 @@ function ChatInner(props: {
           <div class="mx-auto w-full max-w-3xl touch:pt-[calc(var(--mobile-content-inset-top,0)+0.5rem)] touch:pb-(--mobile-content-inset-bottom)">
             <ChatMessages
               editDisabled={disabled()}
-              pendingLocationParams={pendingLocationParamsSignal.get}
+              pendingLocationParams={props.pendingLocation}
             />
           </div>
         </div>
@@ -379,7 +403,9 @@ function ChatInner(props: {
               chatId={chat.chatId()}
               onSend={onSend}
               onStop={onStop}
-              autoFocusOnMount={canAutofocusSplitContent && !navigatedFromJK()}
+              autoFocusOnMount={
+                !props.nested && canAutofocusSplitContent && !navigatedFromJK()
+              }
             />
           </div>
         </FloatRegionOrInline>

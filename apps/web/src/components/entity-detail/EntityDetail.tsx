@@ -34,12 +34,18 @@ import {
   ChannelDetailTopBar,
 } from '@channel/Channel/ChannelDetail';
 import type { ChannelTargetRequest } from '@channel/Channel/ChannelSurface';
+import { DirectBlock, type DirectBlockName } from '@components/app/DirectBlock';
 import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
-import { PreviewPanel } from '@components/app/PreviewPanel';
+import {
+  PreviewFrame,
+  PreviewPanel,
+  PreviewPanelContext,
+} from '@components/app/PreviewPanel';
 import { previewBlockTarget } from '@components/app/previewTarget';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import type { BlockAlias, BlockName } from '@core/block';
 import { fileTypeToBlockName } from '@core/constant/allBlocks';
+import deepEqual from 'fast-deep-equal';
 import {
   children,
   createMemo,
@@ -93,6 +99,34 @@ function PreviewPanelEntityDetail(props: EntityDetailProps) {
       splitPanelContext={panel}
       headerLeading={props.previewHeaderLeading}
     />
+  );
+}
+
+function DirectEntityDetail(
+  props: EntityDetailProps & { type: DirectBlockName }
+) {
+  const panel = useSplitPanelOrThrow();
+  const target = createMemo(() => previewBlockTarget(props.target));
+  const location = createMemo(
+    () => ({ target: target(), request: props.navigationRequest }),
+    undefined,
+    { equals: deepEqual }
+  );
+  return (
+    <PreviewFrame
+      splitPanelContext={panel}
+      headerLeading={props.previewHeaderLeading}
+      locationKey={location}
+    >
+      <PreviewPanelContext previewTarget={target()}>
+        <DirectBlock
+          type={props.type}
+          id={props.target.id}
+          params={target().params}
+          navigationRequest={props.navigationRequest}
+        />
+      </PreviewPanelContext>
+    </PreviewFrame>
   );
 }
 
@@ -205,6 +239,12 @@ export function EntityDetail(props: EntityDetailProps) {
         <CodeDetail documentId={props.target.id}>
           {(context) => <>{renderChildren(context)}</>}
         </CodeDetail>
+      </Match>
+      <Match when={blockType() === 'spreadsheet'}>
+        <DirectEntityDetail {...props} type="spreadsheet" />
+      </Match>
+      <Match when={props.target.type === 'chat'}>
+        <DirectEntityDetail {...props} type="chat" />
       </Match>
       <Match when={blockType() === 'canvas'}>
         <CanvasDetail documentId={props.target.id}>

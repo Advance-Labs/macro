@@ -10,6 +10,7 @@ import type {
   SplitRouter,
   SplitSearchUpdate,
 } from '@app/lib/split-router';
+import { DirectBlock, isDirectBlockName } from '@components/app/DirectBlock';
 import type {
   BlockAlias,
   BlockAliasContext,
@@ -26,6 +27,7 @@ import { useFocusLock } from '@core/util/createControlledOpenSignal';
 import {
   type Accessor,
   batch,
+  createComponent,
   createComputed,
   createMemo,
   createSignal,
@@ -533,6 +535,21 @@ function createPinnedMount(
   }
 
   const blockType = resolveBlockAlias(content.type);
+  if (isDirectBlockName(blockType)) {
+    return {
+      kind: 'block',
+      type: content.type,
+      id: content.id,
+      handle: { type: blockType, id: content.id },
+      element: () =>
+        createComponent(DirectBlock, {
+          type: blockType,
+          id: content.id,
+          params: content.params,
+        }),
+      aliasContext: content.aliasContext,
+    };
+  }
   const handle = orchestrator.createBlockInstance(blockType, content.id, {
     aliasContext: content.aliasContext,
     params: content.params,
