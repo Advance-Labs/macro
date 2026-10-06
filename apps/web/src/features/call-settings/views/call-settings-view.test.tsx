@@ -15,11 +15,13 @@ afterEach(cleanup);
 
 const ALL: RecordingKinds = {
   huddles: true,
+  oneOnOneMeetings: true,
   internalMeetings: true,
   externalMeetings: true,
 };
 const NONE: RecordingKinds = {
   huddles: false,
+  oneOnOneMeetings: false,
   internalMeetings: false,
   externalMeetings: false,
 };
@@ -51,15 +53,25 @@ const checkbox = (name: string) =>
 describe('Calls settings', () => {
   it('shows each record-by-default option and saves a change', () => {
     const calls = renderView({
-      recordByDefault: { ...ALL, externalMeetings: false },
+      recordByDefault: {
+        ...ALL,
+        oneOnOneMeetings: false,
+        externalMeetings: false,
+      },
       team: null,
     });
     expect(checkbox('Huddles').checked).toBe(true);
+    expect(checkbox('1:1 meetings').checked).toBe(false);
     expect(checkbox('Internal meetings').checked).toBe(true);
     expect(checkbox('External meetings').checked).toBe(false);
 
     fireEvent.click(checkbox('Huddles'));
     expect(calls.setRecordByDefault).toHaveBeenCalledWith('huddles', false);
+    fireEvent.click(checkbox('1:1 meetings'));
+    expect(calls.setRecordByDefault).toHaveBeenCalledWith(
+      'oneOnOneMeetings',
+      true
+    );
     fireEvent.click(checkbox('External meetings'));
     expect(calls.setRecordByDefault).toHaveBeenCalledWith(
       'externalMeetings',
@@ -82,6 +94,8 @@ describe('Calls settings', () => {
     expect(block.disabled).toBe(false);
     fireEvent.click(block);
     expect(calls.setTeamBlock).toHaveBeenCalledWith('internalMeetings', true);
+    fireEvent.click(checkbox('Block 1:1 meetings'));
+    expect(calls.setTeamBlock).toHaveBeenCalledWith('oneOnOneMeetings', true);
   });
 
   it('shows the team policy to members but greys it out', () => {
@@ -92,6 +106,7 @@ describe('Calls settings', () => {
     expect(screen.getByText('Admins only')).toBeTruthy();
     for (const name of [
       'Block huddles',
+      'Block 1:1 meetings',
       'Block internal meetings',
       'Block external meetings',
     ]) {
@@ -106,7 +121,7 @@ describe('Calls settings', () => {
     expect(calls.setTeamBlock).not.toHaveBeenCalled();
     expect(
       screen.getAllByText('Only team admins can change this.')
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 
   it('turns off and locks a personal default the team blocks', () => {

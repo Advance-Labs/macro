@@ -1,5 +1,9 @@
 /** The kinds of call the recording settings tell apart. */
-export type RecordingKind = 'huddles' | 'internalMeetings' | 'externalMeetings';
+export type RecordingKind =
+  | 'huddles'
+  | 'oneOnOneMeetings'
+  | 'internalMeetings'
+  | 'externalMeetings';
 
 /** One flag per {@link RecordingKind}. */
 export type RecordingKinds = Record<RecordingKind, boolean>;
@@ -31,9 +35,14 @@ export const RECORDING_KINDS: readonly RecordingKindOption[] = [
     description: 'Calls started from a channel.',
   },
   {
+    kind: 'oneOnOneMeetings',
+    label: '1:1 meetings',
+    description: 'Meetings with only two people, both on your team.',
+  },
+  {
     kind: 'internalMeetings',
     label: 'Internal meetings',
-    description: 'Meetings with only people on your team.',
+    description: 'Meetings with three or more people, all on your team.',
   },
   {
     kind: 'externalMeetings',

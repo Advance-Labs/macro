@@ -4,16 +4,29 @@
 //! default, and team admins can block kinds of call for everyone on the team.
 //! A call records only when its host records that kind by default and the
 //! host's team has not blocked it.
+//!
+//! A standalone call can change kind while it is live. Its recording stops
+//! the first time it becomes a kind its host does not record, and starts the
+//! first time it becomes one they do; a call never starts a second recording,
+//! so a stopped recording is not resumed.
 
 #[cfg(test)]
 mod test;
 
 /// The kinds of call the recording rules tell apart.
+///
+/// A standalone call grows through the meeting kinds in order: it is a
+/// one-on-one until a third person joins, then an internal meeting, and an
+/// external meeting once someone from outside the host's team joins (which can
+/// happen at any point, and ends the progression).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallKind {
     /// A call started from a channel.
     Huddle,
-    /// A standalone call attended only by the host's teammates.
+    /// A standalone call that at most two people, all on the host's team,
+    /// have joined so far.
+    OneOnOneMeeting,
+    /// A standalone call that three or more of the host's teammates joined.
     InternalMeeting,
     /// A standalone call that someone outside the host's team joined.
     ExternalMeeting,
@@ -26,7 +39,9 @@ pub enum CallKind {
 pub struct CallKinds {
     /// Calls started from a channel.
     pub huddles: bool,
-    /// Standalone calls attended only by the host's teammates.
+    /// Standalone calls with only two people, both teammates.
+    pub one_on_one_meetings: bool,
+    /// Standalone calls with three or more people, all teammates.
     pub internal_meetings: bool,
     /// Standalone calls that someone outside the host's team joined.
     pub external_meetings: bool,
@@ -36,6 +51,7 @@ impl CallKinds {
     /// Every kind of call.
     pub const ALL: Self = Self {
         huddles: true,
+        one_on_one_meetings: true,
         internal_meetings: true,
         external_meetings: true,
     };
@@ -43,6 +59,7 @@ impl CallKinds {
     /// No kind of call.
     pub const NONE: Self = Self {
         huddles: false,
+        one_on_one_meetings: false,
         internal_meetings: false,
         external_meetings: false,
     };
@@ -51,6 +68,7 @@ impl CallKinds {
     pub fn contains(self, kind: CallKind) -> bool {
         match kind {
             CallKind::Huddle => self.huddles,
+            CallKind::OneOnOneMeeting => self.one_on_one_meetings,
             CallKind::InternalMeeting => self.internal_meetings,
             CallKind::ExternalMeeting => self.external_meetings,
         }
@@ -60,6 +78,9 @@ impl CallKinds {
     pub fn patched(self, patch: CallKindsPatch) -> Self {
         Self {
             huddles: patch.huddles.unwrap_or(self.huddles),
+            one_on_one_meetings: patch
+                .one_on_one_meetings
+                .unwrap_or(self.one_on_one_meetings),
             internal_meetings: patch.internal_meetings.unwrap_or(self.internal_meetings),
             external_meetings: patch.external_meetings.unwrap_or(self.external_meetings),
         }
@@ -74,7 +95,9 @@ impl CallKinds {
 pub struct CallKindsPatch {
     /// New value for calls started from a channel.
     pub huddles: Option<bool>,
-    /// New value for standalone calls attended only by teammates.
+    /// New value for standalone calls with only two people, both teammates.
+    pub one_on_one_meetings: Option<bool>,
+    /// New value for standalone calls with three or more people, all teammates.
     pub internal_meetings: Option<bool>,
     /// New value for standalone calls with people from outside the team.
     pub external_meetings: Option<bool>,
@@ -147,10 +170,36 @@ pub struct UpdateTeamRecordingPolicyRequest {
     pub blocked: CallKindsPatch,
 }
 
-/// A live call that just gained its first participant from outside the host's
-/// team.
+/// A live standalone call that just became a later [`CallKind`]: its third
+/// participant or its first from outside the host's team joined.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CallTurnedExternal {
+pub struct MeetingKindChange {
     /// The recorder attached to the call at that moment, if any.
     pub egress_id: Option<String>,
+}
+
+/// Who a live standalone call has had so far. Both flags only ever turn on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MeetingAttendance {
+    /// A third person joined while everyone was on the host's team.
+    pub more_than_two: bool,
+    /// Someone from outside the host's team joined.
+    pub external: bool,
+}
+
+impl MeetingAttendance {
+    /// The kinds of call the session has been since it was `since`, oldest
+    /// first, ending with its current kind.
+    pub fn kinds_since(self, since: CallKind) -> Vec<CallKind> {
+        let mut kinds = vec![since];
+        // A call only gains its third participant while still internal, so a
+        // call that is both went through the internal kind first.
+        if since == CallKind::OneOnOneMeeting && self.more_than_two {
+            kinds.push(CallKind::InternalMeeting);
+        }
+        if matches!(since, CallKind::OneOnOneMeeting | CallKind::InternalMeeting) && self.external {
+            kinds.push(CallKind::ExternalMeeting);
+        }
+        kinds
+    }
 }

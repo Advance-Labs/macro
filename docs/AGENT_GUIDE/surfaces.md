@@ -1907,24 +1907,29 @@ live-backend release gates and documents staging retention and recovery.
 
 **Settings → Calls** (`/app/settings/calls`, just below Booking links) decides
 which calls start recording on their own. **Record by default** has one checkbox
-each for **Huddles** (calls started from a channel), **Internal meetings**
-(standalone calls with only teammates) and **External meetings** (a guest or
-someone from another team joined). Checking all three records every call;
-clearing all three keeps recording off. Each change saves immediately. Untouched
-accounts record everything, matching behavior before the setting existed.
+each for **Huddles** (calls started from a channel), **1:1 meetings** (standalone
+calls with only two people, both teammates), **Internal meetings** (three or
+more people, all teammates) and **External meetings** (a guest or someone from
+another team joined). Checking all four records every call; clearing all four
+keeps recording off. Each change saves immediately. Untouched accounts record
+everything, matching behavior before the setting existed.
 
 **Team recording policy** appears for people on a team. Admins and owners check
-**Block huddles**, **Block internal meetings** or **Block external meetings** to
-stop anyone on the team from recording that kind of call; a block overrides
-every personal default. Members see the same checkboxes dimmed with a
+**Block huddles**, **Block 1:1 meetings**, **Block internal meetings** or **Block
+external meetings** to stop anyone on the team from recording that kind of call;
+a block overrides every personal default. Members see the same checkboxes dimmed with a
 not-allowed cursor, an **Admins only** label and an explanation, and cannot
 change them. A blocked kind also shows unchecked and disabled under Record by
 default.
 
 The host's rules apply: the person who started a huddle, or the owner of a
-meeting link. A meeting that starts internal becomes external when the first
-guest or other-team user joins; if the host does not record external meetings,
-recording stops before that person receives call credentials. Exercising
+meeting link. A meeting counts as 1:1 until a third distinct person joins (a
+rejoin does not count), then as internal, and as external once the first guest
+or other-team user joins; a meeting never moves back. When the new kind is one
+the host does not record, recording stops before the newcomer's join completes.
+When it is one they do and the meeting has not recorded yet, recording starts
+then. A meeting records at most once, so a recording stopped this way does not
+resume. Exercising
 recording itself needs a local backend with egress configured; against hosted
 dev, verify the settings round-trip and the member/admin states.
 

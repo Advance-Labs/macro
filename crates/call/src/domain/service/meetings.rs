@@ -5,7 +5,7 @@ use super::*;
 use crate::domain::meetings::{
     CreateMeetingRequest, GuestId, GuestJoinRequest, Meeting, MeetingToken,
 };
-use crate::domain::recording::CallKind;
+use crate::domain::recording::{CallKind, RecordingRules};
 use rootcause::compat::boxed_error::IntoBoxedError;
 use tracing::Instrument;
 
@@ -354,12 +354,12 @@ impl<
             // The session starts external, so later joins have nothing to flip.
             self.repo.mark_call_external(&call.id).await?;
         }
-        let rules = self.host_recording_rules(&call.created_by).await;
-        let recording = rules.filter(|rules| rules.records(kind)).map(|rules| {
-            // Internal-meeting rules may record a session that an outsider
-            // joins while the recorder is still starting.
-            !rules.records(CallKind::ExternalMeeting)
-        });
+        let recording = match self.host_recording_rules(&call.created_by).await {
+            Some(rules) if rules.records(kind) && self.claim_meeting_recorder(&call).await => {
+                Some(rules)
+            }
+            _ => None,
+        };
         self.publish_call_event(&CallMacroEvent::started(CallStartedMetadata {
             call_id: call.id,
             channel_id: None,
@@ -380,8 +380,8 @@ impl<
                     .inspect_err(|error| tracing::error!(error=?error, "failed to dispatch meeting transcription agent")).ok();
             };
             let recording = async {
-                if let Some(stop_if_external) = recording {
-                    start_meeting_recording(&repo, rtc.as_ref(), call_id, &room_name, config.as_ref(), stop_if_external).await;
+                if let Some(rules) = recording {
+                    start_meeting_recording(&repo, rtc.as_ref(), call_id, &room_name, config.as_ref(), rules, kind).await;
                 }
             };
             tokio::join!(transcription, recording);
@@ -416,6 +416,18 @@ impl<
                 return Err(CallError::AlreadyInCall("another call".to_string()));
             }
             Err(AddParticipantError::Repository(error)) => return Err(CallError::Internal(error)),
+        }
+        if let Err(error) = self.admit_meeting_participant(&call).await {
+            // Without the check the recording could outlive the one-on-one, so
+            // this join is undone instead.
+            self.repo
+                .remove_participant(&call.id, actor.copied())
+                .await
+                .inspect_err(
+                    |e| tracing::error!(error=?e, "failed to release unchecked participant"),
+                )
+                .ok();
+            return Err(error);
         }
         self.send_meeting_answered_event(meeting.id, actor.copied())
             .await;
@@ -635,9 +647,10 @@ impl<
 /// A late recorder must be attached before stopping so its completion webhook
 /// can find the archived record. Any failed attachment must also stop egress.
 ///
-/// With `stop_if_external`, a recorder that finds the session already joined by
-/// someone from outside the host's team stops once attached. The join that
-/// flagged the session saw no recorder yet, so stopping it falls to this side.
+/// The recorder starts for a session of kind `since`. Once attached, it stops
+/// if the session has since been any kind that `rules` do not record: the join
+/// that changed the session's kind saw no recorder yet, so stopping it falls to
+/// this side.
 #[tracing::instrument(skip_all, fields(%call_id))]
 pub(super) async fn start_meeting_recording<R: CallRepository, C: CallRtcClient>(
     repo: &R,
@@ -645,7 +658,8 @@ pub(super) async fn start_meeting_recording<R: CallRepository, C: CallRtcClient>
     call_id: Uuid,
     room_name: &str,
     config: Option<&EgressS3Config>,
-    stop_if_external: bool,
+    rules: RecordingRules,
+    since: CallKind,
 ) {
     let Some(config) = config else {
         return;
@@ -657,21 +671,14 @@ pub(super) async fn start_meeting_recording<R: CallRepository, C: CallRtcClient>
             return;
         }
     };
-    let active = match repo.attach_meeting_recording(&call_id, &egress_id).await {
-        Ok(true) => match repo.get_call_by_id(&call_id).await {
-            Ok(call) => call.is_some(),
-            Err(error) => {
-                tracing::error!(error=?error, "failed to confirm meeting is still active");
-                false
-            }
-        },
+    let keep = match repo.attach_meeting_recording(&call_id, &egress_id).await {
+        Ok(true) => still_recordable(repo, call_id, rules, since).await,
         Ok(false) => false,
         Err(error) => {
             tracing::error!(error=?error, "failed to attach meeting recording");
             false
         }
     };
-    let keep = active && !(stop_if_external && turned_external(repo, call_id).await);
     if !keep {
         rtc.stop_egress(&egress_id)
             .await
@@ -682,13 +689,24 @@ pub(super) async fn start_meeting_recording<R: CallRepository, C: CallRtcClient>
     }
 }
 
-/// Whether the session gained an outsider; a failed check counts as yes so a
-/// blocked recording never continues unverified.
-async fn turned_external<R: CallRepository>(repo: &R, call_id: Uuid) -> bool {
-    repo.is_call_external(&call_id)
-        .await
-        .unwrap_or_else(|error| {
-            tracing::error!(error=?error, "failed to check whether meeting turned external");
-            true
-        })
+/// Whether the session is still live and has only been kinds that `rules`
+/// record since it was `since`. A failed check counts as no, so a blocked
+/// recording never continues unverified.
+async fn still_recordable<R: CallRepository>(
+    repo: &R,
+    call_id: Uuid,
+    rules: RecordingRules,
+    since: CallKind,
+) -> bool {
+    match repo.get_meeting_attendance(&call_id).await {
+        Ok(Some(attendance)) => attendance
+            .kinds_since(since)
+            .into_iter()
+            .all(|kind| rules.records(kind)),
+        Ok(None) => false,
+        Err(error) => {
+            tracing::error!(error=?error, "failed to check who joined the meeting");
+            false
+        }
+    }
 }

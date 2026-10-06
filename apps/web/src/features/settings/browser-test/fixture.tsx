@@ -281,12 +281,14 @@ function FixtureCalls(props: { admin: boolean }) {
   const [settings, setSettings] = createSignal<RecordingSettings>({
     recordByDefault: {
       huddles: true,
+      oneOnOneMeetings: false,
       internalMeetings: true,
       externalMeetings: true,
     },
     team: {
       blocked: {
         huddles: false,
+        oneOnOneMeetings: false,
         internalMeetings: false,
         externalMeetings: true,
       },

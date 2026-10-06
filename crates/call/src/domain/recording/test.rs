@@ -1,7 +1,8 @@
 use super::*;
 
-const KINDS: [CallKind; 3] = [
+const KINDS: [CallKind; 4] = [
     CallKind::Huddle,
+    CallKind::OneOnOneMeeting,
     CallKind::InternalMeeting,
     CallKind::ExternalMeeting,
 ];
@@ -9,6 +10,7 @@ const KINDS: [CallKind; 3] = [
 fn only(kind: CallKind) -> CallKinds {
     CallKinds {
         huddles: kind == CallKind::Huddle,
+        one_on_one_meetings: kind == CallKind::OneOnOneMeeting,
         internal_meetings: kind == CallKind::InternalMeeting,
         external_meetings: kind == CallKind::ExternalMeeting,
     }
@@ -73,6 +75,7 @@ fn a_patch_changes_only_the_kinds_it_names() {
         patched,
         CallKinds {
             huddles: true,
+            one_on_one_meetings: true,
             internal_meetings: true,
             external_meetings: false,
         }
@@ -83,11 +86,11 @@ fn a_patch_changes_only_the_kinds_it_names() {
 #[test]
 fn patches_read_camel_case_and_allow_omitted_kinds() {
     let request: UpdateTeamRecordingPolicyRequest =
-        serde_json::from_str(r#"{"blocked":{"internalMeetings":true}}"#).unwrap();
+        serde_json::from_str(r#"{"blocked":{"oneOnOneMeetings":true}}"#).unwrap();
     assert_eq!(
         request.blocked,
         CallKindsPatch {
-            internal_meetings: Some(true),
+            one_on_one_meetings: Some(true),
             ..CallKindsPatch::default()
         }
     );
@@ -107,12 +110,14 @@ fn settings_serialize_camel_case() {
         serde_json::json!({
             "recordByDefault": {
                 "huddles": true,
+                "oneOnOneMeetings": false,
                 "internalMeetings": false,
                 "externalMeetings": false,
             },
             "team": {
                 "blocked": {
                     "huddles": false,
+                    "oneOnOneMeetings": false,
                     "internalMeetings": false,
                     "externalMeetings": true,
                 },
@@ -120,4 +125,52 @@ fn settings_serialize_camel_case() {
             },
         })
     );
+}
+
+#[test]
+fn a_recorder_answers_for_every_kind_since_it_started() {
+    use CallKind::{ExternalMeeting, InternalMeeting, OneOnOneMeeting};
+    let attendance = |more_than_two, external| MeetingAttendance {
+        more_than_two,
+        external,
+    };
+    for (since, seen, kinds) in [
+        (
+            OneOnOneMeeting,
+            attendance(false, false),
+            vec![OneOnOneMeeting],
+        ),
+        (
+            OneOnOneMeeting,
+            attendance(true, false),
+            vec![OneOnOneMeeting, InternalMeeting],
+        ),
+        (
+            OneOnOneMeeting,
+            attendance(false, true),
+            vec![OneOnOneMeeting, ExternalMeeting],
+        ),
+        (
+            OneOnOneMeeting,
+            attendance(true, true),
+            vec![OneOnOneMeeting, InternalMeeting, ExternalMeeting],
+        ),
+        (
+            InternalMeeting,
+            attendance(true, true),
+            vec![InternalMeeting, ExternalMeeting],
+        ),
+        (
+            ExternalMeeting,
+            attendance(false, true),
+            vec![ExternalMeeting],
+        ),
+        (
+            ExternalMeeting,
+            attendance(true, true),
+            vec![ExternalMeeting],
+        ),
+    ] {
+        assert_eq!(seen.kinds_since(since), kinds, "{since:?} with {seen:?}");
+    }
 }

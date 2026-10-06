@@ -10,11 +10,13 @@ import {
 
 const ALL: RecordingKinds = {
   huddles: true,
+  oneOnOneMeetings: true,
   internalMeetings: true,
   externalMeetings: true,
 };
 const NONE: RecordingKinds = {
   huddles: false,
+  oneOnOneMeetings: false,
   internalMeetings: false,
   externalMeetings: false,
 };
@@ -28,9 +30,10 @@ const settings = (
 });
 
 describe('call recording kinds', () => {
-  it('lists huddles, internal meetings and external meetings in that order', () => {
+  it('lists huddles, then meetings from smallest to most open', () => {
     expect(RECORDING_KINDS.map((option) => option.kind)).toEqual([
       'huddles',
+      'oneOnOneMeetings',
       'internalMeetings',
       'externalMeetings',
     ]);

@@ -18944,7 +18944,12 @@
       "CallKinds": {
         "type": "object",
         "description": "One flag per [`CallKind`].",
-        "required": ["huddles", "internalMeetings", "externalMeetings"],
+        "required": [
+          "huddles",
+          "oneOnOneMeetings",
+          "internalMeetings",
+          "externalMeetings"
+        ],
         "properties": {
           "externalMeetings": {
             "type": "boolean",
@@ -18956,7 +18961,11 @@
           },
           "internalMeetings": {
             "type": "boolean",
-            "description": "Standalone calls attended only by the host's teammates."
+            "description": "Standalone calls with three or more people, all teammates."
+          },
+          "oneOnOneMeetings": {
+            "type": "boolean",
+            "description": "Standalone calls with only two people, both teammates."
           }
         }
       },
@@ -18974,7 +18983,11 @@
           },
           "internalMeetings": {
             "type": ["boolean", "null"],
-            "description": "New value for standalone calls attended only by teammates."
+            "description": "New value for standalone calls with three or more people, all teammates."
+          },
+          "oneOnOneMeetings": {
+            "type": ["boolean", "null"],
+            "description": "New value for standalone calls with only two people, both teammates."
           }
         }
       },

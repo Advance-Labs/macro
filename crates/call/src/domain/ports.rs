@@ -31,8 +31,8 @@ use super::meetings::{
 };
 
 use super::recording::{
-    CallKinds, CallKindsPatch, CallRecordingSettings, CallTurnedExternal, RecordingRules,
-    UpdateRecordingDefaultsRequest, UpdateTeamRecordingPolicyRequest,
+    CallKinds, CallKindsPatch, CallRecordingSettings, MeetingAttendance, MeetingKindChange,
+    RecordingRules, UpdateRecordingDefaultsRequest, UpdateTeamRecordingPolicyRequest,
 };
 
 use super::models::{
@@ -568,6 +568,17 @@ pub trait CallRepository: Send + Sync + 'static {
         patch: CallKindsPatch,
     ) -> impl Future<Output = Result<CallKinds, CallError>> + Send;
 
+    /// Flag a live call that only the host's teammates have joined as having
+    /// had more than two participants, counting everyone who ever joined it.
+    /// Call it after recording the newest participant. Returns `Some` only for
+    /// the call that flips the flag, carrying the recorder attached at that
+    /// moment; `None` when the call has had two participants at most, was
+    /// already flagged, is external, or is no longer live.
+    fn mark_call_more_than_two(
+        &self,
+        call_id: &Uuid,
+    ) -> impl Future<Output = Result<Option<MeetingKindChange>, CallError>> + Send;
+
     /// Flag a live call as having had someone from outside the host's team.
     /// Returns `Some` only for the call that flips the flag, carrying the
     /// recorder attached at that moment; `None` when the call was already
@@ -575,11 +586,20 @@ pub trait CallRepository: Send + Sync + 'static {
     fn mark_call_external(
         &self,
         call_id: &Uuid,
-    ) -> impl Future<Output = Result<Option<CallTurnedExternal>, CallError>> + Send;
+    ) -> impl Future<Output = Result<Option<MeetingKindChange>, CallError>> + Send;
 
-    /// Whether a live call has been flagged by [`Self::mark_call_external`].
-    /// `false` once the call is no longer live.
-    fn is_call_external(
+    /// The flags [`Self::mark_call_more_than_two`] and
+    /// [`Self::mark_call_external`] set on a live call; `None` once the call
+    /// is no longer live.
+    fn get_meeting_attendance(
+        &self,
+        call_id: &Uuid,
+    ) -> impl Future<Output = Result<Option<MeetingAttendance>, CallError>> + Send;
+
+    /// Claim a live call's one recorder: `true` only for the first claim, so
+    /// a call never starts a second recorder. `false` once it is no longer
+    /// live.
+    fn claim_meeting_recorder(
         &self,
         call_id: &Uuid,
     ) -> impl Future<Output = Result<bool, CallError>> + Send;

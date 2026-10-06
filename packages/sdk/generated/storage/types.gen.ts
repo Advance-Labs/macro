@@ -1784,9 +1784,13 @@ export type CallKinds = {
      */
     huddles: boolean;
     /**
-     * Standalone calls attended only by the host's teammates.
+     * Standalone calls with three or more people, all teammates.
      */
     internalMeetings: boolean;
+    /**
+     * Standalone calls with only two people, both teammates.
+     */
+    oneOnOneMeetings: boolean;
 };
 
 /**
@@ -1803,9 +1807,13 @@ export type CallKindsPatch = {
      */
     huddles?: boolean | null;
     /**
-     * New value for standalone calls attended only by teammates.
+     * New value for standalone calls with three or more people, all teammates.
      */
     internalMeetings?: boolean | null;
+    /**
+     * New value for standalone calls with only two people, both teammates.
+     */
+    oneOnOneMeetings?: boolean | null;
 };
 
 /**

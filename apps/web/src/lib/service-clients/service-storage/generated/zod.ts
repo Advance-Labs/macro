@@ -2504,7 +2504,12 @@ export const getCallRecordingSettingsResponse = zod
         huddles: zod.boolean().describe('Calls started from a channel.'),
         internalMeetings: zod
           .boolean()
-          .describe("Standalone calls attended only by the host's teammates."),
+          .describe(
+            'Standalone calls with three or more people, all teammates.'
+          ),
+        oneOnOneMeetings: zod
+          .boolean()
+          .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
     team: zod
@@ -2525,7 +2530,12 @@ export const getCallRecordingSettingsResponse = zod
                 internalMeetings: zod
                   .boolean()
                   .describe(
-                    "Standalone calls attended only by the host's teammates."
+                    'Standalone calls with three or more people, all teammates.'
+                  ),
+                oneOnOneMeetings: zod
+                  .boolean()
+                  .describe(
+                    'Standalone calls with only two people, both teammates.'
                   ),
               })
               .describe('One flag per [`CallKind`].'),
@@ -2562,7 +2572,13 @@ export const updateCallRecordingDefaultsBody = zod
           .boolean()
           .nullish()
           .describe(
-            'New value for standalone calls attended only by teammates.'
+            'New value for standalone calls with three or more people, all teammates.'
+          ),
+        oneOnOneMeetings: zod
+          .boolean()
+          .nullish()
+          .describe(
+            'New value for standalone calls with only two people, both teammates.'
           ),
       })
       .describe(
@@ -2583,7 +2599,12 @@ export const updateCallRecordingDefaultsResponse = zod
         huddles: zod.boolean().describe('Calls started from a channel.'),
         internalMeetings: zod
           .boolean()
-          .describe("Standalone calls attended only by the host's teammates."),
+          .describe(
+            'Standalone calls with three or more people, all teammates.'
+          ),
+        oneOnOneMeetings: zod
+          .boolean()
+          .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
     team: zod
@@ -2604,7 +2625,12 @@ export const updateCallRecordingDefaultsResponse = zod
                 internalMeetings: zod
                   .boolean()
                   .describe(
-                    "Standalone calls attended only by the host's teammates."
+                    'Standalone calls with three or more people, all teammates.'
+                  ),
+                oneOnOneMeetings: zod
+                  .boolean()
+                  .describe(
+                    'Standalone calls with only two people, both teammates.'
                   ),
               })
               .describe('One flag per [`CallKind`].'),
@@ -2642,7 +2668,13 @@ export const updateTeamCallRecordingPolicyBody = zod
           .boolean()
           .nullish()
           .describe(
-            'New value for standalone calls attended only by teammates.'
+            'New value for standalone calls with three or more people, all teammates.'
+          ),
+        oneOnOneMeetings: zod
+          .boolean()
+          .nullish()
+          .describe(
+            'New value for standalone calls with only two people, both teammates.'
           ),
       })
       .describe(
@@ -2663,7 +2695,12 @@ export const updateTeamCallRecordingPolicyResponse = zod
         huddles: zod.boolean().describe('Calls started from a channel.'),
         internalMeetings: zod
           .boolean()
-          .describe("Standalone calls attended only by the host's teammates."),
+          .describe(
+            'Standalone calls with three or more people, all teammates.'
+          ),
+        oneOnOneMeetings: zod
+          .boolean()
+          .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
     team: zod
@@ -2684,7 +2721,12 @@ export const updateTeamCallRecordingPolicyResponse = zod
                 internalMeetings: zod
                   .boolean()
                   .describe(
-                    "Standalone calls attended only by the host's teammates."
+                    'Standalone calls with three or more people, all teammates.'
+                  ),
+                oneOnOneMeetings: zod
+                  .boolean()
+                  .describe(
+                    'Standalone calls with only two people, both teammates.'
                   ),
               })
               .describe('One flag per [`CallKind`].'),

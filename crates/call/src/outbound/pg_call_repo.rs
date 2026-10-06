@@ -2214,14 +2214,28 @@ impl CallRepository for PgCallRepo {
         self.patch_team_recording_blocks(team_id, patch).await
     }
 
+    async fn mark_call_more_than_two(
+        &self,
+        call_id: &Uuid,
+    ) -> Result<Option<crate::domain::recording::MeetingKindChange>, CallError> {
+        self.flag_call_more_than_two(call_id).await
+    }
+
     async fn mark_call_external(
         &self,
         call_id: &Uuid,
-    ) -> Result<Option<crate::domain::recording::CallTurnedExternal>, CallError> {
+    ) -> Result<Option<crate::domain::recording::MeetingKindChange>, CallError> {
         self.flag_call_external(call_id).await
     }
 
-    async fn is_call_external(&self, call_id: &Uuid) -> Result<bool, CallError> {
-        self.call_has_external_participants(call_id).await
+    async fn get_meeting_attendance(
+        &self,
+        call_id: &Uuid,
+    ) -> Result<Option<crate::domain::recording::MeetingAttendance>, CallError> {
+        self.read_meeting_attendance(call_id).await
+    }
+
+    async fn claim_meeting_recorder(&self, call_id: &Uuid) -> Result<bool, CallError> {
+        self.claim_recorder(call_id).await
     }
 }

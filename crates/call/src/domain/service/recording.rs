@@ -1,10 +1,11 @@
 //! Recording settings, and applying them when a call starts or a standalone
-//! call is joined by someone from outside its host's team.
+//! call changes kind: when its third participant, or its first from outside
+//! its host's team, joins.
 
 use super::*;
 use crate::domain::recording::{
-    CallKind, CallKinds, CallRecordingSettings, RecordingRules, TeamRecordingPolicy,
-    UpdateRecordingDefaultsRequest, UpdateTeamRecordingPolicyRequest,
+    CallKind, CallKinds, CallRecordingSettings, MeetingKindChange, RecordingRules,
+    TeamRecordingPolicy, UpdateRecordingDefaultsRequest, UpdateTeamRecordingPolicyRequest,
 };
 use entity_access::domain::models::{AdminTeamRole, TeamRole, UserTeamInfo};
 use tracing::Instrument;
@@ -71,8 +72,10 @@ impl<
             .is_some_and(|rules| rules.records(kind))
     }
 
-    /// The kind of call `meeting`'s session is once `joiner` is in it. Without
-    /// a recorder the distinction never matters, so no lookups are made.
+    /// The kind of call `meeting`'s session would be with only `joiner` in it:
+    /// a huddle for a channel's meeting, an external meeting for someone from
+    /// outside the host's team, and otherwise a one-on-one. Without a recorder
+    /// the distinction never matters, so no lookups are made.
     pub(super) async fn meeting_kind(
         &self,
         meeting: &Meeting,
@@ -82,13 +85,13 @@ impl<
             return Ok(CallKind::Huddle);
         }
         if self.egress_s3_config.is_none() {
-            return Ok(CallKind::InternalMeeting);
+            return Ok(CallKind::OneOnOneMeeting);
         }
         let MeetingJoiner::Account(joiner) = joiner else {
             return Ok(CallKind::ExternalMeeting);
         };
         if joiner.as_ref() == meeting.user_id {
-            return Ok(CallKind::InternalMeeting);
+            return Ok(CallKind::OneOnOneMeeting);
         }
         let host = MacroUserIdStr::parse_from_str(&meeting.user_id)
             .map_err(|error| CallError::Internal(error.into()))?;
@@ -96,20 +99,14 @@ impl<
             tokio::join!(self.user_team(host.copied()), self.user_team(joiner));
         Ok(match (host_team?, joiner_team?) {
             (Some(host), Some(joiner)) if host.team_id == joiner.team_id => {
-                CallKind::InternalMeeting
+                CallKind::OneOnOneMeeting
             }
             _ => CallKind::ExternalMeeting,
         })
     }
 
     /// Apply the external-meeting rules the first time someone from outside
-    /// the host's team joins a live standalone call: stop a recording the host
-    /// does not keep for external meetings, or start one the host records
-    /// only for them.
-    ///
-    /// A recorder that internal-meeting rules started may still be attaching.
-    /// [`start_meeting_recording`](super::meetings::start_meeting_recording)
-    /// re-checks this flag after attaching, so one side always stops it.
+    /// the host's team is about to join a live standalone call.
     pub(super) async fn admit_meeting_kind(
         &self,
         call: &Call,
@@ -118,52 +115,93 @@ impl<
         if kind != CallKind::ExternalMeeting || call.channel_id.is_some() {
             return Ok(());
         }
-        let Some(turned) = self.repo.mark_call_external(&call.id).await? else {
+        let Some(change) = self.repo.mark_call_external(&call.id).await? else {
             return Ok(());
         };
+        self.apply_meeting_kind_change(call, kind, change).await;
+        Ok(())
+    }
+
+    /// Apply the internal-meeting rules the first time a third teammate joins
+    /// a live standalone call. Call it once the joiner is recorded as a
+    /// participant and before they receive credentials.
+    pub(super) async fn admit_meeting_participant(&self, call: &Call) -> Result<(), CallError> {
+        if self.egress_s3_config.is_none() || call.channel_id.is_some() {
+            return Ok(());
+        }
+        let Some(change) = self.repo.mark_call_more_than_two(&call.id).await? else {
+            return Ok(());
+        };
+        self.apply_meeting_kind_change(call, CallKind::InternalMeeting, change)
+            .await;
+        Ok(())
+    }
+
+    /// Stop the recording when `call` just became a `kind` its host does not
+    /// record, or start one when the host records it and the call has not
+    /// recorded yet.
+    ///
+    /// A recorder may still be attaching, invisible to `change`.
+    /// [`start_meeting_recording`](super::meetings::start_meeting_recording)
+    /// re-checks the call's kind after attaching, so one side always stops it.
+    async fn apply_meeting_kind_change(
+        &self,
+        call: &Call,
+        kind: CallKind,
+        change: MeetingKindChange,
+    ) {
         let Some(rules) = self.host_recording_rules(&call.created_by).await else {
-            return Ok(());
+            return;
         };
-        match turned.egress_id {
-            Some(egress_id) if !rules.records(CallKind::ExternalMeeting) => {
+        if !rules.records(kind) {
+            if let Some(egress_id) = change.egress_id {
                 // Awaited so the newcomer gets credentials only once the
                 // recorder is told to stop.
                 self.rtc_client
                     .stop_egress(&egress_id)
                     .await
                     .inspect_err(|error| {
-                        tracing::error!(error = ?error, "failed to stop recording for external meeting");
+                        tracing::error!(error = ?error, ?kind, "failed to stop meeting recording");
                     })
                     .ok();
             }
-            None if rules.records(CallKind::ExternalMeeting)
-                && !rules.records(CallKind::InternalMeeting) =>
-            {
-                let rtc = self.rtc_client.clone();
-                let repo = self.repo.clone();
-                let config = self.egress_s3_config.clone();
-                let room_name = call.room_name.clone();
-                let call_id = call.id;
-                tokio::spawn(
-                    async move {
-                        super::meetings::start_meeting_recording(
-                            &repo,
-                            rtc.as_ref(),
-                            call_id,
-                            &room_name,
-                            config.as_ref(),
-                            false,
-                        )
-                        .await;
-                    }
-                    .instrument(
-                        tracing::info_span!("start_external_meeting_recording", call_id = %call_id),
-                    ),
-                );
-            }
-            _ => {}
+            return;
         }
-        Ok(())
+        if !self.claim_meeting_recorder(call).await {
+            return;
+        }
+        let rtc = self.rtc_client.clone();
+        let repo = self.repo.clone();
+        let config = self.egress_s3_config.clone();
+        let room_name = call.room_name.clone();
+        let call_id = call.id;
+        tokio::spawn(
+            async move {
+                super::meetings::start_meeting_recording(
+                    &repo,
+                    rtc.as_ref(),
+                    call_id,
+                    &room_name,
+                    config.as_ref(),
+                    rules,
+                    kind,
+                )
+                .await;
+            }
+            .instrument(tracing::info_span!("start_meeting_recording", call_id = %call_id, ?kind)),
+        );
+    }
+
+    /// Whether `call` may start its one recorder. A failed claim records
+    /// nothing rather than risk a second recorder.
+    pub(super) async fn claim_meeting_recorder(&self, call: &Call) -> bool {
+        self.repo
+            .claim_meeting_recorder(&call.id)
+            .await
+            .inspect_err(|error| {
+                tracing::error!(error = ?error, "failed to claim meeting recorder; not recording");
+            })
+            .unwrap_or(false)
     }
 
     pub(super) async fn recording_settings(

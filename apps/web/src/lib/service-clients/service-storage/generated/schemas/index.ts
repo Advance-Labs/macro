@@ -239,6 +239,7 @@ export * from './callKindsPatch';
 export * from './callKindsPatchExternalMeetings';
 export * from './callKindsPatchHuddles';
 export * from './callKindsPatchInternalMeetings';
+export * from './callKindsPatchOneOnOneMeetings';
 export * from './callRecord';
 export * from './callRecordChannelId';
 export * from './callRecordChannelName';

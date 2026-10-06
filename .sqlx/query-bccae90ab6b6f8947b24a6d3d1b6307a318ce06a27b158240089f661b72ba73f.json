@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE calls SET has_more_than_two_participants = TRUE\n            WHERE id = $1\n                AND NOT has_more_than_two_participants\n                AND NOT has_external_participants\n                AND (SELECT COUNT(*) FROM call_participants WHERE call_id = $1) > 2\n            RETURNING egress_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "egress_id",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bccae90ab6b6f8947b24a6d3d1b6307a318ce06a27b158240089f661b72ba73f"
+}

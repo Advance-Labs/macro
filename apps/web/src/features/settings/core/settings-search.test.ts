@@ -31,6 +31,7 @@ describe('individual settings search', () => {
       tab: 'Calls',
       target: 'record-by-default',
     });
+    expect(search('one-on-one')[0]).toMatchObject({ tab: 'Calls' });
   });
   it('finds and targets a signature without knowing its page', () => {
     expect(search('signatre')[0]).toMatchObject({

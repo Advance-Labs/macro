@@ -7,6 +7,7 @@
 import type { CallKindsPatchExternalMeetings } from './callKindsPatchExternalMeetings';
 import type { CallKindsPatchHuddles } from './callKindsPatchHuddles';
 import type { CallKindsPatchInternalMeetings } from './callKindsPatchInternalMeetings';
+import type { CallKindsPatchOneOnOneMeetings } from './callKindsPatchOneOnOneMeetings';
 
 /**
  * A partial update to [`CallKinds`]. Omitted kinds keep their current value,
@@ -17,6 +18,8 @@ export interface CallKindsPatch {
   externalMeetings?: CallKindsPatchExternalMeetings;
   /** New value for calls started from a channel. */
   huddles?: CallKindsPatchHuddles;
-  /** New value for standalone calls attended only by teammates. */
+  /** New value for standalone calls with three or more people, all teammates. */
   internalMeetings?: CallKindsPatchInternalMeetings;
+  /** New value for standalone calls with only two people, both teammates. */
+  oneOnOneMeetings?: CallKindsPatchOneOnOneMeetings;
 }

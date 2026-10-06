@@ -6,6 +6,6 @@
  */
 
 /**
- * New value for standalone calls attended only by teammates.
+ * New value for standalone calls with three or more people, all teammates.
  */
 export type CallKindsPatchInternalMeetings = boolean | null;

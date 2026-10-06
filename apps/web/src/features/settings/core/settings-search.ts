@@ -118,13 +118,15 @@ const SETTINGS: Setting[] = [
     tab: 'Calls',
     title: 'Record by default',
     target: 'Record by default',
-    keywords: 'recording automatic huddles internal external meetings',
+    keywords:
+      'recording automatic huddles 1:1 one-on-one internal external meetings',
   },
   {
     tab: 'Calls',
     title: 'Team recording policy',
     target: 'Team recording policy',
-    keywords: 'block recording admin huddles internal external meetings',
+    keywords:
+      'block recording admin huddles 1:1 one-on-one internal external meetings',
   },
   {
     tab: 'Agents',

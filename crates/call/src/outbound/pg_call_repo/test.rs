@@ -66,7 +66,7 @@ pub(super) static USER_A: LazyLock<MacroUserIdStr<'static>> =
     LazyLock::new(|| MacroUserIdStr::parse_from_str("macro|user-a@test.com").unwrap());
 pub(super) static USER_B: LazyLock<MacroUserIdStr<'static>> =
     LazyLock::new(|| MacroUserIdStr::parse_from_str("macro|user-b@test.com").unwrap());
-static USER_C: LazyLock<MacroUserIdStr<'static>> =
+pub(super) static USER_C: LazyLock<MacroUserIdStr<'static>> =
     LazyLock::new(|| MacroUserIdStr::parse_from_str("macro|user-c@test.com").unwrap());
 static USER_D: LazyLock<MacroUserIdStr<'static>> =
     LazyLock::new(|| MacroUserIdStr::parse_from_str("macro|user-d@test.com").unwrap());
