@@ -839,6 +839,18 @@ pub async fn transcript_handler<S: CallService>(
 // Error mapping
 // ---------------------------------------------------------------------------
 
+/// Body of a `402 Payment Required` response: the user's plan does not pay
+/// for what they asked.
+#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct PaymentRequiredResponse {
+    /// User-facing explanation.
+    pub message: String,
+    /// Stable reason code, such as `phone_plan_required`,
+    /// `phone_minutes_exhausted`, `overage_limit_reached` or
+    /// `overage_payment_failed`.
+    pub code: String,
+}
+
 impl IntoResponse for CallError {
     fn into_response(self) -> axum::response::Response {
         let status_code = match &self {
@@ -850,12 +862,23 @@ impl IntoResponse for CallError {
             CallError::Forbidden(_) => StatusCode::FORBIDDEN,
             CallError::Conflict(_) => StatusCode::CONFLICT,
             CallError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            CallError::PaymentRequired { .. } => StatusCode::PAYMENT_REQUIRED,
             CallError::Internal(_) => {
                 tracing::error!(error=?self, "internal server error");
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
 
+        if let CallError::PaymentRequired { code, message } = &self {
+            return (
+                status_code,
+                Json(PaymentRequiredResponse {
+                    message: message.to_string(),
+                    code: code.to_string(),
+                }),
+            )
+                .into_response();
+        }
         let message = match &self {
             CallError::Internal(_) => "internal server error".to_string(),
             other => other.to_string(),

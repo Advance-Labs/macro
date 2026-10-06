@@ -51,6 +51,8 @@ pub struct ArchivedCall {
     pub has_recording: bool,
     /// Number of distinct participants over the call's lifetime.
     pub participant_count: usize,
+    /// The call's phone leg, for phone calls.
+    pub phone_leg: Option<super::phone::ArchivedPhoneLeg>,
 }
 
 /// The people known to have been on, or invited to, an archived call.
@@ -682,6 +684,15 @@ pub enum CallError {
     /// calling without a SIP trunk).
     #[error("{0}")]
     Unavailable(String),
+    /// The user's plan does not pay for this. `code` is a stable reason
+    /// clients can act on; `message` is shown to the user.
+    #[error("{message}")]
+    PaymentRequired {
+        /// Stable reason code, such as `phone_plan_required`.
+        code: &'static str,
+        /// User-facing explanation.
+        message: &'static str,
+    },
     /// An internal error occurred.
     #[error(transparent)]
     Internal(#[from] anyhow::Error),

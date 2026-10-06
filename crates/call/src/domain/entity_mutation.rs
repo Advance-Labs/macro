@@ -35,7 +35,9 @@ impl From<CallError> for EntityMutationErrorCode {
                 Self::forbidden(rootcause::report!(error))
             }
             error @ CallError::InvalidRequest(_) => Self::invalid(rootcause::report!(error)),
-            error @ CallError::Forbidden(_) => Self::forbidden(rootcause::report!(error)),
+            error @ (CallError::Forbidden(_) | CallError::PaymentRequired { .. }) => {
+                Self::forbidden(rootcause::report!(error))
+            }
             error @ (CallError::AlreadyInCall(_) | CallError::Conflict(_)) => {
                 Self::conflict(rootcause::report!(error))
             }

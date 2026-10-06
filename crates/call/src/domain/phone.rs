@@ -36,6 +36,31 @@ const EXTENSION_DTMF_PAUSE: &str = "wwww";
 /// Dialing them from a shared trunk is a classic toll-fraud vector.
 const PREMIUM_RATE_PREFIXES: [&str; 2] = ["1900", "1976"];
 
+/// When an archived call's phone leg was connected: the span its phone
+/// minutes are billed for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArchivedPhoneLeg {
+    /// When the leg was answered; `None` when it never connected.
+    pub answered_at: Option<DateTime<Utc>>,
+    /// When the leg ended.
+    pub ended_at: DateTime<Utc>,
+}
+
+impl ArchivedPhoneLeg {
+    /// Billable time on the phone network: answer to hang-up, at most
+    /// [`MAX_PHONE_CALL_DURATION`], rounded up to whole minutes as carriers
+    /// bill it. `None` when the leg never connected.
+    pub fn billable_duration(&self) -> Option<Duration> {
+        let connected = (self.ended_at - self.answered_at?).to_std().ok()?;
+        let seconds = connected.min(MAX_PHONE_CALL_DURATION).as_secs_f64();
+        if seconds <= 0.0 {
+            return None;
+        }
+        let minutes = (seconds / 60.0).ceil() as u64;
+        Some(Duration::from_secs(minutes * 60))
+    }
+}
+
 /// Which side placed a phone call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]

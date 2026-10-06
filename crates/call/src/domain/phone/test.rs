@@ -176,3 +176,27 @@ fn sip_call_statuses_parse_from_livekit_attributes() {
     assert_eq!("hangup".parse(), Ok(SipCallStatus::Hangup));
     assert!("connected".parse::<SipCallStatus>().is_err());
 }
+
+#[test]
+fn connected_time_bills_in_whole_minutes_up_to_the_longest_call() {
+    let answered_at = chrono::Utc::now();
+    let billed = |seconds: i64| {
+        ArchivedPhoneLeg {
+            answered_at: Some(answered_at),
+            ended_at: answered_at + chrono::Duration::seconds(seconds),
+        }
+        .billable_duration()
+        .map(|duration| duration.as_secs() / 60)
+    };
+    assert_eq!(billed(1), Some(1));
+    assert_eq!(billed(60), Some(1));
+    assert_eq!(billed(61), Some(2));
+    assert_eq!(billed(0), None);
+    assert_eq!(billed(-5), None);
+    assert_eq!(billed(10 * 3600), Some(4 * 60));
+    let unanswered = ArchivedPhoneLeg {
+        answered_at: None,
+        ended_at: answered_at,
+    };
+    assert_eq!(unanswered.billable_duration(), None);
+}

@@ -60,7 +60,8 @@ use super::models::{
 };
 use super::phone::PhoneDialingConfig;
 use super::ports::phone::{
-    NoOpPhoneCallRepository, NoOpPhoneContactDirectory, PhoneCallRepository, PhoneContactDirectory,
+    NoOpPhoneCallRepository, NoOpPhoneContactDirectory, PhoneBilling, PhoneCallRepository,
+    PhoneContactDirectory, PhoneUsage, UnmeteredPhoneBilling,
 };
 use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallService, CallSummarizer,
@@ -99,6 +100,7 @@ pub struct CallServiceImpl<
     phone_repo: Ph,
     phone_contacts: Pd,
     phone_dialing: Option<PhoneDialingConfig>,
+    phone_billing: Arc<dyn PhoneBilling>,
 }
 
 impl<
@@ -139,6 +141,7 @@ impl<
             phone_repo: NoOpPhoneCallRepository,
             phone_contacts: NoOpPhoneContactDirectory,
             phone_dialing: None,
+            phone_billing: Arc::new(UnmeteredPhoneBilling),
         }
     }
 }
@@ -209,6 +212,7 @@ impl<
             phone_repo: self.phone_repo,
             phone_contacts: self.phone_contacts,
             phone_dialing: self.phone_dialing,
+            phone_billing: self.phone_billing,
         }
     }
 
@@ -235,6 +239,7 @@ impl<
             phone_repo: self.phone_repo,
             phone_contacts: self.phone_contacts,
             phone_dialing: self.phone_dialing,
+            phone_billing: self.phone_billing,
         }
     }
 
@@ -261,6 +266,7 @@ impl<
             phone_repo: self.phone_repo,
             phone_contacts: self.phone_contacts,
             phone_dialing: self.phone_dialing,
+            phone_billing: self.phone_billing,
         }
     }
 
@@ -291,12 +297,21 @@ impl<
             phone_repo,
             phone_contacts,
             phone_dialing: self.phone_dialing,
+            phone_billing: self.phone_billing,
         }
     }
 
     /// Enable placing outbound phone calls through a SIP trunk.
     pub fn with_phone_dialing(mut self, config: PhoneDialingConfig) -> Self {
         self.phone_dialing = Some(config);
+        self
+    }
+
+    /// Charge for phone calls: calls are admitted against the owner's plan
+    /// and connected minutes are recorded when a call is archived. Without
+    /// it, phone calls are not metered.
+    pub fn with_phone_billing(mut self, billing: Arc<dyn PhoneBilling>) -> Self {
+        self.phone_billing = billing;
         self
     }
 
@@ -355,6 +370,7 @@ impl<
             }
         };
 
+        self.record_phone_minutes(archived, &created_by);
         self.publish_call_event(&CallMacroEvent::record_archived(
             CallRecordArchivedMetadata {
                 call_id: archived.call_id,
@@ -368,6 +384,18 @@ impl<
                 archive_reason,
             },
         ));
+    }
+
+    /// Bill the minutes an archived phone call was connected to its owner.
+    fn record_phone_minutes(&self, archived: &ArchivedCall, owner: &MacroUserIdStr<'static>) {
+        let Some(billed) = archived.phone_leg.and_then(|leg| leg.billable_duration()) else {
+            return;
+        };
+        self.phone_billing.record(PhoneUsage {
+            user: owner.clone(),
+            call_id: archived.call_id,
+            billed,
+        });
     }
 
     /// Send a call event to all channel members (best-effort).

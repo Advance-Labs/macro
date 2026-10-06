@@ -14,7 +14,7 @@ use macro_authorization::{
 };
 use model_error_response::ErrorResponse;
 
-use super::CallRouterState;
+use super::{CallRouterState, PaymentRequiredResponse};
 use crate::domain::models::{CallError, LeaveCallResponse};
 use crate::domain::phone::{
     AssignPhoneNumberRequest, DialPhoneRequest, IncomingPhoneCallsResponse, PhoneCallJoinResponse,
@@ -62,8 +62,9 @@ pub async fn settings<S: CallService, Svc: EntityAccessService, Auth: MacroAutho
         (status = 200, body = PhoneCallJoinResponse),
         (status = 400, body = ErrorResponse, description = "The number cannot or may not be dialed"),
         (status = 401, body = ErrorResponse),
+        (status = 402, body = PaymentRequiredResponse, description = "The caller's plan does not cover the call"),
         (status = 409, body = ErrorResponse, description = "The caller is still in another call"),
-        (status = 503, body = ErrorResponse, description = "Phone calling is not set up"),
+        (status = 503, body = ErrorResponse, description = "Phone calling is not set up, or the caller's plan could not be checked"),
     )
 )]
 #[tracing::instrument(err, skip_all)]

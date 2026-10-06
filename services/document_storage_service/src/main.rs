@@ -833,6 +833,33 @@ async fn run() -> anyhow::Result<()> {
             tracing::info!("outbound phone dialing disabled: LIVEKIT_SIP_OUTBOUND_TRUNK_ID not set")
         }
     }
+    // Phone minutes are usage billed: calls are admitted against the owner's
+    // phone plan and connected minutes are recorded when a call is archived.
+    let phone_billing_auth = config
+        .authentication_service_secret_key
+        .value()
+        .map(|key| -> anyhow::Result<_> {
+            Ok(Arc::new(
+                authentication_service_client::AuthServiceClient::new(
+                    key.to_string(),
+                    macro_service_urls::AuthServiceUrl::new()?.to_string(),
+                ),
+            ))
+        })
+        .transpose()?;
+    if phone_billing_auth.is_none() {
+        tracing::info!(
+            "phone minutes settle on the payer's next billing read: AUTHENTICATION_SERVICE_SECRET_KEY not set"
+        );
+    }
+    let call_service_builder =
+        call_service_builder.with_phone_billing(outbound::phone_billing::compose(
+            db.clone(),
+            config.enable_ai_usage_enforcement,
+            config.ai_pricing(),
+            config.enable_ai_usage_billing,
+            phone_billing_auth,
+        ));
     let call_service = Arc::new(call_service_builder);
 
     consumer_tracker.spawn({

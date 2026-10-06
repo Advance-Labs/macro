@@ -91,6 +91,11 @@ maybe_env_vars! {
     /// Comma-separated country calling codes users may dial, e.g. `1,44`.
     /// Defaults to `1` (North America).
     pub struct PhoneAllowedCountryCodes;
+    /// Internal API key for the authentication service, which owns Stripe.
+    /// With `ENABLE_AI_USAGE_BILLING`, phone minutes past a payer's
+    /// allowance are settled as soon as the call ends; without it they settle
+    /// on the payer's next AI request or Billing page view.
+    pub struct AuthenticationServiceSecretKey;
 }
 
 /// The configuration parameters for the application.
@@ -112,6 +117,9 @@ pub struct Config {
     /// Markup on paid AI usage past the allowance, as a whole percent of
     /// provider cost. Mandatory; set in Doppler.
     pub ai_usage_overage_markup_percent: ai_billing::OverageMarkupPercent,
+    /// Phone minutes included per phone seat per period. Mandatory; set in
+    /// Doppler.
+    pub ai_usage_phone_included_minutes: ai_billing::IncludedPhoneMinutes,
     pub database_url: DatabaseUrl,
     pub database_url_readonly: DatabaseUrlReadonly,
     pub document_storage_bucket: DocumentStorageBucket,
@@ -220,6 +228,11 @@ pub struct Config {
     pub livekit_sip_outbound_trunk_id: LivekitSipOutboundTrunkId,
     pub phone_default_caller_id: PhoneDefaultCallerId,
     pub phone_allowed_country_codes: PhoneAllowedCountryCodes,
+    pub authentication_service_secret_key: AuthenticationServiceSecretKey,
+    /// Default-off settlement of usage past allowances. When enabled, phone
+    /// minutes recorded here ask the authentication service to settle.
+    #[macro_config_default(ai_billing::AiUsageBilling::Disabled)]
+    pub enable_ai_usage_billing: ai_billing::AiUsageBilling,
 }
 
 impl Config {
@@ -233,15 +246,19 @@ impl Config {
                 max: self.ai_usage_max_included_allowance_cents,
             },
             self.ai_usage_overage_markup_percent,
+            self.ai_usage_phone_included_minutes,
         )
     }
 
     pub fn from_env() -> anyhow::Result<Self> {
         let enforcement = ai_usage::config::load_ai_usage_enforcement()
             .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let billing = ai_billing::config::load_ai_usage_billing()
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
         let mut config =
             macro_config::ConfigLoader::load::<Config>().context("failed to load config")?;
         config.enable_ai_usage_enforcement = enforcement;
+        config.enable_ai_usage_billing = billing;
         Ok(config)
     }
 

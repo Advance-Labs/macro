@@ -8,8 +8,8 @@ use sqlx::{PgConnection, Postgres, Transaction};
 
 use super::*;
 use crate::domain::phone::{
-    IncomingPhoneCall, NewPhoneCall, PhoneCallDirection, PhoneCallStatus, PhoneContact, PhoneLeg,
-    PhoneLegUpdate, PhoneNumber,
+    ArchivedPhoneLeg, IncomingPhoneCall, NewPhoneCall, PhoneCallDirection, PhoneCallStatus,
+    PhoneContact, PhoneLeg, PhoneLegUpdate, PhoneNumber,
 };
 use crate::domain::ports::phone::PhoneCallRepository;
 
@@ -166,7 +166,7 @@ pub(super) async fn archive_phone_leg(
     tx: &mut Transaction<'_, Postgres>,
     call_id: &Uuid,
     archived_at: DateTime<Utc>,
-) -> Result<(), CallError> {
+) -> Result<Option<ArchivedPhoneLeg>, CallError> {
     let Some(leg) = sqlx::query!(
         r#"
         SELECT direction, status, sip_call_id, created_at
@@ -178,7 +178,7 @@ pub(super) async fn archive_phone_leg(
     .fetch_optional(tx.as_mut())
     .await?
     else {
-        return Ok(());
+        return Ok(None);
     };
     let direction: PhoneCallDirection = leg.direction.parse().map_err(decode_error)?;
     let status = leg
@@ -186,7 +186,7 @@ pub(super) async fn archive_phone_leg(
         .parse::<PhoneCallStatus>()
         .map_err(decode_error)?
         .concluded(direction);
-    sqlx::query!(
+    let archived = sqlx::query!(
         r#"
         INSERT INTO call_record_phone_legs (
             call_record_id, direction, remote_number, local_number, participant_identity,
@@ -197,14 +197,18 @@ pub(super) async fn archive_phone_leg(
                COALESCE(ended_at, $3), created_at
         FROM call_phone_legs
         WHERE call_id = $1
+        RETURNING answered_at, ended_at
         "#,
         call_id,
         status.as_str(),
         archived_at,
     )
-    .execute(tx.as_mut())
+    .fetch_one(tx.as_mut())
     .await?;
-    Ok(())
+    Ok(Some(ArchivedPhoneLeg {
+        answered_at: archived.answered_at,
+        ended_at: archived.ended_at,
+    }))
 }
 
 /// Create a standalone call owned by `call.owner`, with its phone leg: an

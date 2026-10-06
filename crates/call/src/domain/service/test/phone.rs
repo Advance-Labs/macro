@@ -5,11 +5,14 @@ use std::time::Duration as StdDuration;
 use entity_access::domain::models::ViewAccessLevel;
 
 use crate::domain::phone::{
-    AssignPhoneNumberRequest, DialFailure, DialPhoneRequest, IncomingPhoneCall, NewPhoneCall,
-    PhoneCallDirection, PhoneCallStatus, PhoneContact, PhoneDialingConfig, PhoneLeg,
+    ArchivedPhoneLeg, AssignPhoneNumberRequest, DialFailure, DialPhoneRequest, IncomingPhoneCall,
+    NewPhoneCall, PhoneCallDirection, PhoneCallStatus, PhoneContact, PhoneDialingConfig, PhoneLeg,
     PhoneLegUpdate, PhoneNumber, SipDialAnswered, SipDialRequest, SipParticipant,
 };
-use crate::domain::ports::phone::{PhoneCallRepository, PhoneContactDirectory};
+use crate::domain::ports::phone::{
+    PhoneBilling, PhoneBillingError, PhoneBillingFuture, PhoneCallRepository,
+    PhoneContactDirectory, PhoneUsage, UnmeteredPhoneBilling,
+};
 
 const OWNER: &str = "owner@example.com";
 const CALLEE: &str = "+15552345678";
@@ -224,6 +227,53 @@ fn dialing() -> PhoneDialingConfig {
     }
 }
 
+/// Phone billing that answers every admission with `admit` and keeps the
+/// minutes it is asked to record.
+#[derive(Clone)]
+struct FakePhoneBilling {
+    admit: Result<(), PhoneBillingError>,
+    admitted: Arc<Mutex<Vec<String>>>,
+    recorded: Arc<Mutex<Vec<PhoneUsage>>>,
+}
+
+impl FakePhoneBilling {
+    fn new(admit: Result<(), PhoneBillingError>) -> Self {
+        Self {
+            admit,
+            admitted: Arc::default(),
+            recorded: Arc::default(),
+        }
+    }
+
+    fn admitted(&self) -> Vec<String> {
+        self.admitted.lock().unwrap().clone()
+    }
+
+    fn recorded(&self) -> Vec<PhoneUsage> {
+        self.recorded.lock().unwrap().clone()
+    }
+}
+
+impl PhoneBilling for FakePhoneBilling {
+    fn admit<'a>(
+        &'a self,
+        user: &'a MacroUserIdStr<'_>,
+    ) -> PhoneBillingFuture<'a, Result<(), PhoneBillingError>> {
+        self.admitted.lock().unwrap().push(user.to_string());
+        let admit = self.admit;
+        Box::pin(async move { admit })
+    }
+
+    fn record(&self, usage: PhoneUsage) {
+        self.recorded.lock().unwrap().push(usage);
+    }
+}
+
+const PLAN_REQUIRED: PhoneBillingError = PhoneBillingError::Denied {
+    code: "phone_plan_required",
+    message: "Phone calls need the Phone add-on or a Max plan.",
+};
+
 fn phone_service(
     repo: MockCallRepository,
     rtc: MockCallRtcClient,
@@ -231,6 +281,26 @@ fn phone_service(
     phone_repo: FakePhoneRepo,
     contacts: FakeContacts,
     dialing: Option<PhoneDialingConfig>,
+) -> impl CallService {
+    billed_phone_service(
+        repo,
+        rtc,
+        connection,
+        phone_repo,
+        contacts,
+        dialing,
+        Arc::new(UnmeteredPhoneBilling),
+    )
+}
+
+fn billed_phone_service(
+    repo: MockCallRepository,
+    rtc: MockCallRtcClient,
+    connection: RecordingConnectionService,
+    phone_repo: FakePhoneRepo,
+    contacts: FakeContacts,
+    dialing: Option<PhoneDialingConfig>,
+    billing: Arc<dyn PhoneBilling>,
 ) -> impl CallService {
     let service: BaseWebhookCallService<RecordingConnectionService> = CallServiceImpl::new(
         repo,
@@ -243,7 +313,8 @@ fn phone_service(
     );
     let service = service
         .with_event_broker(RecordingEventBroker::default())
-        .with_phone(phone_repo, contacts);
+        .with_phone(phone_repo, contacts)
+        .with_phone_billing(billing);
     match dialing {
         Some(config) => service.with_phone_dialing(config),
         None => service,
@@ -303,6 +374,16 @@ fn call_receipt(
 
 /// Expect the call to end: everyone is removed and the empty call archived.
 fn expect_call_ends(repo: &mut MockCallRepository, rtc: &mut MockCallRtcClient, call_id: Uuid) {
+    expect_phone_call_archived(repo, rtc, call_id, None);
+}
+
+/// Like [`expect_call_ends`], with the phone leg the archive reports.
+fn expect_phone_call_archived(
+    repo: &mut MockCallRepository,
+    rtc: &mut MockCallRtcClient,
+    call_id: Uuid,
+    phone_leg: Option<ArchivedPhoneLeg>,
+) {
     repo.expect_get_participants().returning(move |_| {
         Box::pin(async move {
             Ok(vec![CallParticipant {
@@ -330,6 +411,7 @@ fn expect_call_ends(repo: &mut MockCallRepository, rtc: &mut MockCallRtcClient, 
                     duration_ms: 1_000,
                     has_recording: false,
                     participant_count: 1,
+                    phone_leg,
                 }))
             })
         });
@@ -1106,4 +1188,161 @@ async fn numbers_can_be_assigned_and_released() {
         service.release_phone_number(number(OWNER_NUMBER)).await,
         Err(CallError::NotFound(_))
     ));
+}
+
+#[tokio::test]
+async fn dialing_needs_a_plan_that_pays_for_the_call() {
+    for (admit, payment_required) in [
+        (Err(PLAN_REQUIRED), true),
+        (Err(PhoneBillingError::Unavailable), false),
+    ] {
+        let billing = FakePhoneBilling::new(admit);
+        // Nothing is created, so neither the repository nor RTC is touched.
+        let service = billed_phone_service(
+            MockCallRepository::new(),
+            MockCallRtcClient::new(),
+            RecordingConnectionService::default(),
+            FakePhoneRepo::default(),
+            FakeContacts::default(),
+            Some(dialing()),
+            Arc::new(billing.clone()),
+        );
+        let error = service
+            .dial_phone(
+                owner(),
+                DialPhoneRequest {
+                    to: CALLEE.to_string(),
+                },
+            )
+            .await
+            .unwrap_err();
+        if payment_required {
+            assert!(
+                matches!(
+                    error,
+                    CallError::PaymentRequired {
+                        code: "phone_plan_required",
+                        ..
+                    }
+                ),
+                "{error:?}"
+            );
+        } else {
+            assert!(matches!(error, CallError::Unavailable(_)), "{error:?}");
+        }
+        assert_eq!(billing.admitted(), vec![owner().to_string()]);
+    }
+}
+
+#[tokio::test]
+async fn inbound_calls_ring_only_when_the_owner_can_pay_for_them() {
+    for (admit, rings) in [
+        (Err(PLAN_REQUIRED), false),
+        // A billing outage never drops a caller.
+        (Err(PhoneBillingError::Unavailable), true),
+        (Ok(()), true),
+    ] {
+        let mut repo = MockCallRepository::new();
+        repo.expect_get_call_by_room_name()
+            .returning(|_| Box::pin(async { Ok(None) }));
+        let mut rtc = sip_webhook(
+            "participant_joined",
+            INBOUND_ROOM,
+            inbound_sip(Some(CALLEE), Some(OWNER_NUMBER)),
+        );
+        if rings {
+            rtc.expect_dispatch_transcription_agent()
+                .returning(|_| Box::pin(async { Ok(()) }));
+            rtc.expect_delete_room().never();
+        } else {
+            rtc.expect_delete_room()
+                .times(1)
+                .withf(|room| room == INBOUND_ROOM)
+                .returning(|_| Box::pin(async { Ok(()) }));
+        }
+        let connection = RecordingConnectionService::default();
+        let phone_repo = FakePhoneRepo::default().with_number(OWNER_NUMBER, owner());
+        let billing = FakePhoneBilling::new(admit);
+        let service = billed_phone_service(
+            repo,
+            rtc,
+            connection.clone(),
+            phone_repo.clone(),
+            FakeContacts::default(),
+            None,
+            Arc::new(billing.clone()),
+        );
+
+        service
+            .process_webhook_event("body", "token")
+            .await
+            .unwrap();
+
+        assert_eq!(billing.admitted(), vec![owner().to_string()]);
+        assert_eq!(phone_repo.created().len(), usize::from(rings));
+        assert_eq!(connection.messages().len(), usize::from(rings));
+    }
+}
+
+#[tokio::test]
+async fn connected_minutes_are_billed_to_the_owner_when_the_call_is_archived() {
+    let answered_at = archived_event_started_at();
+    for (phone_leg, billed_minutes) in [
+        (
+            Some(ArchivedPhoneLeg {
+                answered_at: Some(answered_at),
+                ended_at: answered_at + chrono::Duration::seconds(61),
+            }),
+            Some(2),
+        ),
+        (
+            Some(ArchivedPhoneLeg {
+                answered_at: None,
+                ended_at: answered_at + chrono::Duration::seconds(30),
+            }),
+            None,
+        ),
+        (None, None),
+    ] {
+        let call_id = Uuid::now_v7();
+        let mut repo = MockCallRepository::new();
+        repo.expect_get_call_by_room_name().returning(move |room| {
+            let call = phone_call(call_id, room);
+            Box::pin(async move { Ok(Some(call)) })
+        });
+        let mut rtc = sip_webhook(
+            "participant_left",
+            "phone-room",
+            inbound_sip(Some(CALLEE), Some(OWNER_NUMBER)),
+        );
+        expect_phone_call_archived(&mut repo, &mut rtc, call_id, phone_leg);
+        let phone_repo = FakePhoneRepo::default().with_leg(
+            call_id,
+            leg(PhoneCallDirection::Outbound, PhoneCallStatus::Active),
+        );
+        let billing = FakePhoneBilling::new(Ok(()));
+        let service = billed_phone_service(
+            repo,
+            rtc,
+            RecordingConnectionService::default(),
+            phone_repo,
+            FakeContacts::default(),
+            None,
+            Arc::new(billing.clone()),
+        );
+        service
+            .process_webhook_event("body", "token")
+            .await
+            .unwrap();
+
+        let expected: Vec<_> = billed_minutes
+            .map(|minutes| PhoneUsage {
+                user: owner(),
+                call_id,
+                billed: StdDuration::from_secs(minutes * 60),
+            })
+            .into_iter()
+            .collect();
+        assert_eq!(billing.recorded(), expected);
+    }
 }

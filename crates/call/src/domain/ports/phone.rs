@@ -1,6 +1,8 @@
 //! Ports for phone calls.
 
 use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
 
 use macro_user_id::user_id::MacroUserIdStr;
 use uuid::Uuid;
@@ -187,4 +189,81 @@ impl PhoneContactDirectory for NoOpPhoneContactDirectory {
     ) -> Result<Option<PhoneContact>, rootcause::Report> {
         Ok(None)
     }
+}
+
+/// Why phone billing refused a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PhoneBillingError {
+    /// The user's plan does not pay for the call. `code` is a stable,
+    /// machine-readable reason clients can act on (for example
+    /// `phone_plan_required`); `message` is shown to the user.
+    #[error("{message}")]
+    Denied {
+        /// Stable reason code.
+        code: &'static str,
+        /// User-facing explanation.
+        message: &'static str,
+    },
+    /// The user's plan could not be checked.
+    #[error("phone billing is unavailable")]
+    Unavailable,
+}
+
+impl From<PhoneBillingError> for CallError {
+    fn from(error: PhoneBillingError) -> Self {
+        match error {
+            PhoneBillingError::Denied { code, message } => {
+                CallError::PaymentRequired { code, message }
+            }
+            PhoneBillingError::Unavailable => CallError::Unavailable(
+                "We couldn't check your phone plan. Try again in a moment.".to_string(),
+            ),
+        }
+    }
+}
+
+/// A future returned by [`PhoneBilling`]; boxed so the port can be shared as
+/// a trait object.
+pub type PhoneBillingFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Minutes on the phone network one call used, billed to the call's owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhoneUsage {
+    /// The user the call belongs to: the caller, or the owner of the number
+    /// that was called.
+    pub user: MacroUserIdStr<'static>,
+    /// The call the minutes were used on.
+    pub call_id: Uuid,
+    /// Billable time on the phone network, in whole minutes.
+    pub billed: Duration,
+}
+
+/// Pays for phone minutes: decides whether a user's plan covers another
+/// call, and records the minutes each connected call used.
+pub trait PhoneBilling: Send + Sync + 'static {
+    /// May `user` place or take another phone call?
+    fn admit<'a>(
+        &'a self,
+        user: &'a MacroUserIdStr<'_>,
+    ) -> PhoneBillingFuture<'a, Result<(), PhoneBillingError>>;
+
+    /// Record the minutes a finished call used. Best-effort and
+    /// non-blocking: failures are logged by the implementation.
+    fn record(&self, usage: PhoneUsage);
+}
+
+/// [`PhoneBilling`] for deployments that do not charge for phone calls:
+/// every call is admitted and no minutes are recorded.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnmeteredPhoneBilling;
+
+impl PhoneBilling for UnmeteredPhoneBilling {
+    fn admit<'a>(
+        &'a self,
+        _user: &'a MacroUserIdStr<'_>,
+    ) -> PhoneBillingFuture<'a, Result<(), PhoneBillingError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn record(&self, _usage: PhoneUsage) {}
 }

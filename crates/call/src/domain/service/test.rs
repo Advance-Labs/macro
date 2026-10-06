@@ -983,6 +983,7 @@ fn archived_call_for_event(
         duration_ms: 183_000,
         has_recording,
         participant_count,
+        phone_leg: None,
     }
 }
 

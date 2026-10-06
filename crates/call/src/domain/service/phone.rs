@@ -19,6 +19,7 @@ use crate::domain::phone::{
     PhoneSettingsResponse, SipDialAnswered, SipDialRequest, SipParticipant, extension_dtmf,
     outbound_participant_identity,
 };
+use crate::domain::ports::phone::PhoneBillingError;
 
 /// Websocket event telling a number's owner that a phone call is ringing.
 const PHONE_CALL_INCOMING_EVENT: &str = "phone_call_incoming";
@@ -71,6 +72,7 @@ where
         let dialable = DialablePhoneNumber::parse(&request.to)
             .map_err(|error| CallError::InvalidRequest(error.to_string()))?;
         dialing.permits(&dialable.number)?;
+        self.phone_billing.admit(&actor).await?;
 
         let caller_id = self
             .phone_repo
@@ -384,6 +386,22 @@ where
             self.reject_inbound_call(room_name).await;
             return Ok(());
         };
+
+        match self.phone_billing.admit(&owner).await {
+            Ok(()) => {}
+            Err(PhoneBillingError::Denied { code, .. }) => {
+                tracing::info!(
+                    code,
+                    "rejecting inbound phone call its owner's plan does not cover"
+                );
+                self.reject_inbound_call(room_name).await;
+                return Ok(());
+            }
+            // Never miss a call because billing could not be checked.
+            Err(PhoneBillingError::Unavailable) => {
+                tracing::warn!("phone billing unavailable; ringing the inbound call anyway");
+            }
+        }
 
         let contact = self.find_phone_contact(owner.copied(), caller).await;
         let call_id = Uuid::now_v7();
