@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CaptureData, CaptureResponses, CommentData, CommentResponses, CompleteData, CompleteErrors, CompleteResponses, ControlAgentSessionData, ControlAgentSessionErrors, ControlAgentSessionResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DisconnectData, DisconnectErrors, DisconnectResponses, DiscoverAgentCapabilitiesHandlerData, DiscoverAgentCapabilitiesHandlerErrors, DiscoverAgentCapabilitiesHandlerResponses, EditQueuedActionData, EditQueuedActionErrors, EditQueuedActionResponses, FileData, FileResponses, GetAgentSandboxSizeData, GetAgentSandboxSizeErrors, GetAgentSandboxSizeResponses, GetAgentSessionChangesData, GetAgentSessionChangesErrors, GetAgentSessionChangesPatchData, GetAgentSessionChangesPatchErrors, GetAgentSessionChangesPatchResponses, GetAgentSessionChangesResponses, GetAgentSessionData, GetAgentSessionErrors, GetAgentSessionLogData, GetAgentSessionLogErrors, GetAgentSessionLogResponses, GetAgentSessionPermissionsData, GetAgentSessionPermissionsErrors, GetAgentSessionPermissionsResponses, GetAgentSessionQueueData, GetAgentSessionQueueErrors, GetAgentSessionQueueResponses, GetAgentSessionResponses, LinkData, LinkResponses, ListAgentRepositoriesData, ListAgentRepositoriesErrors, ListAgentRepositoriesResponses, ListAgentRepositoryBranchesData, ListAgentRepositoryBranchesErrors, ListAgentRepositoryBranchesResponses, LoadAgentModelsHandlerData, LoadAgentModelsHandlerErrors, LoadAgentModelsHandlerResponses, PreviewAgentSessionsData, PreviewAgentSessionsErrors, PreviewAgentSessionsResponses, PutAgentSandboxSizeData, PutAgentSandboxSizeErrors, PutAgentSandboxSizeResponses, PutAgentSessionSandboxSizeData, PutAgentSessionSandboxSizeErrors, PutAgentSessionSandboxSizeResponses, RefreshAgentSessionChangesData, RefreshAgentSessionChangesErrors, RefreshAgentSessionChangesResponses, RemoveQueuedActionData, RemoveQueuedActionErrors, RemoveQueuedActionResponses, RenameAgentSessionData, RenameAgentSessionErrors, RenameAgentSessionResponses, ResolveData, ResolveResponses, SetAgentSessionArchivedData, SetAgentSessionArchivedErrors, SetAgentSessionArchivedResponses, StartData, StartErrors, StartResponses, StatusData, StatusErrors, StatusResponses, UpdateAgentSessionPermissionsData, UpdateAgentSessionPermissionsErrors, UpdateAgentSessionPermissionsResponses, ViewData, ViewResponses } from './types.gen';
+import type { AgentSessionsForPullRequestData, AgentSessionsForPullRequestErrors, AgentSessionsForPullRequestResponses, AnswerAgentSessionToolApprovalData, AnswerAgentSessionToolApprovalErrors, AnswerAgentSessionToolApprovalResponses, CaptureData, CaptureResponses, CommentData, CommentResponses, CompleteData, CompleteErrors, CompleteResponses, ControlAgentSessionData, ControlAgentSessionErrors, ControlAgentSessionResponses, CreateAgentSessionData, CreateAgentSessionErrors, CreateAgentSessionResponses, DeleteAgentSessionData, DeleteAgentSessionErrors, DeleteAgentSessionResponses, DisconnectData, DisconnectErrors, DisconnectResponses, DiscoverAgentCapabilitiesHandlerData, DiscoverAgentCapabilitiesHandlerErrors, DiscoverAgentCapabilitiesHandlerResponses, EditQueuedActionData, EditQueuedActionErrors, EditQueuedActionResponses, FileData, FileResponses, GetAgentSandboxSizeData, GetAgentSandboxSizeErrors, GetAgentSandboxSizeResponses, GetAgentSessionChangesData, GetAgentSessionChangesErrors, GetAgentSessionChangesPatchData, GetAgentSessionChangesPatchErrors, GetAgentSessionChangesPatchResponses, GetAgentSessionChangesResponses, GetAgentSessionData, GetAgentSessionErrors, GetAgentSessionLogData, GetAgentSessionLogErrors, GetAgentSessionLogResponses, GetAgentSessionPermissionsData, GetAgentSessionPermissionsErrors, GetAgentSessionPermissionsResponses, GetAgentSessionQueueData, GetAgentSessionQueueErrors, GetAgentSessionQueueResponses, GetAgentSessionResponses, LinkAgentSessionPullRequestData, LinkAgentSessionPullRequestErrors, LinkAgentSessionPullRequestResponses, LinkData, LinkResponses, ListAgentRepositoriesData, ListAgentRepositoriesErrors, ListAgentRepositoriesResponses, ListAgentRepositoryBranchesData, ListAgentRepositoryBranchesErrors, ListAgentRepositoryBranchesResponses, ListAgentSessionPullRequestsData, ListAgentSessionPullRequestsErrors, ListAgentSessionPullRequestsResponses, LoadAgentModelsHandlerData, LoadAgentModelsHandlerErrors, LoadAgentModelsHandlerResponses, PreviewAgentSessionsData, PreviewAgentSessionsErrors, PreviewAgentSessionsResponses, PutAgentSandboxSizeData, PutAgentSandboxSizeErrors, PutAgentSandboxSizeResponses, PutAgentSessionSandboxSizeData, PutAgentSessionSandboxSizeErrors, PutAgentSessionSandboxSizeResponses, RefreshAgentSessionChangesData, RefreshAgentSessionChangesErrors, RefreshAgentSessionChangesResponses, RemoveQueuedActionData, RemoveQueuedActionErrors, RemoveQueuedActionResponses, RenameAgentSessionData, RenameAgentSessionErrors, RenameAgentSessionResponses, ResolveData, ResolveResponses, SetAgentSessionArchivedData, SetAgentSessionArchivedErrors, SetAgentSessionArchivedResponses, StartData, StartErrors, StartResponses, StatusData, StatusErrors, StatusResponses, SteerQueuedActionData, SteerQueuedActionErrors, SteerQueuedActionResponses, UnlinkAgentSessionPullRequestData, UnlinkAgentSessionPullRequestErrors, UnlinkAgentSessionPullRequestResponses, UpdateAgentSessionPermissionsData, UpdateAgentSessionPermissionsErrors, UpdateAgentSessionPermissionsResponses, ViewData, ViewResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -142,6 +142,20 @@ export class Sdk extends HeyApiClient {
     public createAgentSession<ThrowOnError extends boolean = false>(options: Options<CreateAgentSessionData, ThrowOnError>): RequestResult<CreateAgentSessionResponses, CreateAgentSessionErrors, ThrowOnError> {
         return (options.client ?? this.client).post<CreateAgentSessionResponses, CreateAgentSessionErrors, ThrowOnError>({
             url: '/agent-sessions',
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+    }
+    
+    /**
+     * List the sessions associated with a pull request that the caller can view.
+     */
+    public agentSessionsForPullRequest<ThrowOnError extends boolean = false>(options: Options<AgentSessionsForPullRequestData, ThrowOnError>): RequestResult<AgentSessionsForPullRequestResponses, AgentSessionsForPullRequestErrors, ThrowOnError> {
+        return (options.client ?? this.client).post<AgentSessionsForPullRequestResponses, AgentSessionsForPullRequestErrors, ThrowOnError>({
+            url: '/agent-sessions/by-pull-request',
             ...options,
             headers: {
                 'Content-Type': 'application/json',
@@ -291,6 +305,35 @@ export class Sdk extends HeyApiClient {
     }
     
     /**
+     * Unlink a pull request a person linked to a session the caller can edit. The pull request
+     * the session's agent opened stays linked.
+     */
+    public unlinkAgentSessionPullRequest<ThrowOnError extends boolean = false>(options: Options<UnlinkAgentSessionPullRequestData, ThrowOnError>): RequestResult<UnlinkAgentSessionPullRequestResponses, UnlinkAgentSessionPullRequestErrors, ThrowOnError> {
+        return (options.client ?? this.client).delete<UnlinkAgentSessionPullRequestResponses, UnlinkAgentSessionPullRequestErrors, ThrowOnError>({ url: '/agent-sessions/{session_id}/pull-requests', ...options });
+    }
+    
+    /**
+     * List the pull requests associated with a session the caller can view.
+     */
+    public listAgentSessionPullRequests<ThrowOnError extends boolean = false>(options: Options<ListAgentSessionPullRequestsData, ThrowOnError>): RequestResult<ListAgentSessionPullRequestsResponses, ListAgentSessionPullRequestsErrors, ThrowOnError> {
+        return (options.client ?? this.client).get<ListAgentSessionPullRequestsResponses, ListAgentSessionPullRequestsErrors, ThrowOnError>({ url: '/agent-sessions/{session_id}/pull-requests', ...options });
+    }
+    
+    /**
+     * Link a pull request to a session the caller can edit.
+     */
+    public linkAgentSessionPullRequest<ThrowOnError extends boolean = false>(options: Options<LinkAgentSessionPullRequestData, ThrowOnError>): RequestResult<LinkAgentSessionPullRequestResponses, LinkAgentSessionPullRequestErrors, ThrowOnError> {
+        return (options.client ?? this.client).put<LinkAgentSessionPullRequestResponses, LinkAgentSessionPullRequestErrors, ThrowOnError>({
+            url: '/agent-sessions/{session_id}/pull-requests',
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+    }
+    
+    /**
      * The actions waiting to dispatch in this session, oldest first.
      */
     public getAgentSessionQueue<ThrowOnError extends boolean = false>(options: Options<GetAgentSessionQueueData, ThrowOnError>): RequestResult<GetAgentSessionQueueResponses, GetAgentSessionQueueErrors, ThrowOnError> {
@@ -317,6 +360,14 @@ export class Sdk extends HeyApiClient {
                 ...options.headers
             }
         });
+    }
+    
+    /**
+     * Run a queued action next. Moves it ahead of the rest of the queue and
+     * cancels the turn in flight, so this entry dispatches when that turn ends.
+     */
+    public steerQueuedAction<ThrowOnError extends boolean = false>(options: Options<SteerQueuedActionData, ThrowOnError>): RequestResult<SteerQueuedActionResponses, SteerQueuedActionErrors, ThrowOnError> {
+        return (options.client ?? this.client).post<SteerQueuedActionResponses, SteerQueuedActionErrors, ThrowOnError>({ url: '/agent-sessions/{session_id}/queue/{action_id}/steer', ...options });
     }
     
     public view<ThrowOnError extends boolean = false>(options: Options<ViewData, ThrowOnError>): RequestResult<ViewResponses, unknown, ThrowOnError> {
@@ -377,6 +428,22 @@ export class Sdk extends HeyApiClient {
     public putAgentSessionSandboxSize<ThrowOnError extends boolean = false>(options: Options<PutAgentSessionSandboxSizeData, ThrowOnError>): RequestResult<PutAgentSessionSandboxSizeResponses, PutAgentSessionSandboxSizeErrors, ThrowOnError> {
         return (options.client ?? this.client).put<PutAgentSessionSandboxSizeResponses, PutAgentSessionSandboxSizeErrors, ThrowOnError>({
             url: '/agent-sessions/{session_id}/sandbox-size',
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+    }
+    
+    /**
+     * Answer a tool call the agent made in a turn somebody other than the
+     * session's owner prompted. Approve and deny are the owner's; cancel is
+     * anyone's with edit access.
+     */
+    public answerAgentSessionToolApproval<ThrowOnError extends boolean = false>(options: Options<AnswerAgentSessionToolApprovalData, ThrowOnError>): RequestResult<AnswerAgentSessionToolApprovalResponses, AnswerAgentSessionToolApprovalErrors, ThrowOnError> {
+        return (options.client ?? this.client).post<AnswerAgentSessionToolApprovalResponses, AnswerAgentSessionToolApprovalErrors, ThrowOnError>({
+            url: '/agent-sessions/{session_id}/tool-approvals/{approval_id}',
             ...options,
             headers: {
                 'Content-Type': 'application/json',

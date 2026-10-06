@@ -1,4 +1,4 @@
-import type { LegacyReviewNote } from '@app/features/agent-changes/agent-changes';
+import type { LegacyReviewNote } from '@app/features/changes/agent-session-changes';
 import { type Accessor, createContext, useContext } from 'solid-js';
 import type { ReviewFile } from '../core/model';
 import type { ReviewData, ReviewSource } from '../core/source';

@@ -1,6 +1,6 @@
-import { createLegacyReviewState } from '@app/features/agent-changes/agent-changes';
 /** Production boundary: session authority and route state are injected into the reader. */
 import { isCoderHarness } from '@app/features/agents-view/core/agent-kind';
+import { createLegacyReviewState } from '@app/features/changes/agent-session-changes';
 import {
   createSearchParams,
   useOwnsSearchNamespace,
@@ -41,7 +41,7 @@ export function AgentReviewProvider(props: ParentProps) {
     else setLocal((current) => ({ ...current, ...patch }));
   };
   const legacy = createLegacyReviewState({
-    sessionId: session.sessionId,
+    scopeKey: session.sessionId,
     changeset: () => undefined,
   });
   const [navigation, setNavigation] = createSignal(0);

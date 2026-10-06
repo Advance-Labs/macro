@@ -133,7 +133,7 @@ function SessionContent(props: {
         active={panel.isPanelActive()}
         notificationSource={props.notificationSource}
       />
-      <SidePanel.Root defaultOpen={false} persistKey="agent">
+      <SidePanel.Root floating defaultOpen={false} persistKey="agent">
         <Topbar
           title={title()}
           titleContent={
@@ -227,7 +227,7 @@ function SessionContent(props: {
           <SidePanel.Toggle />
         </Topbar>
         <div class="relative min-h-0 min-w-0 flex-1">
-          <SidePanel.Layout headerToggle={false}>
+          <SidePanel.Layout headerToggle={false} floating>
             <AgentSidePanelSections />
             <section
               class="page pane size-full min-w-0"

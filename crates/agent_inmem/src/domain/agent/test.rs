@@ -74,7 +74,7 @@ async fn with_admission<Engine: TurnEngine, Out>(
     let session_id = AgentSessionId::new();
     store.insert(
         session_id,
-        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5".into()),
+        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5-5".into()),
     );
     let state = Arc::new(AgentState {
         session_id,
@@ -409,7 +409,7 @@ async fn new_session_advertises_the_engine_supported_models() {
 
     let selection = agent_fold::domain::model_selection::model_selection(&config_options)
         .expect("session/new should advertise a model select");
-    assert_eq!(selection.current, "anthropic/claude-sonnet-5");
+    assert_eq!(selection.current, "anthropic/claude-sonnet-5-5");
     assert_eq!(
         selection
             .options
@@ -417,7 +417,7 @@ async fn new_session_advertises_the_engine_supported_models() {
             .map(|model| (model.id.as_str(), model.name.as_str()))
             .collect::<Vec<_>>(),
         vec![
-            ("anthropic/claude-sonnet-5", "anthropic/claude-sonnet-5"),
+            ("anthropic/claude-sonnet-5-5", "anthropic/claude-sonnet-5-5"),
             ("other-model", "other-model")
         ]
     );
@@ -638,7 +638,7 @@ async fn turns_accumulate_history_and_send_the_model() {
 
     let requests = engine.requests();
     assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].model, "anthropic/claude-sonnet-5");
+    assert_eq!(requests[0].model, "anthropic/claude-sonnet-5-5");
     assert_eq!(requests[0].messages, vec!["first".to_owned()]);
     // The second turn carries the first turn's prompt and reply.
     assert_eq!(
@@ -867,7 +867,7 @@ async fn session_new_dials_the_advertised_servers_except_macros_own() {
     let session_id = AgentSessionId::new();
     store.insert(
         session_id,
-        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5".into()),
+        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5-5".into()),
     );
     let state = Arc::new(AgentState {
         session_id,
@@ -961,7 +961,7 @@ where
     let session_id = AgentSessionId::new();
     store.insert(
         session_id,
-        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5".into()),
+        crate::domain::session::SessionState::new("anthropic/claude-sonnet-5-5".into()),
     );
     let state = Arc::new(AgentState {
         session_id,
@@ -1462,6 +1462,48 @@ async fn a_silent_turn_with_no_question_out_is_stopped_by_the_idle_timeout() {
     );
 }
 
+/// An engine whose turn waits on a person for twice the idle timeout - the
+/// way a tool call held for the owner does - and then answers.
+struct OwnerWaitingEngine;
+
+impl TurnEngine for OwnerWaitingEngine {
+    fn supported_models(&self) -> &[&str] {
+        crate::testing::TEST_MODELS
+    }
+
+    fn run_turn(
+        &self,
+        request: TurnRequest,
+    ) -> tokio::sync::mpsc::Receiver<Result<StreamPart, agent::AgentError>> {
+        let (parts, receiver) = tokio::sync::mpsc::channel(1);
+        tokio::spawn(async move {
+            {
+                let _waiting = request.awaiting.begin();
+                tokio::time::sleep(TURN_IDLE_TIMEOUT * 2).await;
+            }
+            let _ = parts.send(Ok(StreamPart::Content("approved".into()))).await;
+        });
+        receiver
+    }
+}
+
+/// Waiting on the owner to approve a tool call is not the turn hanging.
+#[tokio::test(start_paused = true)]
+async fn a_turn_waiting_on_the_owner_outlasts_the_idle_timeout() {
+    let (notifications, _config_options, response) =
+        with_agent(Arc::new(OwnerWaitingEngine), async |connection, session| {
+            connection
+                .send_request(text_prompt(&session, "read my email"))
+                .block_task()
+                .await
+                .expect("the turn should complete")
+        })
+        .await;
+
+    assert_eq!(response.stop_reason, StopReason::EndTurn);
+    assert_eq!(spoken(&notifications), "approved");
+}
+
 #[tokio::test]
 async fn ask_without_form_support_explains_instead_of_asking() {
     let engine = Arc::new(ScriptedEngine::new(vec![]));
@@ -1544,7 +1586,7 @@ async fn effort_is_validated_and_model_changes_return_complete_options() {
             .send_request(SetSessionConfigOptionRequest::new(
                 session,
                 MODEL_CONFIG_ID,
-                "anthropic/claude-sonnet-5",
+                "anthropic/claude-sonnet-5-5",
             ))
             .block_task()
             .await

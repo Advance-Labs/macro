@@ -10,6 +10,37 @@
 Team channels are always discoverable to the team. Private channels can only be viewed or joined by invitation. A DM is a channel between two users.
 An external email can be selected as a channel participant. For an unregistered recipient, clicking `Add` sends an email invite.
 
+## Imported Slack history
+
+Import starts in **Settings → Team → Connections → Import from Slack**, not the
+channel composer. Only explicitly selected Slack IDs create work. Slack public
+channels become Team channels with automatic team joining off; private channels
+and group DMs become Private. Two-person DMs keep exactly their mapped pair and
+never gain the importing admin as a third participant. Existing names, roles,
+leavers and newer activity are preserved. Imported history keeps source dates and
+does not produce live message notifications, invitations or bot invocations.
+Unknown authors display their Slack name through the system bot. Attachments and
+attachment-only messages are not imported. Cancellation keeps committed history;
+repeating an archive deduplicates source messages rather than applying later edits.
+
+For verification, use synthetic local history with a root, replies and reactions.
+Search for an imported author name absent from the body. Verify the result for a
+participant and its absence for an unrelated viewer after indexing has caught up.
+Job completion means required search publication finished, not immediate index
+refresh. Test existing channel live activity is not moved backward.
+
+Hover and click imported external links, channel mentions, root-message and reply
+references in the actual message body. Check destination channel/message/root
+UUIDs and that the correct message is revealed, including offscreen replies.
+Forward references must work regardless of conversation processing order. Prior
+same-source imports can resolve without being selected again; unselected targets
+must not be auto-created. Unknown Slack domains remain external links. Missing,
+skipped, deleted and inaccessible targets retain safe source-only fallbacks, and
+another viewer must not gain access through a rendered mention. Code examples
+remain literal; source-controlled tags must not inject entities. Test live edits
+and deletion before deferred reconciliation: neither may be overwritten or revived.
+See the [rollout/recovery gates](../SLACK_ARCHIVE_IMPORT_RUNBOOK.md).
+
 ## Collapsed reply chains
 
 Collapsed threads show the first three complete message groups. Consecutive
@@ -182,8 +213,15 @@ The lower row shows either a full-width PR preview with available line diff coun
 one truncated line of agent output. Failure explanations replace that preview; tool
 commands and other secondary details stay inside the session. There are no tooltips.
 Click the card or **Open session** to read the full response or answer a question;
-click the PR to open its Macro split (GitHub until its entity has synced). Expanded
-session mentions retain their collapse control. The card never expands in place.
+click the PR to open its Macro split (GitHub until its entity has synced). While the
+synced PR is open, a green **Merge** button sits at the end of the PR row. It asks
+**Merge pull request?** first, showing the title and repository/PR number in the
+shared confirmation dialog (a bottom drawer on phones). **Cancel** returns to the
+chip; **Merge pull request** merges on GitHub with your own linked GitHub account,
+so GitHub's permissions and branch protections apply; a refusal shows
+GitHub's reason as a toast, and success flips the chip to merged without a reload.
+Merged and closed PRs show no Merge button. Expanded session mentions retain their
+collapse control. The card never expands in place.
 
 `@codex` and `@claude` are offered to every user before account setup. The built-in
 `@cursor` entry requires the `enable-cursor-agents` rollout flag (local override:
@@ -222,6 +260,8 @@ A late webhook does not require reloading the page.
 When the agent requests permission or input, the Magic Chip displays the waiting
 status for its anchored turn. Open the session to answer; editors and owners can
 respond there. The chip follows the agent's next activity after the answer.
+A tool call held for the owner's approval (a turn somebody other than the owner
+prompted) reads `Waiting for approval`; only the owner approves it, in the session.
 
 Coding agents use `macro_internal.set_pull_request` to register an existing or
 new GitHub PR with their session. Macro Internal MCP is hosted by the harness
@@ -266,6 +306,12 @@ bottom of the area carries the other decisions, refusal first: `Dismiss · Open 
 for a tool draft, `Decline · Submit · Open in session` (or `Open` for a URL) for a question.
 Only the session's owner can act; other viewers see the question read-only and the header
 names who is being waited on. Once answered, the area shows the agent's passage again.
+A prompt the agent read out of a channel or document thread opens no review card at all:
+the reply writes the whole email or calendar event into the thread and asks whether to go
+ahead, and a reply in that same thread approving it ("yes, send it" / "go ahead") is the
+confirmation - the agent then sends or creates directly (`SendConfirmedEmail`,
+`CreateConfirmedCalendarEvent`), with no session visit needed. Being asked to send or
+schedule something only produces the draft; nothing goes out before that approving reply.
 Images made with `GenerateImage` are saved to static file service. The bot embeds
 the returned URL as a Markdown image in its channel reply; generated images have
 no document mention or filename card.
@@ -446,6 +492,14 @@ including mentions and reactions, only after the split is opened or reused.
 Deferred navigation waits until the destination is applied; an unavailable split
 must leave unread state unchanged. Join-only channels remain
 blocked after hydration, including on mobile.
+
+With GraphQL caching enabled, a current-query cached Channels or DMs page
+(including an empty page) remains quiet on a response-free refresh failure.
+Hold or fail the refresh before local filtering finishes: cached rows must not
+flash **Couldn’t load conversations** while awaiting reconciliation. Changing
+filters or resetting the cache must not use older rows to hide a new-query error.
+Cache misses, HTTP/GraphQL failures, and failures to load an uncached continuation
+still show errors and retry controls; background refresh retries continue.
 
 Right-clicking a favorite opens the same menu as its channel's row in the
 sections below — `Mark Read`, `Unfavorite`, `Mute notifications`, `Copy Link`,
@@ -844,8 +898,15 @@ This action does not enable team auto-join. Check opening and reopening,
 switching options, keyboard recipient selection, external email chips,
 cancellation, and focus restoration before sending invites.
 
-Radio group at the top of the channel pane: `Messages` / `Attachments` / `Calls` / `Participants`,
-plus `Ask Macro` and `Call` buttons. The `Calls` tab lists recordings for that channel
+Bubble tabs sit in their own row below the channel header:
+`Messages` / `Attachments` / `Calls` / `Participants`.
+`Ask Macro`, `Invite`, and `Call` actions remain in the header. On narrow desktop
+panes, the tab row scrolls horizontally and keeps its text labels. Standalone
+mobile channels keep view selection in the title menu. The tab row consumes
+space above the active pane: in both a single channel and an adjacent channel
+split, the message composer stays fully visible at the bottom instead of being
+pushed down by the row. The `Calls` tab lists
+recordings for that channel
 (same rows as the Calls soup view, filtered to this channel). The live `Call` tab
 appears while a call is in progress. `Ask Macro` opens a new chat pane with the channel
 already @mentioned as context (see ai-chat.md). On mobile it lives in the channel title's
@@ -855,8 +916,9 @@ instead.
 In the Chat workspace — and wherever a channel opens inline inside another
 view's detail stack (a channel mention followed from the email view, say) — the
 conversation renders an inline detail whose top bar holds the channel avatar
-and name, the same tab strip, live viewer avatars, and the `Call` and
-`Ask Macro` buttons. In Chat an ellipsis follows the name and opens the same
+and name, live viewer avatars, and the `Call` and
+`Ask Macro` buttons, with the same bubble tab row below the top bar. In Chat an
+ellipsis follows the name and opens the same
 entity actions as right-clicking the conversation's rail row — `Open in new
 split`, `Rename`, `Favorite`/`Unfavorite`, `Snooze notifications…`, `Mute
 notifications`, `Remind me`, `Copy Link`, `Copy ID` — so a channel can be
@@ -875,14 +937,29 @@ Leaving from the channel's call controls switches to `Messages` immediately.
 Disconnect and server cleanup continue after that switch; slow or failed RTC
 teardown must not leave the channel showing the join screen.
 
+`Participants` tab keeps people and bots within the available page height, with
+separate scrolling lists and fixed search/invite controls. Team access appears
+between them when available. Search uses the shared
+input group; add, invite, and new-bot actions use neutral outline buttons.
+The bots section stays compact with few or no bots. Search by display name,
+email, or role and clear the search to restore the list; scrolling a long member
+list must leave the bots section and participant controls visible.
+
 `Participants` tab:
 - `Copy invite link`, participant search box.
-- Add: combobox `name@company.com` + `Add Participant` button.
-- Each row: `<name> Member|Owner` with a `Remove participant` button (owner shows
-  `Cannot remove participant`, disabled).
+- Add: combobox `Add participants by name or email` + `Add Participant` button.
+- Dividers frame the Add Participant controls, not the scrolling list. Each row shows the display name above the
+  email, both on a single truncated line without text tooltips, and a
+  title-cased role badge on the right. Click anywhere on the row or focus it and
+  press Enter to open the DM; Shift-click opens it in a new split.
+- The separate `Remove participant` button never opens the DM (owner and current
+  user show `Cannot remove participant`, disabled).
 - Team access: `Team channel` switch (disabled until you belong to a team).
-- Bots: `New bot`, `Search existing bots…` combobox, `Invite bot` — webhook-powered channel
+- Bots: `New bot`, `Search bots by name or handle` combobox, `Invite bot` — webhook-powered channel
   participants.
+- Bot rows match participant rows: name above a truncated handle/description,
+  a `Bot` badge, and a row link that opens the bot. Copy webhook and Remove are
+  separate actions that do not open the bot.
 
 ## Incoming call ringing
 
@@ -931,3 +1008,5 @@ Picture changes refresh other participants' open sessions, including after
 reconnecting.
 Members see the picture without editing controls. One-to-one direct messages
 continue to show the other person's user picture.
+
+When Databases is enabled, type `/database` in a channel message or thread reply and choose **Database** to insert a live question. Ask with Enter or the Ask button, then accept the answer before sending the message. Enter in the question box belongs to the question and must not send the channel draft. Recipients can read the live answer subject to their database access.
