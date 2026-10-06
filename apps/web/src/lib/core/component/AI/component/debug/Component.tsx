@@ -492,15 +492,15 @@ function ProviderFailureChat() {
   );
 }
 
-// Free: all models are shown but only Haiku is available, so there is no
-// accessible model on another provider — the first failure already shows the
-// outage message (no switch button).
+// Free: all models are shown but only Gemini Flash is available, so there is
+// no accessible model on another provider — the first failure already shows
+// the outage message (no switch button).
 function FreeProviderFailureChat() {
   return (
     <ProviderFailureDemo
-      label="Provider failure (free) - all shown, only Haiku available"
-      initialModel={Model.haiku45}
-      availableModels={[Model.haiku45]}
+      label="Provider failure (free) - all shown, only Gemini Flash available"
+      initialModel={Model.gemini38Flash}
+      availableModels={[Model.gemini38Flash]}
     />
   );
 }
