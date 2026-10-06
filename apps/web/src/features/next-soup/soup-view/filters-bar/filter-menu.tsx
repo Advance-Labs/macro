@@ -1,11 +1,11 @@
 import CaretRightIcon from '@phosphor/caret-right.svg';
 import CheckIcon from '@phosphor/check.svg';
+import { Key } from '@solid-primitives/keyed';
 import { cn, Dropdown } from '@ui';
 import {
   type Accessor,
   createEffect,
   createSignal,
-  Index,
   type JSX,
   onCleanup,
   Show,
@@ -116,10 +116,10 @@ export function FilterSubmenu<TId extends string>(props: {
           <Show
             when={props.selectionMode === 'single'}
             fallback={
-              // Indexed rather than keyed: callers rebuild their option arrays
-              // whenever an upstream query or flag settles, and disposing a row
-              // mid-press would swallow the selection.
-              <Index each={props.options}>
+              // Keyed by option id, not by reference: callers rebuild their
+              // option arrays whenever an upstream query or flag settles, and
+              // disposing a row mid-press would swallow the selection.
+              <Key each={props.options} by="id">
                 {(option) => (
                   <FilterOptionItem
                     label={option().label}
@@ -131,7 +131,7 @@ export function FilterSubmenu<TId extends string>(props: {
                     closeOnSelect={props.closeOnSelect}
                   />
                 )}
-              </Index>
+              </Key>
             }
           >
             <Dropdown.RadioGroup
@@ -143,7 +143,7 @@ export function FilterSubmenu<TId extends string>(props: {
                 if (option) props.onSelect(option.id);
               }}
             >
-              <Index each={props.options}>
+              <Key each={props.options} by="id">
                 {(option) => (
                   <Dropdown.RadioItem
                     value={option().id}
@@ -163,7 +163,7 @@ export function FilterSubmenu<TId extends string>(props: {
                     </Dropdown.ItemIndicator>
                   </Dropdown.RadioItem>
                 )}
-              </Index>
+              </Key>
             </Dropdown.RadioGroup>
           </Show>
         </Dropdown.Group>

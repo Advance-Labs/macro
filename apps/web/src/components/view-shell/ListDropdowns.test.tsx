@@ -307,6 +307,43 @@ it('keeps an option selectable when the group list is rebuilt mid-press', async 
   expect(open()).toBe(true);
 });
 
+it('ties each group row to its id rather than its position', async () => {
+  // Groups appear and disappear from the middle of the list, so a row reused
+  // positionally would carry one group's open submenu over to another.
+  const [withPriority, setWithPriority] = createSignal(false);
+  const groups = () => [
+    ...(withPriority()
+      ? [
+          {
+            id: 'priority',
+            label: 'Priority',
+            options: [{ id: 'high', label: 'High' }],
+          },
+        ]
+      : []),
+    {
+      id: 'people',
+      label: 'Assignee',
+      options: [{ id: 'alice', label: 'Alice' }],
+    },
+  ];
+  render(() => (
+    <ListFilterDropdown
+      label="Filter tasks"
+      open
+      groups={groups()}
+      isSelected={() => false}
+      onSelectionChange={() => {}}
+    />
+  ));
+  const assigneeRow = await screen.findByRole('menuitem', { name: 'Assignee' });
+
+  setWithPriority(true);
+
+  expect(screen.getByRole('menuitem', { name: 'Priority' })).toBeTruthy();
+  expect(screen.getByRole('menuitem', { name: 'Assignee' })).toBe(assigneeRow);
+});
+
 it('shows the applied filter count only while filters are active', () => {
   const [count, setCount] = createSignal(0);
   const { container } = render(() => <ListFilterCountBadge count={count()} />);

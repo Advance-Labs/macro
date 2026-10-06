@@ -6,8 +6,9 @@ import CheckIcon from '@phosphor/check.svg';
 import FilterIcon from '@phosphor/funnel-simple.svg';
 import SortIcon from '@phosphor/sort-ascending.svg';
 import GroupIcon from '@phosphor/stack.svg';
+import { Key } from '@solid-primitives/keyed';
 import { cn, Dropdown } from '@ui';
-import { batch, createSignal, For, Index, type JSX, Show } from 'solid-js';
+import { batch, createSignal, For, type JSX, Show } from 'solid-js';
 import { AiFilterInput, type AiFilterInputProps } from './AiFilterInput';
 
 export type ListControlOption<TId extends string> = {
@@ -254,12 +255,15 @@ export function ListFilterDropdown<
         </Show>
         <Dropdown.Group>
           {/*
-           * Indexed rather than keyed: callers derive their groups from
-           * queries and flags, so an equivalent-but-new array can arrive
-           * mid-interaction. Keying by reference would dispose the row and its
-           * open submenu portal instead of updating them in place.
+           * Keyed by group id, not by reference: callers derive their groups
+           * from queries and flags, so an equivalent-but-new array can arrive
+           * mid-interaction, and keying by reference would dispose the row and
+           * its open submenu portal instead of updating them in place. Id is
+           * still the right boundary — groups come and go from the middle of
+           * the list, and a row must not carry one group's open submenu or
+           * search text over to another.
            */}
-          <Index each={props.groups}>
+          <Key each={props.groups} by="id">
             {(group) => (
               <Show
                 when={group().searchPlaceholder}
@@ -314,7 +318,7 @@ export function ListFilterDropdown<
                 />
               </Show>
             )}
-          </Index>
+          </Key>
         </Dropdown.Group>
         <Show when={props.onClear}>
           {(onClear) => (
