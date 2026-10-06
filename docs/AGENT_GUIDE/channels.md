@@ -961,6 +961,20 @@ list must leave the bots section and participant controls visible.
   a `Bot` badge, and a row link that opens the bot. Copy webhook and Remove are
   separate actions that do not open the bot.
 
+On touch devices, this page uses `People` / `Bots` / `Settings` bubble tabs.
+Bots appears when bot management is enabled; Settings appears for channel owners
+and admins when team settings are available. People keeps search and the compact
+`Copy invite link` / `Add participants` buttons above a virtualized scrolling list.
+`Add participants` opens a bottom sheet; Bots has its own full-height list and an
+`Invite bot` sheet. Bots uses the same search toolbar and plain rows as People;
+`Search bots` filters existing bots by name, handle, or description, with compact
+`New bot` and `Invite bot` actions beside it. The fallback AI composer and New
+button are hidden throughout this page and return when leaving it. Both sheets use the standard mobile keyboard-aware layout and
+close after a successful add. Check switching tabs, closing/reopening both sheets,
+and scrolling a long participant list above the bottom dock, with and without the
+keyboard open. An invite-bot request from the channel menu opens the Bots tab and
+its invite sheet.
+
 ## Incoming call ringing
 
 For cross-tab ringing checks, sign the recipient into two tabs and start a call
