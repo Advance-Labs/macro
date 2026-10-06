@@ -1880,6 +1880,13 @@ highlight; deleting a placeable's discussion removes the placeable. An anchor bo
 to a legacy annotation thread that was never imported stays hidden rather than
 shown as a bare highlight.
 
+Attaching or mentioning a PDF in a channel message grants that channel Comment
+access, capped at the sender's own access; other documents still grant View, and
+an existing channel grant is kept. The share dialog's send-to-channel level
+defaults to Comment for a PDF. To verify, attach a PDF in a channel as its owner,
+then open it as another member: the toolbar shows the `Comment` tool, and a
+posted comment persists for the owner.
+
 ## Word (DOCX) editor
 
 When `enable-docx-editor` is on, uploaded `.docx` files open at
