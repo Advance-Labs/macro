@@ -1,25 +1,29 @@
 //! HTTP API for AI billing: the payer's position, overage settings, credit
-//! purchases, the plan catalog, and the internal settle hook.
+//! purchases, the plan catalog, and the internal settle and subscription-period
+//! hooks.
 
 use crate::domain::{
-    BillingError, BillingService, CREDIT_PACKS_CENTS, OVERAGE_LIMIT_MAX_CENTS,
-    OVERAGE_LIMIT_MIN_CENTS, PlanTier, UsageSnapshot,
+    AiPricing, BillingError, BillingService, CREDIT_PACKS_CENTS, OVERAGE_LIMIT_MAX_CENTS,
+    OVERAGE_LIMIT_MIN_CENTS, PaymentGateway, PlanTier, SubscriptionScope, UsageSnapshot,
 };
 use axum::{
     Json, Router,
-    extract::{FromRef, State},
+    extract::{FromRef, Query, State},
     http::{HeaderMap, StatusCode, Uri, header::ORIGIN},
     response::{IntoResponse, Response},
     routing::{get, patch, post},
 };
+use chrono::{DateTime, Utc};
 use macro_authorization::{
     InternalOnly, MacroAuthorizationExtractor, MacroAuthorizationService, MacroAuthorizationState,
     UserOrInternal,
 };
 use macro_user_id::user_id::MacroUserIdStr;
+use macro_uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::ToSchema;
+use teams::domain::model::SeatPlan;
+use utoipa::{IntoParams, ToSchema};
 
 /// Error response body.
 #[derive(Debug, Serialize, ToSchema)]
@@ -33,16 +37,20 @@ pub struct AiBillingErrorBody {
 pub struct PlanCatalogEntry {
     /// The tier.
     pub tier: PlanTier,
-    /// Monthly list price per seat, cents.
+    /// Monthly subscription price per seat, cents.
     pub monthly_price_cents: i64,
-    /// Included AI per seat per period, list-rate cents.
+    /// Included AI per seat per period, in cents at provider cost. For the
+    /// free plan this is its monthly hard cap.
     pub included_ai_cents_per_seat: i64,
+    /// Whether a new purchase or plan move may pick this plan today.
+    pub purchasable: bool,
 }
 
 /// The plan catalog and the knobs the billing UI offers.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PlanCatalogResponse {
-    /// Every plan, cheapest first.
+    /// Every plan, cheapest first. Clients read allowances from here rather
+    /// than hard-coding them; `purchasable` marks the plans a user can buy.
     pub plans: Vec<PlanCatalogEntry>,
     /// Credit packs a payer may buy, cents.
     pub credit_packs_cents: Vec<i64>,
@@ -163,40 +171,82 @@ pub struct SettleRequest {
     pub user_id: String,
 }
 
-/// Router state: the billing service plus the authorization state the
-/// extractors need.
-pub struct AiBillingRouterState<B, Auth> {
+/// Query for [`subscription_period_handler`].
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionPeriodQuery {
+    /// The payer's Stripe customer.
+    pub customer_id: String,
+    /// The team whose subscription to read. Absent for the personal subscription.
+    pub team_id: Option<Uuid>,
+}
+
+/// Response for [`subscription_period_handler`].
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SubscriptionPeriodResponse {
+    /// First instant of the period.
+    pub start: DateTime<Utc>,
+    /// First instant after the period.
+    pub end: DateTime<Utc>,
+}
+
+fn scope_from_query(team_id: Option<Uuid>) -> SubscriptionScope {
+    match team_id {
+        Some(team_id) => SubscriptionScope::Team { team_id },
+        None => SubscriptionScope::Personal,
+    }
+}
+
+/// Router state: the billing service, the payment gateway the internal
+/// subscription-period read uses, the configured pricing the catalog
+/// publishes, and the authorization state the extractors need.
+pub struct AiBillingRouterState<B, P, Auth> {
     /// The billing service.
     pub service: Arc<B>,
+    /// The payment gateway that answers subscription-period reads.
+    pub payments: Arc<P>,
+    /// The pricing the host composed the billing service with.
+    pub pricing: AiPricing,
     /// Authorization state for the request extractors.
     pub authorization_state: MacroAuthorizationState<Auth>,
 }
 
-impl<B, Auth> Clone for AiBillingRouterState<B, Auth> {
+impl<B, P, Auth> Clone for AiBillingRouterState<B, P, Auth> {
     fn clone(&self) -> Self {
         Self {
             service: self.service.clone(),
+            payments: self.payments.clone(),
+            pricing: self.pricing,
             authorization_state: self.authorization_state.clone(),
         }
     }
 }
 
-impl<B, Auth> FromRef<AiBillingRouterState<B, Auth>> for Arc<B> {
-    fn from_ref(state: &AiBillingRouterState<B, Auth>) -> Self {
+impl<B, P, Auth> FromRef<AiBillingRouterState<B, P, Auth>> for AiPricing {
+    fn from_ref(state: &AiBillingRouterState<B, P, Auth>) -> Self {
+        state.pricing
+    }
+}
+
+impl<B, P, Auth> FromRef<AiBillingRouterState<B, P, Auth>> for Arc<B> {
+    fn from_ref(state: &AiBillingRouterState<B, P, Auth>) -> Self {
         state.service.clone()
     }
 }
 
-impl<B, Auth> FromRef<AiBillingRouterState<B, Auth>> for MacroAuthorizationState<Auth> {
-    fn from_ref(state: &AiBillingRouterState<B, Auth>) -> Self {
+impl<B, P, Auth> FromRef<AiBillingRouterState<B, P, Auth>> for MacroAuthorizationState<Auth> {
+    fn from_ref(state: &AiBillingRouterState<B, P, Auth>) -> Self {
         state.authorization_state.clone()
     }
 }
 
 /// Build the AI billing router.
-pub fn ai_billing_router<B, Auth, S>(state: AiBillingRouterState<B, Auth>) -> Router<S>
+pub fn ai_billing_router<B, P, Auth, S>(state: AiBillingRouterState<B, P, Auth>) -> Router<S>
 where
     B: BillingService,
+    P: PaymentGateway,
     Auth: MacroAuthorizationService,
     S: Send + Sync + Clone + 'static,
 {
@@ -214,6 +264,10 @@ where
         .route(
             "/internal/ai-billing/settle",
             post(settle_handler::<B, Auth>),
+        )
+        .route(
+            "/internal/ai-billing/subscription-period",
+            get(subscription_period_handler::<B, P, Auth>),
         )
         .with_state(state)
 }
@@ -279,14 +333,17 @@ pub async fn get_summary_handler<B: BillingService, Auth: MacroAuthorizationServ
     ),
     tag = "ai_billing"
 )]
-pub async fn get_plans_handler() -> Json<PlanCatalogResponse> {
+pub async fn get_plans_handler(State(pricing): State<AiPricing>) -> Json<PlanCatalogResponse> {
     Json(PlanCatalogResponse {
         plans: [PlanTier::Free, PlanTier::Premium, PlanTier::Max]
             .into_iter()
             .map(|tier| PlanCatalogEntry {
                 tier,
                 monthly_price_cents: tier.monthly_price_cents(),
-                included_ai_cents_per_seat: tier.included_ai_cents_per_seat(),
+                included_ai_cents_per_seat: tier.included_ai_cents_per_seat(pricing),
+                purchasable: SeatPlan::PURCHASABLE
+                    .into_iter()
+                    .any(|plan| PlanTier::from(plan) == tier),
             })
             .collect(),
         credit_packs_cents: CREDIT_PACKS_CENTS.to_vec(),
@@ -414,53 +471,48 @@ pub async fn settle_handler<B: BillingService, Auth: MacroAuthorizationService>(
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::{ReturnUrlError, validate_return_url};
-
-    #[test]
-    fn return_urls_must_be_https_on_the_calling_origin() {
-        let origin = Some("https://macro.com");
-        assert_eq!(
-            validate_return_url("https://macro.com/app/settings/billing?x=1", origin),
-            Ok(())
-        );
-        // Without an Origin header any https URL without credentials passes.
-        assert_eq!(
-            validate_return_url("https://preview.macro.com/app", None),
-            Ok(())
-        );
-        assert_eq!(
-            validate_return_url("http://localhost:3000/app", Some("http://localhost:3000")),
-            Ok(())
-        );
-        assert_eq!(
-            validate_return_url("https://macro.com:443/app", origin),
-            Ok(())
-        );
-        assert_eq!(
-            validate_return_url("https://macro.com:8443/app", origin),
-            Err(ReturnUrlError::Origin)
-        );
-        assert_eq!(
-            validate_return_url("https://evil.example/app", origin),
-            Err(ReturnUrlError::Origin)
-        );
-        assert_eq!(
-            validate_return_url("http://macro.com/app", None),
-            Err(ReturnUrlError::Scheme)
-        );
-        assert_eq!(
-            validate_return_url("javascript:alert(1)", None),
-            Err(ReturnUrlError::Unparseable)
-        );
-        assert_eq!(
-            validate_return_url("/app/settings/billing", None),
-            Err(ReturnUrlError::Unparseable)
-        );
-        assert_eq!(
-            validate_return_url("https://user:pw@macro.com/app", None),
-            Err(ReturnUrlError::Credentials)
-        );
+/// The current period of a Stripe customer's non-canceled subscription in the
+/// personal or team scope, preferring an active or trialing one. Internal
+/// services only; the document cognition service reads it when a payer's stored
+/// period is missing or ended.
+#[utoipa::path(
+    get,
+    path = "/internal/ai-billing/subscription-period",
+    operation_id = "get_ai_billing_subscription_period",
+    params(SubscriptionPeriodQuery),
+    responses(
+        (status = 200, description = "Current subscription period", body = SubscriptionPeriodResponse),
+        (status = 204, description = "No non-canceled subscription in scope"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error", body = AiBillingErrorBody),
+    ),
+    tag = "ai_billing"
+)]
+#[tracing::instrument(skip(state, _internal))]
+pub async fn subscription_period_handler<B, P, Auth>(
+    State(state): State<AiBillingRouterState<B, P, Auth>>,
+    _internal: MacroAuthorizationExtractor<Auth, InternalOnly>,
+    Query(query): Query<SubscriptionPeriodQuery>,
+) -> Response
+where
+    B: BillingService,
+    P: PaymentGateway,
+    Auth: MacroAuthorizationService,
+{
+    match state
+        .payments
+        .subscription_period(&query.customer_id, scope_from_query(query.team_id))
+        .await
+    {
+        Ok(Some(period)) => Json(SubscriptionPeriodResponse {
+            start: period.start,
+            end: period.end,
+        })
+        .into_response(),
+        Ok(None) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => error_response(e),
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   source: vi.fn(),
   composeOptions: vi.fn<(options: EmailComposeContextOptions) => void>(),
 }));
+vi.mock('@property/tags', () => ({ InlineFetchedEntityTagsPill: () => null }));
 vi.mock('@queries/email/thread', () => ({ useThreadQuery: mocks.query }));
 vi.mock('@queries/email/draft-cache', () => ({
   clearSavedDraftThreadCache: mocks.clearDraft,
@@ -45,6 +46,9 @@ vi.mock('../email-message/rendering-adapter', () => ({
 }));
 vi.mock('../email-message/sender-icon-adapter', () => ({
   EmailSenderIcon: () => null,
+}));
+vi.mock('./calendar-invitation', () => ({
+  EmailCalendarInvitation: () => null,
 }));
 vi.mock('./thread-action-adapter', () => ({
   createThreadActionAdapter: vi.fn(),

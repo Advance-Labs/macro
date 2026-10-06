@@ -1,67 +1,12 @@
-import type { ChannelTabId } from '@channel/Channel/channel-tabs';
-import { ChannelAvatar } from '@channel/channel-avatar';
-import { CollapsibleHeaderItem } from '@components/app/split-layout/components/CollapsibleItem';
+import { ChannelTopIcon } from '@channel/components/ChannelTopIcon';
 import { HeaderIsland } from '@components/app/split-layout/components/HeaderIsland';
 import { SplitHeaderLeft } from '@components/app/split-layout/components/SplitHeader';
 import { SplitLabel } from '@components/app/split-layout/components/SplitLabel';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { useBlockId } from '@core/block';
-import type { TabItem } from '@core/component/Tabs';
-import { TabsInset } from '@core/component/TabsInset';
-import { UserIcon } from '@core/component/UserIcon';
 import { useChannelName } from '@core/context/channels';
-import { useUserId } from '@core/context/user';
-import { isTouchDevice } from '@core/mobile/isTouchDevice';
-import ChatTextIcon from '@phosphor/chat-text.svg';
-import PaperclipIcon from '@phosphor/paperclip.svg';
-import PhoneIcon from '@phosphor/phone.svg';
-import PhoneCallIcon from '@phosphor/phone-call.svg';
-import UsersIcon from '@phosphor/users.svg';
 import type { ChannelParticipant } from '@queries/channel/types';
-import { ChannelType } from '@service-storage/generated/schemas/channelType';
-import { type Component, type JSX, Show } from 'solid-js';
-
-export const CHANNEL_TAB_ICONS: Record<
-  ChannelTabId,
-  Component<JSX.SvgSVGAttributes<SVGSVGElement>>
-> = {
-  messages: ChatTextIcon,
-  attachments: PaperclipIcon,
-  calls: PhoneIcon,
-  participants: UsersIcon,
-  call: PhoneCallIcon,
-};
-
-type TopIconProps = {
-  channelId: string;
-  channelType: ChannelType;
-  participants: ChannelParticipant[];
-};
-
-function TopIcon(props: TopIconProps) {
-  const userId = useUserId();
-  const recipient = () => {
-    return props.participants.find((p) => p && p.user_id !== userId());
-  };
-
-  return (
-    <Show
-      when={props.channelType === ChannelType.direct_message && recipient()}
-      fallback={
-        <ChannelAvatar
-          channelId={props.channelId}
-          class="size-4 [&_img]:rounded-full"
-        />
-      }
-    >
-      {(recipient) => {
-        return (
-          <UserIcon id={recipient().user_id} isDeleted={false} size="sm" />
-        );
-      }}
-    </Show>
-  );
-}
+import type { ChannelType } from '@service-storage/generated/schemas/channelType';
 
 type TopProps = {
   channelType: ChannelType;
@@ -72,9 +17,6 @@ type TopProps = {
 
 type ChannelTopLeftProps = TopProps & {
   lockRename?: boolean;
-  tabs?: readonly TabItem[];
-  activeTab?: ChannelTabId;
-  onTabChange?: (value: ChannelTabId) => void;
 };
 
 export function ChannelTopLeft(props: ChannelTopLeftProps) {
@@ -85,22 +27,11 @@ export function ChannelTopLeft(props: ChannelTopLeftProps) {
     props.channelName ?? 'New Channel'
   );
 
-  const iconTabList = () =>
-    (props.tabs ?? []).map((tab) => {
-      const Icon = CHANNEL_TAB_ICONS[tab.value as ChannelTabId];
-      return {
-        value: tab.value,
-        label: Icon ? <Icon class="size-4 touch:size-6" /> : tab.label,
-      };
-    });
-
-  const hasTabsMenu = () => !!(props.tabs?.length && props.onTabChange);
-
   return (
     <SplitHeaderLeft>
       <HeaderIsland class="shrink">
         <div class="ph-no-capture z-split-header-content relative flex items-center gap-2 max-w-full h-full shrink min-w-15">
-          <TopIcon
+          <ChannelTopIcon
             channelId={props.channelId}
             channelType={props.channelType}
             participants={props.participants}
@@ -117,23 +48,6 @@ export function ChannelTopLeft(props: ChannelTopLeftProps) {
           />
         </div>
       </HeaderIsland>
-      {/* Mobile has no room for inline tabs; the title file menu carries the
-          tab links there instead (see NewChannelBlockAdapter). */}
-      <Show when={!isTouchDevice() && hasTabsMenu() && props.activeTab}>
-        <CollapsibleHeaderItem
-          id="channel-tabs"
-          priority={1}
-          containerClass="ph-no-capture min-w-0 shrink-0 h-full mx-2"
-        >
-          {(isCollapsed) => (
-            <TabsInset
-              list={isCollapsed() ? iconTabList() : [...(props.tabs ?? [])]}
-              value={props.activeTab}
-              onChange={(value) => props.onTabChange?.(value as ChannelTabId)}
-            />
-          )}
-        </CollapsibleHeaderItem>
-      </Show>
     </SplitHeaderLeft>
   );
 }

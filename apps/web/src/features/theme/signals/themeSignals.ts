@@ -11,6 +11,7 @@ import type {
   ThemeV1,
   ThemeV3,
 } from '../types/themeTypes';
+import { resolveThemeColors } from '../utils/resolvedThemeColors';
 import { normalizeThemeColorTokens } from '../utils/themeColorTokens';
 import {
   convertThemev0v1,
@@ -21,13 +22,9 @@ import { isThemeV2, isThemeV3 } from '../utils/themeValidation';
 
 export const [isThemeSaved, setIsThemeSaved] = createSignal<boolean>(true);
 
-export const [themeUpdate, setThemeUpdate] = createSignal<undefined>(
-  undefined,
-  { equals: () => false }
-);
-
+/** First-paint colors for index.html: page (`color`), panel, and ink. */
 export const [htmlColor, setHtmlColor] = makePersisted(
-  createSignal({ color: '' }),
+  createSignal<{ color: string; panel?: string; ink?: string }>({ color: '' }),
   { name: 'html-color-theme' }
 );
 
@@ -78,6 +75,16 @@ export const [themeColorTokens, setThemeColorTokens] =
 /** Intrinsic mode of the currently rendered theme. */
 export const [liveThemeMode, setLiveThemeMode] = createSignal<'light' | 'dark'>(
   'dark'
+);
+
+/** Shared concrete colors for integrations which cannot inherit CSS tokens. */
+export const resolvedThemeColors = createMemo(() =>
+  resolveThemeColors(themeColorTokens(), liveThemeMode())
+);
+
+/** Icons outside the app follow committed colors, not transient previews. */
+export const [committedThemeAccent, setCommittedThemeAccent] = createSignal(
+  'oklch(0.7 0.12 250deg)'
 );
 
 // Per-mode theme preferences, persisted to localStorage. The active one is

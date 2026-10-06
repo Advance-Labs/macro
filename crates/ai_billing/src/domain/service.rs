@@ -6,18 +6,32 @@ mod test;
 
 use super::ledger::{SettlementPolicy, build_snapshot, decide};
 use super::models::{
-    AllowanceDecision, BillingError, BillingPeriod, BillingSettings, CREDIT_PACKS_CENTS,
-    Entitlement, OVERAGE_CHARGE_THRESHOLD_CENTS, OVERAGE_LIMIT_MAX_CENTS, OVERAGE_LIMIT_MIN_CENTS,
-    OverageChargeStatus, PeriodAllowance, PlanTier, Result, SeatAllowance, SeatUsage,
+    AiUsageBilling, AllowanceDecision, AllowanceStore, BillingError, BillingPeriod,
+    BillingSettings, CREDIT_PACKS_CENTS, Entitlement, OVERAGE_CHARGE_THRESHOLD_CENTS,
+    OVERAGE_LIMIT_MAX_CENTS, OVERAGE_LIMIT_MIN_CENTS, OverageChargeStatus, PayerScope,
+    PeriodAllowance, PeriodLedger, Result, SeatAllowance, SeatUsage, SubscriptionScope,
     UsageSnapshot,
 };
+use super::period::{PeriodSync, SubscriptionPeriod};
 use super::ports::{
     BillingRepo, BillingService, CreditCheckoutRequest, EntitlementSource, OverageChargeRequest,
     PaymentGateway, PendingCharge, UsageReader,
 };
+use super::pricing::AiPricing;
+use ai_usage::AiUsageEnforcement;
 use chrono::{DateTime, Utc};
-use macro_user_id::user_id::MacroUserIdStr;
+use macro_user_id::{cowlike::CowLike, user_id::MacroUserIdStr};
 use macro_uuid::Uuid;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use teams::domain::open_seat_release::OpenSeatRelease;
+
+/// How long a payer whose subscription period read came back empty, failed,
+/// or did not contain `now` meters the fallback period before the next read.
+/// A miss stores nothing, so without this every AI request from that payer
+/// would read the provider again. One minute bounds that to one read per
+/// payer per process while Stripe rolls a period or a provider recovers.
+const PERIOD_MISS_BACKOFF: chrono::Duration = chrono::Duration::minutes(1);
 
 /// The billing service over its four ports.
 #[derive(Clone)]
@@ -26,17 +40,57 @@ pub struct BillingServiceImpl<E, U, R, P> {
     usage: U,
     repo: R,
     payments: P,
+    pricing: AiPricing,
+    enforcement: AiUsageEnforcement,
+    billing: AiUsageBilling,
+    period_sync: Option<Arc<dyn PeriodSync>>,
+    /// Payers whose last subscription period read missed, and until when the
+    /// read is not repeated. Shared by clones so every holder of this service
+    /// in a process backs off together.
+    period_misses: Arc<Mutex<HashMap<String, DateTime<Utc>>>>,
 }
 
 impl<E, U, R, P> BillingServiceImpl<E, U, R, P> {
-    /// Construct the service.
-    pub fn new(entitlements: E, usage: U, repo: R, payments: P) -> Self {
+    /// Construct over the four ports with the configured pricing, and with quota
+    /// enforcement and settlement both disabled. Production composition must
+    /// explicitly install each configured policy.
+    pub fn new(entitlements: E, usage: U, repo: R, payments: P, pricing: AiPricing) -> Self {
         Self {
             entitlements,
             usage,
             repo,
             payments,
+            pricing,
+            enforcement: AiUsageEnforcement::Disabled,
+            billing: AiUsageBilling::Disabled,
+            period_sync: None,
+            period_misses: Arc::default(),
         }
+    }
+
+    /// The pricing this service was composed with.
+    pub const fn pricing(&self) -> AiPricing {
+        self.pricing
+    }
+
+    /// Configure quota enforcement independently of settlement.
+    pub fn with_enforcement(mut self, enforcement: AiUsageEnforcement) -> Self {
+        self.enforcement = enforcement;
+        self
+    }
+
+    /// Configure settlement (credit consumption and overage collection) from
+    /// the host's `ENABLE_AI_USAGE_BILLING` policy, independently of admission.
+    pub fn with_billing(mut self, billing: AiUsageBilling) -> Self {
+        self.billing = billing;
+        self
+    }
+
+    /// Install verified renewal activation at the composition root only after the
+    /// producer and rollout gates pass. Absence never authorizes the new policy.
+    pub fn with_period_sync(mut self, period_sync: Arc<dyn PeriodSync>) -> Self {
+        self.period_sync = Some(period_sync);
+        self
     }
 }
 
@@ -55,11 +109,29 @@ fn usage_for(user: &MacroUserIdStr<'_>, usage: &[SeatUsage]) -> i64 {
         .unwrap_or(0)
 }
 
-fn chargeable_usage_cents(seats: &[SeatAllowance], usage: &[SeatUsage]) -> i64 {
+/// Cost cents of usage beyond each seat's own allowance, summed for the payer.
+fn chargeable_cost_cents(seats: &[SeatAllowance], usage: &[SeatUsage]) -> i64 {
     seats
         .iter()
         .map(|seat| (usage_for(&seat.user, usage) - seat.included_cents).max(0))
         .sum()
+}
+
+fn same_seat_pairs(left: &[SeatAllowance], right: &[SeatAllowance]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut left_pairs: Vec<(&str, i64)> = left
+        .iter()
+        .map(|seat| (seat.user.as_ref(), seat.included_cents))
+        .collect();
+    let mut right_pairs: Vec<(&str, i64)> = right
+        .iter()
+        .map(|seat| (seat.user.as_ref(), seat.included_cents))
+        .collect();
+    left_pairs.sort_unstable();
+    right_pairs.sort_unstable();
+    left_pairs == right_pairs
 }
 
 impl<E, U, R, P> BillingServiceImpl<E, U, R, P>
@@ -70,26 +142,199 @@ where
     P: PaymentGateway,
 {
     async fn position(&self, user: &MacroUserIdStr<'_>, now: DateTime<Utc>) -> Result<Position> {
-        let entitlement = self.entitlements.entitlement(user).await?;
-        let settings = self.repo.settings(&entitlement.payer).await?;
-        let period = BillingPeriod::current(settings.period_anchor, now);
-        // Freeze the open period's allowance so a later plan or seat change
-        // cannot rewrite it after the period closes. Mid-period changes
-        // refresh this row while the period is still current.
-        if entitlement.tier.is_paid() && !entitlement.unlimited {
-            self.repo
-                .remember_period_allowance(
-                    &entitlement.payer,
-                    period.start,
-                    &entitlement.seat_allowances(),
-                )
-                .await?;
+        let first = self.entitlements.entitlement(user).await?;
+        let settings = self.repo.settings(&first.payer).await?;
+        let period = self.usage_period(&first, settings.period_anchor, now).await;
+        if !first.is_metered() {
+            return Ok(Position {
+                entitlement: first,
+                settings,
+                period,
+            });
         }
-        Ok(Position {
-            entitlement,
-            settings,
-            period,
-        })
+        let Some(open) = period.open_start(now) else {
+            return Ok(Position {
+                entitlement: first,
+                settings,
+                period,
+            });
+        };
+        let stored = self
+            .repo
+            .period_allowance(&first.payer, open.start())
+            .await?;
+        if stored.as_ref().is_some_and(|allowance| {
+            same_seat_pairs(&allowance.seats, &first.seat_allowances(self.pricing))
+        }) {
+            return Ok(Position {
+                entitlement: first,
+                settings,
+                period,
+            });
+        }
+
+        let entitlement = match &first.scope {
+            PayerScope::Personal => first.clone(),
+            PayerScope::TeamOwner { .. } | PayerScope::TeamMember { .. } => {
+                self.entitlements.entitlement(user).await?
+            }
+        };
+        if entitlement.payer.as_ref() != first.payer.as_ref() {
+            // `settings.seat_generation` was read for `first.payer`.
+            let settings = self.repo.settings(&entitlement.payer).await?;
+            let period = self
+                .usage_period(&entitlement, settings.period_anchor, now)
+                .await;
+            return Ok(Position {
+                entitlement,
+                settings,
+                period,
+            });
+        }
+        if !entitlement.is_metered() {
+            return Ok(Position {
+                entitlement,
+                settings,
+                period,
+            });
+        }
+
+        // A conflict means a release already wrote the row. The next observation refreshes.
+        match self
+            .repo
+            .store_open_allowance(
+                &entitlement.payer,
+                open,
+                &entitlement.seat_allowances(self.pricing),
+                settings.seat_generation,
+            )
+            .await?
+        {
+            AllowanceStore::Stored | AllowanceStore::Conflict => Ok(Position {
+                entitlement,
+                settings,
+                period,
+            }),
+        }
+    }
+
+    async fn usage_period(
+        &self,
+        entitlement: &Entitlement,
+        anchor: Option<(DateTime<Utc>, DateTime<Utc>)>,
+        now: DateTime<Utc>,
+    ) -> BillingPeriod {
+        if !entitlement.tier.is_paid() {
+            // The free cap is monthly. A Stripe anchor left behind by a lapsed
+            // subscription says nothing about a free user's period.
+            return BillingPeriod::calendar_month(now);
+        }
+        if let Some(period) = BillingPeriod::covering(anchor, now) {
+            return period;
+        }
+        if !entitlement.is_metered() {
+            return BillingPeriod::current(anchor, now);
+        }
+        let payer = &entitlement.payer;
+        if self.period_read_missed_recently(payer, now) {
+            tracing::debug!(
+                "subscription period read missed recently; metering the fallback period"
+            );
+            return BillingPeriod::current(anchor, now);
+        }
+        let read = match self.entitlements.stripe_customer_id(payer).await {
+            Ok(Some(customer_id)) => {
+                self.payments
+                    .subscription_period(&customer_id, SubscriptionScope::from(&entitlement.scope))
+                    .await
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(e),
+        };
+        match read {
+            Ok(Some(period)) => {
+                let Some(adopted) = period.adopted(anchor, now) else {
+                    tracing::warn!(
+                        period_start = %period.start,
+                        period_end = %period.end,
+                        "subscription period past the stored anchor does not contain now; metering the fallback period"
+                    );
+                    self.note_period_miss(payer, now);
+                    return BillingPeriod::current(anchor, now);
+                };
+                let _ = self
+                    .repo
+                    .set_period(payer, adopted.start, adopted.end)
+                    .await
+                    .inspect_err(
+                        |e| tracing::warn!(error = ?e, "storing the subscription period failed"),
+                    );
+                adopted
+            }
+            Ok(None) => {
+                tracing::debug!("no subscription period to read; metering the fallback period");
+                self.note_period_miss(payer, now);
+                BillingPeriod::current(anchor, now)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = ?e,
+                    "reading the subscription period failed; metering the fallback period"
+                );
+                self.note_period_miss(payer, now);
+                BillingPeriod::current(anchor, now)
+            }
+        }
+    }
+
+    fn period_read_missed_recently(&self, payer: &MacroUserIdStr<'_>, now: DateTime<Utc>) -> bool {
+        self.period_misses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(payer.as_ref())
+            .is_some_and(|until| now < *until)
+    }
+
+    fn note_period_miss(&self, payer: &MacroUserIdStr<'_>, now: DateTime<Utc>) {
+        let mut misses = self
+            .period_misses
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        misses.retain(|_, until| now < *until);
+        misses.insert(payer.as_ref().to_string(), now + PERIOD_MISS_BACKOFF);
+    }
+
+    async fn release_at(
+        &self,
+        team_id: Uuid,
+        member: &MacroUserIdStr<'_>,
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        let Some(payer) = self.entitlements.team_payer(team_id).await? else {
+            return Ok(());
+        };
+        if payer.as_ref() == member.as_ref() {
+            return Ok(());
+        }
+        let settings = self.repo.settings(&payer).await?;
+        let anchor = settings.period_anchor;
+        let period = match BillingPeriod::covering(anchor, now) {
+            Some(period) => period,
+            None => match self.entitlements.entitlement(&payer).await {
+                Ok(entitlement) => self.usage_period(&entitlement, anchor, now).await,
+                Err(e) => {
+                    tracing::warn!(
+                        error = ?e,
+                        "reading the payer entitlement failed; releasing in the fallback period"
+                    );
+                    BillingPeriod::current(anchor, now)
+                }
+            },
+        };
+        let Some(open) = period.open_start(now) else {
+            return Ok(());
+        };
+        self.repo.release_open_seat(&payer, open, member).await
     }
 
     async fn snapshot_at(
@@ -102,25 +347,37 @@ where
             settings,
             period,
         } = position;
-        let (used_cents, chargeable_cents, ledger, credit_balance_cents) =
+        let (used_cents, chargeable_customer_cents, ledger, credit_balance_cents) =
             if entitlement.tier.is_paid() {
-                let seats = entitlement.seat_allowances();
+                let seats = entitlement.seat_allowances(self.pricing);
                 let users: Vec<_> = seats.iter().map(|seat| seat.user.clone()).collect();
-                let usage = self
-                    .usage
-                    .list_rate_usage_cents_by_user(&users, *period)
+                let usage = self.usage.usage_cost_cents_by_user(&users, *period).await?;
+                let seats = self
+                    .repo
+                    .legacy_seats(&entitlement.payer, *period, seats)
                     .await?;
-                let used = usage_for(user, &usage);
-                let chargeable = chargeable_usage_cents(&seats, &usage);
+                let used = if seats.iter().any(|seat| seat.user.as_ref() == user.as_ref()) {
+                    usage_for(user, &usage)
+                } else {
+                    0
+                };
+                let chargeable = self
+                    .pricing
+                    .extra_customer_cents(chargeable_cost_cents(&seats, &usage));
                 let ledger = self
                     .repo
                     .period_ledger(&entitlement.payer, period.start)
                     .await?;
                 let balance = self.repo.credit_balance_cents(&entitlement.payer).await?;
                 (used, chargeable, ledger, balance)
-            } else {
-                // Free users are not metered here; skip the ledger reads.
+            } else if entitlement.unlimited {
                 Default::default()
+            } else {
+                // Free users are hard-capped at their own allowance: only their
+                // usage matters, and there is no ledger, credit, or overage to read.
+                let users = [user.clone().into_owned()];
+                let usage = self.usage.usage_cost_cents_by_user(&users, *period).await?;
+                (usage_for(user, &usage), 0, PeriodLedger::default(), 0)
             };
         Ok(build_snapshot(
             user,
@@ -128,9 +385,10 @@ where
             settings,
             *period,
             used_cents,
-            chargeable_cents,
+            chargeable_customer_cents,
             ledger,
             credit_balance_cents,
+            self.pricing,
         ))
     }
 
@@ -160,7 +418,7 @@ where
                 }
             }
         }
-        Ok(entitlement.seat_allowances())
+        Ok(entitlement.seat_allowances(self.pricing))
     }
 
     /// Settle one period for a payer: book uncovered usage from credits, then
@@ -174,21 +432,28 @@ where
     ) -> Result<()> {
         let seats = self.allowance_for_period(entitlement, period, now).await?;
         let users: Vec<_> = seats.iter().map(|seat| seat.user.clone()).collect();
-        let usage = self
-            .usage
-            .list_rate_usage_cents_by_user(&users, period)
+        let usage = self.usage.usage_cost_cents_by_user(&users, period).await?;
+        // Read policy AFTER analytics. V1 execution requires a committed binding,
+        // so any V1 analytics just observed must now be excluded. Filtering before
+        // the usage read would race renewal activation and could double bill.
+        let seats = self
+            .repo
+            .legacy_seats(&entitlement.payer, period, seats)
             .await?;
-        let chargeable_cents = chargeable_usage_cents(&seats, &usage);
-        if chargeable_cents == 0 {
+        let chargeable_cost = chargeable_cost_cents(&seats, &usage);
+        if chargeable_cost == 0 {
             return Ok(());
         }
+        // Mark up the cumulative total, never an increment: the repository
+        // books the difference from what earlier settlements already covered.
+        let chargeable_customer_cents = self.pricing.extra_customer_cents(chargeable_cost);
 
         let outcome = self
             .repo
             .apply_settlement(
                 &entitlement.payer,
                 period.start,
-                chargeable_cents,
+                chargeable_customer_cents,
                 SettlementPolicy {
                     // The repo reads the live overage settings under its lock;
                     // these two are the caller's contribution.
@@ -225,6 +490,7 @@ where
         charge: PendingCharge,
     ) -> Result<()> {
         let payer = &entitlement.payer;
+        let scope = SubscriptionScope::from(&entitlement.scope);
         let customer_id = match self.entitlements.stripe_customer_id(payer).await {
             Ok(Some(customer_id)) => customer_id,
             Ok(None) => {
@@ -255,6 +521,7 @@ where
                         charge_id: charge.id,
                         amount_cents: charge.amount_cents,
                         description,
+                        scope,
                     })
                     .await
                 {
@@ -279,7 +546,7 @@ where
 
         match self
             .payments
-            .pay_overage_invoice(charge.id, &invoice_id)
+            .pay_overage_invoice(charge.id, &invoice_id, scope)
             .await
         {
             Ok(true) => {
@@ -336,6 +603,21 @@ where
     }
 }
 
+impl<E, U, R, P> OpenSeatRelease for BillingServiceImpl<E, U, R, P>
+where
+    E: EntitlementSource + Clone,
+    U: UsageReader + Clone,
+    R: BillingRepo + Clone,
+    P: PaymentGateway + Clone,
+{
+    type Err = BillingError;
+
+    #[tracing::instrument(skip(self), err)]
+    async fn release(&self, team_id: Uuid, member: &MacroUserIdStr<'_>) -> Result<()> {
+        self.release_at(team_id, member, Utc::now()).await
+    }
+}
+
 impl<E, U, R, P> BillingService for BillingServiceImpl<E, U, R, P>
 where
     E: EntitlementSource,
@@ -345,8 +627,11 @@ where
 {
     #[tracing::instrument(skip(self), err)]
     async fn check_allowance(&self, user: &MacroUserIdStr<'_>) -> Result<AllowanceDecision> {
+        if !self.enforcement.is_enabled() {
+            return Ok(AllowanceDecision::Allow);
+        }
         let position = self.position(user, Utc::now()).await?;
-        if position.entitlement.unlimited || position.entitlement.tier == PlanTier::Free {
+        if position.entitlement.unlimited {
             return Ok(AllowanceDecision::Allow);
         }
         let snapshot = self.snapshot_at(user, &position).await?;
@@ -356,14 +641,23 @@ where
     #[tracing::instrument(skip(self), err)]
     async fn snapshot(&self, user: &MacroUserIdStr<'_>) -> Result<UsageSnapshot> {
         let position = self.position(user, Utc::now()).await?;
-        self.snapshot_at(user, &position).await
+        let mut snapshot = self.snapshot_at(user, &position).await?;
+        // Keep the summary consistent with the configured allowance gate.
+        if !self.enforcement.is_enabled() {
+            snapshot.blocked_reason = None;
+        }
+        Ok(snapshot)
     }
 
     #[tracing::instrument(skip(self), err)]
     async fn settle(&self, user: &MacroUserIdStr<'_>) -> Result<()> {
+        // Guard every caller: summary reads, settings, purchases, and internal settlement.
+        if !self.billing.is_enabled() {
+            return Ok(());
+        }
         let now = Utc::now();
         let position = self.position(user, now).await?;
-        if position.entitlement.unlimited || !position.entitlement.tier.is_paid() {
+        if !position.entitlement.is_metered() {
             return Ok(());
         }
         // The previous period first, so a tail that ran past the boundary is
@@ -462,9 +756,21 @@ where
         payer: &MacroUserIdStr<'_>,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
+        verified: Option<SubscriptionPeriod>,
     ) -> Result<()> {
         if start >= end {
             tracing::warn!("ignoring inverted subscription period");
+            return Ok(());
+        }
+        if let Some(facts) = verified {
+            if facts.period != (BillingPeriod { start, end }) {
+                tracing::warn!("ignoring mismatched verified subscription period");
+                return Ok(());
+            }
+            if let Some(sync) = &self.period_sync {
+                sync.sync(payer.clone().into_owned(), facts).await?;
+            }
+            // Item-level policy periods do not change the legacy payer anchor.
             return Ok(());
         }
         self.repo.set_period(payer, start, end).await
