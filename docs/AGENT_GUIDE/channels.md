@@ -469,8 +469,14 @@ seen without moving the conversation. No notification read marking runs
 from an abbreviated list result, even if that result is empty. Access failures
 show **Conversation unavailable** and stay hidden during retry until access is
 confirmed. A route without cached channel metadata shows **Loading conversation**
-until its channel arrives. Mobile and opening in a new split retain the block
-host's existing notification-before-navigation flow.
+until its channel arrives. On mobile, opening from Recent, Channels, or DMs
+also navigates immediately: a slow or failed notification lookup must not prevent
+messages and the composer from loading. Full-edge notification hydration runs
+only after navigation is accepted; failure leaves unread state unchanged and
+must not show an “Unable to open conversation” toast. A late response must not
+reopen the channel or mark it read after the user leaves its mobile pane. Message
+loading retains its own access/error states. Verify with the notification request
+held, then failed, and with rapid back-navigation while it is pending.
 
 The title bar's **Hide navigation** control hides the whole rail. Reopen it with
 **Show navigation** (the hamburger) immediately before the conversation title.
@@ -921,9 +927,9 @@ conversation renders an inline detail whose top bar holds the channel avatar
 and name, the same inset tab strip, live viewer avatars, and the `Call` and
 `Ask Macro` buttons. An ellipsis follows the name — after the breadcrumb where
 the host supplies one, as in Home — and opens the same entity actions as
-right-clicking the conversation's rail row: `Open in new split`, `Rename`,
-`Favorite`/`Unfavorite`, `Snooze notifications…`, `Mute notifications`,
-`Remind me`, `Copy Link`, `Copy ID`. A channel can therefore be favorited
+right-clicking the conversation's rail row: `Rename`, `Favorite`/`Unfavorite`,
+`Snooze notifications…`, `Mute notifications`, `Remind me`, `Copy Link`,
+`Copy ID`. A channel can therefore be favorited
 without finding its row, from Chat and from every view that opens one inline.
 The menu appears once the conversation itself has loaded. Channel-picture
 actions are not in it: they belong to the split's own title `...` menu, so open

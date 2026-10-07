@@ -8,5 +8,6 @@ import type { EntityActionViewContext } from '@app/features/next-soup/actions';
  */
 export const CHANNEL_ACTION_VIEW_CONTEXT: EntityActionViewContext = {
   supportsMarkDone: false,
+  supportsOpenInNewSplit: false,
   senderBucket: undefined,
 };
