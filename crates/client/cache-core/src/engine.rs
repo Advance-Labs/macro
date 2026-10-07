@@ -2,9 +2,11 @@
 //! and dependency tracking together behind the API the hosts (wasm worker /
 //! Tauri) expose over RPC.
 
+mod calendar;
 #[cfg(test)]
 mod test;
 
+use crate::calendar::{CalendarError, EVENT_TYPENAME};
 use crate::denormalize::{DenormalizeError, ReadOutcome, ReadPlans, ReadSession, RecordSource};
 use crate::deps::{
     DepIndex, OpId, QueryDependencies, ViewerFieldUpdate, ViewerFields, changed_viewer_fields,
@@ -80,6 +82,8 @@ pub enum EngineError<S: std::error::Error + 'static> {
     RecordSelection(#[from] RecordSelectionError),
     #[error(transparent)]
     Search(#[from] SearchError),
+    #[error(transparent)]
+    Calendar(#[from] CalendarError),
     #[error("unknown or already-settled optimistic transaction {0}")]
     UnknownTransaction(OptimisticTransactionId),
     #[error("stale claim for optimistic transaction {0}")]
@@ -263,6 +267,8 @@ pub enum RollbackOptimisticWriteResult {
 
 /// Borrowed inputs for atomically beginning one optimistic mutation.
 pub struct BeginOptimisticWrite<'a> {
+    /// Opaque durable client correlation, never sent to the server.
+    pub client_metadata: Option<&'a Json>,
     /// Local entities whose IDs must be resolved from the committed response.
     pub identity_bindings: &'a [IdentityBinding],
     /// Caller-supplied RFC UUID used only for safe coalescing.
@@ -302,6 +308,7 @@ struct OptimisticLayer {
     link_patches: Vec<OptimisticLinkPatch>,
     revalidations: Vec<QueryRevalidation>,
     projection_mutations: Vec<OptimisticProjectionMutation>,
+    uncertain_calendar_event_keys: Vec<EntityKey<'static>>,
 }
 
 struct BegunOptimisticWrite {
@@ -333,6 +340,9 @@ enum IdentityState {
 /// Default hot-tier capacity (records, not bytes — byte budgets are a
 /// hardening-phase refinement).
 pub const DEFAULT_HOT_CAPACITY: usize = 10_000;
+
+/// Bound on the uncertain calendar events one optimistic layer may declare.
+const MAX_UNCERTAIN_CALENDAR_EVENTS: usize = 256;
 
 // Parsed plans contain no cached user data. Bound dynamic document churn while
 // leaving room for the production operation catalog and fragment variants.
@@ -599,6 +609,11 @@ impl<S: Storage> Engine<S> {
                 link_patches: patches,
                 revalidations,
                 projection_mutations: source.projection_mutations,
+                uncertain_calendar_event_keys: source
+                    .uncertain_calendar_event_keys
+                    .into_iter()
+                    .map(|key| identities.get(&key).cloned().unwrap_or(key))
+                    .collect(),
             });
         }
         Ok(layers)
@@ -1613,7 +1628,7 @@ impl<S: Storage> Engine<S> {
         projection_mutations: Vec<OptimisticProjectionMutation>,
     ) -> Result<(OptimisticTransactionId, WriteResult), EngineError<S::Error>> {
         let begun = self
-            .upsert_optimistic_write(origin_op, input, projection_mutations)
+            .upsert_optimistic_write(origin_op, input, projection_mutations, Vec::new())
             .await?;
         Ok((begun.transaction_id, begun.write_result))
     }
@@ -1623,11 +1638,13 @@ impl<S: Storage> Engine<S> {
         origin_op: Option<OpId>,
         input: BeginOptimisticWrite<'_>,
         projection_mutations: Vec<OptimisticProjectionMutation>,
+        uncertain_calendar_event_keys: Vec<EntityKey<'static>>,
     ) -> Result<BegunOptimisticWrite, EngineError<S::Error>> {
         let uuid = Uuid::parse_str(input.uuid)
             .map_err(|_| EngineError::InvalidMutationUuid(input.uuid.to_owned()))?;
         self.ensure_revision_can_advance()?;
         let BeginOptimisticWrite {
+            client_metadata,
             uuid: _,
             query,
             operation_name,
@@ -1639,6 +1656,13 @@ impl<S: Storage> Engine<S> {
             identity_bindings,
         } = input;
         identity::validate(identity_bindings).map_err(EngineError::InvalidOptimisticProjection)?;
+        if uncertain_calendar_event_keys.len() > MAX_UNCERTAIN_CALENDAR_EVENTS
+            || uncertain_calendar_event_keys
+                .iter()
+                .any(|key| key.typename() != Some(EVENT_TYPENAME))
+        {
+            return Err(CalendarError::InvalidKey.into());
+        }
         self.hydrate_optimistic().await?;
 
         let queued = self
@@ -1688,11 +1712,13 @@ impl<S: Storage> Engine<S> {
             IdentityState::NotHydrated | IdentityState::Missing => None,
         };
         let source = OptimisticSource {
+            client_metadata: client_metadata.cloned(),
             identity_bindings: identity_bindings.to_vec(),
             mutation_data: data.clone(),
             link_patches: patches,
             revalidations,
             projection_mutations,
+            uncertain_calendar_event_keys,
         };
         let mut entry = NewQueuedMutation {
             uuid,
@@ -1866,8 +1892,33 @@ impl<S: Storage> Engine<S> {
         claim: MutationClaimRequest,
         projection_mutations: Vec<OptimisticProjectionMutation>,
     ) -> Result<EnqueueOptimisticMutationResult<EngineError<S::Error>>, EngineError<S::Error>> {
+        self.enqueue_optimistic_mutation_with_calendar(
+            origin_op,
+            input,
+            claim,
+            projection_mutations,
+            Vec::new(),
+        )
+        .await
+    }
+
+    /// Durably enqueue optimism, projection overlays, and the calendar events
+    /// whose occurrence sets stay uncertain until the mutation settles.
+    pub async fn enqueue_optimistic_mutation_with_calendar(
+        &mut self,
+        origin_op: Option<OpId>,
+        input: BeginOptimisticWrite<'_>,
+        claim: MutationClaimRequest,
+        projection_mutations: Vec<OptimisticProjectionMutation>,
+        uncertain_calendar_event_keys: Vec<EntityKey<'static>>,
+    ) -> Result<EnqueueOptimisticMutationResult<EngineError<S::Error>>, EngineError<S::Error>> {
         let begun = self
-            .upsert_optimistic_write(origin_op, input, projection_mutations)
+            .upsert_optimistic_write(
+                origin_op,
+                input,
+                projection_mutations,
+                uncertain_calendar_event_keys,
+            )
             .await?;
         let initial_claim = match self.claim_next_mutation(claim).await {
             Ok(Some(claimed)) => InitialClaimOutcome::Claimed(Box::new(claimed)),
@@ -1880,6 +1931,20 @@ impl<S: Storage> Engine<S> {
             write_result: begun.write_result,
             initial_claim,
         })
+    }
+
+    /// Reads durable queue entries without acquiring or changing their leases.
+    pub async fn inspect_mutations(
+        &self,
+    ) -> Result<Vec<crate::queue::MutationInspection>, EngineError<S::Error>> {
+        self.storage
+            .load_mutation_queue()
+            .await
+            .map_err(EngineError::Storage)?
+            .into_iter()
+            .map(crate::queue::MutationInspection::try_from)
+            .collect::<Result<_, _>>()
+            .map_err(EngineError::InvalidOptimisticProjection)
     }
 
     /// Claims the oldest runnable mutation. A leased or backed-off head
@@ -1902,6 +1967,7 @@ impl<S: Storage> Engine<S> {
         claim: MutationClaimToken,
         next_attempt_at_ms: i64,
         error: String,
+        server_failure: bool,
     ) -> Result<DeferOptimisticWriteResult, EngineError<S::Error>> {
         self.hydrate_optimistic().await?;
         let layer = self
@@ -1931,7 +1997,13 @@ impl<S: Storage> Engine<S> {
         }
         if !self
             .storage
-            .defer_mutation(transaction, claim, next_attempt_at_ms, error)
+            .defer_mutation(
+                transaction,
+                claim,
+                next_attempt_at_ms,
+                error,
+                server_failure,
+            )
             .await
             .map_err(EngineError::Storage)?
         {

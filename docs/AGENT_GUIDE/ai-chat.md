@@ -22,8 +22,10 @@ Repeat with the default model and with an explicit model/effort selection.
 The first visible output and the first answer text should appear as they arrive;
 later chunks can arrive in batches. Reasoning or a tool row should not delay the
 first prose. Verify a second prompt and a reload preserve the complete answer.
-Selected model and effort must be confirmed before the first prompt; settings
-already confirmed by the runtime do not need another control request.
+A model selected before the first prompt is part of the create request, and the
+runtime starts on it; no model change appears in the new session's transcript.
+A selected effort is confirmed before the first prompt; settings the runtime
+already reports do not need another control request.
 
 Repeat from a fresh tab using Home, Agents, and a document's Chat action.
 Focusing an agent composer prepares its transcript renderer locally; focus alone
@@ -618,7 +620,7 @@ protocol error with a stable `code` and `retryable` flag, not an HTTP status.
 A direct AI tool/MCP or AI-edit refusal is a failed tool result even if the outer
 transport succeeds. No worker/provider edit should happen after refusal. Ordinary
 manual editing, deterministic tools/imports, and the exempt Memory, AiProjection,
-CallSummary, and Dictation features are not blocked by quota. Optional naming or
+CallSummary, Dictation, and ChatRename features are not blocked by quota. Optional naming or
 trigger inference may be skipped without blocking successful primary work; it
 must not make a fallback model call. Managed sessions use their persisted owner
 for quota, not a collaborating sender. Externally funded runtimes skip session
@@ -863,9 +865,9 @@ reads `Waiting for approval`. The agent's hidden context names the owner and the
 Mention `@Macro` in any channel message. Without the `enable-chat-v3-agents` rollout it is
 the classic in-channel reply; with it, the same mention opens an **agent session** — a
 dedicated transcript at `/app/agent/<uuid>` whose replies also stream back into the thread.
-`@coder` / `@cursor` always open a session. There is only ever one Macro entry in the
-mention menu; which of the two answers is the rollout's decision, not a second choice in
-the menu.
+`@cursor` opens a session. Macro Coding Agent (`@coder`) is unavailable in mention
+suggestions. There is only ever one Macro entry in the mention menu; which of the
+two answers is the rollout's decision, not a second choice in the menu.
 
 ## Agent sessions
 
@@ -1503,3 +1505,25 @@ To verify, start a Macro conversation as a free user with a previously saved
 paid-model preference: the composer should show Gemini and send that model.
 In a live session, confirm the model options contain only Gemini. Backend tests
 also exercise direct ACP model-change requests, downgrade, and resume.
+
+## Booking links
+
+Ask the AI to find or reuse an existing booking link before creating another.
+`ListBookingLinks` returns personal links, current team IDs, full settings and
+shareable URLs (including paused links). It also supplies the revision used to
+protect edits from concurrent settings changes.
+
+Booking links are confirmed in conversation, with no special booking form. The AI
+first explains the proposed meeting details, ownership and named hosts, time zone,
+availability and date exceptions, booking rules, guest questions and whether the
+link accepts bookings. It asks whether to proceed and waits for your reply before
+calling `CreateBookingLink` or `EditBookingLink`. An initial request to create a
+link is not approval of the proposal. IDs and revisions are discovered through
+tools; you should never be asked to enter a team ID, host ID or JSON.
+
+A successful result returns the saved URL. Link creation itself sends no calendar
+invitations; guests receive an invitation when they book. Editing hours affects
+only that link. If another edit makes the revision stale, the AI reads the latest
+settings and confirms a fresh proposal. Identical retries reuse the saved link.
+Old pending booking review requests can be dismissed so the agent can resume with
+conversational confirmation.

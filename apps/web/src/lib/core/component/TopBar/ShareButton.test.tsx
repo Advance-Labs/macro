@@ -10,6 +10,7 @@ import {
   ShareModal,
   ShareOptions,
   ShareTrigger,
+  shareLevelsFor,
 } from './ShareButton';
 
 const ME = 'macro|me@example.com';
@@ -27,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   getDocumentPermissions: vi.fn(),
   getDatabasePermissions: vi.fn(),
   updateDatabasePermissions: vi.fn(),
+  getFormPermissions: vi.fn(),
+  updateFormPermissions: vi.fn(),
   getChatPermissions: vi.fn(),
   updateChatPermissions: vi.fn(),
   fetchCallSharePermission: vi.fn(),
@@ -46,6 +49,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@queries/storage/databases', () => ({
   getDatabaseSharePermissions: mocks.getDatabasePermissions,
   updateDatabaseSharePermissions: mocks.updateDatabasePermissions,
+}));
+vi.mock('@queries/storage/forms', () => ({
+  getFormSharePermissions: mocks.getFormPermissions,
+  updateFormSharePermissions: mocks.updateFormPermissions,
 }));
 vi.mock('@app/lib/analytics/analytics-context', () => ({
   useAnalytics: () => ({ track: vi.fn() }),
@@ -118,7 +125,7 @@ vi.mock('@service-storage/client', () => ({
     },
   },
   blockNameToItemType: (name: string) =>
-    name === 'agent' ? 'agent_session' : 'document',
+    name === 'agent' ? 'agent_session' : name === 'form' ? 'form' : 'document',
   itemTypeToReferenceEntityType: (type: string) => type,
 }));
 vi.mock('@queries/agent-session/share-permissions', () => ({
@@ -360,6 +367,10 @@ beforeEach(() => {
     ok({ id: 'project-permissions', owner: ME })
   );
   mocks.updateInitiativePermissions.mockResolvedValue(ok({}));
+  mocks.getFormPermissions.mockResolvedValue(
+    ok({ id: 'form-id', owner: ME, channelSharePermissions: [] })
+  );
+  mocks.updateFormPermissions.mockResolvedValue(ok({}));
   mocks.updateChatPermissions.mockResolvedValue({ isErr: () => false });
   mocks.updateCallTeamShare.mockResolvedValue({ isErr: () => false });
   mocks.editProject.mockResolvedValue({ isErr: () => false });
@@ -1355,5 +1366,113 @@ describe('entity-owned sharing queries', () => {
     ));
     expect(screen.getByTitle('Only you can access this item.')).toBeTruthy();
     expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+  });
+});
+describe('form share roles', () => {
+  it('shares one entity query between a form trigger and its dialog', async () => {
+    mocks.inBlock = false;
+    render(() => (
+      <>
+        <ShareTrigger id="form-id" blockType="form" onClick={vi.fn()} />
+        <ShareModal
+          id="form-id"
+          itemType="form"
+          blockAlias="form"
+          owner={ME}
+          name="RSVP"
+          userPermissions={Permissions.OWNER}
+          open
+          onOpenChange={() => {}}
+        />
+      </>
+    ));
+    await vi.waitFor(() =>
+      expect(mocks.getFormPermissions).toHaveBeenCalledOnce()
+    );
+    expect(mocks.getFormPermissions).toHaveBeenCalledWith('form-id');
+    expect(mocks.getDocumentPermissions).not.toHaveBeenCalled();
+    expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    'shows form link sharing in the native link area (mobile: %s)',
+    async (mobile) => {
+      mocks.mobile = mobile;
+      mocks.getFormPermissions.mockResolvedValue(
+        ok({ id: 'form-id', owner: ME, channelSharePermissions: [] })
+      );
+      render(() => (
+        <ShareModal
+          id="form-id"
+          itemType="form"
+          blockAlias="form"
+          owner={ME}
+          name="RSVP"
+          userPermissions={Permissions.OWNER}
+          open
+          onOpenChange={() => {}}
+          linkSharing={() => <div>Form link controls</div>}
+        />
+      ));
+      if (mobile) {
+        expect(screen.queryByText('Form link controls')).toBeNull();
+        fireEvent.click(screen.getByRole('tab', { name: 'Link' }));
+      }
+      expect(await screen.findByText('Form link controls')).toBeTruthy();
+    }
+  );
+
+  it('shares a form opened outside its host like any entity', async () => {
+    mocks.inBlock = false;
+    mocks.getFormPermissions.mockResolvedValue(
+      ok({ id: 'form-id', owner: ME, channelSharePermissions: [] })
+    );
+    render(() => (
+      <ShareModal
+        id="form-id"
+        itemType="form"
+        blockAlias="form"
+        owner={ME}
+        name="RSVP"
+        userPermissions={Permissions.OWNER}
+        open
+        onOpenChange={() => {}}
+      />
+    ));
+    expect(await screen.findByText('RSVP')).toBeTruthy();
+    expect(screen.queryByText('Loading form sharing…')).toBeNull();
+    expect(screen.queryByText('Anyone with the link')).toBeNull();
+    await vi.waitFor(() =>
+      expect(mocks.getFormPermissions).toHaveBeenCalledWith('form-id')
+    );
+    expect(mocks.blockPermissionsRead).not.toHaveBeenCalled();
+  });
+
+  it('copies a form’s entity link unless its host supplies another', () => {
+    mocks.inBlock = false;
+    render(() => (
+      <ShareTrigger onClick={vi.fn()} id="form-id" blockType="form" />
+    ));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Share Link' }));
+    expect(mocks.copyLink).toHaveBeenCalledWith(
+      'https://macro.com/app/form/form-id'
+    );
+  });
+
+  it('offers View and Edit on a form, which has no comments, and every level elsewhere', () => {
+    expect(shareLevelsFor('form')).toEqual(['view', 'edit']);
+    expect(shareLevelsFor('document')).toBeUndefined();
+    render(() => (
+      <ShareOptions
+        editPermissionEnabled
+        allowedAccessLevels={shareLevelsFor('form')}
+        setPermissions={vi.fn()}
+      />
+    ));
+    expect(
+      screen.queryByRole('button', { name: 'Set option comment' })
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Set option edit' })
+    ).toBeTruthy();
   });
 });

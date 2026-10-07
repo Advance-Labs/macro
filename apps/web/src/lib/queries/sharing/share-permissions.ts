@@ -9,12 +9,14 @@ import { fetchAgentSessionSharePermissions } from '../agent-session/share-permis
 import { queryClient } from '../client';
 import { fetchInitiativeSharePermissions } from '../initiative/share-permissions';
 import { getDatabaseSharePermissions } from '../storage/databases';
+import { getFormSharePermissions } from '../storage/forms';
 import { sharingKeys } from './keys';
 
 const SUPPORTED_SHARE_PERMISSION_ITEM_TYPES: readonly ShareItemType[] = [
   'agent_session',
   'initiative',
   'database',
+  'form',
   'chat',
   'document',
   'project',
@@ -42,6 +44,7 @@ async function fetchSharePermissions({ id, itemType }: SharePermissionsTarget) {
     .with('agent_session', () => fetchAgentSessionSharePermissions(id))
     .with('initiative', () => fetchInitiativeSharePermissions(id))
     .with('database', () => getDatabaseSharePermissions(id))
+    .with('form', () => getFormSharePermissions(id))
     .with('chat', () => cognitionApiServiceClient.getChatPermissions({ id }))
     .with('document', () =>
       storageServiceClient.getDocumentPermissions({ document_id: id })

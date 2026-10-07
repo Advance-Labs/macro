@@ -19,6 +19,7 @@ export interface BlockMethodRegistry {
   calendar: EmptySpec;
   chat: EmptySpec;
   database: EmptySpec;
+  form: EmptySpec;
   channel: EmptySpec;
   write: EmptySpec;
   pdf: EmptySpec;

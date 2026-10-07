@@ -46,8 +46,12 @@ use connection::{
 };
 use connection_gateway_client::client::ConnectionGatewayClient;
 use documents_hex::domain::ports::{TaskPropertiesPort, task_property_edit_receipt};
+use documents_hex::domain::purge::DocumentPurger;
 use documents_hex::domain::service::DocumentServiceImpl;
 use documents_hex::inbound::axum_router::DocumentRouterState;
+use documents_hex::outbound::document_purge::{
+    LegacyDocumentPurgeRepository, RedisDocxPartReferences, SqsDocumentPurgeQueue,
+};
 use documents_hex::outbound::pg_document_repo::PgDocumentRepo;
 use documents_hex::outbound::s3_upload_url::S3UploadUrlAdapter;
 use dynamodb_client::DynamodbClient;
@@ -348,6 +352,14 @@ pub(crate) type DocumentService = DocumentServiceImpl<
     sync_service_client::SyncServiceClient,
 >;
 
+/// Permanent document purge wired into DSS.
+pub(crate) type DssDocumentPurger = DocumentPurger<
+    LegacyDocumentPurgeRepository,
+    SqsDocumentPurgeQueue,
+    RedisDocxPartReferences,
+    DssEventBroker,
+>;
+
 /// Type alias for the authorization service.
 pub(crate) type AuthorizationService = MacroAuthorizationServiceImpl<MacroAuthJwtValidator>;
 
@@ -485,6 +497,20 @@ pub(crate) type DssChatMutationService = chat::domain::service::ChatServiceImpl<
     EntityAccessManagementService,
 >;
 
+/// Chat service for owner-checked permanent deletes. Unlike
+/// [`DssChatMutationService`] it publishes chat events, which is how search
+/// and activity learn a chat is gone.
+pub(crate) type DssChatPurgeService = chat::domain::service::ChatServiceImpl<
+    chat::outbound::postgres::PgChatRepo<PgBotsRepo>,
+    (),
+    EntityAccessManagementService,
+    DssEventBroker,
+>;
+
+/// State of `DELETE /internal/owned/{entity_type}/{entity_id}`.
+pub(crate) type DssOwnedPurgeState =
+    super::internal::OwnedPurgeState<DssDocumentPurger, DssChatPurgeService, ProjectService>;
+
 /// Concrete unified entity mutation service wired into GraphQL.
 pub(crate) type DssEntityMutationService =
     crate::service::entity_mutation::DssEntityMutationService<
@@ -495,6 +521,7 @@ pub(crate) type DssEntityMutationService =
         DssEmailService,
         ProjectService,
         DatabasesServiceType,
+        FormsServiceType,
         EntityAccessService,
         crate::outbound::entity_mutation::DssEntityLifecycleAdapter<DssEventBroker>,
     >;
@@ -531,6 +558,22 @@ pub(crate) type DatabasesServiceType =
 /// Type alias for the databases router state.
 pub(crate) type DssDatabasesState =
     DatabasesRouterState<DatabasesServiceType, EntityAccessService, AuthorizationService>;
+
+/// Forms compose the databases domain service, so row writes retain its validation and events.
+pub(crate) type FormsServiceType = forms::wiring::PgFormsService<
+    DatabasesServiceType,
+    EntityAccessService,
+    forms::outbound::gateway_event_publisher::GatewayFormEventPublisher,
+    DssEventBroker,
+    CollabSurfaceServiceType,
+>;
+
+/// Forms use the same authentication and entity-access services as databases.
+pub(crate) type DssFormsState = forms::inbound::axum_router::FormsRouterState<
+    FormsServiceType,
+    EntityAccessService,
+    AuthorizationService,
+>;
 
 /// Database onboarding composes transaction-capable owning domain adapters.
 pub(crate) type DssDatabaseStarterState =
@@ -644,7 +687,11 @@ pub(crate) type DssInitiativeState =
     InitiativeRouterState<InitiativeServiceType, EntityAccessService, AuthorizationService>;
 
 /// Type alias for the collab-surface service.
-pub(crate) type CollabSurfaceServiceType = collab_surface::outbound::PgCollabSurfaceService;
+pub(crate) type CollabSurfaceServiceType = collab_surface::outbound::PgCollabSurfaceService<
+    forms::outbound::collaborative_layout::RepositoryFormIds<
+        forms::outbound::pg_forms_repo::PgFormsRepo,
+    >,
+>;
 
 /// Type alias for the collab-surface router state.
 pub(crate) type DssCollabSurfaceState =
@@ -768,13 +815,17 @@ pub(crate) struct ApiContext {
     pub initiative_state: DssInitiativeState,
     pub graphql_initiative_context: graphql_initiative::InitiativeGraphqlContext,
     pub graphql_scheduled_action_context: graphql_scheduled_action::ScheduledActionGraphqlContext,
+    pub graphql_calendar_context: graphql_calendar::CalendarGraphqlContext,
     pub graphql_initiative_entity_loader: graphql_initiative::InitiativeEntityLoader,
+    pub graphql_agent_session_entity_loader: graphql_soup::AgentSessionEntityLoader,
     pub databases_state: DssDatabasesState,
+    pub forms_state: DssFormsState,
     pub database_starter_state: DssDatabaseStarterState,
     pub collab_surface_state: DssCollabSurfaceState,
     pub foreign_entity_state: DssForeignEntityState,
     pub macro_event_broker: DssEventBroker,
     pub sqs_client: Arc<sqs_client::SQS>,
+    pub document_purger: Arc<DssDocumentPurger>,
     pub contacts_ingress: Arc<SqsContactsIngress<SqsContactsQueue>>,
     pub notification_ingress_service: Arc<NotificationIngressType>,
     pub conn_gateway_client: Arc<ConnectionGatewayClient>,
@@ -812,6 +863,7 @@ pub(crate) struct ApiContext {
     pub cal_webhook_state: DssCalWebhookState,
     pub entity_access_management_service: EntityAccessManagementService,
     pub crm_state: DssCrmState,
+    pub owned_purge_state: DssOwnedPurgeState,
 }
 
 env_var! {

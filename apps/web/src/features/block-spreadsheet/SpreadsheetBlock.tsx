@@ -9,7 +9,11 @@ import {
   SplitHeaderRight,
 } from '@components/app/split-layout/components/SplitHeader';
 import { StaticSplitLabel } from '@components/app/split-layout/components/SplitLabel';
-import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
+import {
+  useCanAutofocusSplitContent,
+  useSplitPanel,
+} from '@components/app/split-layout/layoutUtils';
+import { useNavigatedFromJK } from '@components/app/useNavigatedFromJK';
 import { useIsAuthenticated } from '@core/auth';
 import {
   EntityLoadGate,
@@ -130,6 +134,8 @@ function SpreadsheetDocument(
   props: SpreadsheetBlockProps & { data: SpreadsheetDocumentData }
 ) {
   const panel = useSplitPanel();
+  const canAutofocus = useCanAutofocusSplitContent();
+  const { navigatedFromJK } = useNavigatedFromJK();
   const localScope = props.nested || !panel;
   const [attachScope, scopeId] = localScope
     ? useHotkeyDOMScope('spreadsheet')
@@ -374,6 +380,7 @@ function SpreadsheetDocument(
         >
           {(commentLocation, comments) => (
             <SpreadsheetEditor
+              autoFocus={!props.nested && canAutofocus && !navigatedFromJK()}
               commentLocation={commentLocation()}
               comments={comments}
               mentions={spreadsheetMentions}
