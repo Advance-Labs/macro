@@ -94,12 +94,14 @@ export function SetupStatus() {
   const startSetup = () => {
     const state = setupState();
     const links = linksQuery.isSuccess ? linksQuery.data.links : [];
-    const link = links.find(
-      (link) => link.needs_reauth || link.needs_calendar_permission
-    );
+    const link =
+      state === 'reauth'
+        ? links.find((link) => link.needs_reauth)
+        : links.find((link) => link.needs_calendar_permission);
     void startAddInbox({
       provider: link?.provider,
       reconnectLinkId: link?.id,
+      emailAddress: link?.email_address,
       scopes:
         state === 'permission' || state === 'disabled'
           ? 'calendar'

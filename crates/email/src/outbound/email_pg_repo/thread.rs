@@ -45,7 +45,8 @@ pub(super) async fn thread_metadata_by_ids(
         SELECT
             id AS "thread_id!",
             link_id,
-            latest_inbound_message_ts
+            latest_inbound_message_ts,
+            reminder_returned_at
         FROM email_threads
         WHERE id = ANY($1)
         "#,

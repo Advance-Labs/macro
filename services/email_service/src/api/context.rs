@@ -1,3 +1,6 @@
+use crate::calendar_refresh::ConnectionGatewayCalendarRefresh;
+use crate::calendar_request_gate::RedisCalendarRequestGate;
+use crate::calendar_tokens::CalendarTokenProviderAdapter;
 use axum::extract::FromRef;
 use calendar_events::{
     domain::{mutations::CalendarMutationServiceImpl, service::CalendarService},
@@ -12,14 +15,11 @@ use email::{
     },
     outbound::{EmailPgRepo, GmailTokenProviderImpl},
 };
-use email_service::calendar_refresh::ConnectionGatewayCalendarRefresh;
-use email_service::calendar_request_gate::RedisCalendarRequestGate;
-use email_service::calendar_tokens::CalendarTokenProviderAdapter;
 
-use email_service::config::Config;
-use email_service::outbound::email_api::GmailApi;
-use email_service::outbound::mailbox_init::{MicrosoftGrantSource, PgMailboxInitialization};
-use email_service::util::redis::RedisClient;
+use crate::config::Config;
+use crate::outbound::email_api::GmailApi;
+use crate::outbound::mailbox_init::{MicrosoftGrantSource, PgMailboxInitialization};
+use crate::util::redis::RedisClient;
 use entity_access::{domain::service::EntityAccessServiceImpl, outbound::PgAccessRepository};
 use entity_access_management::domain::service::EntityAccessManagementServiceImpl;
 use frecency::{domain::services::FrecencyQueryServiceImpl, outbound::postgres::FrecencyPgStorage};
@@ -69,13 +69,13 @@ pub(crate) type EmailSvc = EmailServiceImpl<
 
 pub(crate) type DraftAttachmentSvc = email::domain::draft_attachments::DraftAttachmentService<
     EmailPgRepo,
-    email_service::outbound::draft_attachment_storage::DraftAttachmentS3,
+    crate::outbound::draft_attachment_storage::DraftAttachmentS3,
     EmailEntityAccessService,
 >;
 
 pub(crate) type MicrosoftTokens = email::domain::mailbox::credentials::MailboxCredentials<
     email::outbound::mailbox_pg::PgMailboxSync,
-    email_service::outbound::email_api::MicrosoftCredentialsClient,
+    crate::outbound::email_api::MicrosoftCredentialsClient,
 >;
 
 pub(crate) type OutlookApi = email_api_client::domain::service::mailbox::MailboxApiService<
@@ -85,14 +85,14 @@ pub(crate) type OutlookApi = email_api_client::domain::service::mailbox::Mailbox
 >;
 pub(crate) type AttachmentReadSvc = email::domain::attachment_access::AttachmentReadService<
     EmailPgRepo,
-    email_service::outbound::attachment_access::ProviderAttachmentBytes<
-        email_service::outbound::email_api::ProviderMailboxGateway<
+    crate::outbound::attachment_access::ProviderAttachmentBytes<
+        crate::outbound::email_api::ProviderMailboxGateway<
             email_api_client::OutlookApiClientRepository,
             MicrosoftTokens,
             email_api_client::domain::ports::AlwaysAllowRateLimiter,
         >,
     >,
-    email_service::outbound::attachment_access::MailAttachmentFiles,
+    crate::outbound::attachment_access::MailAttachmentFiles,
     EmailEntityAccessService,
 >;
 
@@ -107,7 +107,7 @@ pub(crate) struct ApiContext {
     pub mailbox_settings: Arc<
         email::domain::mailbox::settings::MailboxSettingsService<
             email::outbound::mailbox_pg::PgMailboxSync,
-            email_service::outbound::mailbox_settings::ProviderMailboxSettings<
+            crate::outbound::mailbox_settings::ProviderMailboxSettings<
                 email_api_client::OutlookApiClientRepository,
                 MicrosoftTokens,
                 email_api_client::domain::ports::AlwaysAllowRateLimiter,
@@ -115,19 +115,19 @@ pub(crate) struct ApiContext {
         >,
     >,
 
-    pub inbox_lifecycle: Arc<email_service::composition::InboxLifecycle>,
+    pub inbox_lifecycle: Arc<crate::composition::InboxLifecycle>,
     pub inbox_catalog: Arc<
         email::domain::mailbox::catalog::InboxCatalogService<
-            email_service::outbound::inbox_catalog::PgInboxCatalog,
+            crate::outbound::inbox_catalog::PgInboxCatalog,
         >,
     >,
-    pub inbox_health: Arc<email_service::composition::InboxHealth>,
+    pub inbox_health: Arc<crate::composition::InboxHealth>,
     pub attachment_reads: Arc<AttachmentReadSvc>,
     pub draft_attachments: Arc<DraftAttachmentSvc>,
     pub draft_transfers: Arc<
         email::domain::draft_transfer::DraftTransferService<
             EmailPgRepo,
-            email_service::outbound::draft_attachment_storage::DraftAttachmentS3,
+            crate::outbound::draft_attachment_storage::DraftAttachmentS3,
         >,
     >,
     pub mailbox_initializer: Arc<MailboxInitializer>,

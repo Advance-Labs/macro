@@ -16,6 +16,15 @@ const link = (id: string, overrides: Partial<EmailLink> = {}): EmailLink =>
   }) as unknown as EmailLink;
 
 describe('toCalendarAccounts', () => {
+  it('offers reconnect when an expired Google grant still has stored calendar scopes', () => {
+    expect(
+      toCalendarAccounts([link('a', { needs_reauth: true })], 'macro|self')[0]
+    ).toMatchObject({
+      action: 'reconnect',
+      consentScopes: 'gmail_and_calendar',
+    });
+  });
+
   it('offers turn-off for an inbox that already has calendar', () => {
     expect(toCalendarAccounts([link('a')], 'macro|self')).toEqual([
       {
@@ -23,6 +32,7 @@ describe('toCalendarAccounts', () => {
         linkId: 'a',
         emailAddress: 'a@example.com',
         action: 'turnOff',
+        consentScopes: 'calendar',
       },
     ]);
   });
@@ -35,6 +45,7 @@ describe('toCalendarAccounts', () => {
         linkId: 'a',
         emailAddress: 'a@example.com',
         action: 'enable',
+        consentScopes: 'calendar',
       },
     ]);
   });
@@ -45,6 +56,23 @@ describe('toCalendarAccounts', () => {
     ];
     expect(toCalendarAccounts(links, 'macro|self')[0]?.action).toBe('enable');
   });
+
+  it.each([false, true])(
+    'explicitly enables calendar when a revoked inbox has calendar_disabled=%s',
+    (disabled) => {
+      const links = [
+        link('a', {
+          needs_reauth: true,
+          needs_calendar_permission: true,
+          calendar_disabled: disabled,
+        }),
+      ];
+      expect(toCalendarAccounts(links, 'macro|self')[0]).toMatchObject({
+        action: 'enable',
+        consentScopes: 'gmail_and_calendar',
+      });
+    }
+  );
 
   it('offers enable — not turn-off — for a legacy inbox with stale data', () => {
     const links = [
@@ -72,6 +100,7 @@ describe('toCalendarAccounts', () => {
         linkId: 'own',
         emailAddress: 'own@example.com',
         action: 'turnOff',
+        consentScopes: 'calendar',
       },
     ]);
   });

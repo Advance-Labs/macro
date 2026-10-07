@@ -16,10 +16,14 @@ import {
   calendarDisplayLabel,
   spansMultipleInboxes,
 } from '@app/features/calendar/utils/calendar-label';
+import { useUserId } from '@core/context/user';
+import { useAddInboxFlow } from '@core/email-link';
+import { calendarConsentScopes } from '@core/email-link/consent';
 import { recipientEntityMapper, useContacts } from '@core/user';
 import { useVisibleCalendarsQuery } from '@queries/calendar/calendars';
+import { useEmailLinksQuery } from '@queries/email/link';
 import type { CreateCalendarEvent } from '@service-cognition/generated/tools/types';
-import { Layer } from '@ui';
+import { Button, Layer } from '@ui';
 import {
   createEffect,
   createMemo,
@@ -86,6 +90,32 @@ function CalendarDraftComposerFallback() {
 
 function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
   const calendarsQuery = useVisibleCalendarsQuery();
+  const linksQuery = useEmailLinksQuery();
+  const userId = useUserId();
+  const startAddInbox = useAddInboxFlow();
+  const calendars = () => (calendarsQuery.isSuccess ? calendarsQuery.data : []);
+  const links = () => (linksQuery.isSuccess ? linksQuery.data.links : []);
+  const loadingCalendars = () =>
+    calendarsQuery.isPending || linksQuery.isPending;
+  const calendarLoadFailed = () => calendarsQuery.isError || linksQuery.isError;
+  const retryCalendarData = () => {
+    if (calendarsQuery.isError) void calendarsQuery.refetch();
+    if (linksQuery.isError) void linksQuery.refetch();
+  };
+  const primaryInbox = () =>
+    links().find((link) => link.macro_id === userId() && link.is_primary);
+  const primaryNeedsAccess = () =>
+    primaryInbox()?.needs_reauth || primaryInbox()?.needs_calendar_permission;
+  const requestedInbox = () => {
+    if (!props.initialData.calendarId) return primaryInbox();
+    const calendar = calendars().find(
+      (calendar) => calendar.id === props.initialData.calendarId
+    );
+    return links().find((link) => link.id === calendar?.emailLinkId);
+  };
+  const requestedNeedsAccess = () =>
+    requestedInbox()?.needs_reauth ||
+    requestedInbox()?.needs_calendar_permission;
   const contacts = useContacts();
   const [operation, setOperation] = createSignal<'create' | 'reject'>();
   let finalized = false;
@@ -96,8 +126,16 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
   const guestOptions = createMemo(() =>
     contacts().map(recipientEntityMapper('user'))
   );
-  const writableCalendars = createMemo(
-    () => calendarsQuery.data?.filter((calendar) => calendar.isWritable) ?? []
+  const writableCalendars = createMemo(() =>
+    calendars().filter((calendar) => {
+      const link = links().find((link) => link.id === calendar.emailLinkId);
+      return (
+        calendar.isWritable &&
+        link &&
+        !link.needs_reauth &&
+        !link.needs_calendar_permission
+      );
+    })
   );
   const calendarsSpanInboxes = () => spansMultipleInboxes(writableCalendars());
   const calendarOptions = createMemo(() =>
@@ -112,9 +150,20 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
     }))
   );
 
+  // Undefined while the primary inbox still needs access: the choice is the
+  // user's until then.
+  const defaultCalendarId = () =>
+    primaryNeedsAccess()
+      ? undefined
+      : writableCalendars().find(
+          (calendar) =>
+            calendar.emailLinkId === primaryInbox()?.id && calendar.isPrimary
+        )?.id;
+
   const controller = createCalendarEventFormController({
     initialValue: createCalendarEventToEditorInitialValues(props.initialData),
     calendarOptions,
+    defaultCalendarId,
     guestOptions,
     recurrenceTimeZone:
       props.initialData.time.kind === 'timed'
@@ -132,10 +181,13 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
     if (calendarInitialized || calendars.length === 0) return;
     calendarInitialized = true;
     // Resolve the provider-default conference after the calendar catalog loads.
-    const selected =
-      calendars.find(
-        (calendar) => calendar.id === props.initialData.calendarId
-      ) ?? calendars[0];
+    // A requested calendar must still exist, and without a request the primary
+    // inbox's calendar is the default; when neither resolves the selection stays
+    // empty so the user chooses explicitly.
+    const requested = props.initialData.calendarId;
+    const selected = requested
+      ? calendars.find((calendar) => calendar.id === requested)
+      : calendars.find((calendar) => calendar.id === defaultCalendarId());
     if (selected) controller.setField('calendarId', selected.id);
   });
 
@@ -176,6 +228,67 @@ function CalendarDraftComposerContent(props: CalendarDraftComposerProps) {
             {(notice) => (
               <p class="text-xs text-ink-extra-muted/60">{notice()}</p>
             )}
+          </Show>
+          <Show when={!controller.selectedCalendarOption()}>
+            <div
+              role="status"
+              class="flex flex-wrap items-center gap-2 text-sm text-ink-muted"
+            >
+              <Show
+                when={!calendarLoadFailed()}
+                fallback={
+                  <>
+                    <span>Could not load your calendars.</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={retryCalendarData}
+                    >
+                      Try again
+                    </Button>
+                  </>
+                }
+              >
+                <Show
+                  when={!loadingCalendars()}
+                  fallback="Loading your calendars…"
+                >
+                  <span>
+                    The requested calendar is unavailable.{' '}
+                    {requestedNeedsAccess()
+                      ? 'Reconnect it or choose another calendar.'
+                      : 'Wait for it to sync or choose another calendar.'}
+                  </span>
+                  <Show when={requestedNeedsAccess() && requestedInbox()}>
+                    {(link) => (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          void startAddInbox({
+                            scopes: calendarConsentScopes(link()),
+                            emailAddress: link().email_address,
+                          })
+                        }
+                      >
+                        Reconnect calendar
+                      </Button>
+                    )}
+                  </Show>
+                  <Show when={!requestedInbox()}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void startAddInbox({ scopes: 'gmail_and_calendar' })
+                      }
+                    >
+                      Connect calendar
+                    </Button>
+                  </Show>
+                </Show>
+              </Show>
+            </div>
           </Show>
           <EventForm
             controller={controller}

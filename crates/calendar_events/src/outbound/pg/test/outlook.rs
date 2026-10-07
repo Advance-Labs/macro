@@ -926,9 +926,9 @@ async fn occurrence_reminders_override_series_and_survive_calendar_default_chang
         .await
         .unwrap();
     assert_eq!(rows.len(), 3);
-    assert!(rows[1].0.reminders.overrides.is_empty());
-    assert!(!rows[1].0.reminders.use_default);
-    assert_eq!(rows[2].0.reminders.overrides[0].method, "email");
+    assert!(rows[1].event.reminders.overrides.is_empty());
+    assert!(!rows[1].event.reminders.use_default);
+    assert_eq!(rows[2].event.reminders.overrides[0].method, "email");
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]

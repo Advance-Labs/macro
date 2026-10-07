@@ -9,11 +9,13 @@ import { WrapUnlessMobile } from '@core/mobile/WrapUnlessMobile';
 import { ComposerSurface } from '@ui';
 import { createResource, createSignal, Show } from 'solid-js';
 import { MessageOperationRecovery } from '../../email-message/views/message-operation-recovery';
+import { DraftSyncStatus } from '../components/draft-sync-status';
 import { EmailScheduleBar } from '../components/email-schedule-summary';
 import { SignaturePreview } from '../components/signature-preview';
 import type { EmailComposeContext } from '../context/compose-capabilities';
 import { ComposeProvider } from '../context/compose-context';
 import type { ComposeContextValue } from '../primitives/compose-view-state';
+import { createDraftSyncStatus } from '../primitives/draft-sync-status';
 import {
   createEmailComposer,
   type EmailComposerOptions,
@@ -83,6 +85,8 @@ export function EmailComposeView(props: EmailComposeViewProps) {
           onReloadDraft={(draftId, threadId) =>
             setReloadRequest({ draftId, threadId })
           }
+          localDraft={saved()?.local}
+          localAttachments={saved()?.attachments}
         />
       </Show>
     </Show>
@@ -90,10 +94,13 @@ export function EmailComposeView(props: EmailComposeViewProps) {
 }
 
 function LoadedEmailComposeView(
-  props: EmailComposeViewProps & {
-    draftPersistence?: 'committed' | 'queued';
-    onReloadDraft: (draftId: string, threadId: string) => void;
-  }
+  props: EmailComposeViewProps &
+    Pick<
+      EmailComposerOptions,
+      'draftPersistence' | 'localDraft' | 'localAttachments'
+    > & {
+      onReloadDraft: (draftId: string, threadId: string) => void;
+    }
 ) {
   const composeContext = props.context;
   const state = createEmailComposer({
@@ -113,10 +120,20 @@ function LoadedEmailComposeView(
     draft: props.draft,
     draftId: props.draftId,
     draftPersistence: props.draftPersistence,
+    localDraft: props.localDraft,
+    localAttachments: props.localAttachments,
     recipientOptions: props.recipientOptions,
     onRecipientsChange: props.onRecipientsChange,
     initialTo: props.initialTo,
     initialInboxId: props.initialInboxId,
+  });
+  const sync = createDraftSyncStatus({
+    drafts: composeContext.drafts,
+    draftId: state.draftId,
+    localSaveState: state.localSaveState,
+    acknowledgeSaved: state.acknowledgeSaved,
+    retry: state.retryDraft,
+    discard: state.deleteDraftAndReset,
   });
   const {
     editor,
@@ -189,10 +206,26 @@ function LoadedEmailComposeView(
     });
   }
 
-  const leaveCompose = () => {
+  const leaveCompose = async () => {
+    try {
+      await state.flushLocal();
+    } catch (error) {
+      composeContext.notices.reportError(error);
+      return;
+    }
     setDraftBackMenuOpen(false);
     props.host?.goBack?.();
   };
+
+  const SyncStatus = () => (
+    <DraftSyncStatus
+      state={sync.state()}
+      busy={sync.busy()}
+      error={sync.error()}
+      onRetry={sync.retry}
+      onKeepEditing={sync.keepEditing}
+    />
+  );
 
   return (
     <ComposeProvider value={ctxValue}>
@@ -252,7 +285,9 @@ function LoadedEmailComposeView(
             )}
           >
             <ComposeLayout
-              toolbar={<EmailComposeToolbar editor={editor} />}
+              toolbar={
+                <EmailComposeToolbar editor={editor} status={<SyncStatus />} />
+              }
               notice={hasInboxError() ? <EmailPermissionsBanner /> : undefined}
               class="size-full p-4 touch:bg-surface max-h-full touch:max-h-none overflow-hidden flex flex-col min-h-0 touch:min-h-full"
             />

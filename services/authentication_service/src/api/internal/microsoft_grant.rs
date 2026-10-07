@@ -1,5 +1,5 @@
 use crate::api::context::{ApiContext, AuthorizationService};
-use authentication_service::domain::microsoft::MicrosoftAuthError;
+use crate::domain::microsoft::MicrosoftAuthError;
 use axum::{
     Json,
     extract::{Query, State},

@@ -2,7 +2,7 @@ use crate::api::{
     context::ApiContext,
     oauth2::{OAuthState, account_link::build_callback_redirect},
 };
-use authentication_service::domain::microsoft::MicrosoftAuthError;
+use crate::domain::microsoft::MicrosoftAuthError;
 use axum::{
     Json,
     http::StatusCode,

@@ -112,9 +112,18 @@ function createCalendarSettingsControls(isNarrow: () => boolean) {
     match(account.action)
       .with('enable', () => {
         void startAddInbox({
-          scopes: 'calendar',
+          scopes: account.consentScopes,
           provider: account.provider,
           reconnectLinkId: account.linkId,
+          emailAddress: account.emailAddress,
+        });
+      })
+      .with('reconnect', () => {
+        void startAddInbox({
+          scopes: account.consentScopes,
+          provider: account.provider,
+          reconnectLinkId: account.linkId,
+          emailAddress: account.emailAddress,
         });
       })
       .with('turnOff', () => {
@@ -298,11 +307,15 @@ function DesktopCalendarSettings(props: {
                   <span
                     class="shrink-0 text-xs font-medium"
                     classList={{
-                      'text-accent': account.action === 'enable',
+                      'text-accent': account.action !== 'turnOff',
                       'text-failure': account.action === 'turnOff',
                     }}
                   >
-                    {account.action === 'enable' ? 'Enable' : 'Turn off'}
+                    {match(account.action)
+                      .with('enable', () => 'Enable')
+                      .with('reconnect', () => 'Reconnect')
+                      .with('turnOff', () => 'Turn off')
+                      .exhaustive()}
                   </span>
                 </Dropdown.Item>
               )}
@@ -492,11 +505,15 @@ function MobileCalendarSettings(props: {
                     <span
                       class="shrink-0 text-xs font-medium"
                       classList={{
-                        'text-accent': account.action === 'enable',
+                        'text-accent': account.action !== 'turnOff',
                         'text-failure': account.action === 'turnOff',
                       }}
                     >
-                      {account.action === 'enable' ? 'Enable' : 'Turn off'}
+                      {match(account.action)
+                        .with('enable', () => 'Enable')
+                        .with('reconnect', () => 'Reconnect')
+                        .with('turnOff', () => 'Turn off')
+                        .exhaustive()}
                     </span>
                   </MobileDrawer.Item>
                 )}

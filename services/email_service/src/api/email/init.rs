@@ -1,5 +1,6 @@
 use crate::api::ApiContext;
 use crate::api::context::{AuthorizationService, CalendarGrantService};
+use crate::pubsub::publish_email_event;
 use crate::utils::extract_email_with_response;
 use anyhow::Context;
 use axum::{
@@ -14,7 +15,6 @@ use email::domain::models::UserProvider;
 use email::domain::ports::EmailRepo;
 use email::outbound::EmailPgRepo;
 use email_api_client::domain::models::{EmailApiError, TokenFreshness};
-use email_service::pubsub::publish_email_event;
 use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use macro_db_client::in_progress_user_link::InProgressUserLink;
 use macro_user_id::email::EmailStr;
@@ -384,7 +384,7 @@ async fn init_user(
                     .begin()
                     .await
                     .context("Failed to begin graph delegation transaction")?;
-                email_service::outbound::mailbox_init::lock_gmail_connection(
+                crate::outbound::mailbox_init::lock_gmail_connection(
                     &mut tx,
                     &user_context.user_id,
                     &linked_email,
@@ -451,7 +451,7 @@ async fn init_user(
                 .begin()
                 .await
                 .context("Failed to begin self-link bootstrap transaction")?;
-            email_service::outbound::mailbox_init::lock_gmail_connection(
+            crate::outbound::mailbox_init::lock_gmail_connection(
                 &mut tx,
                 &user_context.user_id,
                 &linked_email,
@@ -551,7 +551,7 @@ async fn init_user(
                     .begin()
                     .await
                     .context("Failed to begin shared-inbox promotion transaction")?;
-                email_service::outbound::mailbox_init::lock_gmail_connection(
+                crate::outbound::mailbox_init::lock_gmail_connection(
                     &mut tx,
                     &user_context.user_id,
                     &linked_email,
@@ -652,7 +652,7 @@ async fn init_user(
                 .begin()
                 .await
                 .context("Failed to begin link transaction")?;
-            email_service::outbound::mailbox_init::lock_gmail_connection(
+            crate::outbound::mailbox_init::lock_gmail_connection(
                 &mut tx,
                 &user_context.user_id,
                 provisional_link.email_address.0.as_ref(),
@@ -703,7 +703,7 @@ async fn init_user(
             .begin()
             .await
             .context("Failed to begin link transaction")?;
-        email_service::outbound::mailbox_init::lock_gmail_connection(
+        crate::outbound::mailbox_init::lock_gmail_connection(
             &mut tx,
             &user_context.user_id,
             provisional_link.email_address.0.as_ref(),
