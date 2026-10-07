@@ -205,6 +205,23 @@ fn the_phase_follows_the_last_thing_the_agent_did() {
 }
 
 #[test]
+fn a_pending_request_waits_even_when_its_tool_reports_after_it() {
+    // AskUser sends its question, then reports itself running.
+    let parts = [
+        permission(1, PermissionOutcome::Pending),
+        run("a", "ask", ToolStatus::Running),
+    ];
+    assert_eq!(phase(&parts, false), Some(TurnPhase::Waiting));
+    let answered = [
+        permission(1, PermissionOutcome::Selected {
+            option_id: "allow".to_owned(),
+        }),
+        run("a", "ask", ToolStatus::Running),
+    ];
+    assert_eq!(phase(&answered, false), Some(TurnPhase::Working));
+}
+
+#[test]
 fn a_command_that_carries_a_credential_shows_only_its_program() {
     let parts = [run(
         "a",

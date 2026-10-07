@@ -198,12 +198,18 @@ pub fn prose_text(parts: &[MessagePart], segment: &Segment) -> String {
 
 /// What an unfinished reply is doing now. `None` once its turn has ended.
 ///
-/// Read off the last part rather than the last segment: a thought belongs to
-/// no segment, and an agent thinking after a passage is not still writing it.
+/// A pending question or approval blocks the turn wherever it sits: the tool
+/// that asked can report itself running after its question. Otherwise the
+/// phase is read off the last part rather than the last segment: a thought
+/// belongs to no segment, and an agent thinking after a passage is not still
+/// writing it.
 #[must_use]
 pub fn phase(parts: &[MessagePart], closed: bool) -> Option<TurnPhase> {
     if closed {
         return None;
+    }
+    if parts.iter().any(is_pending_request) {
+        return Some(TurnPhase::Waiting);
     }
     let phase = match parts.iter().rev().find(|part| !is_blank_text(part)) {
         Some(MessagePart::Text { .. }) => TurnPhase::Writing,
@@ -212,17 +218,23 @@ pub fn phase(parts: &[MessagePart], closed: bool) -> Option<TurnPhase> {
         {
             TurnPhase::Working
         }
-        Some(MessagePart::Permission {
-            outcome: PermissionOutcome::Pending,
-            ..
-        })
-        | Some(MessagePart::Elicitation {
-            outcome: ElicitationOutcome::Pending,
-            ..
-        }) => TurnPhase::Waiting,
         _ => TurnPhase::Thinking,
     };
     Some(phase)
+}
+
+/// A question or approval the user has not answered yet.
+fn is_pending_request(part: &MessagePart) -> bool {
+    matches!(
+        part,
+        MessagePart::Permission {
+            outcome: PermissionOutcome::Pending,
+            ..
+        } | MessagePart::Elicitation {
+            outcome: ElicitationOutcome::Pending,
+            ..
+        }
+    )
 }
 
 fn is_blank_text(part: &MessagePart) -> bool {
