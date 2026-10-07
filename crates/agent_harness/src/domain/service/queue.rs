@@ -9,6 +9,7 @@ use agent_session::domain::events::{
     WaitingForInputMetadata,
 };
 use agent_session::domain::model::StoredQueuedAction;
+use futures::future::BoxFuture;
 
 use super::*;
 
@@ -297,7 +298,21 @@ where
             .await
     }
 
-    pub(super) async fn execute(
+    /// Run one command; see [`Self::execute_unboxed`].
+    ///
+    /// Boxed, like [`Self::dispatch_next`]: unoptimized builds give every
+    /// awaited future its own slot in the awaiting frame, and the routing and
+    /// worker code await a command in several places, each of which would
+    /// otherwise hold a copy of this large future on the stack.
+    pub(super) fn execute(
+        &self,
+        session_id: AgentSessionId,
+        command: HarnessCommand,
+    ) -> BoxFuture<'_, Result<CommandOutcome>> {
+        Box::pin(self.execute_unboxed(session_id, command))
+    }
+
+    async fn execute_unboxed(
         &self,
         session_id: AgentSessionId,
         command: HarnessCommand,
@@ -519,6 +534,8 @@ where
                     ReplyOutcome::of_turn(&stop, last_text.clone()),
                 )
                 .await;
+                // The answer is showing: the bot stops typing.
+                self.end_presentation(session_id, ended.as_ref()).await;
                 if let (Some(turn), Some(fold_action_id)) = (&ended, fold_action_id)
                     && turn.action_id != fold_action_id
                 {
@@ -575,6 +592,7 @@ where
                 // chance to stop its pending reply spinning.
                 self.resolve_reply(session_id, in_flight.as_ref(), ReplyOutcome::Failed)
                     .await;
+                self.end_presentation(session_id, in_flight.as_ref()).await;
                 self.publish_lifecycle(session_id, |identity| {
                     AgentSessionLifecycleEvent::Stopped(SessionStoppedMetadata {
                         identity,
@@ -583,6 +601,16 @@ where
                     })
                 })
                 .await;
+                Ok(CommandOutcome::Completed)
+            }
+            HarnessCommand::Turn(TurnSignal::Progressed {
+                turn,
+                action_id,
+                phase,
+                segments,
+            }) => {
+                self.present_progress(session_id, turn, action_id, phase, segments)
+                    .await;
                 Ok(CommandOutcome::Completed)
             }
             HarnessCommand::Turn(TurnSignal::ElicitationRaised { question, .. }) => {
@@ -997,6 +1025,20 @@ where
             });
     }
 
+    /// Dispatch the next queued entry; see [`Self::dispatch_unboxed`].
+    ///
+    /// Boxed so the dispatch's large future lives on the heap rather than in
+    /// every frame that awaits it. Unoptimized builds give each awaited
+    /// future its own stack slot, and a direct message's first turn nests
+    /// open, dispatch, and delivery inside one command - deep enough to
+    /// overflow a worker thread's stack in a local build.
+    pub(super) fn dispatch_next(
+        &self,
+        session_id: AgentSessionId,
+    ) -> BoxFuture<'_, Result<Dispatch>> {
+        Box::pin(self.dispatch_unboxed(session_id))
+    }
+
     /// Deliver the oldest queued action, marking the session busy on success.
     ///
     /// Composition runs first so a lexical failure never posts a chip for a
@@ -1011,9 +1053,10 @@ where
     /// line for the next turn end or the next prompt, and stays visible in
     /// the queue meanwhile. The error still propagates, so a caller whose
     /// own action triggered this dispatch hears about it.
-    #[tracing::instrument(err, skip(self), fields(%session_id))]
-    pub(super) async fn dispatch_next(&self, session_id: AgentSessionId) -> Result<Dispatch> {
-        if self.sessions.get_session(session_id).await?.is_archived {
+    #[tracing::instrument(name = "dispatch_next", err, skip(self), fields(%session_id))]
+    async fn dispatch_unboxed(&self, session_id: AgentSessionId) -> Result<Dispatch> {
+        let session = self.sessions.get_session(session_id).await?;
+        if session.is_archived {
             self.queues.drop_session(session_id);
             self.write_queue(session_id).await?;
             self.publish_queue(session_id).await;
@@ -1077,15 +1120,34 @@ where
                     origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
                 })
             });
+            // A reply shown in segments posts nothing until the agent has
+            // something to say or do: the bot types meanwhile.
+            let in_segments = entry.announce.as_ref().is_some_and(|origin| {
+                origin.reply_placement.voice_style() == crate::domain::model::VoiceStyle::Segments
+            });
+            let speaks_as_chip = match &entry.announce {
+                Some(origin) if origin.reuse_origin_message => true,
+                Some(origin)
+                    if origin.reply_placement == crate::domain::model::ReplyPlacement::Thread =>
+                {
+                    // Unknown is treated as a chip: a chip's message is never
+                    // rewritten into a reply, which is the safe mistake.
+                    self.reply_persona(&session)
+                        .await
+                        .map_or(true, |persona| persona.is_coding)
+                }
+                _ => false,
+            };
             let mut flight = InFlightTurn {
                 action_id: entry.action_id,
                 turn: prompted_message_id.turn,
                 actor: entry.actor.clone(),
                 announce: entry.announce.clone(),
-                announcement_message_id: entry
-                    .announced
-                    .or_else(|| dm_store.map(|_| macro_uuid::generate_uuid_v7())),
+                announcement_message_id: entry.announced,
                 dispatched_at: chrono::Utc::now(),
+                bot_id: Some(session.bot_id),
+                speaks_as_chip,
+                presented: Vec::new(),
             };
             if let Some(store) = dm_store {
                 match store.claim(entry.action_id, &flight).await {
@@ -1111,7 +1173,7 @@ where
                 }
             }
 
-            if entry.announced.is_none() {
+            if entry.announced.is_none() && !in_segments {
                 let announcement = match self
                     .announcement(
                         session_id,
@@ -1159,8 +1221,12 @@ where
                         announce: entry.announce,
                         announcement_message_id: entry.announced,
                         dispatched_at: chrono::Utc::now(),
+                        bot_id: flight.bot_id,
+                        speaks_as_chip: flight.speaks_as_chip,
+                        presented: flight.presented.clone(),
                     };
                     self.busy.mark_turn(session_id, turn.clone());
+                    self.publish_typing(session_id, &turn, true).await;
                     self.publish_lifecycle(session_id, |identity| {
                         AgentSessionLifecycleEvent::TurnStarted(TurnStartedMetadata {
                             identity,

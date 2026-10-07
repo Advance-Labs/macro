@@ -2,7 +2,6 @@ import { AgentDmComposer } from '@app/features/agent-dms/agent-dm-composer';
 import {
   AgentDmContextBoundary,
   AgentDmMessageStatus,
-  AgentDmReplyContent,
 } from '@app/features/agent-dms/agent-dm-message';
 import { AgentDmProvider } from '@app/features/agent-dms/agent-dm-provider';
 import { openChatWithInput } from '@app/features/chat/ChatWithAgentButton';
@@ -810,13 +809,9 @@ export function Channel(props: ChannelProps) {
                                                 messageId={item.id}
                                               />
                                             }
-                                            renderMessageContent={(content) => (
-                                              <AgentDmReplyContent
-                                                messageId={item.id}
-                                              >
-                                                {content}
-                                              </AgentDmReplyContent>
-                                            )}
+                                            hideTriggeredBy={
+                                              !!channel()?.agent_dm
+                                            }
                                             data={m}
                                             parent={() => ({
                                               type: 'channel',

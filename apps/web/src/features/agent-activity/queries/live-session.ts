@@ -13,19 +13,41 @@ import {
   onCleanup,
 } from 'solid-js';
 
-/** One shared session subscription for the open DM; text paints at most 4 Hz. */
-export function createDmLiveSession(sessionId: Accessor<string | undefined>) {
+/**
+ * How long a session's shared fold outlives the last surface showing it. The
+ * typing row follows the newest message; moving there re-acquires the fold
+ * instead of loading the whole session again.
+ */
+export const RELEASE_DELAY_MS = 5_000;
+
+/**
+ * One shared subscription to an agent session for a conversation surface: a
+ * typing row's live tail, a reply message's steps. Every surface showing the
+ * same session shares its fold through {@link AgentSession.acquire}; text
+ * paints at most 4 Hz.
+ *
+ * A viewer who cannot read the session is `denied`, which is not a failure:
+ * the conversation still shows the bot typing and the steps it posted.
+ */
+export function createLiveSession(sessionId: Accessor<string | undefined>) {
   const [messages, setMessages] = createSignal<FoldedMessage[]>([]);
   const [metadata, setMetadata] = createSignal<SessionMetadata>();
+  const [loaded, setLoaded] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
+  const [denied, setDenied] = createSignal(false);
   const [retry, setRetry] = createSignal(0);
+  // Callers derive the id from state that changes for other reasons, such as
+  // a typing heartbeat; only a different session resubscribes.
+  const currentId = createMemo(sessionId);
   const live = createMemo(() => {
     retry();
-    const id = sessionId();
+    const id = currentId();
     batch(() => {
       setMessages([]);
       setMetadata(undefined);
+      setLoaded(false);
       setFailed(false);
+      setDenied(false);
     });
     if (!id) return undefined;
     const session = AgentSession.acquire(id);
@@ -59,8 +81,17 @@ export function createDmLiveSession(sessionId: Accessor<string | undefined>) {
         ]);
         if (timer) clearTimeout(timer);
         flush();
-      } catch {
-        if (!disposed) setFailed(true);
+        setLoaded(true);
+      } catch (error) {
+        if (disposed) return;
+        // Not readable by this viewer: a channel member watching someone
+        // else's thread reply. Duck-typed so tests can stub the session.
+        if (
+          (error as { name?: string } | undefined)?.name ===
+          'AgentSessionAccessDenied'
+        )
+          setDenied(true);
+        else setFailed(true);
       }
     };
     void load();
@@ -68,14 +99,16 @@ export function createDmLiveSession(sessionId: Accessor<string | undefined>) {
       disposed = true;
       if (timer) clearTimeout(timer);
       unsubscribe();
-      session.release();
+      setTimeout(() => session.release(), RELEASE_DELAY_MS);
     });
     return session;
   });
   return {
     messages,
     metadata,
+    loaded,
     failed,
+    denied,
     retry: () => setRetry((value) => value + 1),
     issue: (action: AgentAction) => live()?.issue(action),
   };

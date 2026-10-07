@@ -26,6 +26,11 @@ type ChannelMessageProps = {
    * navigation, points at this message.
    */
   targeted?: boolean;
+  /**
+   * Leave out who triggered a bot's message. In a private conversation with
+   * an agent that is always the viewer, so it says nothing.
+   */
+  hideTriggeredBy?: boolean;
   onClick?: JSX.EventHandlerUnion<HTMLDivElement, MouseEvent>;
 };
 
@@ -117,6 +122,7 @@ function RegularMessageLayout(props: {
   parent: MessageParent;
   inputMode?: 'inline' | 'unified';
   messageEditor?: MessageEditor;
+  hideTriggeredBy?: boolean;
 }) {
   return (
     <Message.Layout class="pt-(--regular-message-padding-t)">
@@ -134,7 +140,9 @@ function RegularMessageLayout(props: {
           <Message.EditedIndicator class="shrink-0" />
           <Message.AgentSessionLink class="ml-auto" />
         </div>
-        <Message.FromPill />
+        <Show when={!props.hideTriggeredBy}>
+          <Message.FromPill />
+        </Show>
       </Message.Slot>
       <Message.Slot placement="content" class="ph-no-capture">
         <MessageContentSlot
@@ -238,6 +246,7 @@ export function ChannelMessage(props: ChannelMessageProps) {
               parent={props.parent}
               inputMode={props.inputMode}
               messageEditor={props.messageEditor}
+              hideTriggeredBy={props.hideTriggeredBy}
             />
           </Match>
         </Switch>

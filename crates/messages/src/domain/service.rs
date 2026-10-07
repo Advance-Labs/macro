@@ -158,6 +158,36 @@ impl<R: MessageRepository, E: MessageEventPublisher> MessageService<R, E> {
         active: bool,
         nonce: Option<String>,
     ) -> Result<(), MessageError> {
+        self.publish_typing(access, root_id, active, nonce, None)
+            .await
+    }
+
+    /// Publish an agent session typing through the bot that speaks for it.
+    /// Only a bot capability may say a session is typing: a person's typing
+    /// never names one.
+    #[tracing::instrument(err, skip(self, access))]
+    pub async fn agent_typing(
+        &self,
+        access: EntityAccessReceipt<MessageWrite>,
+        root_id: Option<Uuid>,
+        active: bool,
+        agent: AgentTyping,
+    ) -> Result<(), MessageError> {
+        if !matches!(access.auth(), EntityAccessAuth::Bot(_)) {
+            return Err(MessageError::Forbidden);
+        }
+        self.publish_typing(access, root_id, active, None, Some(agent))
+            .await
+    }
+
+    async fn publish_typing(
+        &self,
+        access: EntityAccessReceipt<MessageWrite>,
+        root_id: Option<Uuid>,
+        active: bool,
+        nonce: Option<String>,
+        agent: Option<AgentTyping>,
+    ) -> Result<(), MessageError> {
         let parent = parent_from_receipt(&access)?;
         let actor = actor_from_receipt(&access, &parent)?;
         self.ensure_parent(&parent).await?;
@@ -171,6 +201,7 @@ impl<R: MessageRepository, E: MessageEventPublisher> MessageService<R, E> {
             change: MessageChange::Typing {
                 thread_id: root_id,
                 active,
+                agent,
             },
         })
         .await;

@@ -9,17 +9,14 @@ import type { JSX } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  stop: vi.fn(),
   retry: vi.fn(),
   failure: vi.fn(),
-  fresh: vi.fn(),
 }));
 vi.mock('@service-agent-harness/client', () => ({
-  agentHarnessServiceClient: { control: mocks.stop },
+  agentHarnessServiceClient: { control: vi.fn() },
 }));
 vi.mock('@service-agent-harness/direct-messages', () => ({
   retryAgentDm: mocks.retry,
-  startFreshAgentDm: mocks.fresh,
 }));
 vi.mock('@core/component/Toast/Toast', () => ({
   toast: { failure: mocks.failure },
@@ -81,16 +78,17 @@ function mount(data: AgentDmConversationResponse) {
 }
 
 describe('agent DM controls', () => {
-  it('keeps Stop available after access is revoked and scopes it to the active segment', async () => {
-    mocks.stop.mockResolvedValue(ok({}));
+  it('counts queued messages while a turn runs and leaves Stop to its typing row', () => {
     const view = mount(
-      conversation([turn('old', 'running'), turn('current', 'running')], false)
+      conversation([
+        turn('old', 'failed'),
+        turn('current', 'running'),
+        turn('current', 'queued'),
+      ])
     );
-    await fireEvent.click(view.getByRole('button', { name: 'Stop' }));
-    await waitFor(() =>
-      expect(mocks.stop).toHaveBeenCalledWith('current', { type: 'stop' })
-    );
-    await waitFor(() => expect(view.changed).toHaveBeenCalledOnce());
+    expect(view.getByText('1 queued')).toBeTruthy();
+    expect(view.queryByRole('button', { name: 'Stop' })).toBeNull();
+    expect(view.queryByText(/could not finish/)).toBeNull();
   });
 
   it('retries only the chosen current-segment attempt with its original identity', async () => {
@@ -110,25 +108,4 @@ describe('agent DM controls', () => {
     expect(view.getByText(/could not finish/)).toBeTruthy();
     expect(view.queryByRole('button', { name: 'Retry message' })).toBeNull();
   });
-});
-
-it('confirms starting fresh against the current segment and refreshes on success', async () => {
-  mocks.fresh.mockResolvedValue(ok(undefined));
-  const view = mount(conversation([turn('current', 'succeeded')]));
-  fireEvent.click(view.getByRole('button', { name: 'Start fresh' }));
-  expect(view.getByText(/Your history stays here/)).toBeTruthy();
-  expect(mocks.fresh).not.toHaveBeenCalled();
-  fireEvent.click(view.getByRole('button', { name: 'Start fresh' }));
-  await waitFor(() =>
-    expect(mocks.fresh).toHaveBeenCalledWith('dm', 'current')
-  );
-  await waitFor(() => expect(view.changed).toHaveBeenCalledOnce());
-});
-
-it('requires a running turn to be stopped before context reset', () => {
-  const view = mount(conversation([turn('current', 'running')]));
-  expect(
-    view.getByRole('button', { name: 'Start fresh' }).hasAttribute('disabled')
-  ).toBe(true);
-  expect(view.getByRole('button', { name: 'Stop' })).toBeTruthy();
 });

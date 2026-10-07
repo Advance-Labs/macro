@@ -1,4 +1,5 @@
 import {
+  AgentActivityNode,
   AgentContextNode,
   AgentSessionMentionNode,
   AwaitNode,
@@ -31,6 +32,7 @@ import {
   clearDecorators,
   setDecorator,
 } from '@macro-inc/lexical-core/decoratorRegistry';
+import { AgentActivity } from './component/decorator/AgentActivity';
 import { AgentContext } from './component/decorator/AgentContext';
 import { AgentSessionMention } from './component/decorator/AgentSessionMention';
 import { Await } from './component/decorator/Await';
@@ -66,6 +68,7 @@ import { registerDiffNodeFactory } from './component/dom-factory/diff-factory';
 export function initializeLexical() {
   clearDecorators();
   setDecorator(AgentContextNode, AgentContext);
+  setDecorator(AgentActivityNode, AgentActivity);
   setDecorator(HorizontalRuleNode, HorizontalRule);
   setDecorator(UserMentionNode, UserMention);
   setDecorator(GroupMentionNode, GroupMention);

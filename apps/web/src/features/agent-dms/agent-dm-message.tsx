@@ -1,8 +1,6 @@
-import { InteractionCard } from '@app/features/agent-interactions/components/InteractionCard';
-import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { toast } from '@core/component/Toast/Toast';
 import { Button } from '@ui';
-import { For, type ParentProps, Show } from 'solid-js';
+import { Show } from 'solid-js';
 import { useOptionalAgentDm } from './context';
 import { useAgentDmControl } from './queries/controls';
 
@@ -92,98 +90,6 @@ export function AgentDmMessageStatus(props: { messageId: string }) {
             Retry message
           </Button>
         </Show>
-      </div>
-    </Show>
-  );
-}
-
-/** The normal message layout hosts streamed text and live decisions in place. */
-export function AgentDmReplyContent(props: ParentProps<{ messageId: string }>) {
-  const context = useOptionalAgentDm();
-  if (!context) return props.children;
-  const record = () =>
-    context
-      .conversation()
-      ?.turns.find(
-        (turn) =>
-          turn.replyMessageId === props.messageId && turn.state === 'running'
-      );
-  const prompt = () =>
-    context
-      .messages()
-      .find((message) => message.requestId === record()?.actionId);
-  const reply = () =>
-    context
-      .messages()
-      .find(
-        (message) =>
-          message.author.kind === 'agent' && message.turn === prompt()?.turn
-      );
-  const text = () =>
-    reply()
-      ?.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : []))
-      .join('\n\n') ?? '';
-  const pending = () =>
-    context.interactions
-      .pending()
-      .filter((request) => request.turn === prompt()?.turn);
-  const keys = () =>
-    pending().map((request) =>
-      JSON.stringify([request.kind, request.requestId, request.turn])
-    );
-  const requestFor = (key: string) =>
-    pending().find(
-      (request) =>
-        JSON.stringify([request.kind, request.requestId, request.turn]) === key
-    );
-  const workingTool = () =>
-    reply()?.parts.findLast(
-      (part) => part.kind === 'tool_use' && part.status === 'running'
-    );
-  const toolFor = (toolId: string | null) => {
-    const part = reply()?.parts.find(
-      (part) => part.kind === 'tool_use' && part.id === toolId
-    );
-    return part?.kind === 'tool_use' ? part : undefined;
-  };
-  const status = () =>
-    pending().length
-      ? 'Waiting for you'
-      : workingTool()
-        ? 'Using tools…'
-        : text()
-          ? 'Responding…'
-          : 'Thinking…';
-  return (
-    <Show when={record()} fallback={props.children}>
-      <div class="space-y-3">
-        <Show when={text()}>
-          <StaticMarkdown markdown={text()} />
-        </Show>
-        <div role="status" aria-live="polite" class="text-xs text-ink-muted">
-          {status()}
-        </div>
-        <Show when={context.liveFailed()}>
-          <div class="flex items-center gap-2 text-xs text-ink-muted">
-            Live updates disconnected.
-            <Button size="xs" variant="ghost" onClick={context.retryLive}>
-              Reconnect
-            </Button>
-          </div>
-        </Show>
-        <For each={keys()}>
-          {(key) => (
-            <Show when={requestFor(key)}>
-              {(request) => (
-                <InteractionCard
-                  request={request()}
-                  controller={context.interactions}
-                  tool={toolFor(request().toolCall)}
-                />
-              )}
-            </Show>
-          )}
-        </For>
       </div>
     </Show>
   );

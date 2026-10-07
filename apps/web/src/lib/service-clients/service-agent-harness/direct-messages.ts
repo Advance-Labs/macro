@@ -26,14 +26,3 @@ export function retryAgentDm(channelId: string, turn: AgentDmTurn) {
     }
   ).then((result) => result.map(() => undefined));
 }
-
-export function startFreshAgentDm(channelId: string, sessionId: string) {
-  return fetchWithToken<Record<string, never>>(
-    `${SERVER_HOSTS['agent-harness']}/agent-dms/${channelId}/start-fresh`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-    }
-  ).then((result) => result.map(() => undefined));
-}

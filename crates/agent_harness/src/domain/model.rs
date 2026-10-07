@@ -356,6 +356,84 @@ impl ReplyPlacement {
             Self::Timeline => None,
         }
     }
+
+    /// How a turn answered here is shown.
+    pub fn voice_style(self) -> VoiceStyle {
+        match self {
+            Self::Thread => VoiceStyle::Turn,
+            Self::Timeline => VoiceStyle::Segments,
+        }
+    }
+}
+
+/// How an agent's reply is shown where it was asked.
+///
+/// The same turn reads either way; what differs is how many messages it
+/// takes. A thread carries one reply per mention, so the reply is one message
+/// that grows. A private conversation reads like talking to a teammate, so
+/// each passage the agent writes is its own message as soon as it is
+/// finished, with the steps it took after it attached.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceStyle {
+    /// One message per turn, posted when the turn starts and updated in place.
+    Turn,
+    /// One message per passage, posted when the passage is finished; nothing
+    /// is posted until the agent has something to say or do.
+    Segments,
+}
+
+/// One message of an agent's reply, as it should read now.
+///
+/// The domain decides which segments a message shows and whether it is
+/// news; the announcer chooses the words around them and composes the
+/// nodes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyPresentation {
+    /// The session the reply speaks for.
+    pub session_id: AgentSessionId,
+    /// The bot the session speaks as; the message is posted as it.
+    pub bot_id: BotId,
+    /// Who prompted the turn; the bot writes on their current capability.
+    pub triggered_by: MacroUserIdStr<'static>,
+    /// Where the reply is shown.
+    pub parent: messages::domain::models::MessageParent,
+    /// The thread it is shown in; `None` for a timeline.
+    pub thread_id: Option<Uuid>,
+    /// The message's id, allocated before it is first posted so posting it
+    /// again finds the same message.
+    pub message_id: Uuid,
+    /// The turn the segments belong to.
+    pub turn: agent_fold::domain::model::TurnId,
+    /// The segments the message shows, in order.
+    pub segments: Vec<agent_fold::domain::model::ProjectedSegment>,
+    /// Lead with a link to the session.
+    pub link: bool,
+    /// Show that the turn is still running after the segments.
+    pub pending: bool,
+    /// How the turn ended, on the reply's last message once it has.
+    pub outcome: Option<ReplyOutcome>,
+    /// Whether this update is news: the reply's last message, once the turn
+    /// has ended.
+    pub notify: bool,
+}
+
+/// An agent session typing through the bot that speaks for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTypingUpdate {
+    /// The session whose turn is running.
+    pub session_id: AgentSessionId,
+    /// The bot the session speaks as.
+    pub bot_id: BotId,
+    /// Who prompted the turn; the bot types on their current capability.
+    pub triggered_by: MacroUserIdStr<'static>,
+    /// Where the reply will appear.
+    pub parent: messages::domain::models::MessageParent,
+    /// The thread it will appear in; `None` for a timeline.
+    pub thread_id: Option<Uuid>,
+    /// Whether the agent is typing.
+    pub active: bool,
+    /// What the agent is doing.
+    pub phase: agent_fold::domain::model::TurnPhase,
 }
 
 /// Source message and placement of one agent response.
@@ -785,6 +863,12 @@ pub struct ResolvedReply {
     pub triggered_by: MacroUserIdStr<'static>,
     /// What the reply should say now.
     pub outcome: ReplyOutcome,
+    /// The turn the reply answers.
+    pub turn: agent_fold::domain::model::TurnId,
+    /// The reply's segments, when this replica watched the turn run: the
+    /// passages and steps the reply shows. Empty when it did not, and the
+    /// reply is then told from `outcome` alone.
+    pub segments: Vec<agent_fold::domain::model::ProjectedSegment>,
 }
 
 /// Values required to provision a new session container.

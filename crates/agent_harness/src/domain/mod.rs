@@ -11,6 +11,8 @@ pub mod notifications;
 /// consulted by container managers' idle reapers.
 pub mod pending;
 pub mod ports;
+/// Which channel messages an agent's reply is shown through.
+pub mod presenter;
 /// The per-session queue of turn-occupying actions awaiting their turn.
 pub mod queue;
 /// Compute resources for a sandbox size.

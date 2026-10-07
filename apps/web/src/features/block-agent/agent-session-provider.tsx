@@ -69,6 +69,8 @@ export function AgentSessionProvider(
         parts: [{ kind: 'text', text: prompt }],
         stop: null,
         pending: true,
+        segments: [],
+        phase: null,
       },
     ];
   };

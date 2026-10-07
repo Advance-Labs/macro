@@ -16776,6 +16776,27 @@
         ],
         "description": "Events publishable to [`MacroAgentSessionLifecycleTopic`].\n\nThe serde tag and [`AgentSessionLifecycleEventName`] spell the same wire\nnames: subscribers filter on them, so they are API. The\n`event_names_match_the_wire` test holds the two in step. Exhaustive on\npurpose: a consumer's match should break when a variant is added."
       },
+      "AgentTyping": {
+        "type": "object",
+        "description": "An agent session typing through its bot.",
+        "required": ["session_id", "phase"],
+        "properties": {
+          "phase": {
+            "$ref": "#/components/schemas/AgentTypingPhase",
+            "description": "What the agent is doing. Deliberately coarse: a typing event reaches\neveryone in the conversation, and which tool runs on what is for\nviewers who can read the session itself."
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The session whose turn the bot is speaking for."
+          }
+        }
+      },
+      "AgentTypingPhase": {
+        "type": "string",
+        "description": "What a typing agent is doing.",
+        "enum": ["thinking", "writing", "working", "waiting"]
+      },
       "Anchor": {
         "oneOf": [
           {
@@ -28834,6 +28855,17 @@
               "active": {
                 "type": "boolean",
                 "description": "Whether the user is currently typing."
+              },
+              "agent": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentTyping",
+                    "description": "Present when an agent session is typing through the bot that\nspeaks for it. Names the session, so a viewer who can read it can\nshow the turn live in place of the bare indicator."
+                  }
+                ]
               },
               "thread_id": {
                 "type": ["string", "null"],

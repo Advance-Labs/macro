@@ -132,14 +132,14 @@ async fn direct_messages_share_one_session_queue_in_order_and_answer_in_the_time
         agent.received_notifications().is_empty(),
         "a DM follow-up must not cancel the current turn"
     );
-    assert_eq!(
-        announcer.announced().len(),
-        1,
-        "the second answer waits for its turn"
+    assert!(
+        announcer.announced().is_empty(),
+        "a private reply posts nothing until the agent has something to show"
     );
-    assert_eq!(
-        announcer.announced()[0].reply_placement,
-        ReplyPlacement::Timeline
+    assert!(
+        matches!(announcer.typed().as_slice(), [typing] if typing.active && typing.thread_id.is_none()),
+        "the bot types in the timeline while the first turn runs: {:#?}",
+        announcer.typed()
     );
     assert!(
         sessions.get(id).await.unwrap().thread_id.is_none(),
@@ -148,16 +148,121 @@ async fn direct_messages_share_one_session_queue_in_order_and_answer_in_the_time
     says(&agent, "First answer.");
     agent.completes_prompt().await;
     turns.lifecycle_published(4).await;
-    assert_eq!(announcer.announced().len(), 2);
+    assert_eq!(answers(&announcer), ["First answer."]);
     says(&agent, "Second answer.");
     agent.completes_prompt().await;
     turns.lifecycle_published(6).await;
-    assert_eq!(announcer.resolved().len(), 2);
+    assert_eq!(answers(&announcer), ["First answer.", "Second answer."]);
     assert!(
         announcer
-            .announced()
+            .presented()
             .iter()
-            .all(|reply| reply.reply_placement == ReplyPlacement::Timeline && !reply.is_coding)
+            .all(|reply| reply.thread_id.is_none() && !reply.link),
+        "a private reply is top-level and repeats no session link"
+    );
+    assert!(announcer.announced().is_empty());
+}
+
+/// The text of each final reply message shown, in order: the answers.
+fn answers(announcer: &AnnouncerMock) -> Vec<String> {
+    announcer
+        .presented()
+        .iter()
+        .filter(|reply| reply.notify)
+        .filter_map(|reply| {
+            reply
+                .segments
+                .iter()
+                .rev()
+                .find_map(|segment| segment.text.clone())
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_private_reply_posts_each_passage_with_its_steps_and_only_the_answer_is_news() {
+    use agent_fold::domain::model::{SegmentKind, TurnPhase};
+    let ((service, _, containers, announcer, _), turns) =
+        harness_with_signals(PromptContextMock::default(), PromptComposerMock::default());
+    let id = AgentSessionId::new();
+    let container = open_dm(&service, &containers, id, dm_command()).await;
+    let agent = container.agent();
+
+    says(&agent, "Checking the tests first.");
+    eventually("the agent is seen writing", || {
+        announcer
+            .typed()
+            .iter()
+            .any(|typing| typing.phase == TurnPhase::Writing)
+    })
+    .await;
+    assert!(
+        announcer.presented().is_empty(),
+        "an unfinished passage streams live and is not posted"
+    );
+
+    runs(&agent, "t1", "in_progress", "cargo test");
+    eventually("the narration is posted with its open steps", || {
+        !announcer.presented().is_empty()
+    })
+    .await;
+    let narration = announcer.presented()[0].clone();
+    assert!(!narration.notify, "narration is not news");
+    assert_eq!(
+        narration
+            .segments
+            .iter()
+            .map(|segment| (segment.segment.kind, segment.segment.sealed))
+            .collect::<Vec<_>>(),
+        [(SegmentKind::Prose, true), (SegmentKind::Activity, false)]
+    );
+    assert_eq!(
+        narration.segments[0].text.as_deref(),
+        Some("Checking the tests first.")
+    );
+    assert!(
+        announcer
+            .typed()
+            .iter()
+            .any(|typing| typing.phase == TurnPhase::Working),
+        "the bot says it is working while the step runs"
+    );
+
+    finishes(&agent, "t1");
+    says(&agent, "All green.");
+    agent.completes_prompt().await;
+    turns.lifecycle_published(4).await;
+
+    let presented = announcer.presented();
+    let finals: Vec<_> = presented.iter().filter(|reply| reply.notify).collect();
+    assert_eq!(finals.len(), 1, "{presented:#?}");
+    assert_eq!(
+        finals[0]
+            .segments
+            .last()
+            .and_then(|segment| segment.text.as_deref()),
+        Some("All green.")
+    );
+    assert_ne!(
+        finals[0].message_id, narration.message_id,
+        "the answer is a message of its own"
+    );
+    // The narration's message is rewritten once its steps sealed, never posted twice.
+    let narration_updates: Vec<_> = presented
+        .iter()
+        .filter(|reply| reply.message_id == narration.message_id)
+        .collect();
+    assert!(
+        narration_updates
+            .last()
+            .unwrap()
+            .segments
+            .iter()
+            .all(|segment| segment.segment.sealed)
+    );
+    assert!(
+        matches!(announcer.typed().last(), Some(typing) if !typing.active),
+        "the bot stops typing once the answer is showing"
     );
 }
 
@@ -176,7 +281,8 @@ async fn a_different_person_cannot_prompt_the_reserved_dm_session() {
             .await,
         Err(HarnessError::Session(AgentSessionError::Forbidden))
     ));
-    assert_eq!(announcer.announced().len(), 1);
+    assert!(announcer.announced().is_empty());
+    assert!(announcer.presented().is_empty());
 }
 
 #[tokio::test]
@@ -195,10 +301,10 @@ async fn an_external_persona_dm_binds_the_connected_runtime_without_spawning_a_c
     assert_eq!(containers.spawned(), 0);
     assert_eq!(repo.get(id).await.unwrap().harness, "external");
     assert_eq!(prompts(&runtime.agent()).len(), 1);
-    assert_eq!(announcer.announced().len(), 1);
-    assert_eq!(
-        announcer.announced()[0].reply_placement,
-        ReplyPlacement::Timeline
+    assert!(announcer.announced().is_empty());
+    assert!(
+        announcer.typed().iter().any(|typing| typing.active),
+        "an external persona types like any other"
     );
 
     mention_origin_mut(&mut command).message_id = macro_uuid::generate_uuid_v7();
@@ -246,7 +352,7 @@ async fn a_completed_dm_message_never_runs_again_when_the_broker_replays_it(pool
     let completed = journal.get(source).await.unwrap().unwrap();
     assert_eq!(completed.state, DmTurnState::Succeeded);
     assert!(completed.reply_finalized);
-    assert_eq!(announcer.resolved().len(), 1);
+    assert_eq!(answers(&announcer), ["Recorded answer"]);
     assert_eq!(
         service
             .execute(session, HarnessCommand::DirectMessage(command))
@@ -256,8 +362,8 @@ async fn a_completed_dm_message_never_runs_again_when_the_broker_replays_it(pool
     );
     service.recover_direct_messages().await.unwrap();
     assert_eq!(prompts(&container.agent()).len(), 1);
-    assert_eq!(announcer.announced().len(), 1);
-    assert_eq!(announcer.resolved().len(), 1);
+    assert!(announcer.announced().is_empty());
+    assert_eq!(answers(&announcer), ["Recorded answer"]);
 }
 
 #[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
@@ -321,15 +427,19 @@ async fn recovered_messages_dispatch_in_durable_order_even_when_delivered_in_rev
         .await
         .unwrap();
     container.agent().wait_for_requests(3).await;
-    assert_eq!(
-        announcer.announced()[0].origin_message_id,
-        mention_origin(&first).message_id
+    assert!(
+        prompt_text(&container.agent(), 0).contains("First admitted message"),
+        "the older admission runs first"
     );
     container.agent().completes_prompt().await;
     signals.lifecycle_published(4).await;
-    assert_eq!(
-        announcer.announced()[1].origin_message_id,
-        mention_origin(&second).message_id
-    );
+    container.agent().wait_for_requests(4).await;
+    assert!(prompt_text(&container.agent(), 1).contains("Second admitted message"));
+    assert!(announcer.announced().is_empty());
     assert_eq!(containers.spawned(), 1);
+}
+
+/// The text of the `index`-th prompt the agent received.
+fn prompt_text(agent: &FakeAgent, index: usize) -> String {
+    serde_json::to_string(&prompts(agent)[index]).unwrap()
 }

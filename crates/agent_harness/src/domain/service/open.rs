@@ -512,6 +512,9 @@ where
                     announce: None,
                     announcement_message_id: None,
                     dispatched_at: chrono::Utc::now(),
+                    bot_id: Some(bot_id),
+                    speaks_as_chip: false,
+                    presented: Vec::new(),
                 };
                 if !store.claim(record.action_id, &flight).await? {
                     return Ok(());

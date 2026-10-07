@@ -87,6 +87,9 @@ fn flight(record: &DmTurn) -> InFlightTurn {
         }),
         announcement_message_id: Some(macro_uuid::generate_uuid_v7()),
         dispatched_at: chrono::Utc::now(),
+        bot_id: None,
+        speaks_as_chip: false,
+        presented: Vec::new(),
     }
 }
 

@@ -168,6 +168,7 @@ export function handleMessageEvent(
         user_id: event.actor,
         thread_id: change.thread_id,
         action: change.active ? 'start' : 'stop',
+        agent: change.agent,
       },
       currentUserId ?? ''
     );

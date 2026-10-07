@@ -101,6 +101,7 @@ fn markdown(body: AgentChatReplyBody) -> String {
     match body {
         AgentChatReplyBody::Markdown { markdown } => markdown,
         AgentChatReplyBody::Pending => panic!("expected prose, got the spinner"),
+        AgentChatReplyBody::Segments { .. } => panic!("expected prose, got segments"),
     }
 }
 
@@ -118,6 +119,7 @@ fn every_reply_names_its_session() {
         AgentChatReply {
             session_id: "00000000-0000-0000-0000-00000000000a".to_owned(),
             body: AgentChatReplyBody::Pending,
+            link: None,
         }
     );
 }

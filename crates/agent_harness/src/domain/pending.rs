@@ -76,6 +76,21 @@ impl PendingCommands {
     pub fn is_pending(&self, session: AgentSessionId) -> bool {
         self.0.contains_key(&session)
     }
+
+    /// Every turn in flight on this replica, for work that runs per turn on a
+    /// timer - keeping a running turn's typing indicator alive.
+    #[must_use]
+    pub fn running(&self) -> Vec<(AgentSessionId, InFlightTurn)> {
+        self.0
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .value()
+                    .as_ref()
+                    .map(|turn| (*entry.key(), turn.clone()))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -97,6 +112,9 @@ mod test {
             announce: None,
             announcement_message_id: None,
             dispatched_at: chrono::Utc::now(),
+            bot_id: None,
+            speaks_as_chip: false,
+            presented: Vec::new(),
         }
     }
 

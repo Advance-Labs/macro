@@ -328,6 +328,27 @@ export type AgentSessionLifecycleEvent = {
     metadata: SessionDeletedMetadata;
 };
 
+/**
+ * An agent session typing through its bot.
+ */
+export type AgentTyping = {
+    /**
+     * What the agent is doing. Deliberately coarse: a typing event reaches
+     * everyone in the conversation, and which tool runs on what is for
+     * viewers who can read the session itself.
+     */
+    phase: AgentTypingPhase;
+    /**
+     * The session whose turn the bot is speaking for.
+     */
+    session_id: string;
+};
+
+/**
+ * What a typing agent is doing.
+ */
+export type AgentTypingPhase = 'thinking' | 'writing' | 'working' | 'waiting';
+
 export type Anchor = PdfAnchor;
 
 export type AnchorId = PdfAnchorId & {
@@ -8148,6 +8169,7 @@ export type MessageChange = {
      * Whether the user is currently typing.
      */
     active: boolean;
+    agent?: null | AgentTyping;
     /**
      * Root being replied to, or no root for the parent composer.
      */

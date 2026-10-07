@@ -128,6 +128,10 @@ where
                     entry.announce.as_ref(),
                     entry.actor.as_ref(),
                     ReplyOutcome::Failed,
+                    // A refused entry never opened a turn: there is nothing
+                    // it said or did to show, only that it was refused.
+                    agent_fold::domain::model::TurnId(0),
+                    Vec::new(),
                 )
                 .await;
             if resolved && let Some(store) = dm_store {

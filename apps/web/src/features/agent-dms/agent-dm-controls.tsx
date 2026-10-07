@@ -1,12 +1,14 @@
 import { toast } from '@core/component/Toast/Toast';
 import type { AgentDmConversationResponse } from '@service-agent-harness/direct-messages';
-import { Show } from 'solid-js';
-import { ContextControls } from './components/context-controls';
 import { ConversationActivity } from './components/conversation-activity';
 import { useOptionalAgentDm } from './context';
 import { useAgentDmControl } from './queries/controls';
 
-/** Session controls for the current segment, independent of the agent block. */
+/**
+ * What waits in the current segment and how its last attempt ended,
+ * independent of the agent block. A running turn is stopped from the agent's
+ * typing row, where it shows.
+ */
 export function AgentDmControls(props: {
   conversation: AgentDmConversationResponse;
   onChanged: () => void;
@@ -42,45 +44,20 @@ export function AgentDmControls(props: {
       : undefined;
   };
   return (
-    <>
-      <Show when={current()}>
-        {(session) => (
-          <ContextControls
-            available={props.conversation.available}
-            settingsChanged={props.conversation.settingsChanged}
-            busy={!!running()}
-            pending={mutation.isPending}
-            onStartFresh={() =>
-              mutation.mutateAsync({
-                type: 'fresh',
-                channelId: props.conversation.channelId,
-                sessionId: session(),
-              })
-            }
-          />
-        )}
-      </Show>
-      <ConversationActivity
-        running={!!running()}
-        queued={queued()}
-        failed={context ? undefined : failure()}
-        canRetry={props.conversation.available}
-        pending={mutation.isPending}
-        onStop={() => {
-          const turn = running();
-          if (turn)
-            mutation.mutate({ type: 'stop', sessionId: turn.sessionId });
-        }}
-        onRetry={() => {
-          const turn = failed();
-          if (turn)
-            mutation.mutate({
-              type: 'retry',
-              channelId: props.conversation.channelId,
-              turn,
-            });
-        }}
-      />
-    </>
+    <ConversationActivity
+      queued={queued()}
+      failed={context || running() ? undefined : failure()}
+      canRetry={props.conversation.available}
+      pending={mutation.isPending}
+      onRetry={() => {
+        const turn = failed();
+        if (turn)
+          mutation.mutate({
+            type: 'retry',
+            channelId: props.conversation.channelId,
+            turn,
+          });
+      }}
+    />
   );
 }

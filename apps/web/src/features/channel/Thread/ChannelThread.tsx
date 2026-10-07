@@ -319,6 +319,7 @@ export function ChannelThread(props: ThreadProps) {
               <DebugSuspense name="ChannelThread.message">
                 <ChannelMessage
                   renderContent={props.renderMessageContent}
+                  hideTriggeredBy={props.hideTriggeredBy}
                   parent={props.parent()}
                   message={props.data()}
                   actions={props.getMessageActions?.(props.data())}

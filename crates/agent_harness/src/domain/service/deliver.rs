@@ -317,6 +317,15 @@ where
             outcome,
             ReplyOutcome::NeedsInput { .. } | ReplyOutcome::Resumed
         );
+        let in_segments = turn.announce.as_ref().is_some_and(|origin| {
+            origin.reply_placement.voice_style() == crate::domain::model::VoiceStyle::Segments
+        });
+        // A reply shown in segments is shown once its turn has ended. While
+        // the turn waits on a question, the question is answered live and
+        // the bot's typing says it is waiting.
+        if in_segments && !terminal {
+            return;
+        }
         let dm_store = self.dm_turns.as_ref().filter(|_| {
             turn.announce.as_ref().is_some_and(|origin| {
                 origin.reply_placement == crate::domain::model::ReplyPlacement::Timeline
@@ -349,15 +358,27 @@ where
                 _ => {}
             }
         }
-        let resolved = self
-            .resolve_announced_reply(
+        let resolved = if in_segments {
+            self.present_final(session_id, turn, outcome.clone()).await
+        } else {
+            let segments = if turn.speaks_as_chip {
+                Vec::new()
+            } else {
+                crate::domain::presenter::turn_segments(
+                    &self.reported_segments(session_id, turn.turn),
+                )
+            };
+            self.resolve_announced_reply(
                 session_id,
                 turn.announcement_message_id,
                 turn.announce.as_ref(),
                 turn.actor.as_ref(),
                 outcome.clone(),
+                turn.turn,
+                segments,
             )
-            .await;
+            .await
+        };
         if resolved
             && terminal
             && let Some(store) = dm_store
@@ -369,6 +390,7 @@ where
     }
 
     /// Resolve an announcement even when its queued command never opened a turn.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn resolve_announced_reply(
         &self,
         session_id: AgentSessionId,
@@ -376,6 +398,8 @@ where
         origin: Option<&AnnounceOrigin>,
         actor: Option<&MacroUserIdStr<'static>>,
         outcome: ReplyOutcome,
+        turn: agent_fold::domain::model::TurnId,
+        segments: Vec<agent_fold::domain::model::ProjectedSegment>,
     ) -> bool {
         let (Some(message_id), Some(origin), Some(triggered_by)) = (message_id, origin, actor)
         else {
@@ -427,6 +451,8 @@ where
                 origin_parent: origin.parent.clone(),
                 triggered_by: triggered_by.clone(),
                 outcome: outcome.clone(),
+                turn,
+                segments,
             })
             .await
         {

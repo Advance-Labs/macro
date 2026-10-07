@@ -21,6 +21,7 @@ mod deliver;
 mod lifecycle;
 mod lifecycle_events;
 mod open;
+mod present;
 mod queue;
 
 use std::sync::Arc;
@@ -164,6 +165,21 @@ struct AgentHarnessInner<
     mentions: Mentions,
     /// Where the notifications a fact warrants go.
     notifier: Notifier,
+    /// How a running turn's reply was last reported, keyed by session: the
+    /// reply's segments as the fold reported them, for the turn's end to
+    /// show. Only ever touched from the session's own command worker.
+    projections: DashMap<
+        AgentSessionId,
+        (
+            agent_fold::domain::model::TurnId,
+            Vec<agent_fold::domain::model::ProjectedSegment>,
+        ),
+    >,
+    /// What each running turn's agent is doing, for its typing indicator.
+    typing_phases: DashMap<AgentSessionId, agent_fold::domain::model::TurnPhase>,
+    /// The shape each reply message was last shown with, so a report that
+    /// changes nothing it shows does not rewrite it.
+    presented_shapes: DashMap<macro_uuid::Uuid, Vec<(u32, bool)>>,
 }
 
 /// One handle on the orchestrator's state, shared by the service's clones
@@ -342,6 +358,9 @@ where
                 lifecycle_publisher,
                 mentions,
                 notifier,
+                projections: DashMap::new(),
+                typing_phases: DashMap::new(),
+                presented_shapes: DashMap::new(),
             }),
             workers: Arc::new(DashMap::new()),
             repositories: None,

@@ -26,23 +26,30 @@ function AgentDmComposerContent(props: ParentProps<{ channelId: string }>) {
       : conversation.isSuccess
         ? 'unavailable'
         : 'loading';
+  // Centered in the message column, like the channel input it wraps: the
+  // input sizes itself to that column, and the controls and notices share
+  // its edges.
   return (
-    <div class="flex w-full min-w-0 flex-col">
+    <div class="flex w-full min-w-0 flex-col items-center">
       <Show when={conversation.isSuccess && conversation.data}>
         {(data) => (
-          <AgentDmControls
-            conversation={data()}
-            onChanged={() => void conversation.refetch()}
-          />
+          <div class="macro-message-width">
+            <AgentDmControls
+              conversation={data()}
+              onChanged={() => void conversation.refetch()}
+            />
+          </div>
         )}
       </Show>
       <Show
         when={available()}
         fallback={
-          <ConversationNotice
-            state={notice()}
-            onRetry={() => void conversation.refetch()}
-          />
+          <div class="macro-message-width">
+            <ConversationNotice
+              state={notice()}
+              onRetry={() => void conversation.refetch()}
+            />
+          </div>
         }
       >
         {props.children}

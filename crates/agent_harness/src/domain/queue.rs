@@ -28,6 +28,7 @@ use agent_session::domain::events::{InFlightTurnSummary, TurnSummary};
 use agent_session::domain::model::AgentSessionId;
 use agent_session::domain::model::StoredQueuedAction;
 use agent_session::domain::ports::QueuedControl;
+use bot_id::BotId;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -94,6 +95,20 @@ pub struct InFlightTurn {
     /// turn hours old with nothing streaming is the shape of a wedged
     /// session, and without this it looks exactly like a long one.
     pub dispatched_at: DateTime<Utc>,
+    /// The bot the session speaks as, for the turn's typing and reply
+    /// messages. Absent on a turn recorded before it was kept.
+    #[serde(default)]
+    pub bot_id: Option<BotId>,
+    /// Whether the turn was announced as a session chip (a coding agent or an
+    /// assignment), which renders the turn itself: its message is never
+    /// rewritten into a reply.
+    #[serde(default)]
+    pub speaks_as_chip: bool,
+    /// The messages a reply shown in segments is posted as, in order. Each id
+    /// is allocated, and saved with the turn, before the message is first
+    /// posted, so showing the reply again updates the same messages.
+    #[serde(default)]
+    pub presented: Vec<Uuid>,
 }
 
 impl InFlightTurn {
