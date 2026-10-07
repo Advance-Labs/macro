@@ -132,6 +132,9 @@ pub struct RestoredColumn {
     pub kind: Option<ColumnKind>,
     /// Whether the first value should still infer a type.
     pub infer_type: bool,
+    /// Whether this column permits absent values.
+    #[serde(default = "super::models::column_nullable_default")]
+    pub nullable: bool,
 }
 
 /// A row a delete removed: its id and place.
@@ -369,6 +372,8 @@ pub struct TableImage {
 pub struct ColumnImage {
     /// Whether a first value still determines the column's type.
     pub infer_type: bool,
+    /// Whether this column permits absent values.
+    pub nullable: bool,
     /// The column.
     pub id: ColumnId,
     /// Its table.
@@ -518,13 +523,14 @@ pub fn settled_column(
 
 /// The entry of a table made whole, by an import or a new database's
 /// starter: its columns and rows, created together. Undoing it removes the
-/// table.
+/// table. The written cells also describe each row's initial history.
 pub fn created_table(
     database_id: DatabaseId,
     table: TableId,
     version: TableVersion,
     columns: &[ColumnId],
     rows: &[RowId],
+    after: CellImage,
 ) -> JournalEntry {
     JournalEntry {
         database_id,
@@ -536,6 +542,7 @@ pub fn created_table(
                 table,
                 change: models_databases::TableChange::Delete,
             }],
+            after,
             ..ChangeInverse::default()
         },
         rows: rows

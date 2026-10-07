@@ -267,6 +267,8 @@ fn enqueue_archive(handle: &EngineHandle, n: u16) -> (String, String) {
         "native-runner".into(),
         10,
         1000,
+        None,
+        vec![],
     ))
     .unwrap();
     let InitialMutationClaimWire::Claimed { mutation } = result.initial_claim else {

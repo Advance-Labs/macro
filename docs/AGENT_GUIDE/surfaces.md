@@ -13,7 +13,7 @@ Low-emphasis right-aligned split-header actions (including Calendar's touch/prev
 New event and Channel's idle Call and Ask Macro) are borderless with a rounded-xl
 background on hover. Emphasized variants retain their treatment, including an
 active call's green ink and outline frame. Channel, company, contact, and project
-content tabs use bubble tabs in a separate row below the header. Button sizes do not change variant colors or framing; individual
+content tabs use inset controls in the top bar. Button sizes do not change variant colors or framing; individual
 framed controls default to glass on touch and flat on desktop. Use `glass={true}`
 to enable glass on all devices, or `glass={false}` to disable it everywhere.
 Embedded and low-emphasis actions use `ghost`; inline calendar-invitation text
@@ -151,36 +151,11 @@ that entity's last operation in the batch. Emitted `SoupUpdated` items are non-n
 If viewer-scoped hydration finds no item, the backend logs and omits that update;
 it does not imply deletion. Only explicit `GraphqlCacheDeletion` events remove records.
 
-## In-app reminder alerts
+## Email reminder delivery
 
-With reminders enabled, an unseen reminder notification produces a persistent
-alert while the Macro tab is visible, including when DevTools, the address bar,
-or another window has keyboard focus. Browser notification permission is not
-required. Returning to a hidden tab also surfaces unseen reminders from the
-loaded notification feed. Alerts do not activate the full notification history
-query: live arrivals are buffered independently while the tab is hidden.
-Multiple occurrences share one alert, with up to three descriptions and a count
-of the rest; normal save/copy toasts do not replace it.
-
-**Open reminder** opens the reminder details, including standalone reminders.
-For a group, **View reminders** opens the reminders list. Opening acknowledges
-the alert only after navigation applies; a rejected or superseded navigation
-leaves the card actionable. Opening or closing acknowledges it only in this
-browser account; it does not complete, delete, or snooze a reminder.
-Acknowledgements survive reloads and synchronize between tabs on the same origin.
-A later occurrence of a recurring reminder alerts again.
-Seeing or completing its notification elsewhere also removes it from the alert.
-
-Existing item-level notification mutes and snoozes also hide matching reminder
-alerts. Snoozing does not acknowledge the occurrence: an unseen alert can return
-when the snooze expires, without requiring another network event. The alert does
-not add a new per-occurrence Snooze control.
-
-When verifying, intercept notification responses in an owned browser tab and
-inject unseen reminder fixtures instead of scheduling real hosted reminders.
-Check permission denied, a burst of reminders before history loads, hide/show,
-reload after dismissal, mute/unmute, snooze expiry, and desktop/mobile widths. This foreground path does not deliver browser
-push when Macro is closed.
+An email snooze returns its original conversation to the inbox and adds a
+notification to that email row in Home. It has no separate reminder toast or
+detail view. See [Email reminders](reminders.md#delivery-and-undo).
 
 ## Home (desktop) / Notifications (mobile) — `/app/home`
 
@@ -284,13 +259,7 @@ are restored, including before a chat-limit paywall opens. With agents disabled,
 the input stays 32px above the vertical center as suggestions load. With agents
 enabled, the composer uses the same topbar offset and 24/64 padding as the
 Agents new-conversation page so the two inputs share a baseline; suggestions
-still load below it without moving the input. Eligible newer accounts (all
-accounts in development) see “New to Macro? See the **Getting Started** page.” directly
-below the composer, above suggestions. The link opens
-`/app/component/getting-started`; **Dismiss Getting Started link** hides it and
-remembers the dismissal per user in this browser across reloads. Dismissals update
-all open Home panes immediately and stay isolated when switching accounts. This
-dismissal is independent of the Getting Started sidebar link. Up to three cached AI
+still load below it without moving the input. Up to three cached AI
 suggestions appear below the
 composer, using the existing fast/smart recommendation projections. Compact rows
 use one line: reason — Phosphor icon and item name, followed by Open, all at the same font size. Clicking a
@@ -405,9 +374,11 @@ The mobile task drawer retains its existing layout.
 Email's Tags sidebar uses the same [nested tag tree as Tasks](tasks.md#nested-sidebar-tags).
 Carets and folder-only parents expand branches; actual tags select their exact ID
 and switch the mailbox to All. Parent selection does not include descendant tags.
+Unlike Tasks and Drive, it lists only personal tags; team-shared tags are hidden,
+and its `New tag` action creates a personal tag with no Team sharing option.
 
 Full email client. Tabs: `Signal` / `Noise` / `Favorites` / `Sent` / `Scheduled` / `Calendar` / `Drafts` / `Shared` /
-`All`. Compose via the `Email` button (or `Create` → `Email E`). On a fresh local user it
+`Archived` / `All`. Compose via the `Email` button (or `Create` → `Email E`). On a fresh local user it
 shows `Connect your email` (Gmail/Google Workspace OAuth) — most functionality needs a
 connected account. Search is `Ctrl+F` within the surface.
 
@@ -419,6 +390,14 @@ the paginated GraphQL Soup query uses `favoritesOnly: true`. With the flag off,
 REST Soup uses `favorites_only: true`. Starring changes membership without
 changing the list query. Text search still resolves favorite IDs for the search
 service. An empty favorites list shows `No favorite emails`.
+
+`Archived`, directly before All, lists your own archived (Mail Done) threads: the
+All mailbox with Done applied, excluding threads teammates shared with you. It
+respects the selected inboxes and filters. The search service cannot filter
+archive state, so search within the tab keeps only archived hits on the client.
+Rows offer **Unarchive email**;
+unarchiving removes the row at once. The tab persists across reloads. An empty
+list shows `No archived email`.
 
 On desktop, a favorited email keeps a filled, muted star just before its
 timestamp. Other rows reserve only that small star slot. Hovering reveals
@@ -530,8 +509,10 @@ writer. Email mutations and their uncached reply reloads use the primary; ordina
 GraphQL/REST lists, direct Soup lookups, and realtime Soup hydration use the replica.
 A mutation reply is fresh, but subsequent list refetches are eventually consistent
 and can still return replica-stale read/archive state. Test that boundary separately
-from mutation reply correctness. A post-commit reply-load failure is retryable;
-it must not discard the queued intent. Deploy
+from mutation reply correctness. GraphQL application errors, including a failed
+post-commit reply load, release the queued mutation rather than retrying forever.
+Transport failures retain the existing retry policy. Draft recovery preserves local
+content and offers explicit Retry using the original handle. Deploy
 the backend schema containing `setEmailThreadArchived` before this client.
 Browser WASM and native cache builds must include the regenerated schema metadata;
 native offline archive support therefore requires a full app build, not just OTA.
@@ -551,7 +532,7 @@ All, Signal, Noise, Drafts, Sent, Calendar, and Shared support tab changes and n
 filter combinations while offline: account selection
 (including delegated inboxes), read/unread, and archive-based Done/Not Done. Mail Done
 means `inboxVisible = false`; it is **not** notification lifecycle state. Signal/Noise
-retain their Inbox scope, so archived mail is found using All + Done.
+retain their Inbox scope, so archived mail is found in Archived (All + Done).
 
 A `Showing cached mail` notice identifies results over synchronized metadata, not a
 claim of complete mailbox coverage. These lists paginate locally beyond the first
@@ -659,8 +640,15 @@ or the latest message when none is selected. `F` opens a forward and focuses To.
 While an editable field is focused, Escape is handled by that field before the
 close-reply shortcut.
 An edited reply remains a draft when navigating away and returning. Standalone
-compose also flushes pending edits when leaving through app navigation. During
-send or discard, its sender and scheduling controls cannot change the operation.
+compose also flushes pending edits when leaving through app navigation. Switch
+views immediately after typing, before the 500 ms autosave debounce: the old
+thread must close, further navigation must work, and reopening must retain the
+last edit. Repeat with an existing draft and a new reply. During
+mobile Save Draft navigation, a failed local flush is reported and keeps the
+back menu and editor open with their contents intact. After another edit saves
+successfully, Save Draft can leave the composer. Reopen an existing reply after
+clearing its body: the saved empty body must not restore the original quoted HTML.
+During send or discard, its sender and scheduling controls cannot change the operation.
 Attachments that can be opened are buttons named by their filename; Tab to one
 and press Enter or Space. Removal is a separate button named `Remove <filename>`.
 Removing a forwarded file keeps the received original.
@@ -668,6 +656,74 @@ When checking draft autosave, edit the body of a draft with uploaded or forwarde
 attachments, wait for the save, and reopen it; the attachments should remain visible.
 AI email tool drafts persist body-only edits; changing recipients or the subject
 is not required to save the body.
+
+With GraphQL draft queuing enabled, working copies and pending attachment bytes
+are saved on this device independently of the mutation queue. A failed server
+save must leave the draft discoverable in **Drafts** (including grouped views)
+and in its reply thread. **Draft saved** sits immediately left of the desktop
+delete button after editing pauses for 500 ms and the latest local save completes,
+then fades out after two seconds, including offline saves. Resuming typing hides
+it immediately; another pause and saved version restart the timer. Background
+sync updates do not. Failures replace it with persistent **Retry** in the same place; hover for details.
+Clicking Send must not show the badge for its preparatory draft save, including
+when delivery fails. Later edits can show it again after the usual pause.
+Verify the label does not cycle through saving/syncing text on each edit and
+that retry remains accessible beside the actions on mobile. Editing while failed
+continues saving locally without repeatedly submitting the rejected request.
+Repeated local-save failures show one persistent warning per composer; recovery
+or closing that composer dismisses it. A later failure shows a new warning.
+Retry preserves the original draft handle. An already-sent rejection drops the
+local copy rather than recreating the sent message. The REST compose path keeps
+its existing behavior.
+
+Native draft recovery requires a full app update containing queue inspection and
+durable mutation metadata support. An older app receiving an OTA bundle shows
+**Macro update required** and uses the existing uncached fallback. Its old queue
+must remain intact, with no new claims or queued writes, until the native update.
+When the cache becomes unavailable, draft saves and discards must not bypass its
+preserved queue through GraphQL or REST fallback. Local editing stays durable;
+reload or update the app to resume server sync. Verify this after a native
+upgrade-required error and a worker initialization failure; ordinary reads still work.
+
+For recovery verification, reject a draft save with a GraphQL error (including
+legacy `retryable: true` metadata), then perform an unrelated queued action: the
+failed save must release the queue. Reload and reopen the draft; verify subject,
+recipients, body, and pending file contents. Retry and check that exactly one
+server draft exists. If per-mutation recovery preparation fails or times out,
+the mutation must fail and release the queue too, including legacy drafts that
+have not been copied into recovery storage. Existing local working copies remain;
+an unmigrated legacy edit can be lost if the queue held its only durable copy.
+Verify that an unrelated queued action still completes in both cases.
+Repeat with two tabs, a save response arriving after a newer
+edit, an attachment upload completing during another local save, and Discard
+while an attachment snapshot is still being saved. A snapshot based on an older
+local revision must fail without replacing newer content or files, including
+when another tab saves first. Reopen the draft to use the latest version.
+A completed discard must not resurrect on reload. A clean,
+fully synchronized local copy must not hide newer server edits or sent state.
+While online, create a disposable reply, wait for its server identity, discard
+it, then leave and reopen the thread and reload. Its local body and attachment
+bytes must be gone and the server draft must stay deleted. Repeat with a second
+tab holding the same draft under its server ID: a delayed save from that tab must
+not recreate the discarded working copy. Repeat after Undo revives the draft:
+the old tab must not overwrite the restored copy even when revisions match.
+A newly composed reply still saves.
+
+For offline replies, use a received email so recipients come from its contacts.
+Type a reply, leave the thread, and reopen it while still offline; repeat both
+immediately after typing and after waiting for autosave. The reply body and
+recipients must remain, including after reload. Delay local draft discovery while
+the cached thread is available: the reply editor must wait for the recovered
+draft before it can accept edits. When several local replies target the same
+message, reopen the most recently edited draft. This exercises the real form-to-
+storage boundary as well as queued saves; plain hand-built save inputs alone
+do not cover it.
+
+Explicit sign-out warns before removing unsynchronized local drafts and files.
+Cancel must retain them; confirm must clear them and fence in-flight work so the
+next account cannot see them. If local storage cannot be inspected, sign-out must
+still offer a warning and a way to continue. Do not verify this by deleting real
+user drafts; use disposable drafts in an isolated test session.
 The three-dot button beneath a body reveals quoted content and a trimmed
 signature. Plaintext and Macro Markdown use the existing Markdown renderer;
 Macro Markdown messages retain document mentions. Ordinary HTML bodies use an
@@ -676,13 +732,29 @@ open shadow root: Playwright text locators can reach them, but a card's ordinary
 
 Sending a reply from an inbox thread marks that thread done but stays on it;
 only the explicit Mark done action opens the next email.
+Sending a message shows it in the open thread immediately, while delivery is
+still pending. It stays visible until the thread refresh confirms it, with no
+duplicate message. Failed delivery removes that message and restores the reply
+draft; a successful Undo Send removes it and reopens the draft. This temporary
+thread display uses the existing REST delivery path.
+Sending must leave the new message's reply composer closed. After delivery,
+focus belongs to the sent message card in the same thread pane, even while
+the thread refresh is still pending. Replying again requires clicking Reply
+or using a reply shortcut.
+
 After a successful send, the `Email sent` notice offers `Undo`. Undo restores the
 sent envelope and editable content, including when the reply used another inbox;
 a slow background refresh must not keep the restored editor disabled. A rejected
 send reports failure and restores its original reply editor if it is still mounted.
 A failure from an older, unmounted editor must not overwrite a newer edited reply.
 A presentation or refresh error after successful delivery is not a reason to send
-again.
+again. After the undo window and provider acceptance, send finalization supplies
+any missing delivery timestamp before publishing the realtime update. The cached
+Sent list must therefore admit the message without waiting for Gmail inbox sync
+or an online visit to Sent. Verify by sending from another Mail tab, receiving the
+final sent update, then switching offline and opening Sent. Existing provider
+timestamps and timestamps from repeated finalization remain unchanged; an unsent
+or cancelled draft must not acquire Sent membership.
 
 Send and schedule are refused with a notice while the device is offline, while a
 draft is still syncing (its save was accepted locally but not yet confirmed by the
@@ -692,25 +764,22 @@ offline: a blocking notice explains and nothing is attached.
 For a new standalone email, a failed REST draft save is best-effort: Send can
 still proceed without a draft ID when no save was queued and no attachment is
 waiting to upload. A server rejection blocks sending even an existing draft.
-An internal draft-save failure, including a failed response read after the save
-commits, stays queued and retries with backoff. It must not permanently disable
-autosave; Send stays blocked until a save is confirmed. Invalid or unauthorized
-writes still stop retrying.
+GraphQL draft saves automatically retry only network failures. GraphQL errors,
+including internal, invalid, and unauthorized errors, fail the mutation and
+release the queue. The local working copy offers explicit Retry; Send stays
+blocked until a save is confirmed.
 A successful save response with an invalid cache identity binding still commits
 its normalizable server data and reports a cache diagnostic without replaying
 the mutation or asking the user to save again. If that response also cannot be
 normalized, the attempt stops retrying and reports a permanent cache failure.
-If an offline save is permanently rejected after reconnect, a persistent
-**Draft could not be saved** notice offers **Save as new draft**. The editor keeps
-the latest text and stops autosaving until that action is chosen. Recovery saves
-the current content under a new draft identity; a reply stays in its conversation.
-Previously saved attachments that cannot be copied require reattachment, with a
-separate notice. Verify that further typing alone does not retry the rejected
-write, recovery uses the newest text, and closing or resetting the composer
-removes its recovery notice. Other transient notices must not hide that action.
+If a queued GraphQL save is permanently rejected after reconnect, the draft status
+offers **Retry** using the original draft handle and latest locally saved content.
+Further typing saves locally without retrying the rejected write. Verify that
+pending attachment bytes survive reopening and that a reply stays in its
+conversation.
 An already-sent rejection after reconnect follows the same path as an immediate
 already-sent response: announce that the email or reply was sent, clear the local
-composer, and cancel pending autosave. It must never offer **Save as new draft**.
+composer, and cancel pending autosave. It must never offer Retry for that draft.
 Verify this in standalone and reply composers, including a queued edit awaiting
 its debounce and a failure racing the first identity read. A settlement for a
 previous or different draft must not clear the current editor.
@@ -1035,7 +1104,12 @@ combine to narrow the results. Created by is hidden while My Files
 is restricted to your own files. Recent offers only file-scope filtering.
 `Sort files` offers modified, created, and viewed dates.
 Recent uses the viewer's own interaction order and does not offer a sort override.
-The New menu and drag/drop uploads target the selected folder. File rows retain
+The New menu and drag/drop uploads target the selected folder. In a folder
+opened in its own split or an inline preview, drop files from the computer onto
+the empty state or file list, then reopen the folder to verify membership.
+Check both one file and multiple files; the nested list drop target must retain
+the open folder as the upload destination.
+File rows retain
 selection and context menus; ordinary folder clicks and Enter browse inside Drive,
 while Markdown, code/CSV, image, video, PDF/DOCX, canvas, and unrecognized file
 clicks and Enter replace the list with a breadcrumbed detail. Those detail
@@ -1063,6 +1137,11 @@ returning from an opened file.
 
 Event composer dropdown triggers and date/time inputs use the theme control
 surface, so they blend with the dialog instead of using the darker page fill.
+Their menus stay inside the composer's portal scope. Verify that calendar,
+recurrence, Guests, conferencing, Location, and Notifications open on the first
+click from the title field and accept changes without closing the composer.
+Open the start/end date picker and its nested time list; selecting a time keeps
+the date picker open. Escape dismisses the active menu before the composer.
 
 The path selects the Month, Week, or Day period, and choosing another period updates
 that path. Calendar navigation defaults to Day on phones and Week on desktop; the most
@@ -1367,6 +1446,9 @@ On desktop, clicking or dragging empty grid time opens the event composer.
 While an event's details are open, a press on empty grid time closes them and
 does not start a new event; the next press creates one. Clicking another event
 switches the open details.
+Desktop event details stay inside the visible calendar grid, including Home
+previews and narrow splits. They overlap wide Day-view events when needed and
+shrink to fit the pane; long details scroll while the RSVP row stays visible.
 
 The `New event` composer (also opened by dragging a range on the grid) has an `Event kind`
 pill choosing between `Event` and `Out of office`. Picking `Out of office` hides the guests,
@@ -1651,7 +1733,13 @@ joining a standalone call never makes its content available to the wider team.
 
 On desktop, the local sidebar uses the same navigation primitives as Email and Tasks.
 Board and List share a horizontal segmented toggle at the top of the sidebar; the
-main header has no layout toggle. People is not available. Views include All companies, My companies
+main header has no layout toggle. People lists contacts across every CRM-enabled
+team the viewer belongs to. Duplicate full email addresses (case-insensitive)
+collapse to the visible contact with the most recent interaction; ties use the
+contact ID. Each team's record and existing contact links remain separate. Hidden
+contacts and contacts under hidden companies are excluded. The directory supports
+name/email search and sorting, and its navigation remains available on touch devices.
+Company views include All companies, My companies
 (Owner = current user), Needs follow-up (has a stage other than Churned and last
 interaction at least 14 days ago),
 Recently active (team email activity within 7 days), and Unassigned (no Owner). Existing personal/team
@@ -1692,9 +1780,9 @@ the toggle to dismiss it; the open state is not restored on a later visit.
 It copies the record's direct URL and shows a confirmation toast; this is also
 available in the embedded company and contact breadcrumb header.
 
-A company is laid out like a project. Below its split header or embedded
-breadcrumb header, a separate bubble-tab row shows `Overview`, `Team`, `Emails`,
-`Files`, `Tasks`, and `Calls`. Narrow rows scroll horizontally with text labels. Overview shows the name, pills
+A company is laid out like a project. Its split header or embedded breadcrumb
+header shows inset `Overview`, `Team`, `Emails`, `Files`, `Tasks`, and `Calls`
+tabs, collapsing to icons when narrow. Overview shows the name, pills
 for each domain and `Last interacted`, the generated description and the
 Discussion. Team lists the contacts with `Add contact`. Emails keeps the
 `Signal`/`All` and `Team`/`Me` toggles. Files lists non-task documents whose
@@ -1818,22 +1906,12 @@ the mention opens the database. Databases also appear in the Ctrl+K command menu
 **All** and **Files**, ordered by creation time. Home's merged feed and the Recent view read Soup, which
 does not list databases.
 
-## Getting Started — `/app/component/getting-started`
-
-The buttons under **Put Macro's agent to work** create a chat and send their
-example prompt on first use. Later clicks reopen that button's saved chat without
-sending the prompt again, including after leaving the page or refreshing. Each
-button has its own chat, saved per account in this browser's local storage.
-Repeated clicks while the same button is creating its chat are ignored; a failed
-creation can be retried.
-
 ## Home — `/app/component/home`
 
-Greeting, getting-started checklist, example prompt buttons (`Draft a document`,
-`Draft an email`, `Search & research`), and the ubiquitous `Ask AI` composer.
-Eligible newer accounts (all accounts in development) also see the same
-dismissible **Getting Started** link below
-the composer, with its dismissal shared with the desktop Home starting pane.
+Greeting, example prompt buttons (`Draft a document`, `Draft an email`,
+`Search & research`), and the ubiquitous `Ask AI` composer. Finishing onboarding
+without a deep link lands here. The retired Getting Started page's old
+`/app/getting-started` and `/app/component/getting-started` links also open Home.
 
 On phones, shared confirmations (including Remove Member and Cancel Invitation)
 use a glass sheet with a title, description, Close confirmation button, and
@@ -2042,9 +2120,16 @@ uses the shared workspace width.
 Left nav (feature and platform gates still apply):
 
 - **Blocks**: Email, Calendar, Agents, CRM.
-- **Personal**: Account, Appearance, Notifications, Keyboard shortcuts, Billing, Mobile App.
+- **Personal**: Account, Appearance, Notifications, Keyboard shortcuts, Usage, Billing, Desktop App, Mobile App.
 - **Workspace**: Team, Tags, Integrations (personal Gmail/GitHub accounts).
 - **Developer**: Agent connections, Runtimes, MCP server, API Keys, Bots.
+
+**Desktop App** (`/app/settings/desktop-app`) shows a compact version and
+build-date card in the desktop app. The date is when the running app bundle was
+built, not when it was installed on the computer. In the browser it links to the
+latest desktop release on GitHub, and only appears when the `desktop-app` PostHog
+flag is enabled. Native desktop always shows this section regardless of the flag;
+native mobile never shows it.
 
 Search checks individual setting titles and keywords, tolerates common typos,
 and shows the parent page below each control result. Selecting a result opens
@@ -2062,17 +2147,54 @@ retains theme search, editing, copying, and custom theme creation.
 Existing settings URLs remain valid; `connections` still opens Integrations,
 `agent-connections` opens Agent connections, and `harness` aliases Runtimes.
 
-`Billing` (current plan card with
-`Manage`; only in dev (`dev.macro.com/app` or a local frontend using the dev
-backend), every plan shows an **AI usage** card with the period meter; paid
-plans add the credit balance, credit-pack buttons `$10`/`$25`/`$50`/`$100` that
-redirect to Stripe Checkout, and a `Usage billing` toggle with per-period limit
-pills, while Free shows only the meter against its monthly cap; these controls
-and usage-billing promotional copy are hidden outside dev; an `Upgrade` section
-for Free users with a Premium card (`Upgrade now`) and a Max card (`Get Max`),
-an `Upgrade to Max` card on Premium (titled `Need more AI?` in dev), and a
-`Switch to Premium` link on Max; on a team a plan change moves only the viewer's
-own seat)
+`Usage` appears directly above Billing, including for Free accounts. In
+production, the `enable-ai-usage-billing` PostHog flag controls activation. While
+it is off or loading, the page shows **AI billing changes take effect on October
+8, 2026.** and all Usage controls are disabled. Turning the flag on activates the
+page and removes the announcement. Dev and local remain interactive even with
+the flag off. The production usage-limit dialog follows the same flag. Its
+**Monthly limit** meter displays a percentage using the backend's current-period
+usage and allowance. The info button explains AI agent chat and AI document
+editing. **Usage Credits** shows the dollar balance and `Add more`, which opens
+**Need more usage?** with `$25` / `$50` / `$100` / `Other`. Supported amounts
+redirect to Stripe Checkout; unsupported custom amounts are disabled. Free
+accounts see `View plans` instead of purchase or reload controls; paid team
+members who are not the payer cannot manage billing.
+Unlimited enterprise plans show `Unlimited` and do not offer credit purchases
+or automatic reload. The development paid-plan preview can still display
+those controls, with purchases disabled.
+
+The **Automatic reload** switch opens **Auto-Reload** without toggling directly.
+It contains Minimum balance (default `$10`), Target balance (default `$100`),
+optional Maximum monthly spend (`No limit`), a payment-method management link,
+and the automatic-charge warning. The dialog saves for paid payers:
+`Turn on auto-reload` enables usage billing with those thresholds (the monthly
+limit also caps usage billing per period), `Save` updates them while on, and
+`Turn off` disables usage billing. The **Automatic reload** switch reflects the
+saved state. Paid team members who are not the payer see
+`Only the account that pays for this plan can change automatic reload.` and
+cannot save. After a failed automatic reload the dialog shows `Your last
+automatic reload could not be charged. Update your payment method, then save to
+try again.`; saving retries. Existing postpaid usage billing is shown separately
+and can be turned off by the payer; while it is on, credits reload automatically
+when the balance drops below the minimum. Local **Developer tools** offer
+`Preview Free plan` and `Preview paid plan` to display either Usage page with
+sample usage, regardless of the signed-in account's tier.
+`Open Free usage-limit dialog` and `Open paid usage-limit dialog` open the
+corresponding exhausted-usage prompt directly. The previews also work before
+the usage summary loads or when it fails. The paid-plan preview allows
+testing Auto-Reload settings. Purchases and payment management are disabled during any
+preview; `Reset preview` restores server data and closes the usage-limit dialog.
+`Preview production before Oct 8` shows the October 8 announcement and disables
+Usage controls, including usage-limit dialogs. Dev tools remain interactive:
+Free and paid previews can be combined with this state, and `Reset preview`
+restores the normal dev view.
+
+`Billing` shows the current plan and `Manage`, an `Upgrade` section for Free
+users with Premium (`Upgrade now`) and Max (`Get Max`), an `Upgrade to Max` card
+on Premium, and a `Switch to Premium` link on Max. On a team, a plan change moves
+only the viewer's own seat. Plan allowance copy uses the backend catalog and
+still follows the `enable-ai-usage-billing` flag; usage controls live in Usage.
 
 `Team` (members list; on a paid team each row shows the seat's plan,
 and admins/owners can move a seat between Premium and Max with the `Seat plan`
@@ -2178,6 +2300,21 @@ mocked backend responses on 2026-09-15. Provider login and a full deployed Macro
 session were not exercised by that UI check.
 
 ## Notifications
+
+In the desktop app, **Settings → Notifications → Delivery → Desktop notifications**
+controls system notification delivery for this installation. When the Notifications
+page is disabled by its feature flag, the existing **Account → Notifications**
+switch controls the same preference.
+Turning it off takes effect immediately and persists across app restarts; turning
+it on requests permission and resumes delivery when authorized. On macOS the
+switch reads the actual system authorization, and enabling it requests macOS
+permission if it has not been decided. If macOS reports denial, enabling the switch
+shows directions to **System Settings → Notifications → Macro → Allow notifications**
+without requesting permission again; returning to Macro refreshes the switch.
+It does not change inbox items or other devices. Focus and presentation settings
+can still suppress alerts even when authorization is granted.
+Verify off/on and persistence after restarting; on the Notifications page, a failed
+toggle should show an error toast and allow retry.
 
 On native Android, enable notifications in Settings while signed in. Android 13+
 also asks for system permission; the system's **Activity** notification channel
@@ -2328,15 +2465,13 @@ and contact views (both inside the CRM workspace and in standalone blocks).
 
 ### Email reminders
 
-The global Reminders workspace uses one continuous collection with completion
-and schedule shown independently on the existing entity rows. Its persistent
-clock exposes the full schedule on hover/focus and opens the existing editor;
-see [collection verification](reminders.md#one-collection-independent-completion-and-schedule).
+Email's **Reminders** tab contains original conversations with active snoozes,
+ordered by return time. Each row's clock opens the shared reminder command menu;
+see [collection verification](reminders.md#email--reminders).
 
 Use **H** on one selected email or its open conversation, **Remind me** in the
-menu, or the header bell. These share the email-specific, time-first workflow
-in [Reminders](reminders.md#email-follow-ups-h). A successful new reminder moves
-out of the inbox and advances within that surface's filtered list. Cancel and
-failed saves keep the current email. H on a pending follow-up edits it; Remove
-returns it to the inbox. The bell's label identifies pending time or returned
-status. Bare H in a reply or search field must remain ordinary typing.
+menu, or the header bell. These share the [email reminder menu](reminders.md#snooze-or-change-a-conversation).
+A confirmed save archives the thread and advances within the invoking list.
+Cancel and failed saves keep the current email. H on a pending snooze edits it;
+**Remove reminder** returns it to the inbox. Bare H in a reply or search field
+remains ordinary typing.

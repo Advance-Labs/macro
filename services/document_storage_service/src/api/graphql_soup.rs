@@ -171,7 +171,9 @@ fn insert_graphql_context_data(
     data.insert(state.channel_service.clone());
     data.insert(state.graphql_initiative_context.clone());
     data.insert(state.graphql_scheduled_action_context.clone());
+    data.insert(state.graphql_calendar_context.clone());
     data.insert(state.graphql_initiative_entity_loader.clone());
+    data.insert(state.graphql_agent_session_entity_loader.clone());
     data.insert(graphql_initiative::initiative_detail_loader(
         state.graphql_initiative_context.clone(),
         macro_user_id.clone(),
@@ -184,6 +186,7 @@ fn insert_graphql_context_data(
     data.insert(state.soup_router_state.email_service());
     data.insert(state.entity_access_service.clone());
     data.insert(soup_item_loader);
+    data.insert(state.agent_session_log_subscriptions.clone());
     // Mutation replies must read their committed state from the primary email
     // service. Ordinary Soup lists and subscriptions retain their own reader.
     data.insert(email_mutation_thread_loader(
@@ -192,12 +195,12 @@ fn insert_graphql_context_data(
     data.insert(complete_graph::agent_session_bot_loader(PgBotsRepo::new(
         state.readonly_db.0.clone(),
     )));
+    // Read right after the session is created and after its subscription
+    // starts, so the log must hold every committed row: the primary.
     data.insert(complete_graph::agent_session_log_loader(
         PgAgentSessionRepo::new(
-            state.readonly_db.0.clone(),
-            OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(
-                state.readonly_db.0.clone(),
-            ))),
+            state.db.clone(),
+            OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(state.db.clone()))),
         ),
     ));
     data.insert(complete_graph::entity_properties_loader(

@@ -7,6 +7,7 @@ import {
   type ErrorResponseHandler,
   type SafeFetchInit,
   safeFetch,
+  statusError,
 } from '@core/util/safeFetch';
 import { Telemetry } from '@macro-inc/observability';
 
@@ -737,13 +738,33 @@ export const authServiceClient = {
     );
   },
 
+  async updateAiAutoReload(args: {
+    enabled: boolean;
+    minimumBalanceCents: number;
+    targetBalanceCents: number;
+    monthlySpendLimitCents: number | null;
+  }) {
+    return await fetchWithAuth<AiUsageSnapshot>(
+      `${authHost}/ai-billing/auto-reload`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled: args.enabled,
+          minimumBalanceCents: args.minimumBalanceCents,
+          targetBalanceCents: args.targetBalanceCents,
+          monthlySpendLimitCents: args.monthlySpendLimitCents,
+        }),
+      }
+    );
+  },
+
   async createAiCreditCheckout(args: {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
   }) {
     return (
-      await fetchWithAuth<{ url: string }>(
+      await fetchWithAuth<{ url: string }, 'PAID_PLAN_REQUIRED'>(
         `${authHost}/ai-billing/credits/checkout`,
         {
           method: 'POST',
@@ -752,6 +773,15 @@ export const authServiceClient = {
             successUrl: args.successUrl,
             cancelUrl: args.cancelUrl,
           }),
+          errorResponseHandler: async (response) => {
+            if (response.status === 402) {
+              return {
+                code: 'PAID_PLAN_REQUIRED',
+                message: 'A paid plan is required',
+              };
+            }
+            return statusError(response.status);
+          },
         }
       )
     ).map((result) => result.url);

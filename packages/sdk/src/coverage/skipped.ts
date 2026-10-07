@@ -33,9 +33,12 @@ export const agentHarnessExcluded = [
   'loadAgentModelsHandler',
   'discoverAgentCapabilitiesHandler',
   'previewAgentSessions',
+  // Speculative page warm-up requires a signed-in user and is app-internal.
+  'warmAgentSessionHandler',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
 
 export const agentHarnessBacklog = [
+  'answerAgentSessionToolApproval',
   'getAgentSessionPermissions',
   'updateAgentSessionPermissions',
 ] as const satisfies readonly (keyof AgentHarnessSdk)[];
@@ -122,6 +125,7 @@ export const authExcluded = [
   'startCodexLogin',
   'toggleTeamAutoJoinDomain',
   'toggleTeamNonAdminInvites',
+  'updateAiBillingAutoReload',
   'updateAiBillingOverage',
   'verifyEmailLink',
   'verifyFusionauthUserEmail',
@@ -291,6 +295,8 @@ export const staticFilesBacklog =
   [] as const satisfies readonly (keyof StaticFilesSdk)[];
 
 export const storageExcluded = [
+  // Browser Loro-session initialization/publication; SDK layout writes use putFormLayout.
+  'collaborateForm',
   // Slack archive imports are browser-admin workflows, not SDK surface in v1.
   'cancelSlackImport',
   'completeSlackImportUploads',
@@ -385,7 +391,7 @@ export const storageExcluded = [
 ] as const satisfies readonly (keyof StorageSdk)[];
 
 export const storageBacklog = [
-  // Email follow-ups are available through the generated client, like reminders.
+  // Email follow-ups are available through the generated client.
   'getEmailFollowup',
   'setEmailFollowup',
   'listEmailReminders',
@@ -397,14 +403,12 @@ export const storageBacklog = [
   'createEntityMention',
   'createHarnessPairing',
   'createInitiative',
-  'createReminder',
   'createUserApiKey',
   'deleteAnchor',
   'deleteEntityMention',
   'deleteHarness',
   'deleteInitiative',
   'deleteSelfHarness',
-  'deleteReminder',
   'deleteUserApiKey',
   'editAnchor',
   'editCallTranscript',
@@ -426,15 +430,12 @@ export const storageBacklog = [
   'getHarnessPairing',
   'getInitiative',
   'getSelfHarness',
-  'getReminder',
   'listAgents',
   'listHarnessAgents',
   'listHarnessSessions',
   'listHarnesses',
   'listInitiatives',
   'listOccurrences',
-  'listReminders',
-  'listReminderCollection',
   'listTeamOutOfOffice',
   'listUserApiKeys',
   // Meeting management uses the generated client.
@@ -456,7 +457,6 @@ export const storageBacklog = [
   'toggleShareWithTeam',
   'updateAgent',
   'updateInitiative',
-  'updateReminder',
   'validateDocumentPermissionsToken',
 ] as const satisfies readonly (keyof StorageSdk)[];
 

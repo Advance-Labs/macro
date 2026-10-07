@@ -522,6 +522,12 @@ fn applied(
             table_versions,
             changes,
         }),
+        WritesOutcome::MissingRequiredCell { write, column, row } => Err(refuse(
+            write,
+            row_index(&ops[write], row),
+            Some(column),
+            "the required column needs a value",
+        )),
         WritesOutcome::SchemaMoved(_) => Err(DatabaseError::VersionConflict),
         WritesOutcome::TableNotFound(_) => Err(DatabaseError::NotFound),
         WritesOutcome::VersionConflict(_) | WritesOutcome::TablesChanged { .. } => {
@@ -551,6 +557,12 @@ fn applied(
             None,
             column_of(write),
             "the column was removed or changed by someone else; refresh and try again",
+        )),
+        WritesOutcome::ColumnProtected { write, capability } => Err(refuse(
+            write,
+            None,
+            column_of(write),
+            SchemaError::ColumnProtected { capability }.to_string(),
         )),
         WritesOutcome::ColumnRenamedElsewhere { write } => Err(refuse(
             write,

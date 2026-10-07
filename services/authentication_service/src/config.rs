@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
+use crate::service::signup_policy::SignupPolicy;
 use anyhow::Context;
-use authentication_service::service::signup_policy::SignupPolicy;
 use database_env_vars::{DatabaseUrl, RedisUri};
 use gtm_invite::domain::models::{GtmInviteConfig, PromoCode};
 use macro_auth::InternalApiKey;
@@ -287,14 +287,19 @@ impl Config {
         self.signup_policy_for_environment(self.environment)
     }
 
-    /// Resolves the signup policy for an explicit environment.
-    pub(crate) fn signup_policy_for_environment(
+    /// Resolves the signup policy for an explicit environment. Public for the
+    /// Doppler config check binary, which validates both environments.
+    pub fn signup_policy_for_environment(
         &self,
         environment: Environment,
     ) -> anyhow::Result<SignupPolicy> {
+        // Temporarily open Develop signups even when Doppler disables the bypass.
+        // Remove this override to restore the configured allowlist policy.
+        let bypass_allowlist =
+            self.development_bypass_signup_allowlist || matches!(environment, Environment::Develop);
         resolve_signup_policy(
             environment,
-            self.development_bypass_signup_allowlist,
+            bypass_allowlist,
             &self.development_signup_allowlist_json,
         )
     }
