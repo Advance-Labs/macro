@@ -1,5 +1,5 @@
 import type { CalendarBlockProps } from '@block-calendar/types';
-import type { BlockCanvasProps } from '@block-canvas/component/Block';
+import type { CanvasBlockParams } from '@block-canvas/CanvasBlock';
 import type { BlockChannelProps } from '@block-channel/component/NewChannelBlockAdapter';
 import type { BlockMarkdownProps } from '@block-md/component/Block';
 import type { IDocumentStorageServiceFile } from '@filesystem/file';
@@ -322,7 +322,7 @@ export type ExtractLoadType<T extends LoadFunction<any, any>> =
 
 export interface BlockComponentProps extends Record<BlockName, ObjectLike> {
   calendar: CalendarBlockProps;
-  canvas: BlockCanvasProps;
+  canvas: CanvasBlockParams;
   channel: BlockChannelProps;
   md: BlockMarkdownProps;
 }

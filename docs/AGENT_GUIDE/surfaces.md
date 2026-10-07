@@ -53,6 +53,16 @@ node with an entity mention, as legacy links do. Routed links retain compatible
 block targets, but not workspace paths or pane-local search state; unsupported
 links remain text.
 
+## Canvas document hosts
+
+Saved canvases mount directly in splits, Home/File previews, and embedded
+document cards without a legacy block container. Opening the same Canvas link
+again must move its viewport without rebuilding the editor. A Canvas card in a
+Markdown document is read-only and keeps its saved viewport; a Canvas embedded
+inside Canvas Next remains a full editor with isolated split chrome. Check that
+rename, Download, Share, Ask Macro, permission badges, and live indicators still
+appear on a normal Canvas split, while repeated embedded references can coexist.
+
 ## Live updates in flat Soup lists
 
 The normalized cache retains at most 64 flat/grouped Soup page snapshots per

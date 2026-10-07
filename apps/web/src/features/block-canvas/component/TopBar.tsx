@@ -13,56 +13,90 @@ import {
   SplitHeaderLeft,
   SplitHeaderRight,
 } from '@components/app/split-layout/components/SplitHeader';
-import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
-import { useBlockId } from '@core/block';
-import { BlockLiveIndicators } from '@core/component/LiveIndicators';
+import { StaticSplitLabel } from '@components/app/split-layout/components/SplitLabel';
+import { LiveIndicators } from '@core/component/LiveIndicators';
+import {
+  getPermissions,
+  hasPermissions,
+  Permissions,
+} from '@core/component/SharePermissions';
 import {
   getShareDrawerRecipientInput,
   ShareTrigger,
 } from '@core/component/TopBar/ShareButton';
 import { useShareModal } from '@core/component/TopBar/shareModal';
-import { blockFileSignal, blockMetadataSignal } from '@core/signal/load';
-import { useGetPermissions } from '@core/signal/permissions';
-import {
-  useBlockDocumentDownloadName,
-  useBlockDocumentName,
-} from '@core/util/currentBlockDocumentName';
+import { ENABLE_LIVE_INDICATORS } from '@core/constant/featureFlags';
+import { useUserId } from '@core/context/user';
+import { useUserIndicators } from '@core/state/liveIndicators';
 import { buildSimpleEntityUrl } from '@core/util/url';
 import { useCopyLink } from '@core/util/useCopyLink';
+import { createRenameDssEntityMutation } from '@entity';
 import { downloadFile } from '@filesystem/download';
 import IconShared from '@icon/share.svg';
 import DownloadSimple from '@phosphor/download-simple.svg';
+import { useItemRawName } from '@queries/preview';
+import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
+import type { DocumentMetadata } from '@service-storage/generated/schemas/documentMetadata';
+import { formatDocumentName } from '@service-storage/util/filename';
 import { createCallback } from '@solid-primitives/rootless';
-import { onMount } from 'solid-js';
+import type { Accessor } from 'solid-js';
+import { onMount, Show } from 'solid-js';
 import { URL_PARAMS } from '../constants';
-import { useCanvasDocument } from '../context/canvas-document-context';
 import { useToolManager } from '../signal/toolManager';
 import { useRenderState } from '../store/RenderState';
 import type { CanvasDocumentChrome } from './CanvasDocument';
 
-export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
+export type CanvasTopBarProps = {
+  documentId: string;
+  documentMetadata: DocumentMetadata;
+  userAccessLevel: AccessLevel;
+  sourceFile: Blob;
+  savedFile: Accessor<Blob | undefined>;
+  hotkeyScope: string;
+  chrome: CanvasDocumentChrome;
+};
+
+export function TopBar(props: CanvasTopBarProps) {
   const analytics = useAnalytics();
-
-  const toolManager = props.next ? undefined : useToolManager();
-  const getLocation = props.next?.location ?? useRenderState().getLocation;
-  const getCurrentSavedFile =
-    props.next?.savedFile ??
-    useCanvasDocument().state.signals.currentSavedFile[0];
-  const documentId = useBlockId();
-  const fileName = useBlockDocumentName('Unknown Filename');
-  const downloadName = useBlockDocumentDownloadName('Unknown Filename');
-  const canvasFile = blockFileSignal.get;
-
-  const permissions = useGetPermissions();
+  const permissions = () => getPermissions(props.userAccessLevel);
+  const isOwner = () => hasPermissions(permissions(), Permissions.OWNER);
+  const updatedName = useItemRawName(() => ({
+    type: 'document',
+    id: props.documentId,
+  }));
+  const fileName = () =>
+    updatedName() || props.documentMetadata.documentName || 'Unknown Filename';
+  const downloadName = () =>
+    formatDocumentName(
+      fileName(),
+      props.documentMetadata.fileType ?? 'canvas',
+      { caseInsensitiveSuffix: true }
+    );
+  const rename = createRenameDssEntityMutation();
+  const entity = () => ({
+    type: 'document' as const,
+    id: props.documentId,
+    name: fileName(),
+    fileType: 'canvas' as const,
+    ownerId: props.documentMetadata.owner,
+  });
+  const toolManager =
+    props.chrome.mode === 'next' ? undefined : useToolManager();
+  const getLocation =
+    props.chrome.mode === 'next'
+      ? props.chrome.location!
+      : useRenderState().getLocation;
   const openShare = useShareModal(() => ({
-    id: documentId,
+    id: props.documentId,
     blockAlias: 'canvas',
     itemType: 'document',
-    name: fileName() ?? '',
+    name: fileName(),
     userPermissions: permissions(),
-    owner: blockMetadataSignal()?.owner,
+    owner: props.documentMetadata.owner,
   }));
   const copyEntityLink = useCopyLink();
+  const indicators = useUserIndicators(() => props.documentId);
+  const userId = useUserId();
 
   let ref!: HTMLDivElement;
   onMount(() => {
@@ -70,10 +104,7 @@ export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
   });
 
   const downloadDocument = createCallback(async () => {
-    const file = getCurrentSavedFile() ?? canvasFile();
-    if (!file) return;
-
-    downloadFile(file, downloadName());
+    downloadFile(props.savedFile() ?? props.sourceFile, downloadName());
     analytics.track('download', { blockType: 'canvas' });
   });
 
@@ -85,7 +116,7 @@ export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
       [URL_PARAMS.s]: location.s.toString(),
     };
     copyEntityLink(
-      buildSimpleEntityUrl({ type: 'canvas', id: documentId }, params)
+      buildSimpleEntityUrl({ type: 'canvas', id: props.documentId }, params)
     );
     analytics.track('copy_share_link', { blockType: 'canvas' });
   };
@@ -110,7 +141,7 @@ export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
       action: () =>
         openChatWithAgent({
           type: 'document',
-          id: documentId,
+          id: props.documentId,
           name: fileName(),
           fileType: 'canvas',
         }),
@@ -120,9 +151,14 @@ export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
       label: 'Share',
       icon: IconShared,
       action: openShare,
-      condition: () => !!canvasFile(),
       buttonComponent: () => (
-        <ShareTrigger onClick={openShare} copyLink={copyLink} />
+        <ShareTrigger
+          id={props.documentId}
+          blockType="canvas"
+          hotkeyScope={props.hotkeyScope}
+          onClick={openShare}
+          copyLink={copyLink}
+        />
       ),
       focusTarget: getShareDrawerRecipientInput,
     },
@@ -131,21 +167,36 @@ export function TopBar(props: { next?: CanvasDocumentChrome } = {}) {
   return (
     <div ref={ref}>
       <SplitHeaderLeft>
-        <BlockItemSplitLabel />
+        <StaticSplitLabel
+          label={fileName()}
+          iconType="canvas"
+          onRename={
+            isOwner()
+              ? (newName) => rename.mutate({ entity: entity(), newName })
+              : undefined
+          }
+        />
       </SplitHeaderLeft>
       <SplitHeaderRight>
-        {/* Hidden on mobile/tablet: no floating-island treatment for live avatars yet. */}
-        <div class="-order-1 touch:hidden">
-          <BlockLiveIndicators />
-        </div>
+        <Show when={ENABLE_LIVE_INDICATORS}>
+          <div class="-order-1 touch:hidden">
+            <LiveIndicators
+              userIds={indicators() ?? []}
+              currentUserId={userId()}
+            />
+          </div>
+        </Show>
       </SplitHeaderRight>
-      <ResponsivePermissionsBadge />
+      <ResponsivePermissionsBadge permissions={permissions()} />
       <ResponsiveBlockToolbar
         tools={tools}
         ops={ops}
-        id={documentId}
+        id={props.documentId}
         itemType="document"
         name={fileName()}
+        entity={entity()}
+        entityKind="canvas"
+        permissions={permissions()}
       />
     </div>
   );

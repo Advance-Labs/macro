@@ -2,7 +2,7 @@ import { BlockRegistry } from '@core/block';
 import { createHeadlessEditor } from '@lexical/headless';
 import { DocumentMentionNode } from '@macro-inc/lexical-core';
 import { describe, expect, it, vi } from 'vitest';
-import { fileTypeToBlockName, verifyBlockName } from './allBlocks';
+import { blocks, fileTypeToBlockName, verifyBlockName } from './allBlocks';
 
 vi.mock('@service-storage/websocket', () => ({
   storageWS: { reconnectIfDisconnected: vi.fn() },
@@ -22,12 +22,16 @@ const definitionFiles = import.meta.glob('../../../features/*/definition.ts', {
 });
 
 describe('block definition discovery', () => {
-  it('has one definition file for every block', () => {
+  it('has metadata for every block and definitions only for legacy blocks', () => {
     const discoveredNames = Object.values(definitionFiles).map(
       (source) => String(source).match(/\bname:\s*['"]([^'"]+)['"]/)?.[1]
     );
 
-    expect(discoveredNames.sort()).toEqual([...BlockRegistry].sort());
+    expect([...discoveredNames, 'canvas'].sort()).toEqual(
+      [...BlockRegistry].sort()
+    );
+    expect(blocks.canvas).toBeUndefined();
+    expect(fileTypeToBlockName('canvas')).toBe('canvas');
   });
 });
 

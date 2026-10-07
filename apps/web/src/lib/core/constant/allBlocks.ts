@@ -17,16 +17,39 @@ import {
 } from './featureFlags';
 import { DefaultFilename } from './filename';
 
-const discoveredBlockDefinitions = Object.values<AnyBlockDefinition>(
-  import.meta.glob('../../../features/*/definition.ts', {
-    eager: true,
-    import: 'definition',
-  })
-);
+type BlockMetadata = Pick<
+  AnyBlockDefinition,
+  'name' | 'description' | 'defaultFilename' | 'accepted' | 'aliases'
+>;
 
-const definitionNames = discoveredBlockDefinitions.map(
-  (definition) => definition.name
+// Direct features retain routing and creation metadata without registering a
+// legacy loader or renderer.
+const directBlockMetadata: readonly BlockMetadata[] = [
+  {
+    name: 'canvas',
+    description: 'edit canvas',
+    accepted: { canvas: 'application/x-macro-canvas' },
+  },
+];
+
+const discoveredBlockDefinitions = Object.values<AnyBlockDefinition>(
+  import.meta.glob(
+    [
+      '../../../features/*/definition.ts',
+      '!../../../features/block-canvas/definition.ts',
+    ],
+    {
+      eager: true,
+      import: 'definition',
+    }
+  )
 );
+const metadata: readonly BlockMetadata[] = [
+  ...discoveredBlockDefinitions,
+  ...directBlockMetadata,
+];
+
+const definitionNames = metadata.map((definition) => definition.name);
 const duplicateDefinitionNames = definitionNames.filter(
   (name, index) => definitionNames.indexOf(name) !== index
 );
@@ -49,7 +72,7 @@ if (missingBlockDefinitions.length > 0) {
 
 export const blocks = Object.fromEntries(
   discoveredBlockDefinitions.map((definition) => [definition.name, definition])
-) as Readonly<Record<BlockName, Readonly<AnyBlockDefinition>>>;
+) as Readonly<Partial<Record<BlockName, Readonly<AnyBlockDefinition>>>>;
 
 export const blockAcceptedMimetypeToFileExtension: Record<
   MimeType,
@@ -82,7 +105,8 @@ const blockNameToDefaultFilename: Partial<
   Record<BlockName | BlockAlias, string>
 > = {};
 
-for (const [name, block] of Object.entries(blocks)) {
+for (const block of metadata) {
+  const name = block.name;
   blockNameToFileExtensionSet[name as BlockName] = new Set();
   blockNameToMimeTypeSet[name as BlockName] = new Set();
 
@@ -323,6 +347,6 @@ export function verifyBlockName(
     if (ENABLE_DOCX_TO_PDF) return 'pdf';
   }
   if (isBlockAlias(name)) return name;
-  if (name && name in blocks) return name as BlockName;
+  if (name && definitionNames.includes(name)) return name as BlockName;
   return 'unknown';
 }

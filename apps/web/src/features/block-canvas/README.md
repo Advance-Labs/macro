@@ -6,6 +6,12 @@ version 2 through the existing storage endpoint after editing. Unsupported legac
 content stays available in the legacy editor; newer versions are never handed to
 it. SyncService integration is deferred.
 
+`CanvasBlock.tsx` is the app-facing host. It loads the document and owns access,
+history tracking, entity commands, split chrome, and block-handle registration
+without creating a legacy block instance. `component/CanvasDocument.tsx` remains
+the editor boundary shared by the direct host and Drive's entity-detail view.
+Canvas cards in Markdown mount the direct host as read-only nested documents;
+Canvas Next embeds mount an unmanaged full editor inside their isolated panel.
 
 This block is a canvas where you can create, export, and import diagrams.
 

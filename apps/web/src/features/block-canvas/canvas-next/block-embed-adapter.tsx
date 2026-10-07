@@ -23,6 +23,7 @@ import {
   useContext,
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import { CanvasBlock } from '../CanvasBlock';
 import type { CanvasEmbedViewProps } from './components/embed-view';
 import { CanvasAncestry } from './context/canvas-ancestry';
 
@@ -42,9 +43,16 @@ function CanvasBlockEmbedContent(props: CanvasEmbedViewProps) {
   const kind = props.geometry.fileType === 'canvas' ? 'canvas' : 'md';
   const documentId = props.geometry.documentId;
   // Unmanaged block-in-block instances deliberately support repeated references.
-  // Legacy `nested` means a read-only thumbnail. Mount the full editor here;
-  // our isolated panel and the host's inert boundary own embed interaction.
-  const instance = createBlockInstance(kind, documentId);
+  // `nested` means a read-only thumbnail, so mount the full Canvas editor here;
+  // the isolated panel and the host's inert boundary own embed interaction.
+  const legacyInstance =
+    kind === 'md' ? createBlockInstance(kind, documentId) : undefined;
+  const content = () =>
+    kind === 'canvas' ? (
+      <CanvasBlock documentId={documentId} embedded />
+    ) : (
+      <Dynamic component={legacyInstance!.element} />
+    );
   const [attachHotkeys, scopeId] = useHotkeyDOMScope('canvas-embed');
   const [panelRef, setPanelRef] = createSignal<HTMLElement | null>(null);
   const [displayName, setDisplayName] = createSignal(props.geometry.name);
@@ -177,7 +185,7 @@ function CanvasBlockEmbedContent(props: CanvasEmbedViewProps) {
               <div class="p-4 text-base text-ink-muted">Loading editor…</div>
             }
           >
-            <Dynamic component={instance.element} />
+            {content()}
           </Suspense>
         </SplitPanelContext.Provider>
       </div>

@@ -1,4 +1,4 @@
-import type { CanvasSpec } from '@block-canvas/definition';
+import type { CanvasSpec } from '@block-canvas/component/CanvasDocument';
 import type { BlockChatSpec } from '@block-chat/blockClient';
 import type { BlockName } from './block';
 

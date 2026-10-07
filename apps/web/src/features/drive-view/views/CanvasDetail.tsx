@@ -1,20 +1,22 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { CanvasDocument } from '@block-canvas/component/CanvasDocument';
+import {
+  type CanvasDocumentData,
+  loadCanvasDocument,
+} from '@block-canvas/queries/canvas-document';
+import { useGlobalBlockOrchestrator } from '@components/app/GlobalAppState';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import {
   getPermissions,
   hasPermissions,
   Permissions,
 } from '@core/component/SharePermissions';
+import { createMethodRegistration } from '@core/orchestrator';
 import { downloadFile } from '@filesystem/download';
 import { useSearchParams } from '@solidjs/router';
 import type { Accessor, JSX } from 'solid-js';
 import { FileDetailLayout, FileDetailLoadGate } from '../components/FileDetail';
 import { downloadFileOperation } from '../components/file-detail-operations';
-import {
-  type CanvasDocumentData,
-  loadCanvasDocument,
-} from '../queries/canvas-document';
 import { documentDownloadName } from '../util/document-download-name';
 import type { FileDetailContext } from '../util/file-detail-context';
 
@@ -59,6 +61,8 @@ export function CanvasDetailDocument(props: {
   children?: (context: CanvasDetailContext) => JSX.Element;
 }) {
   const panel = useSplitPanelOrThrow();
+  const orchestrator = useGlobalBlockOrchestrator();
+  const handle = orchestrator.registerBlockHandle('canvas', props.documentId);
   const [searchParams] = useSearchParams();
   const canEdit = () =>
     hasPermissions(
@@ -79,6 +83,9 @@ export function CanvasDetailDocument(props: {
         hotkeyScope={panel.splitHotkeyScope}
         portalScope="split"
         locationParams={searchParams}
+        registerMethods={(methods) =>
+          createMethodRegistration(() => handle, methods)
+        }
       >
         {(content, state) => (
           <CanvasDetailContent

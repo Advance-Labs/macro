@@ -66,6 +66,8 @@ export type CanvasDocumentMethods = {
   goToLocationFromParams: (params: Record<string, unknown>) => void;
 };
 
+export type CanvasSpec = CanvasDocumentMethods;
+
 export type CanvasDocumentProps = {
   documentId: string;
   file?: Blob;

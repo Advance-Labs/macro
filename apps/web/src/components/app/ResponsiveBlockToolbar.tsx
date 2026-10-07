@@ -1,3 +1,4 @@
+import type { BlockAlias, BlockName } from '@core/block';
 import type { Permissions } from '@core/component/SharePermissions';
 import type { HotkeyToken } from '@core/hotkey/tokens';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
@@ -70,19 +71,21 @@ function getToolLabel(tool: BlockTool) {
   return typeof tool.label === 'function' ? tool.label() : tool.label;
 }
 
-export function ResponsivePermissionsBadge() {
+export function ResponsivePermissionsBadge(props: {
+  permissions?: Permissions;
+}) {
   return (
     <Show
       when={isTouchDevice()}
       fallback={
         <SplitHeaderRight>
-          <SplitPermissionsBadge />
+          <SplitPermissionsBadge permissions={props.permissions} />
         </SplitHeaderRight>
       }
     >
       <SplitHeaderLeft>
         <HeaderIsland>
-          <SplitPermissionsBadge />
+          <SplitPermissionsBadge permissions={props.permissions} />
         </HeaderIsland>
       </SplitHeaderLeft>
     </Show>
@@ -105,6 +108,7 @@ interface BlockToolbarProps {
   entity?: EntityData;
   /** Feature-owned access when the session loads outside legacy Block state. */
   permissions?: Permissions;
+  entityKind?: BlockName | BlockAlias;
 }
 
 /**
@@ -168,6 +172,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
               tools={fileMenuTools()}
               entity={props.entity}
               permissions={props.permissions}
+              entityKind={props.entityKind}
               buttonClass="order-first"
             />
           </SplitTitleFileMenu>
@@ -204,6 +209,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
           tools={fileMenuTools()}
           entity={props.entity}
           permissions={props.permissions}
+          entityKind={props.entityKind}
           buttonClass="order-last"
         />
       </SplitTitleFileMenu>

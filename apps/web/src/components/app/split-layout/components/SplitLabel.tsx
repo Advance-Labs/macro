@@ -12,6 +12,7 @@ import {
   isArchiveType,
 } from '@core/component/EntityIcon';
 import { InlineTitleEditor } from '@core/component/InlineTitleEditor';
+import { hasPermissions, Permissions } from '@core/component/SharePermissions';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { blockMetadataSignal } from '@core/signal/load';
 import {
@@ -200,21 +201,53 @@ export function SplitHeaderBadge(props: { text: string; tooltip?: string }) {
   );
 }
 
-export function SplitPermissionsBadge() {
+export function SplitPermissionsBadge(props: { permissions?: Permissions }) {
+  if (props.permissions !== undefined) {
+    return <ResolvedPermissionsBadge permissions={props.permissions} />;
+  }
+  return <LegacyPermissionsBadge />;
+}
+
+function LegacyPermissionsBadge() {
   const canEdit = useCanEdit();
   const canComment = useCanComment();
   const canView = useCanView();
-  const showBadge = () => !canEdit();
+
+  return (
+    <PermissionsBadge
+      canEdit={canEdit()}
+      canComment={canComment()}
+      canView={canView()}
+    />
+  );
+}
+
+function ResolvedPermissionsBadge(props: { permissions: Permissions }) {
+  return (
+    <PermissionsBadge
+      canEdit={hasPermissions(props.permissions, Permissions.CAN_EDIT)}
+      canComment={hasPermissions(props.permissions, Permissions.CAN_COMMENT)}
+      canView={hasPermissions(props.permissions, Permissions.CAN_VIEW)}
+    />
+  );
+}
+
+function PermissionsBadge(props: {
+  canEdit: boolean;
+  canComment: boolean;
+  canView: boolean;
+}) {
+  const showBadge = () => !props.canEdit;
 
   const tooltip = () => {
-    if (!canView()) return 'No Access';
-    if (canComment()) return 'Comment Only';
+    if (!props.canView) return 'No Access';
+    if (props.canComment) return 'Comment Only';
     return 'View Only';
   };
 
   const text = () => {
-    if (!canView()) return 'no access';
-    if (canComment()) return 'comment only';
+    if (!props.canView) return 'no access';
+    if (props.canComment) return 'comment only';
     return 'viewer';
   };
 

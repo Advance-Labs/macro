@@ -1,6 +1,39 @@
+import { throwOnErr } from '@core/util/result';
+import { fetchBinaryDocumentData } from '@queries/storage/binary-document';
+import { useEntitySubscription } from '@service-connection/client';
 import { storageServiceClient } from '@service-storage/client';
+import type { AccessLevel } from '@service-storage/generated/schemas/accessLevel';
+import type { DocumentMetadata } from '@service-storage/generated/schemas/documentMetadata';
+import { fetchBinary } from '@service-storage/util/fetchBinary';
+import type { Accessor } from 'solid-js';
 import type { CanvasFile } from '../canvas-next/core/document-format';
 import type { Canvas } from '../model/CanvasModel';
+
+export type CanvasDocumentData = {
+  documentMetadata: DocumentMetadata;
+  userAccessLevel: AccessLevel;
+  file: Blob;
+};
+
+export async function loadCanvasDocument(
+  documentId: string
+): Promise<CanvasDocumentData> {
+  const data = await throwOnErr(() => fetchBinaryDocumentData(documentId));
+  const file = await throwOnErr(() => fetchBinary(data.blobUrl, 'blob'));
+
+  return {
+    documentMetadata: data.documentMetadata,
+    userAccessLevel: data.userAccessLevel,
+    file,
+  };
+}
+
+export function useCanvasDocumentSubscription(documentId: Accessor<string>) {
+  useEntitySubscription(() => ({
+    entity_type: 'document',
+    entity_id: documentId(),
+  }));
+}
 
 export type CanvasViewLocation = {
   x?: number;

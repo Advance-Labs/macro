@@ -14,6 +14,7 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ViewShell } from '../view-shell/ViewShell';
+import { DirectBlock, isDirectBlockName } from './DirectBlock';
 import type {
   PreviewBlockTarget,
   PreviewPanelSelection,
@@ -183,6 +184,57 @@ function sameLocation(left: PreviewBlockTarget, right: PreviewBlockTarget) {
 }
 
 function PreviewBlock(
+  props: PreviewPanelProps & { target: PreviewBlockTarget }
+) {
+  const location = createMemo(() => props.target, undefined, {
+    equals: sameLocation,
+  });
+  const navigation = createMemo(
+    () => ({ target: location(), request: props.navigationRequest ?? 0 }),
+    undefined,
+    {
+      equals: (left, right) =>
+        left.request === right.request &&
+        sameLocation(left.target, right.target),
+    }
+  );
+
+  return (
+    <Show
+      when={
+        isDirectBlockName(props.target.blockType)
+          ? props.target.blockType
+          : undefined
+      }
+      fallback={<LegacyPreviewBlock {...props} />}
+    >
+      {(type) => (
+        <PreviewFrame
+          splitPanelContext={props.splitPanelContext}
+          onFocusOut={props.onFocusOut}
+          ref={props.ref}
+          headerLeading={props.headerLeading}
+          locationKey={navigation}
+        >
+          <PreviewPanelContext
+            previewTarget={props.target}
+            previewEntity={props.selectedEntity}
+            onFocusOut={props.onFocusOut}
+          >
+            <DirectBlock
+              type={type()}
+              id={props.target.blockId}
+              params={props.target.params}
+              navigationRequest={props.navigationRequest}
+            />
+          </PreviewPanelContext>
+        </PreviewFrame>
+      )}
+    </Show>
+  );
+}
+
+function LegacyPreviewBlock(
   props: PreviewPanelProps & { target: PreviewBlockTarget }
 ) {
   const blockInstance = createMemo<
