@@ -18,11 +18,13 @@ import {
   NewChatPage,
   type StartConversation,
 } from '../agents-view/views/NewChatPage';
+import { useHomeView } from './home-view-context';
 import { buildHomeAgentPrompt } from './queries/home-agent-prompt';
 
-/** Home supplies suggestions to the same composer used by Agents. */
+/** Home supplies suggestions and its detail pane to the same composer used by Agents. */
 export function HomeAgentComposer(props: { autoFocus?: boolean }) {
   const panel = useSplitPanelOrThrow();
+  const home = useHomeView();
   const input = useChatInputContext();
   const roster = createAgentRosterSource();
   const settings = useSettingsState();
@@ -75,14 +77,15 @@ export function HomeAgentComposer(props: { autoFocus?: boolean }) {
       return true;
     },
   });
-  // Home stays put: the new session joins the Home list once it is created,
-  // and opening it from there picks up the pending create.
+  // The session opens in Home's detail pane rather than Agents; its row joins
+  // the Home list once the create answers.
   const start = (conversation: StartConversation) => {
-    startPendingSession({
+    const id = startPendingSession({
       ...conversation,
       userId: userId(),
       submitSurface: 'home',
     });
+    home.openPreview({ type: 'agent_session', id });
   };
   return (
     <div class="agents-view-portal min-w-0 [&_.newchat]:p-0">
