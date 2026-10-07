@@ -4,6 +4,7 @@ import {
   Permissions,
 } from '@core/component/SharePermissions';
 import { focusNeighborTask, isPlainArrow, returnToDocument, type TaskEdge } from '@core/component/inlineTaskNavigation';
+import { CONTINUE_INLINE_TASK_DRAFT_COMMAND } from '@core/component/LexicalMarkdown/plugins/inline-task-draft/inlineTaskDraftPlugin';
 import type { LexicalEditor, NodeKey } from 'lexical';
 import { createRenameDssEntityMutation } from '@entity';
 import type { PreviewDocumentProperties } from '@queries/preview/types';
@@ -219,6 +220,15 @@ function InlineTaskTitleValue(props: {
               }
               if (event.key === 'Enter') {
                 event.preventDefault();
+                const input = event.currentTarget;
+                if (!event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey &&
+                    props.editor && props.nodeKey && input.selectionStart === input.selectionEnd &&
+                    input.selectionEnd === input.value.length &&
+                    props.editor.dispatchCommand(CONTINUE_INLINE_TASK_DRAFT_COMMAND, props.nodeKey)) {
+                  // The existing blur handler saves while the following draft takes focus.
+                  input.blur();
+                  return;
+                }
                 void save();
               } else if (event.key === 'Escape') {
                 event.preventDefault();
