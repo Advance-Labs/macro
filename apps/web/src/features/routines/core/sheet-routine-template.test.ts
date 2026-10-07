@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseRoutineSeed } from './draft';
 import { validateRoutineDraft } from './routine-draft';
 import { sheetRoutineSeed } from './sheet-routine-template';
 
@@ -55,5 +56,15 @@ describe('sheet routine template', () => {
     expect(sheetRoutineSeed({ ...sheet, documentName: ' ' }).name).toBe(
       'Update spreadsheet'
     );
+  });
+
+  it('passes the split-param check only with a complete seed', () => {
+    const seed = sheetRoutineSeed(sheet);
+    expect(parseRoutineSeed(seed)).toEqual(seed);
+    expect(parseRoutineSeed({ name: 'Update Billing' })).toBeUndefined();
+    expect(parseRoutineSeed([seed])).toBeUndefined();
+    expect(
+      parseRoutineSeed({ ...seed, triggers: [{ kind: 'schedule' }] })
+    ).toBeUndefined();
   });
 });
