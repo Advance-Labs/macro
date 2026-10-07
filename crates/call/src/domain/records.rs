@@ -9,6 +9,9 @@ use macro_user_id::user_id::MacroUserIdStr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[cfg(test)]
+mod test;
+
 /// A nonempty, opaque provider identifier, preserved verbatim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -51,6 +54,16 @@ pub enum CallCreatedVia {
     Manual,
 }
 
+/// Supported call and transcript providers. Add variants as integrations grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallProvider {
+    /// A Macro-native call or transcript.
+    Macro,
+    /// A call or transcript imported from Granola.
+    Granola,
+}
+
 /// Durable product identity, independent of any room or provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,8 +103,8 @@ pub struct CallSource {
     pub user_id: MacroUserIdStr<'static>,
     /// Stable provider-account namespace, retained across credential rotation.
     pub namespace: String,
-    /// Open provider identifier, such as `granola`.
-    pub provider: String,
+    /// Provider that supplied the source object.
+    pub provider: CallProvider,
     /// Provider object category, such as `note` or `meeting`.
     pub object_type: String,
     /// Opaque provider identifier, not necessarily a UUID.
@@ -188,8 +201,8 @@ pub struct CallTranscript {
     pub recording_id: Option<Uuid>,
     /// Language tag, if known.
     pub language: Option<String>,
-    /// Transcription provider, independently of the call's source.
-    pub provider: Option<String>,
+    /// Provider that supplied the transcript, independently of the call's source.
+    pub provider: Option<CallProvider>,
     /// Optional absolute origin for transcript offsets.
     pub started_at: Option<DateTime<Utc>>,
     /// Ordered content; missing timing and speaker information remain absent.

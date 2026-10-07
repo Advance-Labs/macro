@@ -5,6 +5,39 @@ DO $$ BEGIN
 END $$;
 DELETE FROM calls WHERE id = '019a0000-0000-7000-8000-000000000012';
 
+-- Calls created after deployment also receive a durable identity immediately.
+INSERT INTO "SharePermission" (id) VALUES ('call-model-new');
+INSERT INTO calls (id, room_name, created_by, share_permission_id, created_at) VALUES
+('019a0000-0000-7000-8000-000000000013', 'new-native-room', 'macro|call-model-a@test.com', 'call-model-new', '2026-01-02T10:00:00Z');
+DO $$ BEGIN
+    ASSERT EXISTS (
+        SELECT 1 FROM call_entities
+        WHERE id = '019a0000-0000-7000-8000-000000000013'
+            AND user_id = 'macro|call-model-a@test.com'
+            AND created_via = 'native'
+            AND started_at = '2026-01-02T10:00:00Z'::timestamptz
+            AND share_permission_id = 'call-model-new'
+    );
+END $$;
+INSERT INTO call_records (id, room_name, created_by, share_permission_id, started_at, ended_at, duration_ms)
+SELECT id, room_name, created_by, share_permission_id, created_at, '2026-01-02T10:05:00Z', 300000 FROM calls
+WHERE id = '019a0000-0000-7000-8000-000000000013';
+DELETE FROM calls WHERE id = '019a0000-0000-7000-8000-000000000013';
+DO $$ BEGIN
+    ASSERT EXISTS (
+        SELECT 1 FROM call_entities
+        WHERE id = '019a0000-0000-7000-8000-000000000013'
+            AND ended_at = '2026-01-02T10:05:00Z'::timestamptz
+            AND duration_ms = 300000
+            AND share_permission_id = 'call-model-new'
+    );
+END $$;
+DELETE FROM call_records WHERE id = '019a0000-0000-7000-8000-000000000013';
+DO $$ BEGIN
+    ASSERT NOT EXISTS (SELECT 1 FROM call_entities WHERE id = '019a0000-0000-7000-8000-000000000013');
+    ASSERT NOT EXISTS (SELECT 1 FROM "SharePermission" WHERE id = 'call-model-new');
+END $$;
+
 -- Old service writers update the new identity without changing native IDs.
 UPDATE call_records SET custom_name = 'Renamed call' WHERE id = '019a0000-0000-7000-8000-000000000011';
 INSERT INTO call_records (id, room_name, created_by, share_permission_id, started_at, ended_at, duration_ms)
