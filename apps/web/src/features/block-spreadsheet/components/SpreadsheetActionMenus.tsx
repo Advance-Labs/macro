@@ -103,7 +103,11 @@ export function InsertMenu(props: SpreadsheetToolbarProps) {
     >
       <Dropdown.Group>
         <Dropdown.GroupLabel>Chart of the selected cells</Dropdown.GroupLabel>
-        <For each={CHART_TYPES.filter((type) => !('more' in type))}>
+        <For
+          each={CHART_TYPES.filter(
+            (type) => !('more' in type) && !('catalog' in type)
+          )}
+        >
           {(type) => (
             <Dropdown.Item
               closeOnSelect
@@ -120,7 +124,11 @@ export function InsertMenu(props: SpreadsheetToolbarProps) {
           </Dropdown.SubTrigger>
           <Dropdown.SubContent>
             <Dropdown.Group>
-              <For each={CHART_TYPES.filter((type) => 'more' in type)}>
+              <For
+                each={CHART_TYPES.filter(
+                  (type) => 'more' in type && !('catalog' in type)
+                )}
+              >
                 {(type) => (
                   <Dropdown.Item
                     closeOnSelect
