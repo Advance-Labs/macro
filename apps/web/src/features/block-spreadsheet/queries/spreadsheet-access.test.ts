@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { waitForSpreadsheetRollout } from './spreadsheet-access';
+import {
+  isSpreadsheetEnabledForCurrentUser,
+  waitForSpreadsheetRollout,
+} from './spreadsheet-access';
 
 const state = vi.hoisted(() => ({
+  enabled: true,
   override: undefined as boolean | undefined,
   cached: undefined as boolean | undefined,
   fresh: undefined as boolean | undefined,
@@ -22,7 +26,7 @@ vi.mock('@core/constant/featureFlags', () => ({
       return state.override;
     },
   },
-  isFeatureEnabled: vi.fn(),
+  isFeatureEnabled: () => state.enabled,
 }));
 vi.mock('@app/lib/analytics', () => ({
   analytics: {
@@ -56,6 +60,15 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.useRealTimers());
+
+describe('imperative spreadsheet rollout guard', () => {
+  it('follows the PostHog decision without a separate email restriction', () => {
+    state.enabled = true;
+    expect(isSpreadsheetEnabledForCurrentUser()).toBe(true);
+    state.enabled = false;
+    expect(isSpreadsheetEnabledForCurrentUser()).toBe(false);
+  });
+});
 
 describe('spreadsheet open rollout readiness', () => {
   it.each([true, false])(
