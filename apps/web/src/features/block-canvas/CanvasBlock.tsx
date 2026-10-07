@@ -30,8 +30,8 @@ import type { CanvasView } from './context/canvas-document-context';
 import {
   type CanvasDocumentData,
   loadCanvasDocument,
-  useCanvasDocumentSubscription,
 } from './queries/canvas-document';
+import { useCanvasDocumentSubscription } from './queries/canvas-document-subscription';
 
 export type CanvasBlockParams = {
   view?: CanvasView;
