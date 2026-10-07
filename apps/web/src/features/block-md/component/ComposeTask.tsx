@@ -822,6 +822,10 @@ export function ComposeTask(props: ComposeTaskProps) {
     if (container) {
       attachHotkeys(container);
     }
+    // An empty title (e.g. a task started from an email) waits for the user.
+    if (!title().trim()) {
+      requestAnimationFrame(() => titleEditorRoot?.focus());
+    }
   });
 
   registerHotkey({
@@ -958,7 +962,7 @@ export function ComposeTask(props: ComposeTaskProps) {
           </Scroll>
         </EntityComposer.Body>
 
-        <div class="shrink-0 flex items-center px-2 py-2">
+        <div class="shrink-0 flex items-center py-2 -ml-1 touch:-ml-[3px]">
           <input
             ref={(el) => {
               attachInputRef = el;
@@ -1050,7 +1054,7 @@ export function ComposeTask(props: ComposeTaskProps) {
       <EntityComposer.Footer class="items-center">
         <Tooltip label={sharingHint()} tabIndex={0}>
           <ToggleSwitch
-            class="shrink-0"
+            class="shrink-0 ml-0.5"
             checked={shareWithTeam()}
             onChange={setShareWithTeam}
             disabled={isCreating()}
