@@ -20,6 +20,7 @@ import { Button } from '@ui';
 import {
   createSignal,
   ErrorBoundary,
+  type JSX,
   onCleanup,
   type ParentProps,
   Show,
@@ -104,9 +105,12 @@ function ProjectsContent(props: ParentProps) {
   );
 }
 
-export function ProjectsTab(props: {
+type ProjectsTabProps = {
   onOpen: (id: string, event?: MouseEvent, newSplit?: boolean) => void;
-}) {
+  headerLeading?: JSX.Element;
+};
+
+export function ProjectsTab(props: ProjectsTabProps) {
   return (
     <Projects>
       <ProjectsCollectionHost {...props} />
@@ -122,9 +126,7 @@ export function ProjectsSidebarSection(props: ProjectsSidebarProps) {
   );
 }
 
-function ProjectsCollectionHost(props: {
-  onOpen: (id: string, event?: MouseEvent, newSplit?: boolean) => void;
-}) {
+function ProjectsCollectionHost(props: ProjectsTabProps) {
   const panel = useSplitPanelOrThrow();
   const layout = useSplitLayout();
   const context = useProjectsContext();
@@ -176,6 +178,7 @@ function ProjectsCollectionHost(props: {
         }
         onCopyId={(id) => void copyId.executeById(id)}
         onShare={(projectId) => setSharing(projectId)}
+        headerLeading={props.headerLeading}
       />
       <Show when={sharing()} keyed>
         {(projectId) => (

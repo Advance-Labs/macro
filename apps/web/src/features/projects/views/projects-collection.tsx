@@ -28,6 +28,7 @@ import {
   type Accessor,
   batch,
   createSignal,
+  type JSX,
   Match,
   Show,
   Switch,
@@ -61,6 +62,8 @@ export function ProjectsCollection(props: {
   onCopyId(id: string): void;
   /** Omit where the host cannot show the project's Share menu. */
   onShare?(id: string): void;
+  /** Host chrome above the title, inside the header's safe-area inset. */
+  headerLeading?: JSX.Element;
 }) {
   const context = useProjectsContext();
   const collection = props.collection;
@@ -278,6 +281,7 @@ export function ProjectsCollection(props: {
     <>
       <ViewShell.Header>
         <div class="flex min-w-0 flex-col gap-3">
+          {props.headerLeading}
           <div class="hidden h-8 min-w-0 items-center touch:flex @max-[720px]/view-shell:flex">
             <h1 class="min-w-0 truncate text-xl font-semibold tracking-[-0.03em] text-ink">
               Projects

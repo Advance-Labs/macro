@@ -9,7 +9,12 @@ export function EntityDetailTopBar(
   props: ParentProps<{ navigation?: JSX.Element }>
 ) {
   return (
-    <ViewShell.TopBar class={cn('touch:flex', props.navigation && 'gap-3')}>
+    <ViewShell.TopBar
+      class={cn(
+        'touch:mt-(--safe-top) touch:flex',
+        props.navigation && 'gap-3'
+      )}
+    >
       <ViewBreadcrumbs.Outlet
         aria-label="Task location"
         fallback={<EntityDetailBreadcrumbSkeleton />}
