@@ -106,14 +106,17 @@ offer independent Open, Closed, and Merged selections. Custom multi-status
 selections hide the tabs, except the combined Closed preset keeps them visible.
 A partial Closed-only or Merged-only selection leaves both tabs unhighlighted.
 Status combines with other filters, counts toward filter badges, and applies
-before pagination. Clearing filters resets to Open. Other filters cover repository,
-author, assignee, label, and, when a GitHub identity is linked, reviews (Reviewed
-by you, Not reviewed by you, and Awaiting review from you). The list topbar says
+before pagination. Clearing filters resets to Open. Other filters cover
+priority, linked work, started from, repository, author, assignee, label, and,
+when a GitHub identity is linked, reviews (Reviewed by you, Not reviewed by you,
+and Awaiting review from you). The list topbar says
 Reviews when narrow or when the sidebar is collapsed; the selected scope stays
 visible as a heading above search.
 Saved review selections stay inactive, including their filter badge and empty-state
 copy, while the GitHub identity is unavailable; they resume when it returns.
-Sort offers Recently updated, Least recently updated, Newest, and Oldest. When visible PRs
+Sort offers Priority, Recently updated, Least recently updated, Newest, and Oldest;
+Priority orders the loaded rows most urgent first and keeps recency within a
+priority. When visible PRs
 have GitHub labels, a Labels section below Favorites lists them with their
 colors; choosing a label shows only PRs with it, and choosing it again clears
 it. PR rows use the shared entity layout with selection checkboxes,
@@ -129,6 +132,34 @@ opens that session; Shift-click on the single-session chip opens another split.
 Chip clicks do not open or select the containing PR row. Empty results have no
 chip, and loading, private, deleted, or unavailable sessions never offer navigation.
 The PR's status pill stays passive; status filtering lives in the Reviews list tabs.
+
+Each PR row shows what it links to. A priority icon before the title comes from
+the most urgent open linked task (a closed task counts only when none is open),
+otherwise from a GitHub priority label (`P0`–`P3`, `priority: high`, `urgent`,
+`critical`); the tooltip names its source. Pills before the author show the
+linked **Agent session**s (sessions an agent opened the PR from, or a person
+linked), **Customer**s (CRM companies in linked tasks' Companies property, or a
+company whose thread started a session), **Ticket**s (tasks the PR text, branch,
+or comments mention as `MACRO-<id>`, and tasks whose thread started a session),
+and **Channel**s (channels whose thread started a session). A pill with one item
+opens it (Shift-click for another split); with more it shows `+N` and opens a
+list. Items the viewer cannot access are omitted. Rows show a pulsing
+placeholder while links load. The first pill names where the PR was started
+(Claude, Codex, Cursor, Devin, Copilot, Jules, or Macro), including PRs opened
+outside Macro: a Macro agent session that opened the PR wins and shows the tool
+its harness ran; otherwise a session link in the description (`claude.ai/code/…`,
+`chatgpt.com/codex/tasks/…`, `cursor.com/agents…`, `app.devin.ai/sessions/…`,
+`jules.google.com/…`, `macro.com/app/agent/…`), then footers such as
+"Generated with Claude Code" or a `Co-Authored-By: Claude` trailer, then the
+bot author (for example `Copilot` or `devin-ai-integration[bot]`), then the
+branch prefix (`claude/`, `codex/`, `cursor/`, `devin/`, `copilot/`, `jules-`).
+Its tooltip names the signal; clicking it opens the Macro session in a split or
+the external session in a new tab. Filters add **Priority** (including No
+priority), **Linked to** (an agent session, a ticket, a customer, a channel),
+and **Started from** (each tool, or Unknown); these run on the loaded rows,
+which wait for their links before matching. The PR side panel's **Linked work**
+section shows the same origin under **Started from**, plus the priority,
+tickets, customers, and channels.
 
 PR rows can be added to or removed from Favorites through their context menu or
 bulk entity actions. When at least one accessible PR is favorited, Reviews shows
