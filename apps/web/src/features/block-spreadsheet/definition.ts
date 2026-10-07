@@ -3,7 +3,7 @@ import { fetchSyncDocumentOpenContext } from '@queries/storage/documentLoad/sync
 import { createSyncServiceSource } from '@service-sync/source';
 import { err, ok } from 'neverthrow';
 import { lazy } from 'solid-js';
-import { isSpreadsheetEnabledForCurrentUser } from './queries/spreadsheet-access';
+import { waitForSpreadsheetRollout } from './queries/spreadsheet-access';
 
 export const definition = defineBlock({
   name: 'spreadsheet',
@@ -15,8 +15,10 @@ export const definition = defineBlock({
   syncServiceEnabled: true,
   editPermissionEnabled: true,
   async load(source, intent) {
-    if (!isSpreadsheetEnabledForCurrentUser()) return LoadErrors.UNAUTHORIZED;
     if (source.type !== 'sync-service') return LoadErrors.INVALID;
+    // A rollout miss is not a permission failure: the block explains it, and
+    // a stale UNAUTHORIZED would outlive flags that enable it moments later.
+    if (!(await waitForSpreadsheetRollout())) return LoadErrors.INVALID;
     if (intent === 'preload') return ok({ type: 'preload', origin: source });
     const context = await fetchSyncDocumentOpenContext(source.id);
     if (context.isErr()) return err(context.error);

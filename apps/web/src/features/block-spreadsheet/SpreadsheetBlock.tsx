@@ -12,6 +12,7 @@ import { BlockItemSplitLabel } from '@components/app/split-layout/components/Spl
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
+import { LoadingPanel } from '@core/component/LoadingSpinner';
 import {
   createParamsState,
   ParamsProvider,
@@ -36,7 +37,10 @@ import { onMount, Show } from 'solid-js';
 import { spreadsheetChatContext } from './core/chat-context';
 import type { SpreadsheetData } from './definition';
 import { createSpreadsheetStore } from './primitives/create-spreadsheet-store';
-import { useSpreadsheetAccess } from './primitives/use-spreadsheet-access';
+import {
+  useSpreadsheetAccess,
+  useSpreadsheetAccessLoading,
+} from './primitives/use-spreadsheet-access';
 import { createSpreadsheetSession } from './queries/spreadsheet-session';
 import { SpreadsheetComments } from './SpreadsheetComments';
 import { spreadsheetMentions } from './spreadsheet-mentions';
@@ -44,6 +48,7 @@ import { SpreadsheetEditor } from './views/SpreadsheetEditor';
 
 export default function SpreadsheetBlock(props: { share?: string }) {
   const enabled = useSpreadsheetAccess();
+  const loading = useSpreadsheetAccessLoading();
   const params = createParamsState();
   createMethodRegistration(blockHandleSignal.get, {
     goToLocationFromParams: params.navigate,
@@ -53,9 +58,11 @@ export default function SpreadsheetBlock(props: { share?: string }) {
       <Show
         when={enabled()}
         fallback={
-          <div class="p-6 text-ink-muted">
-            Spreadsheets are not enabled for this account.
-          </div>
+          <Show when={!loading()} fallback={<LoadingPanel />}>
+            <div class="p-6 text-ink-muted">
+              Spreadsheets are not enabled for this account.
+            </div>
+          </Show>
         }
       >
         <SpreadsheetBlockContent share={props.share} />

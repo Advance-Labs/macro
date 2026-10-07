@@ -6,3 +6,9 @@ export function useSpreadsheetAccess() {
   const flag = useFeatureFlag(enableSpreadsheets);
   return () => flag().enabled;
 }
+
+/** Whether this session's rollout answer is still pending. */
+export function useSpreadsheetAccessLoading() {
+  const flag = useFeatureFlag(enableSpreadsheets);
+  return () => flag().loading;
+}
