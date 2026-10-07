@@ -42,7 +42,9 @@ function autoMergeFailureMessage(error: unknown): string {
 
 /**
  * Detects if the merge failure is due to pending CI checks, which would
- * make auto-merge a viable alternative.
+ * make auto-merge a viable alternative. We check for specific GitHub error
+ * patterns related to status checks and branch protection rules, rather than
+ * generic "not mergeable" messages which could have other causes.
  */
 function isAutoMergeCandidate(error: unknown): boolean {
   if (!(error instanceof ThrownResultError)) return false;
@@ -51,8 +53,7 @@ function isAutoMergeCandidate(error: unknown): boolean {
     message.includes('required status') ||
     message.includes('status check') ||
     message.includes('checks must pass') ||
-    message.includes('rule violations') ||
-    message.includes('not mergeable')
+    message.includes('rule violations')
   );
 }
 
