@@ -3,7 +3,7 @@
 ## Surface
 
 `Go to Tasks` → `/app/component/tasks`. Tabs: `My tasks`, `Created by me`, `Team tasks`, and `Projects`.
-The desktop toolbar contains search (`Ctrl+F`), `Sort`, `Group`, and `Filter`;
+The desktop toolbar contains search (`Ctrl+F`), an icon-only `Task layout` dropdown, `Sort`, `Group`, and `Filter`;
 the filter uses the legacy compact option rows and searchable Assignee, Created by,
 and Tags submenus. Multi-select choices keep the menu open; Escape dismisses it.
 The top of the `Filter` menu is a `Filter with AI…` textbox, focused when the menu opens: type a plain-English
@@ -71,6 +71,96 @@ layouts. Narrow splits also show a close button when multiple splits are open. C
 the originating tab breadcrumb, a task tab, or a tag to return to the list.
 Shift-click a row or favorite to open it in a new split
 instead. Keyboard list navigation only moves focus; press Enter to open the focused task.
+
+## Board layout
+
+Open the icon-only **Task layout** dropdown in the toolbar and choose **Board**
+(or **List** to switch back). Its icon reflects the current layout. **Group by**
+offers Status, Priority, Assignee, and (when Projects is enabled) Project.
+Both layouts share one grouping, which restores with the Tasks navigation entry.
+List-only None and Date groupings display Status columns in Board; switching
+back to List retains those selections and collapsed groups until grouping changes.
+
+Click a card's body or title to open the task. Move at least 10 pixels with the
+mouse button held to start dragging to another column; holding still does not
+start a drag. Property pills remain interactive and do not start a drag.
+A new destination column highlights once movement slows
+or pauses for about 100 ms. Fast travel suppresses activation of new columns.
+A valid hover shows **Board sorted by Updated**, **Created**, or **Viewed**
+using the active sort label. The drop does not choose a pointer insertion slot:
+its card takes its place in the current sort (or search relevance order).
+Same-column moves and column reordering remain disabled.
+Layout, primary sort, sort direction, and grouping are reflected in `tasks.layout`,
+`tasks.sort`, `tasks.sortReversed`, and `tasks.groupBy` search parameters.
+Explicit URL values override saved preferences; back/forward navigation
+restores the corresponding controls, including the layout.
+Columns are 336px wide. Each column pages independently with **Load more tasks**.
+Use the horizontal scrollbar to reach more columns. Vertical wheel input over
+empty board background or gaps also scrolls horizontally. A wheel gesture stays
+with its original scroll area until momentum stops, even if another column moves
+under the pointer. A new gesture inside an overflowing column scrolls vertically.
+Each column has its own vertical scrollbar when its cards overflow, while keeping
+its heading visible. Lane scrollbars appear while hovering the lane or scroll track
+and hide 200 ms after leaving. Off-hover momentum does not reveal them; focus and
+active scrollbar dragging retain visibility.
+Normal columns fit their content up to the viewport height; only the hidden-column
+summary fills the height. Both columns and cards are virtualized, so offscreen
+content is not all present in the DOM. A column's vertical position restores when
+scrolling away and back. The active drag source
+stays mounted while scrolling to a destination.
+While dragging, hold the card near a column's top or bottom edge to scroll its
+cards vertically. Hold near the board's left or right edge to scroll horizontally;
+moving beyond that edge keeps scrolling until release or cancellation. Valid drops
+still require the pointer to be inside a visible destination column.
+
+Column titles use status/priority icons, assignee avatars, or the project icon.
+Active filters also restrict columns: excluded values do not remain as empty
+boards. Allowed Status and Priority values retain empty destinations. Assignee
+and Project columns come from matching task groups; there is no extra-column
+selector. When filters hide known columns, a full-height dashed summary appears
+at the end. A filter illustration, count, and outline **Reveal hidden columns**
+button stay near the top of that column.
+Status and Priority show **N hidden**. Assignee and Project show **N+ hidden**:
+these lower bounds count known groups, not every group excluded by server filters.
+**Reveal hidden columns** clears only the current grouping's filter;
+other filters, the current tab, and search stay active. The dashed column is not
+a drop target.
+
+An icon-only status pill appears before the task title, and an icon-only assignee
+pill appears to its right in every grouping. The lower row omits status, assignee,
+and the grouping property. The remaining properties use standard pill controls
+and icons. Priority uses a compact icon-only pill; due date and project appear
+when set. Read-only tasks keep passive property pills.
+A task assigned to multiple people appears in each person's column. Moving it
+from Alice to Bob replaces Alice while keeping the other assignees. Moving to
+**Unassigned** clears all assignees. Project moves change the task's Project
+property (an initiative), never its legacy folder.
+
+Only editable tasks can move. Access checks and property definitions can keep
+moves unavailable while loading. A destination project also requires edit
+access. A pending move disables further moves of the same task in every column;
+failed writes use the shared property mutation's rollback and show an error.
+A valid destination highlights and shows the sort overlay only while dragging
+inside that column, not in gaps or outside the board. Drops move the card
+immediately while the save is pending; failures restore its prior membership.
+After a successful save, the board scrolls only as needed to reveal the destination
+card, including virtualized columns and rows; already visible cards stay in place.
+It does not scroll after a cancelled or failed drop, or when the current board
+scope changes during the save. Successful moves show no notification.
+A cross-column drop settles one opaque visual copy from the card's release position
+into its sorted destination; the real card appears when the copy lands. The release
+snapshot survives source unmounting after edge scrolling. Sorting updates retarget
+an in-flight copy without restarting from the source column.
+Visible placements animate during moves and rollback without animating ordinary
+scrolling or paging. In Assignee grouping, moving to an already assigned person
+reveals the existing card rather than creating a duplicate.
+Reduced-motion preferences disable these transitions.
+Filters remain active: completing a task or removing yourself as assignee can
+hide the card from the current view. Click its title to open the task; modified
+clicks can open a separate split.
+
+Due-date columns and priority/due-date sorting are not in this version.
+The shared board primitives remain independent of Tasks queries and mutations.
 
 ## Cached grouped lists
 
@@ -369,8 +459,14 @@ set only on tasks. Setting it needs edit access to the task and the project;
 removing it needs edit access to the task. The project's Tasks tab lists the
 tasks whose Project property names the project.
 
-The project's Tasks tab starts with the task search, controls, and unified list;
-the project title and property pills appear only on Overview. Use
+The project's Tasks tab starts with task search, controls, and the selected List or
+Board layout; the project title and property pills appear only on Overview.
+Use the same icon-only **Task layout** dropdown to choose a layout. Both layouts
+show only tasks linked to the current project and use the same filters and editors.
+Layout, sort direction, and grouping use `projectTasks.layout`, `projectTasks.sort`,
+`projectTasks.sortReversed`, and `projectTasks.groupBy` URL parameters, independent
+of the main Tasks view's controls. Saved project entry state remains the fallback
+when URL parameters are absent. Use
 `New task` to create a task in the project: the composer opens with its Project
 set to this project (change or clear it like any property), and the create
 request carries it, so there is no separate assignment step. The new row appears
