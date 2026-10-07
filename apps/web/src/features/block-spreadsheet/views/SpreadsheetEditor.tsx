@@ -76,6 +76,8 @@ export function SpreadsheetEditor(props: {
   autoFocus?: boolean;
   commentLocation?: SpreadsheetCommentAnchor;
   comments?: SpreadsheetCommentsCapability;
+  /** Whether a clipboard shortcut fired outside the grid is meant for it. */
+  ownsClipboard?: (event: ClipboardEvent) => boolean;
   onExport: (content: string) => void;
   onExportXlsx: (bytes: Uint8Array) => void;
 }) {
@@ -972,6 +974,7 @@ export function SpreadsheetEditor(props: {
           onPaste={(text, metadata) => {
             actions.pasteText(text, metadata);
           }}
+          ownsClipboard={props.ownsClipboard}
           onClear={grid.clear}
           onGridReady={(element) => {
             gridElement = element;
