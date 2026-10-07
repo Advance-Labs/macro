@@ -26,11 +26,17 @@ export function SettingsSidebar(props: {
 }) {
   let root: HTMLDivElement | undefined;
   return (
-    <ViewSidebar.Root ref={root} aria-label="Settings navigation">
+    <ViewSidebar.Root
+      ref={root}
+      aria-label="Settings navigation"
+      class="bg-page"
+    >
       <ViewSidebar.Header>
         <div class="flex min-w-0 items-center gap-1">
           <ViewSidebar.CloseButton class="shrink-0" />
-          <ViewSidebar.Title>Settings</ViewSidebar.Title>
+          <ViewSidebar.Title class="font-[Roboto_Slab_Variable] text-base font-[350] tracking-[-0.01em]">
+            Settings
+          </ViewSidebar.Title>
         </div>
       </ViewSidebar.Header>
 
@@ -41,7 +47,7 @@ export function SettingsSidebar(props: {
           autocomplete="off"
           value={props.searchQuery}
           onValueChange={props.onSearchQueryChange}
-          class="border-0 bg-ink/5 shadow-none"
+          class="border border-edge bg-ink/[0.025] shadow-none"
           onEscape={() => props.onSearchQueryChange('')}
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {

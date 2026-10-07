@@ -1,7 +1,8 @@
 import CaretLeftIcon from '@phosphor/caret-left.svg';
-import { Button, type ButtonProps, ComposerSurface, cn } from '@ui';
+import { Button, type ButtonProps, cn } from '@ui';
 import { children, createContext, type JSX, Show, useContext } from 'solid-js';
 import { settingsTarget } from './core/settings-target';
+import './settings.css';
 
 /** Detail pages inherit the mobile sheet's header and compact spacing. */
 export const SettingsSheetContext = createContext(false);
@@ -46,60 +47,71 @@ export function SettingsPage(props: {
   const inSheet = useContext(SettingsSheetContext);
   return (
     <div
-      data-settings-page
-      data-drawer-scroll-body={inSheet ? true : undefined}
-      class="@container/settings-page h-full min-h-0 overflow-y-auto [overflow-anchor:none] select-children bg-panel [&_[data-variant=cta]]:bg-ink [&_[data-variant=cta]]:text-panel [&_[data-variant=cta]]:focus-visible:ring-panel/70 [&_:has(>input[type=checkbox])]:[--color-accent:var(--color-ink)] [&_input[type=checkbox]]:accent-ink"
+      class={cn('relative size-full min-h-0', inSheet ? 'bg-panel' : 'bg-page')}
     >
-      {/* On mobile/tablet the page is full-frame: the chrome insets live inside the
+      <Show when={!inSheet}>
+        {/* Onboarding's inset frame and soft overhead light. */}
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-4 rounded-[32px] border border-ink/[0.04] bg-[radial-gradient(ellipse_60%_28%_at_50%_0%,color-mix(in_oklch,var(--color-ink)_5%,transparent),transparent)] touch:hidden"
+        />
+      </Show>
+      <div
+        data-settings-page
+        data-drawer-scroll-body={inSheet ? true : undefined}
+        class="@container/settings-page relative size-full min-h-0 overflow-y-auto [overflow-anchor:none] select-children font-[Inter_Variable] [&_[data-variant=cta]]:rounded-full [&_[data-variant=cta]]:bg-ink [&_[data-variant=cta]]:text-page [&_[data-variant=cta]]:focus-visible:ring-page/70 [&_:has(>input[type=checkbox])]:[--color-accent:var(--color-ink)] [&_input[type=checkbox]]:accent-ink"
+      >
+        {/* On mobile/tablet the page is full-frame: the chrome insets live inside the
           scroll content (plus the usual breathing room) so pages scroll under
           the floating header and bottom rows like every other block. */}
-      <div
-        class={cn(
-          'mx-auto w-full max-w-[960px]',
-          inSheet
-            ? '@container px-3 pt-2 pb-[max(24px,var(--mobile-sheet-safe-padding))]'
-            : '@container px-12 pt-8 pb-24 @max-[480px]/settings-page:px-4 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]'
-        )}
-      >
-        <Show when={props.onBack}>
-          <button
-            type="button"
-            class="mb-5 -ml-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-ink-muted outline-none hover:bg-ink/4 hover:text-ink focus-visible:bg-ink/6"
-            onClick={props.onBack}
-          >
-            <CaretLeftIcon class="size-4" />
-            {props.backLabel ?? 'Back'}
-          </button>
-        </Show>
-        <header class="flex items-start justify-between gap-4 @max-[480px]/settings-page:flex-col @max-[480px]/settings-page:gap-3">
-          <div class="flex flex-col gap-1.5 min-w-0">
-            <Show when={!inSheet || props.showTitleInSheet || props.onBack}>
-              <div class="flex min-w-0 items-center gap-3">
-                <Show when={props.icon}>
-                  <div class="flex size-9 shrink-0 items-center justify-center [&_svg]:size-7 [&_img]:size-7">
-                    {props.icon}
-                  </div>
-                </Show>
-                <h1 class="min-w-0 text-[26px]/tight font-medium tracking-[-0.025em] text-ink">
-                  {props.title}
-                </h1>
-              </div>
-            </Show>
-            <Show when={props.description}>
-              <p class="text-sm leading-relaxed text-ink/60">
-                {props.description}
-              </p>
-            </Show>
-            <Show when={props.signpost}>{props.signpost}</Show>
-          </div>
-          <Show when={props.actions}>
-            <div class="shrink-0 pt-1">{props.actions}</div>
-          </Show>
-        </header>
         <div
-          class={cn('flex flex-col', inSheet ? 'gap-6 mt-3' : 'mt-12 gap-12')}
+          class={cn(
+            'mx-auto w-full max-w-[960px]',
+            inSheet
+              ? '@container px-3 pt-2 pb-[max(24px,var(--mobile-sheet-safe-padding))]'
+              : '@container px-12 pt-14 pb-24 @max-[480px]/settings-page:px-4 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]'
+          )}
         >
-          {props.children}
+          <Show when={props.onBack}>
+            <button
+              type="button"
+              class="mb-5 -ml-1.5 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm text-ink-muted outline-none hover:bg-ink/4 hover:text-ink focus-visible:bg-ink/6"
+              onClick={props.onBack}
+            >
+              <CaretLeftIcon class="size-4" />
+              {props.backLabel ?? 'Back'}
+            </button>
+          </Show>
+          <header class="flex items-start justify-between gap-4 @max-[480px]/settings-page:flex-col @max-[480px]/settings-page:gap-3">
+            <div class="flex flex-col gap-1.5 min-w-0">
+              <Show when={!inSheet || props.showTitleInSheet || props.onBack}>
+                <div class="flex min-w-0 items-center gap-3">
+                  <Show when={props.icon}>
+                    <div class="flex size-9 shrink-0 items-center justify-center [&_svg]:size-7 [&_img]:size-7">
+                      {props.icon}
+                    </div>
+                  </Show>
+                  <h1 class="min-w-0 font-[Roboto_Slab_Variable] text-[30px]/[1.2] font-[315] tracking-[-0.025em] text-ink [text-wrap:balance] sm:text-[36px]/[1.2]">
+                    {props.title}
+                  </h1>
+                </div>
+              </Show>
+              <Show when={props.description}>
+                <p class="max-w-[560px] text-sm leading-6 text-ink-muted sm:text-[15px]">
+                  {props.description}
+                </p>
+              </Show>
+              <Show when={props.signpost}>{props.signpost}</Show>
+            </div>
+            <Show when={props.actions}>
+              <div class="shrink-0 pt-1">{props.actions}</div>
+            </Show>
+          </header>
+          <div
+            class={cn('flex flex-col', inSheet ? 'gap-6 mt-3' : 'mt-12 gap-12')}
+          >
+            {props.children}
+          </div>
         </div>
       </div>
     </div>
@@ -127,17 +139,19 @@ export function SettingsSection(props: {
           : undefined
       }
       tabIndex={-1}
-      class={cn('scroll-mt-4 outline-none rounded-[26.25px]', props.class)}
+      class={cn('scroll-mt-4 outline-none rounded-3xl', props.class)}
     >
       <SettingsSurface class="flex flex-col gap-2 p-5 touch:p-4">
         <Show when={props.title || actions()}>
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div class="flex flex-col gap-0.5 min-w-0">
               <Show when={props.title}>
-                <h2 class="text-base font-medium text-ink">{props.title}</h2>
+                <h2 class="font-[Roboto_Slab_Variable] text-xl/tight font-[350] tracking-[-0.02em] text-ink">
+                  {props.title}
+                </h2>
               </Show>
               <Show when={props.description}>
-                <p class="text-sm leading-relaxed text-ink/60">
+                <p class="text-sm leading-relaxed text-ink-muted">
                   {props.description}
                 </p>
               </Show>
@@ -166,22 +180,21 @@ export function SettingsSurface(props: {
       when={!nested}
       fallback={<div class={props.class}>{props.children}</div>}
     >
-      <ComposerSurface
-        as="div"
+      <div
         class={cn(
-          'relative min-w-0 touch:rounded-3xl touch:border touch:border-edge-muted touch:bg-composer touch:text-composer-ink',
+          'relative min-w-0 rounded-3xl border border-edge bg-ink/[0.025] text-ink',
           props.class
         )}
       >
         <SettingsSurfaceContext.Provider value={true}>
           {props.children}
         </SettingsSurfaceContext.Provider>
-      </ComposerSurface>
+      </div>
     </Show>
   );
 }
 
-/** Rows share a surface; standalone cards use the email composer's elevation. */
+/** Rows share a surface; standalone cards get their own hairline frame. */
 export function SettingsCard(props: { class?: string; children: JSX.Element }) {
   const nested = useContext(SettingsSurfaceContext);
   return (
@@ -254,7 +267,7 @@ export function SettingsRow(props: {
         <Show when={props.description}>
           <div
             class={cn(
-              'text-sm leading-relaxed text-ink/60',
+              'text-sm leading-relaxed text-ink-muted',
               props.hideDescriptionOnMobile && 'mobile:hidden'
             )}
           >
@@ -364,7 +377,7 @@ export function IntegrationRow(props: {
           <Show when={props.status}>{props.status}</Show>
         </div>
         <Show when={props.description}>
-          <div class="text-sm leading-relaxed text-ink/60">
+          <div class="text-sm leading-relaxed text-ink-muted">
             {props.description}
           </div>
         </Show>
@@ -386,7 +399,7 @@ export function SettingsButton(props: ButtonProps) {
   return (
     <Button
       {...props}
-      class={cn('rounded-lg font-normal gap-1.5', props.class)}
+      class={cn('rounded-full font-normal gap-1.5', props.class)}
     />
   );
 }
