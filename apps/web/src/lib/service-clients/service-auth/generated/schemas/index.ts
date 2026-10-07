@@ -50,6 +50,8 @@ export * from './cursorModelOption';
 export * from './cursorModelsResponse';
 export * from './denyReason';
 export * from './emptyResponse';
+export * from './enableAutoMergeRequest';
+export * from './enableAutoMergeResponse';
 export * from './enrichedGithubPullRequest';
 export * from './enrichedGithubPullRequestAdditions';
 export * from './enrichedGithubPullRequestAssignees';
