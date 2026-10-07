@@ -581,13 +581,13 @@ impl GithubOauthImpl {
             .await?;
 
         if !response.status().is_success() {
+            let status = response.status();
             let error_body = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "unknown error".to_string());
             anyhow::bail!(
-                "failed to fetch pull request node ID (status {}): {error_body}",
-                response.status()
+                "failed to fetch pull request node ID (status {status}): {error_body}",
             );
         }
 
