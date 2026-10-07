@@ -164,6 +164,7 @@ function StackEntityDetail(props: {
         </Show>
         <EntityDetail
           target={props.entry.data}
+          routeOwned
           previewHeaderLeading={
             <Show
               when={entityDetailBlockType(props.entry.data) === 'spreadsheet'}

@@ -1,5 +1,6 @@
+import { spreadsheetLocationParams } from '@app/features/block-spreadsheet/spreadsheet-route';
 import { URL_PARAMS as CHANNEL_PARAMS } from '@block-channel/constants';
-import { DirectBlock, isDirectBlockName } from '@components/app/DirectBlock';
+import { chatLocationParams } from '@block-chat/chat-route';
 import { isInBlock, type PreviewState, useMaybeBlockName } from '@core/block';
 import { useItemPreviewData } from '@core/component/ItemPreview';
 import { toast } from '@core/component/Toast/Toast';
@@ -72,6 +73,12 @@ false && floatWithElement;
 const ChannelMessageThreadCard = lazyNamed(
   () => import('./ChannelMessageThreadCard'),
   'ChannelMessageThreadCard'
+);
+
+const ChatBlock = lazyNamed(() => import('@block-chat/ChatBlock'), 'ChatBlock');
+const SpreadsheetBlock = lazyNamed(
+  () => import('@app/features/block-spreadsheet/SpreadsheetBlock'),
+  'default'
 );
 
 const stringifyPreviewBox = ([width, height]: PreviewBox): [string, string] => {
@@ -237,12 +244,19 @@ function DocumentCardInner(props: DocumentCardDecoratorProps) {
       const i = item();
       if (!i || i.loading) return;
       const blockType = resolveBlockAlias(verifyBlockName(props.blockName));
-      if (isDirectBlockName(blockType)) {
+      if (blockType === 'chat') {
         getElement = () => (
-          <DirectBlock
-            type={blockType}
-            id={i.id}
-            params={previewData()}
+          <ChatBlock
+            chatId={i.id}
+            params={chatLocationParams(previewData())}
+            nested
+          />
+        );
+      } else if (blockType === 'spreadsheet') {
+        getElement = () => (
+          <SpreadsheetBlock
+            documentId={i.id}
+            params={spreadsheetLocationParams(previewData())}
             nested
           />
         );

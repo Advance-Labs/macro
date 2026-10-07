@@ -86,6 +86,12 @@ Spreadsheets are an internal pilot controlled by the `enable-spreadsheets` PostH
 flag in every environment. Team targeting is configured in PostHog; ordinary
 document permissions continue to control access to each workbook.
 
+Comment notifications and location links use route-owned spreadsheet targets.
+An existing workbook in Drive, Home, a preview, or a popover receives the target
+without resetting its sync session. Reopening the same comment must seek again.
+During a cold load, only the latest request applies. Embedded workbooks keep
+local targets and never borrow a parent pane's comment request.
+
 Choose **Create → Spreadsheet**, or **New → Spreadsheet** in Files or a folder.
 Native workbooks open at `/app/spreadsheet/<uuid>` and use the normal document
 title bar with **Ask Macro** and **Share** at the top right. The **File actions**

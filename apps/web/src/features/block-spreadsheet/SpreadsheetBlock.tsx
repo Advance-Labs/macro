@@ -1,6 +1,8 @@
 import { ChatWithAgentButton } from '@app/features/chat/ChatWithAgentButton';
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
+import { claimOf, useOptionalSplitRouter } from '@app/lib/split-router';
+import { PaneContext } from '@app/lib/split-router/solid/context';
 import { ResponsiveBlockToolbar } from '@components/app/ResponsiveBlockToolbar';
 import {
   SplitHeaderLeft,
@@ -33,10 +35,6 @@ import { useUserId } from '@core/context/user';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { track } from '@core/internal/trackBlockOpened';
 import { isMobile } from '@core/mobile/isMobile';
-import {
-  createMethodRegistration,
-  type OwnedBlockHandle,
-} from '@core/orchestrator';
 import { useUserIndicators } from '@core/state/liveIndicators';
 import { getDisplayName, tryMacroId } from '@core/user';
 import { createRenameDssEntityMutation } from '@entity';
@@ -47,7 +45,14 @@ import { useItemRawName } from '@queries/preview';
 import { useEntitySubscription } from '@service-connection/client';
 import { createSyncServiceSource } from '@service-sync/source';
 import { Badge } from '@ui';
-import { createEffect, createResource, on, onMount, Show } from 'solid-js';
+import {
+  createEffect,
+  createResource,
+  on,
+  onMount,
+  Show,
+  useContext,
+} from 'solid-js';
 import { spreadsheetChatContext } from './core/chat-context';
 import { createSpreadsheetStore } from './primitives/create-spreadsheet-store';
 import { useSpreadsheetAccess } from './primitives/use-spreadsheet-access';
@@ -58,6 +63,11 @@ import {
 import { createSpreadsheetSession } from './queries/spreadsheet-session';
 import { SpreadsheetComments } from './SpreadsheetComments';
 import { spreadsheetMentions } from './spreadsheet-mentions';
+import {
+  spreadsheetDetailSearch,
+  spreadsheetDetailSearchCodec,
+  spreadsheetLocationParams,
+} from './spreadsheet-route';
 import { SpreadsheetEditor } from './views/SpreadsheetEditor';
 
 export type SpreadsheetBlockProps = {
@@ -66,9 +76,7 @@ export type SpreadsheetBlockProps = {
   navigationRequest?: number | string;
   share?: string;
   nested?: boolean;
-  handle?: OwnedBlockHandle<
-    import('@core/blockMethodRegistry').BlockMethodsFor<'spreadsheet'>
-  >;
+  routeOwned?: boolean;
 };
 
 /** Direct spreadsheet composition. The loaded view owns its live sync session. */
@@ -127,15 +135,47 @@ function SpreadsheetDocument(
     ? useHotkeyDOMScope('spreadsheet')
     : ([undefined, panel.splitHotkeyScope] as const);
   const params = createParamsState();
+  const router = useOptionalSplitRouter();
+  const pane = useContext(PaneContext);
+  const routeLocation = () => {
+    if (!props.routeOwned || !router || !pane) return;
+    const entry = pane.entry();
+    if (
+      !entry ||
+      claimOf(router.routes, entry.location.route) !==
+        `block:spreadsheet:${props.documentId}`
+    )
+      return;
+    const raw = entry.location.search?.[spreadsheetDetailSearch.namespace];
+    if (!raw) return;
+    const parsed = spreadsheetDetailSearchCodec.parse(raw);
+    if (!parsed.valid || parsed.value.documentId !== props.documentId) return;
+    return parsed.value;
+  };
+  const routeParams = () =>
+    spreadsheetLocationParams({
+      comment_id: routeLocation()?.commentId,
+      share: routeLocation()?.share,
+    });
   createEffect(
     on(
-      () => [props.params, props.navigationRequest] as const,
-      ([location]) => params.navigate(location ?? {})
+      () =>
+        props.routeOwned
+          ? ([
+              routeLocation()?.commentId,
+              routeLocation()?.share,
+              routeLocation()?.seek,
+              props.documentId,
+            ] as const)
+          : ([props.params, props.navigationRequest] as const),
+      () =>
+        params.navigate(
+          props.routeOwned
+            ? routeParams()
+            : spreadsheetLocationParams(props.params)
+        )
     )
   );
-  createMethodRegistration<'spreadsheet'>(() => props.handle, {
-    goToLocationFromParams: params.navigate,
-  });
   const permissions = () => getPermissions(props.data.userAccessLevel);
   const authenticated = useIsAuthenticated();
   const canEdit = () =>
@@ -222,7 +262,13 @@ function SpreadsheetDocument(
   }));
   createEffect(
     on(
-      () => [props.share, props.navigationRequest] as const,
+      () =>
+        props.routeOwned
+          ? ([routeLocation()?.share, routeLocation()?.seek] as const)
+          : ([
+              props.share ?? props.params?.share,
+              props.navigationRequest,
+            ] as const),
       ([share]) => {
         if (share === 'true') openShare();
       }
@@ -231,7 +277,14 @@ function SpreadsheetDocument(
   const chrome = () => Boolean(panel) && !props.nested;
 
   return (
-    <ParamsProvider state={params} urlParams={props.params ?? {}}>
+    <ParamsProvider
+      state={params}
+      urlParams={
+        props.routeOwned
+          ? routeParams()
+          : spreadsheetLocationParams(props.params)
+      }
+    >
       <div
         class="portal-scope relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden"
         data-block-type="spreadsheet"

@@ -5,6 +5,16 @@ User-sent messages in chat and agent transcripts use an ink-colored bubble with
 lighter bubble with the normal text palette. Preview Markdown and controls at
 `/app/debug/ui?ui=invert-util` under **User-sent AI message**.
 
+## Legacy chat location links
+
+Chat message links use the split router and reuse a matching standalone, Home,
+or Agents detail owner without replacing its surrounding list route. Open the
+same message link twice after scrolling away; each request must seek again
+without resetting the draft. During a cold load, only the latest target applies.
+Local previews and embedded cards never consume a parent pane's chat target.
+Opening a message in an existing local preview or popover updates that view;
+closing the view releases its ownership.
+
 ## Checking first-response latency
 
 From outside an editor, press `c`, then `a`, type a prompt, and press Enter.

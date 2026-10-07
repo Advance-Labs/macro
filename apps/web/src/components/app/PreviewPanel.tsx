@@ -1,5 +1,18 @@
+import {
+  spreadsheetDetailSearch,
+  spreadsheetDetailSearchCodec,
+  spreadsheetLocationParams,
+} from '@app/features/block-spreadsheet/spreadsheet-route';
+import { type Entry, useOptionalSplitRouter } from '@app/lib/split-router';
+import { PaneContext } from '@app/lib/split-router/solid/context';
+import {
+  chatDetailSearch,
+  chatDetailSearchCodec,
+  chatLocationParams,
+} from '@block-chat/chat-route';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import type { BlockOrchestrator } from '@core/orchestrator';
+import { lazyNamed } from '@core/util/lazyNamed';
 import { createContextProvider } from '@solid-primitives/context';
 import deepEqual from 'fast-deep-equal';
 import {
@@ -8,13 +21,16 @@ import {
   createRenderEffect,
   createSignal,
   type JSX,
+  Match,
   on,
+  onCleanup,
   Show,
   Suspense,
+  Switch,
+  useContext,
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { ViewShell } from '../view-shell/ViewShell';
-import { DirectBlock, isDirectBlockName } from './DirectBlock';
 import type {
   PreviewBlockTarget,
   PreviewPanelSelection,
@@ -28,6 +44,11 @@ import {
   type SplitPanelContextType,
 } from './split-layout/context';
 
+const ChatBlock = lazyNamed(() => import('@block-chat/ChatBlock'), 'ChatBlock');
+const SpreadsheetBlock = lazyNamed(
+  () => import('@app/features/block-spreadsheet/SpreadsheetBlock'),
+  'default'
+);
 export const [PreviewPanelContext, useMaybePreviewPanel] =
   createContextProvider(
     (props: {
@@ -166,6 +187,8 @@ export type PreviewPanelProps = {
   target: PreviewBlockTarget | undefined;
   /** Re-open the same target without replacing its mounted block. */
   navigationRequest?: number;
+  /** Only a route-backed detail host opts into feature search targets. */
+  routeOwned?: boolean;
   /** Live selection metadata when a row opened this route. */
   selectedEntity?: PreviewPanelSelection;
   orchestrator: BlockOrchestrator;
@@ -189,8 +212,90 @@ function PreviewBlock(
   const location = createMemo(() => props.target, undefined, {
     equals: sameLocation,
   });
+  const router = useOptionalSplitRouter();
+  const pane = useContext(PaneContext);
+  const [delivery, setDelivery] = createSignal<{
+    source: PreviewBlockTarget;
+    sourceRequest: number | undefined;
+    destination: Readonly<Entry>;
+  }>();
+  const destination = () => {
+    const next = delivery();
+    return next &&
+      sameLocation(next.source, location()) &&
+      next.sourceRequest === props.navigationRequest
+      ? next.destination
+      : undefined;
+  };
+  if (router && pane) {
+    const owner = Symbol('preview-navigation');
+    onCleanup(
+      router.claims.register(() => {
+        const target = location();
+        if (
+          props.routeOwned ||
+          (target.blockType !== 'chat' && target.blockType !== 'spreadsheet')
+        )
+          return [];
+        return [
+          {
+            owner,
+            pane: pane.pane(),
+            claim: `block:${target.blockType}:${target.blockId}`,
+            activate: (next?: Readonly<Entry>) => {
+              if (next)
+                setDelivery({
+                  source: location(),
+                  sourceRequest: props.navigationRequest,
+                  destination: next,
+                });
+              props.splitPanelContext.handle.activate();
+            },
+          },
+        ];
+      })
+    );
+  }
+  const target = createMemo(
+    () => {
+      const source = location();
+      const next = destination();
+      if (!next) return source;
+      if (source.blockType === 'chat') {
+        const parsed = chatDetailSearchCodec.parse(
+          next.location.search?.[chatDetailSearch.namespace]
+        );
+        return {
+          ...source,
+          params:
+            parsed.valid && parsed.value.chatId === source.blockId
+              ? chatLocationParams({
+                  message_id: parsed.value.messageId,
+                  share: parsed.value.share,
+                })
+              : {},
+        };
+      }
+      const parsed = spreadsheetDetailSearchCodec.parse(
+        next.location.search?.[spreadsheetDetailSearch.namespace]
+      );
+      return {
+        ...source,
+        params:
+          parsed.valid && parsed.value.documentId === source.blockId
+            ? spreadsheetLocationParams({
+                comment_id: parsed.value.commentId,
+                share: parsed.value.share,
+              })
+            : {},
+      };
+    },
+    undefined,
+    { equals: sameLocation }
+  );
+  const request = () => destination()?.id ?? props.navigationRequest;
   const navigation = createMemo(
-    () => ({ target: location(), request: props.navigationRequest ?? 0 }),
+    () => ({ target: target(), request: request() ?? 0 }),
     undefined,
     {
       equals: (left, right) =>
@@ -201,34 +306,43 @@ function PreviewBlock(
   return (
     <Show
       when={
-        isDirectBlockName(props.target.blockType)
-          ? props.target.blockType
-          : undefined
+        props.target.blockType === 'chat' ||
+        props.target.blockType === 'spreadsheet'
       }
       fallback={<LegacyPreviewBlock {...props} />}
     >
-      {(type) => (
-        <PreviewFrame
-          splitPanelContext={props.splitPanelContext}
+      <PreviewFrame
+        splitPanelContext={props.splitPanelContext}
+        onFocusOut={props.onFocusOut}
+        ref={props.ref}
+        headerLeading={props.headerLeading}
+        locationKey={navigation}
+      >
+        <PreviewPanelContext
+          previewTarget={target()}
+          previewEntity={props.selectedEntity}
           onFocusOut={props.onFocusOut}
-          ref={props.ref}
-          headerLeading={props.headerLeading}
-          locationKey={navigation}
         >
-          <PreviewPanelContext
-            previewTarget={props.target}
-            previewEntity={props.selectedEntity}
-            onFocusOut={props.onFocusOut}
-          >
-            <DirectBlock
-              type={type()}
-              id={props.target.blockId}
-              params={props.target.params}
-              navigationRequest={props.navigationRequest}
-            />
-          </PreviewPanelContext>
-        </PreviewFrame>
-      )}
+          <Switch>
+            <Match when={props.target.blockType === 'chat'}>
+              <ChatBlock
+                chatId={props.target.blockId}
+                params={chatLocationParams(target().params)}
+                navigationRequest={request()}
+                routeOwned={props.routeOwned}
+              />
+            </Match>
+            <Match when={props.target.blockType === 'spreadsheet'}>
+              <SpreadsheetBlock
+                documentId={props.target.blockId}
+                params={spreadsheetLocationParams(target().params)}
+                navigationRequest={request()}
+                routeOwned={props.routeOwned}
+              />
+            </Match>
+          </Switch>
+        </PreviewPanelContext>
+      </PreviewFrame>
     </Show>
   );
 }

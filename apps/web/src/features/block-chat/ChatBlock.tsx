@@ -1,5 +1,7 @@
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
+import { claimOf, useOptionalSplitRouter } from '@app/lib/split-router';
+import { PaneContext } from '@app/lib/split-router/solid/context';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { SidePanel } from '@components/app/side-panel';
 import { useSplitPanel } from '@components/app/split-layout/layoutUtils';
@@ -13,9 +15,9 @@ import {
   ParamsProvider,
 } from '@core/component/ParamsProvider';
 import { getPermissions } from '@core/component/SharePermissions';
+import { useShareModal } from '@core/component/TopBar/shareModal';
 import { useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { track } from '@core/internal/trackBlockOpened';
-import type { OwnedBlockHandle } from '@core/orchestrator';
 import { DebouncedNotificationReadMarker } from '@notifications';
 import { useQueryClient } from '@queries/client';
 import { useItemRawName } from '@queries/preview';
@@ -28,7 +30,13 @@ import {
   on,
   onMount,
   Show,
+  useContext,
 } from 'solid-js';
+import {
+  chatDetailSearch,
+  chatDetailSearchCodec,
+  chatLocationParams,
+} from './chat-route';
 import {
   canEditChat,
   loadChatSession,
@@ -43,9 +51,7 @@ export type ChatBlockProps = {
   params?: Record<string, string>;
   navigationRequest?: number | string;
   nested?: boolean;
-  handle?: OwnedBlockHandle<
-    import('@core/blockMethodRegistry').BlockMethodsFor<'chat'>
-  >;
+  routeOwned?: boolean;
 };
 
 export function ChatBlock(props: ChatBlockProps) {
@@ -90,14 +96,47 @@ function LoadedChat(props: ChatBlockProps & { data: GetChatResponse }) {
     ? useHotkeyDOMScope('chat')
     : ([undefined, panel!.splitHotkeyScope] as const);
   const params = createParamsState();
+  const router = useOptionalSplitRouter();
+  const pane = useContext(PaneContext);
+  const routeLocation = () => {
+    if (!props.routeOwned || !router || !pane) return;
+    const entry = pane.entry();
+    if (
+      !entry ||
+      claimOf(router.routes, entry.location.route) !==
+        `block:chat:${props.chatId}`
+    )
+      return;
+    const raw = entry.location.search?.[chatDetailSearch.namespace];
+    if (!raw) return;
+    const parsed = chatDetailSearchCodec.parse(raw);
+    if (!parsed.valid || parsed.value.chatId !== props.chatId) return;
+    return parsed.value;
+  };
+  const routeParams = () =>
+    chatLocationParams({
+      message_id: routeLocation()?.messageId,
+      share: routeLocation()?.share,
+    });
   const [pendingLocation, setPendingLocation] = createSignal<
     Record<string, string> | undefined
   >(undefined, { equals: false });
   createEffect(
     on(
-      () => [props.params, props.navigationRequest] as const,
-      ([location]) => {
-        params.navigate(location ?? {});
+      () =>
+        props.routeOwned
+          ? ([
+              routeLocation()?.messageId,
+              routeLocation()?.share,
+              routeLocation()?.seek,
+              props.chatId,
+            ] as const)
+          : ([props.params, props.navigationRequest] as const),
+      () => {
+        const location = props.routeOwned
+          ? routeParams()
+          : chatLocationParams(props.params);
+        params.navigate(location);
         setPendingLocation(location);
       }
     )
@@ -111,6 +150,25 @@ function LoadedChat(props: ChatBlockProps & { data: GetChatResponse }) {
     id: props.chatId,
   }));
   const name = () => updatedName() || props.data.chat.name || DEFAULT_CHAT_NAME;
+  const openShare = useShareModal(() => ({
+    id: props.chatId,
+    blockAlias: 'chat',
+    itemType: 'chat',
+    name: name(),
+    userPermissions: permissions(),
+    owner: props.data.chat.userId,
+  }));
+  createEffect(
+    on(
+      () =>
+        props.routeOwned
+          ? ([routeLocation()?.share, routeLocation()?.seek] as const)
+          : ([props.params?.share, props.navigationRequest] as const),
+      ([share]) => {
+        if (share === 'true') openShare();
+      }
+    )
+  );
   useBlockEntityCommands({
     id: props.chatId,
     scopeId,
@@ -139,7 +197,12 @@ function LoadedChat(props: ChatBlockProps & { data: GetChatResponse }) {
   });
 
   return (
-    <ParamsProvider state={params} urlParams={props.params ?? {}}>
+    <ParamsProvider
+      state={params}
+      urlParams={
+        props.routeOwned ? routeParams() : chatLocationParams(props.params)
+      }
+    >
       <div
         class="portal-scope relative size-full"
         tabIndex={-1}
@@ -161,7 +224,6 @@ function LoadedChat(props: ChatBlockProps & { data: GetChatResponse }) {
             data={props.data}
             chatId={props.chatId}
             scopeId={scopeId}
-            handle={props.handle}
             canEdit={canEdit}
             nested={props.nested}
             showHeader={Boolean(panel)}

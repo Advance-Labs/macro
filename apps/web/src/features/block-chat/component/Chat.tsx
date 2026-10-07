@@ -1,5 +1,4 @@
 import { showAiUsageLimit } from '@app/features/paywall/ai-usage-limit-handling';
-import type { SendBuilder } from '@block-chat/blockClient';
 import { TopBar } from '@block-chat/component/TopBar';
 import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
 import { useCanAutofocusSplitContent } from '@components/app/split-layout/layoutUtils';
@@ -44,8 +43,6 @@ import { usePaywallState } from '@core/constant/PaywallState';
 import { lastExecutedCommand } from '@core/hotkey/state';
 import { TOKENS } from '@core/hotkey/tokens';
 import { registerScopeSignalHotkey } from '@core/hotkey/utils';
-import type { OwnedBlockHandle } from '@core/orchestrator';
-import { createMethodRegistration } from '@core/orchestrator';
 import { markMessageSent } from '@core/util/message-send-motion';
 import { createRenameDssEntityMutation } from '@entity';
 import { invalidateUserQuota } from '@queries/auth';
@@ -59,9 +56,6 @@ export type ChatProps = {
   data: GetChatResponse;
   chatId: string;
   scopeId: string;
-  handle?: OwnedBlockHandle<
-    import('@core/blockMethodRegistry').BlockMethodsFor<'chat'>
-  >;
   canEdit: Accessor<boolean>;
   nested?: boolean;
   showHeader?: boolean;
@@ -280,21 +274,6 @@ function ChatInner(
     const attached = input.attachments.attached();
     const model_ = input.model();
     saveChatState({ attachments: attached, input: inputText, model: model_ });
-  });
-
-  createMethodRegistration<'chat'>(() => props.handle, {
-    sendMessage: async (sendRequest: SendBuilder) => {
-      onSend({
-        content: sendRequest.userRequest,
-        model: sendRequest.model ?? input.model(),
-        attachments: sendRequest.attachments ?? [],
-        toolset: { type: 'all' },
-      });
-    },
-    goToLocationFromParams: (params: Record<string, string>) => {
-      props.setPendingLocation(params);
-      props.navigate(params);
-    },
   });
 
   // Check for pending send data (e.g., from SoupChatInput) and send it
