@@ -6,8 +6,4 @@
  */
 import type { GithubMergeMethod } from './githubMergeMethod';
 
-/**
- * The merge method to use when auto-merging. Omitted means the first
-method the repository allows, in the order merge, squash, rebase.
- */
-export type EnableAutoMergeRequestMergeMethod = GithubMergeMethod | null;
+export type EnableAutoMergeRequestMergeMethod = null | GithubMergeMethod;
