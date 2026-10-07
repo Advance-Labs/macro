@@ -1279,3 +1279,5 @@ async fn schema_version_conflicts_keep_the_retry_signal() {
         }
     }
 }
+
+mod scopes;
