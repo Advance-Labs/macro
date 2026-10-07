@@ -2163,8 +2163,11 @@ restores the normal dev view.
 `Billing` shows the current plan and `Manage`. Free users see separate Pro
 (`Get Pro`) and Max (`Get Max`) cards, side by side when the panel is wide enough
 and stacked on narrow panels. The Pro card shows `Free for one month!` for Free
-users. Prices read `/ month` for solo users and `per seat / month` for team
-accounts. Each card puts its button beside the price when wide enough and below
+users. `Get Pro` requests the same server-validated 30-day first-subscription
+trial as onboarding; checkout redirects only after the server confirms the trial.
+Ineligible accounts see the rejection reason and are not silently charged.
+`Get Max` keeps standard paid terms. Prices read `/ month` for solo users and
+`per seat / month` for team accounts. Each card puts its button beside the price when wide enough and below
 the price when narrow. Free lists 2 connected email accounts; Pro and Max list
 unlimited connected email accounts. Pro users see a Max card (`Upgrade to Max`); Max
 users see a Pro card (`Switch to Pro`). Cards appear only for users who can

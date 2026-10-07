@@ -4,6 +4,7 @@ import {
   type BillingInput,
   describeSeatPlans,
   getBillingState,
+  getFreePlanCheckoutRequest,
 } from './billing-state';
 
 const baseline: BillingInput = {
@@ -14,6 +15,20 @@ const baseline: BillingInput = {
 };
 
 describe('billing presentation policy', () => {
+  it('requests a confirmed first-month trial when a Free account selects Pro', () => {
+    expect(getFreePlanCheckoutRequest('premium')).toEqual({
+      plan: 'premium',
+      onboardingTrial: true,
+    });
+  });
+
+  it('keeps Max checkout on paid terms', () => {
+    expect(getFreePlanCheckoutRequest('max')).toEqual({
+      plan: 'max',
+      onboardingTrial: false,
+    });
+  });
+
   it.each<PlanTier>(['free', 'premium', 'max'])(
     'hides options for a team-paid member on %s',
     (tier) => {

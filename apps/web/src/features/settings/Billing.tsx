@@ -16,7 +16,10 @@ import type { PaidPlan } from '@service-auth/ai-billing-types';
 import { stripeServiceClient } from '@service-stripe/client';
 import { createMemo, type JSX, Suspense } from 'solid-js';
 import { BillingSettingsView } from './components/billing-settings-view';
-import { getBillingState } from './core/billing-state';
+import {
+  getBillingState,
+  getFreePlanCheckoutRequest,
+} from './core/billing-state';
 
 export function Billing() {
   if (import.meta.env.DEV && LOCAL_ONLY) {
@@ -91,12 +94,16 @@ function LiveBilling(props: { controls?: JSX.Element }) {
 
   const handleCheckout = async (plan: PaidPlan) => {
     try {
-      const url = await checkout.mutateAsync({ plan });
+      const url = await checkout.mutateAsync(getFreePlanCheckoutRequest(plan));
       analytics.track('subscription_start', { type: plan });
       window.location.href = url;
     } catch (error) {
       console.error(error);
-      toast.failure("Couldn't start checkout. Please try again.");
+      toast.failure(
+        error instanceof Error
+          ? error.message.replace(/Premium/g, 'Pro')
+          : "Couldn't start checkout. Please try again."
+      );
     }
   };
 

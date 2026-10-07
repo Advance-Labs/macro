@@ -28,6 +28,11 @@ export function getBillingState(input: BillingInput) {
 
 export type BillingState = ReturnType<typeof getBillingState>;
 
+/** Free accounts get the same server-validated Pro trial as onboarding. */
+export function getFreePlanCheckoutRequest(plan: PaidPlanTier) {
+  return { plan, onboardingTrial: plan === 'premium' };
+}
+
 export function describeSeatPlans(plans: readonly PaidPlanTier[]): string {
   const maxSeats = plans.filter((plan) => plan === 'max').length;
   const proSeats = plans.length - maxSeats;
