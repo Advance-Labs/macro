@@ -2165,7 +2165,8 @@ restores the normal dev view.
 and stacked on narrow panels. The Pro card shows `Free for one month!` for Free
 users. Prices read `/ month` for solo users and `per seat / month` for team
 accounts. Each card puts its button beside the price when wide enough and below
-the price when narrow. Pro users see a Max card (`Upgrade to Max`); Max
+the price when narrow. Free lists 2 connected email accounts; Pro and Max list
+unlimited connected email accounts. Pro users see a Max card (`Upgrade to Max`); Max
 users see a Pro card (`Switch to Pro`). Cards appear only for users who can
 manage their subscription. Team-paid members see no plan options, including
 on Free seats. Member options stay hidden until the billing summary confirms

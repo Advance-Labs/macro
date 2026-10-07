@@ -24,6 +24,7 @@ const BILLING_PLAN_FEATURES: Record<
     'Access to Haiku',
     ...(usage ? [usage] : []),
     'MCP access',
+    '2 connected email accounts',
     '5 GB storage',
   ],
   premium: (usage) => [
@@ -32,7 +33,7 @@ const BILLING_PLAN_FEATURES: Record<
     ...(usage ? [usage] : []),
     'No email watermark',
     'AI projections',
-    'Multiple email inboxes',
+    'Unlimited connected email accounts',
     'Calls',
     'Teams',
     'Team-level memory',
@@ -41,6 +42,7 @@ const BILLING_PLAN_FEATURES: Record<
   max: () => [
     'Everything in Pro',
     '10x more AI usage than Pro',
+    'Unlimited connected email accounts',
     'Team-level memory',
     '1 TB storage',
     'Priority support',
