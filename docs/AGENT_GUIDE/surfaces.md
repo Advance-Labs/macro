@@ -2234,11 +2234,32 @@ Usage controls, including usage-limit dialogs. Dev tools remain interactive:
 Free and paid previews can be combined with this state, and `Reset preview`
 restores the normal dev view.
 
-`Billing` shows the current plan and `Manage`, an `Upgrade` section for Free
-users with Premium (`Upgrade now`) and Max (`Get Max`), an `Upgrade to Max` card
-on Premium, and a `Switch to Premium` link on Max. On a team, a plan change moves
-only the viewer's own seat. Plan allowance copy uses the backend catalog and
-still follows the `enable-ai-usage-billing` flag; usage controls live in Usage.
+`Billing` shows the current plan and `Manage`. Free users see separate Pro
+(`Get Pro`) and Max (`Get Max`) cards, side by side when the panel is wide enough
+and stacked on narrow panels. The Pro card shows `Free for one month!` for Free
+users. `Get Pro` requests the same server-validated 30-day first-subscription
+trial as onboarding; checkout redirects only after the server confirms the trial.
+Ineligible accounts see the rejection reason and are not silently charged.
+`Get Max` keeps standard paid terms. Prices read `/ month` for solo users and
+`per seat / month` for team accounts. Each card puts its button beside the price when wide enough and below
+the price when narrow. Free lists 2 connected email accounts; Pro and Max list
+unlimited connected email accounts. Pro users see a Max card (`Upgrade to Max`); Max
+users see a Pro card (`Switch to Pro`). Cards appear only for users who can
+manage their subscription. Team-paid members see no plan options, including
+on Free seats. Member options stay hidden until the billing summary confirms
+they pay for their own seat. On a team, a plan change moves only the viewer's
+own seat. Max lists "10x more AI usage than Pro"; Free and Pro allowance labels
+still follow the `enable-ai-usage-billing` flag. Usage controls live in Usage.
+
+On a local HMR dev server, `Preview billing states` opens an opt-in preview in
+Billing. Choose Solo, a team-paid member, a self-paying member, or a team owner,
+and Free, Pro, or Max. `Permissions, loading, and feature states` exposes the
+billing summary status, billing permission, active/trialing license, AI usage
+flag, and pending plan actions. The preview uses the real Billing UI with local
+fixtures; checkout, plan changes, Manage, and Team settings only show preview
+status messages. `Reset preview` restores Solo/Free; `Exit preview` restores
+the signed-in account. State is not persisted and resets on leaving Billing.
+These controls are excluded from deployed builds, including dev.macro.com.
 
 `Team` (members list; on a paid team each row shows the seat's plan,
 and admins/owners can move a seat between Premium and Max with the `Seat plan`
