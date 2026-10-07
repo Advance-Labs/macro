@@ -4,7 +4,8 @@ name = "cache-wasm"
 publish = false
 # Rebuild for reminder return timestamps in the local Mail index.
 # Rebuild with the calendar range index and the compatibility epoch 4 storage name.
-version = "0.6.40"
+# Expose calendarRange, calendarCommit, and uncertain calendar events on enqueue.
+version = "0.6.41"
 
 [features]
 default = []
