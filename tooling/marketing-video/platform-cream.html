@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>macro.com: one platform (cream)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* macro.com launch ad. Graphics follow the live homepage sections (Email and chat, Documents and
+   tasks, Coding agents, Sheets and databases): dark cards with the lit rim, glass bubbles,
+   Roboto Slab titles, blue accent. */
+@font-face { font-family: "Inter"; src: url("fonts/inter-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "display"; src: url("fonts/roboto-slab-variable.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+:root { --c0: #f4efe9; --c1: #d6d2cd; --c2: #b8b5b2; --c3: #9a9896; --c4: #7d7c7a; --a0: #61a3e6; --ok: #2fc46b; --doc: #b590ff; --warn: #e2b646; --sheet: #3ec27a; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #090909; }
+body { display: flex; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+html.render body { display: block; min-height: 0; }
+#stage { position: relative; overflow: hidden; flex: none; background: #090909; color: var(--c1);
+  font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-feature-settings: "cv11", "ss01"; }
+#rings { position: absolute; width: 3200px; height: 3200px; margin: -1600px 0 0 -1600px; transform-origin: 50% 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, transparent 0 41px, rgba(244,239,233,.045) 41px 42px), radial-gradient(circle at 50% 50%, rgba(244,239,233,.035), transparent 40%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); mask-image: radial-gradient(circle at 50% 50%, #000 8%, rgba(0,0,0,.45) 26%, transparent 48%); }
+#world { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.a { position: absolute; }
+.flex { display: flex; align-items: center; }
+.nowrap { white-space: nowrap; }
+.ic { display: inline-block; flex: none; vertical-align: -3px; }
+/* homepage-email-surface: dark card, 135° lit rim, soft shadow */
+.card { position: absolute; background: #11100f; border-radius: 30px; box-shadow: 0 10px 40px -8px #0004; }
+.card::after, .bub::after, .rim::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; padding: 1px;
+  -webkit-mask: linear-gradient(#f4efe9 0 0) content-box, linear-gradient(#f4efe9 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.card::after { background: linear-gradient(135deg, rgba(244,239,233,.16) 0%, rgba(244,239,233,.05) 30%, rgba(244,239,233,.03) 70%, rgba(244,239,233,.08) 100%); }
+/* chat bubble: glass rim, specular upper-left */
+.bub { position: relative; display: inline-block; background: #1b1a18; border-radius: 30px; padding: 15px 22px; font-size: 22px; line-height: 31px; color: #e3ded9; box-shadow: 0 8px 24px -14px #0006; }
+.bub::after { background: linear-gradient(135deg, rgba(214,210,205,.24) 0%, transparent 26%, transparent 74%, rgba(214,210,205,.12) 100%); }
+.who { font-size: 16px; color: var(--c3); margin: 0 0 8px 2px; display: flex; gap: 7px; align-items: baseline; }
+.who i { font-style: normal; font-size: 12px; color: var(--c4); }
+.who i.ag { color: var(--a0); }
+.av { width: 44px; height: 44px; border-radius: 50%; flex: none; background-size: cover; background-position: center; box-shadow: inset 0 0 0 1px rgba(244,239,233,.12); }
+.men { color: var(--a0); text-decoration: underline; text-decoration-color: rgba(97,163,230,.35); text-underline-offset: 4px; }
+.ref { white-space: nowrap; }
+.ref u { text-decoration-color: rgba(214,210,205,.35); text-underline-offset: 4px; color: #e3ded9; }
+.hair { position: absolute; left: 24px; right: 24px; height: 1px; background: rgba(244,239,233,.06); }
+.lab { position: absolute; left: 0; right: 0; text-align: center; font-family: display; font-weight: 330; letter-spacing: -0.035em; line-height: 1; color: #f4efe9; white-space: nowrap; }
+.sub { position: absolute; left: 0; right: 0; text-align: center; font-size: 17px; line-height: 26px; color: var(--c4); }
+/* sheet */
+.grid { position: absolute; left: 0; right: 0; font-size: 16px; color: #dbd7d2; }
+.grid .r { position: absolute; left: 0; right: 0; height: 30px; border-bottom: 1px solid rgba(244,239,233,.06); display: flex; }
+.grid .c { flex: none; border-right: 1px solid rgba(244,239,233,.06); padding: 0 8px; line-height: 30px; white-space: nowrap; overflow: hidden; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 14px; font-weight: 500; }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 18px; background: rgba(244,239,233,.06); font-size: 16px; color: #dfdbd6; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 10px; font-size: 15px; font-weight: 500; white-space: nowrap; }
+.tile { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+</style>
+<script src="icons.js"></script>
+<script src="phx.js"></script>
+</head>
+<body>
+<div id="stage">
+  <div id="rings"></div>
+  <div id="world"></div>
+</div>
+<script>
+"use strict";
+// ---------- formats: 9:16 (Reels/Stories), 4:5 (feed), 1:1 ----------
+const FMT = new URLSearchParams(location.search).get("fmt") || "916";
+const [W, H] = { "916": [1080, 1920], "45": [1080, 1350], "11": [1440, 1440], "169": [1920, 1080] }[FMT];
+const SC = { "916": 1.22, "45": 1.1, "11": 1.42, "169": 1.2 }[FMT];        // world → screen
+const TALL = FMT === "916";
+
+// ---------- music-driven timing ----------
+// Upbeat: "Swish Swed" by Arulo (Mixkit 201), time-stretched 120 → 100 BPM (pitch kept); drop downbeat 48.038 s.
+// 20 beats = 5 bars.  lock head, ten surfaces one beat each, gather, fold
+const MUSIC = [["upbeat", 100.0, [2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3]]];
+const STEP_T = [0];
+for (const [, bpm, beats] of MUSIC) for (const n of beats) STEP_T.push(STEP_T[STEP_T.length - 1] + (n * 60) / bpm);
+const BEATS = STEP_T.length - 1, T = STEP_T[BEATS];
+function B(x) { const k = Math.floor(x / BEATS), r = x - k * BEATS, i = Math.min(BEATS - 1, Math.floor(r)); return k * T + STEP_T[i] + (r - i) * (STEP_T[i + 1] - STEP_T[i]); }
+function stepAt(t) { let i = 0; while (i < BEATS - 1 && STEP_T[i + 1] <= t) i++; return i + (t - STEP_T[i]) / (STEP_T[i + 1] - STEP_T[i]); }
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const lerp = (a, b, p) => a + (b - a) * p;
+const sm = (x) => { x = clamp(x); return x * x * (3 - 2 * x); };
+const TAU = Math.PI * 2;
+
+// Closed-form unit step response of a damped spring.
+// resp = undamped period (s), damp = damping ratio (<1 gives a tiny overshoot).
+function spr(t, resp = 0.42, damp = 0.82) {
+  if (t <= 0) return 0;
+  const w = TAU / resp;
+  if (damp >= 1) { const e = Math.exp(-w * t); return 1 - e * (1 + w * t); }
+  const wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return 1 - e * (Math.cos(wd * t) + (damp * w / wd) * Math.sin(wd * t));
+}
+// Free response from displacement x0 and velocity v0 (used after a drag release).
+function free(t, x0, v0, resp, damp) {
+  const w = TAU / resp, wd = w * Math.sqrt(1 - damp * damp), e = Math.exp(-damp * w * t);
+  return e * (x0 * Math.cos(wd * t) + ((v0 + damp * w * x0) / wd) * Math.sin(wd * t));
+}
+const mj = (x) => { x = clamp(x); return x * x * x * (10 + x * (-15 + 6 * x)); }; // minimum-jerk
+const bell = (x) => (x <= 0 || x >= 1 ? 0 : 16 * x * x * (1 - x) * (1 - x));
+
+// A value that changes target many times is the sum of one spring per change.
+// Periodic: every change also contributes from the previous loop (t + T), so the
+// last frame flows into the first with matching position and velocity.
+function Track(evs, resp = 0.42, damp = 0.82) {
+  const E = evs.map(([bt, v, r, d]) => ({ t: B(bt), v, r: r ?? resp, d: d ?? damp }));
+  const n = E.length;
+  E.forEach((e, i) => { e.dv = e.v - E[(i + n - 1) % n].v; });
+  const base = E[n - 1].v;
+  const f = (t) => {
+    let v = base;
+    for (const e of E) if (e.dv !== 0) v += e.dv * (spr(t - e.t, e.r, e.d) + spr(t + T - e.t, e.r, e.d));
+    return v;
+  };
+  f.target = (t) => {
+    let best = -Infinity, v = base;
+    for (const e of E) for (const tt of [e.t, e.t - T]) if (tt <= t && tt > best) { best = tt; v = e.v; }
+    return v;
+  };
+  return f;
+}
+
+// Cursor path: sum of minimum-jerk moves, each with a slight perpendicular arc.
+function Path(segs) {
+  const S = segs.map(([b0, b1, x, y, bow]) => ({ t0: B(b0), t1: B(b1), x, y, bow: bow ?? 0.07 }));
+  const n = S.length;
+  S.forEach((s, i) => { const p = S[(i + n - 1) % n]; s.dx = s.x - p.x; s.dy = s.y - p.y; });
+  const bx = S[n - 1].x, by = S[n - 1].y;
+  return (t) => {
+    let x = bx, y = by;
+    for (const s of S) for (const tt of [t, t + T]) {
+      const u = (tt - s.t0) / (s.t1 - s.t0);
+      if (u <= 0) continue;
+      const m = mj(u), bb = bell(u) * s.bow;
+      x += s.dx * m - s.dy * bb;
+      y += s.dy * m + s.dx * bb;
+    }
+    return [x, y];
+  };
+}
+
+// Content enter/exit: its own timing, so swapped text never overlaps.
+function visAmt(t, tin, tout, inResp = 0.3) {
+  const f = (tt) => {
+    if (tt < tin) return null;
+    const pin = spr(tt - tin, inResp, 1);
+    const pout = tout == null ? 0 : sm((tt - tout) / 0.11);
+    return { pin, pout, o: pin * (1 - pout) };
+  };
+  let r = f(t) || { pin: 0, pout: 0, o: 0 };
+  if (tout != null && tout > T) { // only windows that wrap past the loop point
+    const r2 = f(t + T);
+    if (r2 && r2.o > r.o) r = r2;
+  }
+  return r;
+}
+
+
+
+// ---------- icons ----------
+const px_ = (n, size, color = "currentColor") => `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 256 256" fill="${color}">${window.PHX[n]}</svg>`;
+const ic = (name, size, color = "currentColor") => `<span class="ic" style="width:${size}px;height:${size}px;color:${color}">${window.ICONS[name]}</span>`;
+const MARK = ["M0 10.014v6.801a.75.75 0 0 0 .225.513l2.742 2.644 2.002-.8v-7.099l-2.97-2.859z", "M4.078 4.8v5.786l1.36 1.309v1.313L12.481 20l2.002-.8-.001-7.1L6.078 4z", "M13.594 4.8v5.786l1.36 1.311-.013 1.3L22 20 24 19.2V12.42a.75.75 0 0 0-.225-.533L15.595 4z"];
+const photo = (n, s = 44) => `<div class="av" style="width:${s}px;height:${s}px;background-image:url(img/${n}.webp)"></div>`;
+const glyphAv = (inner, s = 44, bg = "#16161a") => `<div class="av flex" style="width:${s}px;height:${s}px;justify-content:center;background:${bg}">${inner}</div>`;
+const cursorSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="#f4efe9"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.13a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg>`;
+const ref = (icon, label) => `<span class="ref">${icon} <u>${label}</u></span>`;
+const docIc = px_("file", 22, "var(--doc)"), pdfIc = px_("file-pdf", 22, "#f06a6a"), calIc = px_("calendar-blank", 22, "var(--c2)"),
+  callIc = px_("phone-call", 22, "var(--c2)"), prIc = px_("git-pull-request", 21, "var(--ok)"), sheetIc = px_("table", 22, "var(--sheet)");
+const bubble = (id, side, av, who, body, extra = "") =>
+  `<div class="a" id="${id}" style="${side === "r" ? "right" : "left"}:0;${extra}"><div class="flex" style="align-items:flex-end;gap:14px;${side === "r" ? "flex-direction:row-reverse" : ""}">${av}<div><div class="who" style="${side === "r" ? "justify-content:flex-end" : ""}">${who}</div><div class="bub">${body}</div></div></div></div>`;
+
+// ---------- the seven graphics (world px; each centered on its own box) ----------
+// p = id prefix, so the orbit tiles can reuse the same markup
+const CARDS = [
+  { key: "email", label: "Email", w: 800, h: 520, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a nowrap" style="left:26px;top:30px;font-size:17px;color:var(--c4)">From</div>
+      <div class="a chip" style="left:108px;top:20px;height:44px;border-radius:22px;padding:0 16px 0 6px">${photo("jacob", 32)}Jacob Beckerman</div>
+      <div class="a nowrap" id="${p}gen" style="left:430px;top:30px;font-size:16px;color:var(--c3)">Generating…</div>
+      <div class="a nowrap" style="right:26px;top:30px;font-size:16px;color:var(--c3)">Bcc</div>
+      <div class="hair" style="top:82px"></div>
+      <div class="a nowrap" style="left:26px;top:100px;font-size:17px;color:var(--c4)">To</div><div class="a nowrap" style="left:108px;top:99px;font-size:18px;color:#e3ded9">Dana Whitfield &lt;dana@example.com&gt;</div>
+      <div class="hair" style="top:142px"></div>
+      <div class="a nowrap" style="left:26px;top:160px;font-size:17px;color:var(--c4)">Cc</div><div class="a nowrap" style="left:108px;top:159px;font-size:18px;color:#e3ded9">Julia Westphal &lt;julia@macro.com&gt;</div>
+      <div class="hair" style="top:202px"></div>
+      <div class="a nowrap" style="left:26px;top:220px;font-size:17px;color:var(--c4)">Subject</div><div class="a nowrap" style="left:108px;top:219px;font-size:19px;color:#e3ded9">Great meeting you — demo follow-up</div>
+      <div class="hair" style="top:264px"></div>
+      <div class="a nowrap" id="${p}b0" style="left:26px;top:292px;font-size:19px;color:#e3ded9">Hi Dana,</div>
+      <div class="a nowrap" id="${p}b1" style="left:26px;top:334px;font-size:19px;color:#e3ded9">Thanks for joining the demo on September 14. Great meeting your team!</div>
+      <div class="a nowrap" id="${p}b2" style="left:26px;top:376px;font-size:19px;color:#e3ded9">Here’s our ${ref(pdfIc, "Macro sales overview.pdf")} and the ${ref(docIc, "Team rollout plan")}.</div>
+      <div class="a flex" style="right:22px;bottom:20px;gap:18px;color:var(--c3)">${px_("paperclip", 24)}${px_("text-aa", 24)}<div class="flex" style="width:46px;height:46px;border-radius:50%;justify-content:center;background:rgba(244,239,233,.08)">${px_("arrow-up", 22, "#d5d1cc")}</div></div>
+    </div>` },
+  { key: "chat", label: "Chat", w: 740, h: 330, html: (p) => `
+    ${bubble(p + "c0", "l", photo("julia"), "Julia", "Dana wants to invite her team.<br>Are we still on for Thursday?", "top:0")}
+    ${bubble(p + "c1", "r", photo("jacob"), "Jacob", `<span class="men">@Claude</span>, draft a follow-up based on<br>${ref(calIc, "Demo Call Sep 14th")} and ${ref(callIc, "the transcript")}.`, "top:146px")}` },
+  { key: "calls", label: "Calls", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:26px;top:22px;gap:10px;font-size:18px;font-weight:600;color:#e4e0db"><span style="width:9px;height:9px;border-radius:50%;background:var(--ok)"></span>Demo call · Northwind<span style="font-weight:400;color:var(--c4);font-size:15px">12:04</span></div>
+      <div class="a flex" style="right:22px;top:16px;gap:6px">${photo("jacob", 30)}${photo("julia", 30)}<div class="av flex" style="width:30px;height:30px;justify-content:center;background:#2a2a2c;font-size:13px;font-weight:600;color:#d5d1cc">D</div></div>
+      <div class="a" style="left:24px;top:66px;width:476px;height:318px;border-radius:18px;background:url(img/call-main-feed.webp) center/cover"></div>
+      <div class="a rim" style="left:338px;top:270px;width:148px;height:100px;border-radius:12px;background:url(img/call-pip-feed.webp) center/cover;box-shadow:0 8px 20px -8px #000a"></div>
+      <div class="a nowrap" style="left:522px;top:70px;font-size:14px;font-weight:500;color:var(--c4)">Live transcript</div>
+      ${[["Dana", "Can my whole team join on Thursday?"], ["Jacob", "Yes, I’ll add them to the invite."], ["Macro", "Noted. Added Dana’s team to Thursday’s invite."]].map(([w, x], k) =>
+        `<div class="a" id="${p}l${k}" style="left:522px;width:256px;top:${102 + k * 92}px;font-size:16px;line-height:22px;color:#ddd9d4"><div style="font-size:13px;font-weight:600;color:${w === "Macro" ? "var(--a0)" : "var(--c3)"};margin-bottom:3px">${w}</div>${x}</div>`).join("")}
+      <div class="a flex" style="left:24px;width:476px;bottom:22px;justify-content:center;gap:12px">
+        ${["microphone", "video-camera"].map((n) => `<div class="flex" style="width:46px;height:46px;border-radius:50%;justify-content:center;background:rgba(244,239,233,.08)">${px_(n, 22, "#ddd9d4")}</div>`).join("")}
+        <div class="flex" style="height:46px;padding:0 20px;border-radius:23px;background:#e5484d;color:#f4efe9;font-size:16px;font-weight:600">Leave</div></div>
+    </div>` },
+  { key: "docs", label: "Docs", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a nowrap" style="left:44px;top:42px;font-size:30px;font-weight:600;color:#e8e4de">Q3 launch plan</div>
+      <div class="a nowrap" style="left:44px;top:116px;font-size:21px;color:#ddd9d4">Launch owner: <span style="background:rgba(97,163,230,.18);color:var(--a0);border-radius:5px;padding:1px 4px" id="${p}men">@evan</span><span id="${p}car" style="display:inline-block;width:2px;height:24px;background:var(--doc);vertical-align:-5px;margin-left:1px;position:relative"><span class="a nowrap" style="left:0;top:-30px;background:var(--doc);color:#1a1033;font-size:14px;font-weight:500;padding:3px 7px;border-radius:5px 5px 5px 0">Julia</span></span></div>
+      <div class="a nowrap" id="${p}d1" style="left:44px;top:170px;font-size:21px;color:var(--c2)">Announcement: <span class="men">@Julia</span> · Invite check: <span class="men">@Gabriel</span></div>
+      <div class="a nowrap" id="${p}d2" style="left:44px;top:230px;font-size:22px;font-weight:600;color:#e8e4de">Launch checklist</div>
+      ${[["square-task-in-progress-circle", "var(--warn)", "Announcement post", "Julia"], ["square-task-created-circle", "var(--ok)", "Invite check", "Gabriel"], ["square-task-done-circle", "var(--a0)", "Rollout doc", "Claude"]].map(([i, c, l, o], k) =>
+        `<div class="a flex nowrap" id="${p}t${k}" style="left:44px;top:${282 + k * 50}px;gap:12px;font-size:20px;color:#ddd9d4">${ic(i, 20, c)}${l}<span style="color:var(--c4);font-size:16px">${o}</span></div>`).join("")}
+      <div class="a flex nowrap" style="right:30px;top:44px;gap:8px;font-size:14px;color:var(--c3)"><span style="width:8px;height:8px;border-radius:50%;background:var(--doc)"></span>Julia<span style="width:8px;height:8px;border-radius:50%;background:#d9895a;margin-left:8px"></span>Claude</div>
+    </div>` },
+  { key: "sheet", label: "Spreadsheets", w: 800, h: 450, html: (p) => {
+    const cols = [[34, ""], [190, "Customer"], [150, "Company"], [140, "Last active"], [110, "Events"], [176, "Plan"]];
+    const rows = [["Dana Whitfield", "Northwind", "Today", "1,842", "Team"], ["Maya Chen", "Lumen", "Yesterday", "1,204", "Team"], ["Owen Park", "Fieldnote", "Sep 20", "986", "Pro"],
+      ["Priya Shah", "Harbor", "Sep 19", "874", "Team"], ["Leo Martins", "Kindred", "Sep 18", "731", "Pro"], ["Sam Okonkwo", "Relay", "Sep 17", "655", "Team"], ["Elena Voss", "Paperplane", "Sep 15", "512", "Pro"]];
+    const row = (cells, y, i, bold) => `<div class="r" id="${p}r${i}" style="top:${y}px">${cols.map(([w], k) => `<div class="c" style="width:${w}px;${k === 0 ? "color:var(--c4);text-align:center;font-size:13px" : ""}${k === 4 ? ";text-align:right" : ""}${bold && k ? ";font-weight:600" : ""}">${cells[k]}</div>`).join("")}</div>`;
+    return `<div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:24px;top:22px;gap:10px;font-size:17px;color:#d5d1cc">${sheetIc}Customers to reach</div>
+      <div class="a flex nowrap" style="right:24px;top:22px;gap:14px;font-size:15px;color:var(--c4)">${["100%", "$", "%", "Sans serif", "B", "I"].map((x) => `<span>${x}</span>`).join("")}</div>
+      <div class="a flex nowrap" style="left:0;right:0;top:62px;height:34px;border-top:1px solid rgba(244,239,233,.06);border-bottom:1px solid rgba(244,239,233,.06);font-size:15px;color:var(--c3)"><span style="width:76px;padding-left:22px">A1</span><span style="color:var(--c4)">ƒ</span>&nbsp;&nbsp;Customer</div>
+      <div class="grid" style="top:96px">
+        <div class="r" style="top:0;background:rgba(244,239,233,.03);color:var(--c4);font-size:13px">${cols.map(([w], k) => `<div class="c" style="width:${w}px;text-align:center">${k ? "ABCDE"[k - 1] : ""}</div>`).join("")}</div>
+        ${row(["1", ...cols.slice(1).map((c) => c[1])], 30, 0, true)}
+        ${rows.map((r, i) => row([String(i + 2), ...r], 60 + i * 30, i + 1)).join("")}
+        <div class="a" id="${p}sel" style="left:34px;top:30px;width:190px;height:30px;box-shadow:inset 0 0 0 2px #dfdbd6"></div>
+      </div>
+      <div class="a flex nowrap" style="left:24px;bottom:16px;gap:16px;font-size:14px;color:var(--c4)"><span style="color:#d5d1cc;border-bottom:2px solid #d5d1cc;padding-bottom:4px">Top customers</span>200 rows × 26 columns</div>
+    </div>`; } },
+  { key: "db", label: "Databases", w: 800, h: 450, html: (p) => {
+    const ST = { "In progress": ["var(--warn)", "rgba(226,182,70,.14)"], "Todo": ["var(--c2)", "rgba(244,239,233,.08)"], "Done": ["var(--a0)", "rgba(97,163,230,.16)"], "In review": ["var(--doc)", "rgba(181,144,255,.15)"] };
+    const rows = [["Announcement post", "In progress", "julia", "Sep 24"], ["Invite check", "In review", "teo", "Sep 24"], ["Rollout doc", "Done", "jacob", "Sep 22"], ["Pricing page", "Todo", "julia", "Sep 26"], ["Customer emails", "In progress", "jacob", "Sep 25"]];
+    return `<div class="card" style="inset:0;overflow:hidden">
+      <div class="a flex nowrap" style="left:30px;top:28px;gap:12px;font-size:24px;font-weight:600;color:#e8e4de">${px_("database", 26, "var(--c2)")}Launch tracker</div>
+      <div class="a flex nowrap" style="right:28px;top:30px;gap:8px;font-size:14px;color:var(--c3)">${ic("logo-notion", 16, "#d5d1cc")}Imported from Notion</div>
+      <div class="a flex nowrap" style="left:30px;top:82px;gap:6px;font-size:15px;color:var(--c3)"><span class="pill" style="background:rgba(244,239,233,.08);color:#e4e0db">${px_("table", 16)}Table</span><span class="pill">${px_("kanban", 16)}Board</span></div>
+      <div class="a flex nowrap" style="left:30px;right:30px;top:132px;height:38px;border-bottom:1px solid rgba(244,239,233,.07);font-size:14px;color:var(--c4)"><span style="width:300px">Name</span><span style="width:180px">Status</span><span style="width:150px">Owner</span><span>Due</span></div>
+      ${rows.map(([n, s, o, d], i) => `<div class="a flex nowrap" id="${p}r${i}" style="left:30px;right:30px;top:${170 + i * 52}px;height:52px;border-bottom:1px solid rgba(244,239,233,.05);font-size:18px;color:#dfdbd6">
+        <span class="flex" style="width:300px;gap:10px">${px_("file", 18, "var(--c3)")}${n}</span><span style="width:180px"><span class="pill" style="color:${ST[s][0]};background:${ST[s][1]}">${s}</span></span>
+        <span class="flex" style="width:150px;gap:8px;font-size:16px;color:var(--c2)">${photo(o, 24)}${o[0].toUpperCase() + o.slice(1)}</span><span style="font-size:16px;color:var(--c3)">${d}</span></div>`).join("")}
+    </div>`; } },
+  { key: "pr", label: "Pull requests", w: 800, h: 460, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:32px;top:32px;gap:12px;font-size:23px;font-weight:600;color:#e8e4de">${px_("git-pull-request", 26, "var(--ok)")}fix(deploy): retry transient registry failures<span style="font-weight:400;color:var(--c4)">#482</span></div>
+      <div class="a flex nowrap" style="left:32px;top:82px;gap:10px;font-size:16px;color:var(--c3)"><span class="pill" style="background:rgba(47,196,107,.15);color:var(--ok)">Open</span>${photo("teo", 24)}Teo wants to merge into <span class="pill" style="background:rgba(97,163,230,.12);color:var(--a0);font-family:ui-monospace,monospace;font-size:13px">main</span> from <span class="pill" style="background:rgba(97,163,230,.12);color:var(--a0);font-family:ui-monospace,monospace;font-size:13px">teo/deploy-retry</span></div>
+      <div class="a rim" style="left:32px;right:32px;top:136px;height:206px;border-radius:16px;background:rgba(244,239,233,.025)">
+        <div class="a nowrap" id="${p}sum" style="left:20px;top:16px;font-size:17px;font-weight:600;color:#e4e0db">All checks have passed</div>
+        <div class="a nowrap" style="left:20px;top:44px;font-size:14px;color:var(--c4)">3 successful checks</div>
+        ${["build", "test (ubuntu-latest)", "deploy-preview"].map((n, k) => `<div class="a flex nowrap" style="left:20px;right:20px;top:${82 + k * 40}px;gap:12px;font-size:17px;color:#ddd9d4">
+          <span id="${p}k${k}" style="position:relative;width:20px;height:20px">${px_("check-circle-fill", 20, "var(--ok)")}</span>${n}<span style="margin-left:auto;font-size:14px;color:var(--c4)">${["1m 12s", "3m 40s", "48s"][k]}</span></div>`).join("")}
+      </div>
+      <div class="a flex nowrap" style="left:32px;bottom:34px;gap:12px;font-size:16px;color:var(--c3)"><span style="color:var(--ok)">+124</span><span style="color:#f06a6a">−4</span>· 3 files · linked to ${ref(ic("square-task-in-review-circle", 18, "var(--doc)"), "Flaky deploy pipeline")}</div>
+      <div class="a btn" id="${p}merge" style="right:32px;bottom:26px;height:42px;padding:0 16px;background:var(--ok);color:#06210f;font-size:16px">${px_("git-merge", 18, "#06210f")}Merge</div>
+    </div>` },
+  { key: "agent", label: "Coding agents", w: 740, h: 440, html: (p) => `
+    ${bubble(p + "a0", "l", photo("teo"), "Teo", `I’ve started ${ref(prIc, "PR #482")} to fix the flaky deploy<br>pipeline. <span class="men">@Cursor</span>, investigate the failures.`, "top:0")}
+    ${bubble(p + "a1", "l", glyphAv(cursorSvg, 44, "#111"), `Cursor <i>Agent</i>`, "On it. I’ll work on your branch, fix the failures,<br>and run the tests.", "top:150px")}
+    <div class="a rim" id="${p}a2" style="left:58px;right:0;top:300px;height:120px;border-radius:16px;background:#141416">
+      <div class="a flex nowrap" style="left:16px;top:16px;gap:10px;font-size:17px;color:#e4e0db">${px_("check-circle-fill", 20, "var(--ok)")}<b style="font-weight:600">Cursor Agent</b><span style="color:var(--c4)">· Done</span></div>
+      <div class="a flex nowrap" style="right:14px;top:10px;gap:8px">
+        <span class="btn" style="background:rgba(244,239,233,.05);color:var(--c2);font-size:14px">View session ${px_("arrow-up-right", 14)}</span>
+        <span class="btn" style="font-size:14px;color:#dfdbd6">${px_("git-pull-request", 16, "var(--ok)")}<u style="text-underline-offset:3px">PR #482</u></span>
+        <span class="btn" style="background:rgba(47,196,107,.12);color:var(--ok);font-size:14px">${px_("git-merge", 16, "var(--ok)")}Merge</span></div>
+      <div class="a nowrap" style="left:16px;right:16px;top:70px;font-size:17px;color:#d9d5d1;overflow:hidden;text-overflow:ellipsis">Updated your existing PR with the deploy fix. Fixed transient registry failures with bounded retries…</div>
+    </div>` },
+  { key: "agents", label: "AI agents", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:28px;top:24px;gap:10px;font-size:18px;font-weight:600;color:#e4e0db">${px_("sparkle", 20, "var(--a0)")}Weekly customer digest<span class="pill" style="background:rgba(244,239,233,.06);color:var(--c2);font-weight:400">${ic("wide-claude", 14, "#d9895a")}Claude</span></div>
+      <div class="a nowrap" style="right:28px;top:28px;font-size:14px;color:var(--c4)">Runs every Friday</div>
+      <div class="a" style="right:28px;top:72px"><div class="bub" style="font-size:19px;line-height:27px;padding:12px 18px">Summarize this week’s customer calls<br>and update the CRM.</div></div>
+      ${[["Searched 12 calls and 48 emails", "magnifying-glass"], ["Read the Northwind pilot thread", "envelope"], ["Updated 3 companies in CRM", "building-office"], ["Drafted the weekly digest", "file"]].map(([x, n], k) =>
+        `<div class="a flex nowrap" id="${p}s${k}" style="left:28px;top:${186 + k * 50}px;gap:12px;font-size:18px;color:#dbd7d2"><span id="${p}c${k}">${px_("check-circle-fill", 20, "var(--ok)")}</span>${px_(n, 18, "var(--c3)")}${x}</div>`).join("")}
+      <div class="a flex nowrap" id="${p}out" style="left:28px;bottom:26px;gap:10px;font-size:17px;color:var(--c3)">Output ${ref(docIc, "Weekly customer digest")}</div>
+    </div>` },
+  { key: "memory", label: "Team memory", w: 800, h: 470, html: (p) => `
+    <div class="card" style="inset:0">
+      <div class="a flex nowrap" style="left:28px;top:24px;gap:10px;font-size:20px;font-weight:600;color:#e4e0db">${px_("database", 22, "var(--a0)")}Team memory</div>
+      <div class="a nowrap" style="right:28px;top:28px;font-size:14px;color:var(--c4)">Shared with your team and agents</div>
+      ${[["Dana Whitfield is Northwind’s buyer", "envelope", "Re: Rollout"], ["Launch ships Thursday, owners in the plan", "hash-straight", "#launch"], ["Deploys retry transient registry errors", "git-pull-request", "PR #482"], ["Maya owns the Northwind deal", "building-office", "CRM"], ["Dana’s team joins the Thursday call", "phone-call", "Demo call"]].map(([x, n, src], k) =>
+        `<div class="a flex nowrap" id="${p}m${k}" style="left:28px;right:28px;top:${82 + k * 56}px;height:46px;gap:12px;font-size:18px;color:#ddd9d4;border-bottom:1px solid rgba(244,239,233,.05)">${px_("sparkle", 16, "var(--c4)")}${x}<span class="pill" style="margin-left:auto;background:rgba(244,239,233,.06);color:var(--c2);font-weight:400">${px_(n, 15, "var(--c3)")}${src}</span></div>`).join("")}
+      <div class="a flex nowrap" style="left:28px;bottom:24px;gap:10px;font-size:16px;color:var(--c3)">${ic("wide-claude", 16, "#d9895a")}<span><span class="men">@Claude</span> who owns Northwind? <span style="color:#ddd9d4">Maya, from the CRM and the Sep 14 call.</span></span></div>
+    </div>` },
+];
+const NC = CARDS.length, FIRST = 2;   // card k lives in step FIRST + k
+
+// =====================================================================
+// DOM
+// =====================================================================
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), world = $("world"), rings = $("rings");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+rings.style.left = W / 2 + "px"; rings.style.top = H / 2 + "px";
+world.style.transform = `translate(${W / 2}px,${H / 2}px) scale(${SC})`;
+const el = (html) => { const d = document.createElement("div"); d.innerHTML = html.trim(); const n = d.firstElementChild; world.appendChild(n); return n; };
+
+// lockup: the Macro mark + "macro.com", and the headline
+// the real logo (img/macro-logo.svg): the mark's three pieces and the MACRO letterforms, 126.4 units tall
+const LOGO_MARK = ["M0 47.151L16.199 40.81C22.551 47.236 34.299 57.491 39.832 63.809L39.88 99.564C39.876 105.615 40.12 114.034 39.774 119.931C34.433 121.982 29.103 124.064 23.786 126.177C19.631 122.268 1.946 106.135 0 102.379L0 47.151Z", "M47.632 0L48.504 0C50.116 1.598 52.174 3.051 53.824 4.712C73.817 24.845 95.62 43.76 115.445 63.991C115.552 66.818 115.592 69.696 115.513 72.523C115.075 88.301 115.701 104.194 115.444 119.951C111.602 121.871 103.313 124.848 99.214 126.339C94.102 120.866 86.899 114.298 81.323 109.052C71.856 100.234 62.526 91.27 53.337 82.163C50.385 79.209 45.332 75.304 43.124 72.361C43.132 68.995 43.082 65.629 42.976 62.264C40.676 59.71 35.402 55.12 32.496 52.172C32.501 37.889 32.044 20.249 32.654 6.207C36.92 4.311 43.939 2.079 47.632 0Z", "M123.569 0L124.699 0C128.214 3.816 134.12 9.106 138.047 12.948L177.874 51.237C181.701 54.971 188.687 60.396 191.23 64.633L191.308 120.003C187.261 121.904 179.556 124.694 175.227 126.234C171.746 123.787 160.568 112.286 156.725 108.629C144.592 97.087 130.339 84.409 118.9 72.353C118.953 69.16 118.982 65.966 118.986 62.772C117.614 60.894 110.311 54.369 108.016 51.991C107.405 39.273 107.793 19.202 108.018 6.291C111.901 4.493 120.969 1.705 123.569 0Z"];
+const LOGO_TYPE = ["M300.92 74.009C303.615 65.501 314.262 28.568 318.438 24.27C319.069 23.621 320.033 23.468 320.898 23.383C325.453 22.938 330.369 23.327 334.959 23.34C344.903 23.418 354.847 23.409 364.79 23.313C365.435 28.476 365.159 47.453 365.049 53.72C364.76 70.195 365.603 88.708 364.891 104.92C359.092 104.67 351.994 104.855 346.096 104.868C345.405 87.158 345.97 65.92 345.975 47.942L345.975 42.119C342.414 41.927 334.922 41.484 331.931 42.955C329.991 45.279 313.144 97.492 310.719 104.744C304.754 105.034 297.264 104.878 291.222 104.896C288.559 98.001 272.305 45.132 269.992 43.053C267.621 40.923 258.972 42.055 255.716 42.198C256.161 48.995 255.924 58.249 255.925 65.211L255.935 104.789C249.665 104.935 243.166 104.872 236.878 104.882C236.574 94.772 236.811 83.325 236.808 73.094L236.883 23.444C243.865 23.268 278.739 22.963 283.378 24.014C285.689 24.538 298.601 67.413 300.92 74.009Z", "M395.967 23.803C398.277 23.364 414.299 23.575 417.612 23.582C433.177 23.668 448.746 23.647 464.311 23.52C472.343 23.502 477.848 23.959 484.031 29.966C492.494 38.188 490.209 52.684 490.192 63.875L490.197 104.955L471.479 104.952C470.916 96.84 471.623 88.213 470.997 79.669C463.765 79.265 453.206 79.593 445.779 79.594L396.684 79.632C397.07 86.718 396.698 97.491 396.691 104.932L377.688 104.949C376.997 94.08 377.811 80.689 377.521 69.546C377.662 60.66 377.214 51.725 377.742 42.859C378.359 32.511 386.5 25.768 395.967 23.803ZM396.525 60.895C420.379 60.944 446.825 61.49 470.481 60.867C471.86 59.149 471.627 45.245 470.358 43.104C467.556 41.2 405.961 41.902 397.844 42.391C395.636 44.958 396.866 56.326 396.525 60.895Z", "M522.79 23.419C530.395 23.053 539.793 23.502 547.572 23.38C569.962 23.031 593.076 23.871 615.412 23.271C615.78 28.658 615.585 36.536 615.598 42.116C587.143 41.263 557.796 42.418 529.26 42.034C527.259 42.007 524.432 42.404 522.595 43.18C522.35 43.559 522.164 43.976 522.054 44.415C521.047 48.287 522.375 75.786 521.774 81.689C521.69 82.522 522.126 84.198 522.6 85.003C525.249 86.762 554.977 86.034 560.504 86.019L615.56 85.992C615.606 92.272 615.602 98.552 615.547 104.832L553.729 104.862C542.096 104.861 522.286 106.802 512.392 101.015C500.895 93.871 502.35 80.027 502.761 68.524C503.463 48.961 497.044 28.443 522.79 23.419Z", "M628.023 23.423L687.86 23.349C698.415 23.346 709.045 23.201 719.557 23.509C732.988 23.902 740.546 34.132 740.72 46.907C740.927 62.171 741.52 71.402 725.794 78.315C729.671 87.236 734.935 96.141 738.536 104.878L726.814 104.839L718.021 104.824C713.247 97.434 708.766 87.719 705.08 79.668C686.032 79.254 665.821 79.606 646.685 79.619L646.702 104.947C640.54 104.716 634.082 104.833 627.913 104.9C627.35 85.968 628.179 66.507 627.828 47.527C627.688 39.873 627.578 31.009 628.023 23.423ZM646.664 60.92L694.437 60.958C699.456 60.961 718.131 61.618 721.579 59.898C722.324 56.863 722.193 46.423 721.11 43.41C718.778 41.117 699.087 41.949 694.809 41.951L651.996 42.012C650.307 42.034 648.619 42.078 646.926 42.142C646.414 44.538 646.642 57.699 646.664 60.92Z", "M773.622 23.423C792.145 23.184 810.799 23.439 829.33 23.344C835.53 23.761 843.447 22.578 849.478 24.136C867.501 28.796 866.367 45.886 865.766 60.547C865.419 69.063 866.756 79.557 865.355 87.263C864.767 90.557 863.405 93.663 861.378 96.322C857.285 101.702 852.11 103.801 845.635 104.68C842.406 104.992 836.566 104.83 833.075 104.831L810.418 104.85L787.359 104.857C778.899 104.852 768.629 105.79 761.651 100.217C756.805 96.65 752.548 88.79 753.115 82.502C754.203 70.468 751.507 52.227 753.72 40.77C754.359 37.381 755.802 34.196 757.927 31.481C762.07 26.201 767.198 24.208 773.622 23.423ZM844.027 86.04C848.128 83.916 847.248 78.015 846.799 73.885C846.13 67.731 848.28 47.736 846.075 43.201C843.6 41.958 837.946 41.865 835.064 41.967C815.382 42.661 794.384 41.048 774.816 42.108C773.724 42.46 773 42.546 772.425 43.642C771.354 45.694 771.507 81.49 772.332 83.863C772.569 84.54 772.759 85.098 773.432 85.431C776.398 86.889 835.593 85.87 844.027 86.04Z"];
+const MS = 104, LK = MS / 126.4, MW = 191.3 * LK, TW_ = (866.7 - 236) * LK;
+const lock = el(`<div class="a" id="lock" style="left:0;top:0">
+  <svg id="mk" class="a" width="${MW}" height="${MS}" viewBox="0 0 191.3 126.4" fill="#f4efe9" style="left:${-MW / 2}px;top:${-MS / 2}px;overflow:visible">${LOGO_MARK.map((d, i) => `<path id="mk${i}" d="${d}"/>`).join("")}</svg>
+  <svg id="wm" class="a" width="${TW_}" height="${MS}" viewBox="236 0 630.7 126.4" fill="#f4efe9" style="left:0;top:${-MS / 2}px;overflow:visible">${LOGO_TYPE.map((d, i) => `<path id="lt${i}" d="${d}"/>`).join("")}</svg>
+</div>`);
+const head = el(`<div class="a" id="head" style="left:-500px;width:1000px;top:0">
+  <div class="lab" style="position:relative;font-size:${TALL ? 70 : 64}px;line-height:1.12;white-space:normal">The unified workspace<br>for your company.</div></div>`);
+const E = {};
+// measure the wordmark to center the lockup
+const GAP = 44.7 * LK;                    // the logo's own mark-to-type spacing
+let WMW = 0;
+
+// hero card instances + their labels
+const hero = CARDS.map((c, k) => {
+  const n = el(`<div class="a" id="card${k}" style="left:${-c.w / 2}px;top:${-c.h / 2}px;width:${c.w}px;height:${c.h}px">${c.html("h" + k)}</div>`);
+  const lab = el(`<div class="a" id="lab${k}" style="left:-600px;width:1200px;top:0"><div class="lab" style="position:relative;font-size:${TALL ? 92 : 80}px">${c.label}</div></div>`);
+  return { n, lab };
+});
+// orbit tiles (static copies)
+const tiles = CARDS.map((c, k) => el(`<div class="tile" id="tile${k}"><div style="position:relative;width:${c.w}px;height:${c.h}px">${c.html("t" + k)}</div></div>`));
+document.querySelectorAll("#world [id]").forEach((n) => { E[n.id] = n; });
+
+// ---------- motion ----------
+const LBL_GAP = TALL ? 60 : 44;
+const cardTop = (k) => -CARDS[k].h / 2 + (TALL ? 70 : 52);       // card sits a little low; its label above
+let BLUR = 3;
+const px = (v) => v.toFixed(3) + "px";
+function show(n, o) { if (o <= 0.002) { n.style.display = "none"; return false; } n.style.display = ""; n.style.opacity = Math.min(1, o).toFixed(4); return true; }
+function fx(n, o, blur, tr) { if (!show(n, o)) return false; n.style.filter = blur > 0.04 ? `blur(${blur.toFixed(3)}px)` : "none"; n.style.transform = tr || "none"; return true; }
+const pop = (n, t, at, dy = 10, resp = 0.26) => { const p = spr(t - at, resp, 1); fx(n, t < at ? 0 : p, (1 - p) * 6, `translate3d(0,${px((1 - p) * dy)},0)`); };
+function write(n, t, a, b) { const p = sm((t - a) / (b - a)); if (!show(n, p > 0 ? 0.3 + 0.7 * p : 0)) return; n.style.clipPath = p >= 1 ? "none" : `inset(-8px ${((1 - p) * 100).toFixed(2)}% -8px -8px)`; }
+
+// lockup tracks (periodic: the mark slides left as the wordmark arrives, recenters for the orbit)
+let SH = 0;
+let LK_X, LK_Y, LK_S;
+function buildTracks() {
+  WMW = E.wm.getBoundingClientRect().width / SC;
+  SH = (GAP + WMW) / 2;                                   // mark center offset when the wordmark is out
+  LK_X = Track([[2.5, 0], [13.15, -SH]], 0.42, 0.9);
+  LK_Y = Track([[1, TALL ? -230 : -150], [2.5, 0]], 0.42, 0.9);
+  LK_S = Track([[1, 0.8], [2.5, 1.3], [13.15, 1]], 0.42, 0.9);
+}
+// gather layout: seven tiles around the mark (hand-placed per format), drifting gently
+const SLOTS = {
+  "916": [0.42, [[-205, -665], [205, -665], [-205, -395], [205, -395], [-282, 0], [282, 0], [-205, 395], [205, 395], [-205, 665], [205, 665]]],
+  "45": [0.29, [[-360, -400], [-120, -400], [120, -400], [360, -400], [-360, 0], [360, 0], [-360, 400], [-120, 400], [120, 400], [360, 400]]],
+  "11": [0.3, [[-375, -330], [-125, -330], [125, -330], [375, -330], [-370, 0], [370, 0], [-375, 330], [-125, 330], [125, 330], [375, 330]]],
+  "169": [0.26, [[-640, -250], [-320, -250], [0, -250], [320, -250], [640, -250], [-640, 250], [-320, 250], [0, 250], [320, 250], [640, 250]]],
+}[FMT];
+const ORB = [0, 0, SLOTS[0]];
+const orbitAt = (k, bt) => {
+  const [x, y] = SLOTS[1][k], d = (bt - 12) * 3;
+  return [x * (1 + 0.006 * d), y * (1 + 0.006 * d)];
+};
+
+// ---------- sound ----------
+const CUES = [];
+const cue = (bt, type, gain = 1, extra = {}) => CUES.push({ t: B(bt), type, gain, ...extra });
+const MARK_T = [12, 12.06, 12.12];      // the mark reassembles as the gather starts
+MARK_T.forEach((b, i) => cue(b, "pop", 0.6, { pitch: [1, 1.26, 1.5][i] }));
+cue(1, "swoosh", 0.55); cue(1.02, "click", 0.5);
+const DING = [1, 1.122, 1.26, 1.335, 1.498, 1.682, 1.888];
+CARDS.forEach((c, k) => {
+  const s0 = FIRST + k; cue(s0, "click", 0.85); cue(s0 + 0.01, "swish", 0.45);
+  const at = (f) => s0 + f * 0.6;
+  if (c.key === "email") [0.15, 0.24, 0.33, 0.42, 0.55, 0.64, 0.73].forEach((f, i) => cue(at(f), "key", 0.28, { seed: i }));
+  if (c.key === "chat") cue(at(0.3), "pop", 0.55, { pitch: 1.2 });
+  if (c.key === "docs") [0.14, 0.21, 0.29, 0.36, 0.44].forEach((f, i) => cue(at(f), "key", 0.32, { seed: 20 + i }));
+  if (c.key === "sheet") [0.5, 0.62, 0.74, 0.86].forEach((f, i) => cue(at(f), "tick", 0.22, { pitch: 1 + 0.06 * i }));
+  if (c.key === "db") [0.08, 0.15, 0.22, 0.29, 0.36].forEach((f, i) => cue(at(f), "tick", 0.16, { pitch: 1.3 }));
+  if (c.key === "pr") { [0.18, 0.34, 0.5].forEach((f, i) => cue(at(f), "tick", 0.42, { pitch: [1.26, 1.5, 1.68][i] })); cue(at(0.68), "pop", 0.6, { pitch: 1.3 }); }
+  if (c.key === "agent") { cue(at(0.28), "pop", 0.5, { pitch: 1.1 }); cue(at(0.55), "blip", 0.45); }
+  if (c.key === "calls") { cue(at(0.05), "blip", 0.5); [0.25, 0.5, 0.75].forEach((f) => cue(at(f), "pop", 0.4, { pitch: 1.15 })); }
+  if (c.key === "agents") [0.15, 0.32, 0.49, 0.66].forEach((f, i) => cue(at(f), "tick", 0.4, { pitch: [1.26, 1.335, 1.498, 1.682][i] }));
+  if (c.key === "memory") [0.1, 0.22, 0.34, 0.46, 0.58].forEach((f, i) => cue(at(f), "tick", 0.3, { pitch: 1.12 + 0.12 * i }));
+});
+CARDS.forEach((_, k) => cue(12 + k / 12, "pop", 0.38, { pitch: DING[k % 7] * (k >= 7 ? 2 : 1) }));
+cue(12, "swoosh", 0.6); cue(13, "swoosh", 0.6);
+for (let i = 0; i < 5; i++) CUES.push({ t: B(13.15) + 0.02 + i * 0.055 + 0.03, type: "key", gain: 0.42, seed: 40 + i });  // one per letter
+cue(13.5, "chime", 0.8);
+
+// =====================================================================
+// seek(t)
+// =====================================================================
+function seek(tIn) {
+  const t = ((tIn % T) + T) % T, bt = stepAt(t);
+  BLUR = 9;
+  rings.style.transform = `scale(${(1 + 0.04 * Math.sin((t / T) * TAU)).toFixed(4)})`;
+
+  // ----- lockup -----
+  const lv = visAmt(t, B(12), B(2) + T - 0.02, 0.3);
+  if (fx(E.lock, lv.o, lv.pout * 16, `translate3d(${px(LK_X(t) * LK_S(t))},${px(LK_Y(t))},0) scale(${LK_S(t).toFixed(4)})`)) {
+    // the mark: three pieces, one per eighth note (and again for the orbit)
+    MARK.forEach((_, i) => {
+      let dt = t - B(MARK_T[i]); if (dt < -0.5) dt += T; const p = spr(dt, 0.3, 0.8), at = t - dt;
+      const pe = E["mk" + i]; pe.style.opacity = (t < at ? 0 : clamp(p * 1.4)).toFixed(3);
+      pe.style.transform = `translate(0px,${((1 - p) * 24).toFixed(3)}px)`;
+    });
+    // the wordmark wipes in after the mark moves aside
+    const wOn = bt < 2 || bt >= 13.15;
+    const w0 = B(13.15) + 0.02, tw = bt < 2 ? t + T : t;
+    E.wm.style.left = px(MW / 2 + GAP);
+    E.mk.style.left = px(-MW / 2);
+    if (show(E.wm, wOn ? 1 : 0)) LOGO_TYPE.forEach((_, i) => {   // letters rise in on sixteenths
+      const at = w0 + i * 0.055, p = spr(tw - at, 0.26, 0.72), le = E["lt" + i];
+      le.style.opacity = (tw < at ? 0 : clamp(p * 1.5)).toFixed(3);
+      le.style.transform = `translate(0px,${((1 - p) * 34).toFixed(3)}px)`;
+    });
+  }
+  // headline
+  const hv = visAmt(t, B(1) + 0.04, B(2) - 0.02, 0.3);
+  if (fx(E.head, hv.o, (1 - hv.pin) * 14 + hv.pout * 16, `translate3d(0,${px((TALL ? 0 : 20) + (1 - hv.pin) * 18)},0)`)) {}
+
+  // ----- the seven graphics, one per beat -----
+  CARDS.forEach((c, k) => {
+    const s0 = FIRST + k, tin = B(s0), tout = B(s0 + 1) - 0.01;
+    const v = visAmt(t, tin, tout, 0.2);
+    const top = cardTop(k);
+    const on = fx(hero[k].n, v.o, (1 - v.pin) * 10 + v.pout * 14, `translate3d(0,${px(top + c.h / 2 + (1 - v.pin) * 26)},0) scale(${(0.965 + 0.035 * v.pin).toFixed(4)})`);
+    const lv_ = visAmt(t, tin + 0.02, tout, 0.24);
+    fx(hero[k].lab, lv_.o, (1 - lv_.pin) * 10 + lv_.pout * 14, `translate3d(0,${px(top - LBL_GAP - (TALL ? 92 : 80) + (1 - lv_.pin) * 14)},0)`);
+    if (!on) return;
+    const p = "h" + k, a = (f) => tin + f * 0.6 * (tout - tin);   // settle early: a card is on for one beat
+    if (c.key === "email") {
+      E[p + "gen"].style.opacity = (0.45 + 0.55 * (0.5 + 0.5 * Math.cos((t - tin) * 9))).toFixed(3);
+      write(E[p + "b0"], t, a(0.12), a(0.3)); write(E[p + "b1"], t, a(0.25), a(0.6)); write(E[p + "b2"], t, a(0.5), a(0.86));
+    } else if (c.key === "chat") { pop(E[p + "c0"], t, tin, 14); pop(E[p + "c1"], t, a(0.3), 14); }
+    else if (c.key === "docs") {
+      const n = clamp(Math.floor((t - a(0.12)) / ((a(0.5) - a(0.12)) / 5)), 0, 5);
+      E[p + "men"].textContent = "@evan".slice(0, n); show(E[p + "men"], n > 0 ? 1 : 0);
+      pop(E[p + "d1"], t, a(0.35)); pop(E[p + "d2"], t, a(0.45)); [0, 1, 2].forEach((i) => pop(E[p + "t" + i], t, a(0.5 + i * 0.1)));
+    } else if (c.key === "sheet") {
+      for (let i = 0; i < 8; i++) pop(E[p + "r" + i], t, a(0.05 + i * 0.05), 6);
+      const r = Math.min(7, Math.floor(clamp((t - a(0.5)) / (a(0.95) - a(0.5))) * 4));
+      E[p + "sel"].style.top = px(30 + 30 * r);
+    } else if (c.key === "db") { for (let i = 0; i < 5; i++) pop(E[p + "r" + i], t, a(0.08 + i * 0.07), 8); }
+    else if (c.key === "pr") {
+      [0, 1, 2].forEach((i) => { const at = a(0.18 + i * 0.16), q = spr(t - at, 0.22, 0.7); E[p + "k" + i].style.transform = `scale(${(t < at ? 0 : q).toFixed(3)})`; });
+      const mp = spr(t - a(0.68), 0.25, 0.7); E[p + "merge"].style.transform = `scale(${(0.9 + 0.1 * mp).toFixed(3)})`; E[p + "merge"].style.opacity = (0.35 + 0.65 * clamp(mp)).toFixed(3);
+    } else if (c.key === "calls") { [0, 1, 2].forEach((i) => pop(E[p + "l" + i], t, a(0.2 + i * 0.25), 8)); }
+    else if (c.key === "agents") { [0, 1, 2, 3].forEach((i) => { pop(E[p + "s" + i], t, a(0.1 + i * 0.17), 8); const q = spr(t - a(0.15 + i * 0.17), 0.22, 0.7); E[p + "c" + i].style.display = "inline-block"; E[p + "c" + i].style.transform = `scale(${(t < a(0.15 + i * 0.17) ? 0 : q).toFixed(3)})`; }); pop(E[p + "out"], t, a(0.8), 6); }
+    else if (c.key === "memory") { for (let i = 0; i < 5; i++) pop(E[p + "m" + i], t, a(0.05 + i * 0.12), 8); }
+    else if (c.key === "agent") { pop(E[p + "a0"], t, tin, 14); pop(E[p + "a1"], t, a(0.28), 14); pop(E[p + "a2"], t, a(0.55), 14); }
+  });
+
+  // ----- orbit: all seven around the mark, then they fold into it -----
+  tiles.forEach((n, k) => {
+    const at = B(12 + k / 12), v = visAmt(t, at, B(13.7), 0.26);
+    const c = CARDS[k];
+    if (!show(n, v.o)) return;
+    const [ox, oy] = orbitAt(k, bt);
+    const fold = clamp(spr(t - B(13) - k * 0.015, 0.4, 1));
+    const x = ox * (1 - fold), y = oy * (1 - fold) + (TALL ? 0 : 0);
+    const s = ORB[2] * (0.6 + 0.4 * v.pin) * (1 - 0.85 * fold);
+    n.style.filter = (1 - v.pin) * 8 + fold * 6 > 0.04 ? `blur(${((1 - v.pin) * 8 + fold * 6).toFixed(3)}px)` : "none";
+    n.style.opacity = (v.o * (1 - fold * 0.9)).toFixed(4);
+    n.style.transform = `translate3d(${px(x - (c.w * s) / 2)},${px(y - (c.h * s) / 2)},0) scale(${s.toFixed(4)})`;
+  });
+}
+
+// ---------- boot ----------
+window.SONGS = { upbeat: ["song-swish-swed-arulo-100.wav", 48.0382] }; // Mixkit 201, "Swish Swed" by Arulo, atempo 0.8333
+window.seek = seek; window.DURATION = T; window.CUES = CUES; window.B = B; window.MUSIC = MUSIC; window.FMT = [W, H];
+window.probe = (t) => [LK_X(t), LK_Y(t), LK_S(t), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+window.ready = Promise.all(['400 20px "Inter"', '500 20px "Inter"', '600 20px "Inter"', '620 20px "Inter"', '330 40px "display"'].map((f) => document.fonts.load(f)))
+  .then(() => document.fonts.ready)
+  .then(() => Promise.all([...document.querySelectorAll(".av")].map((a) => { const u = a.style.backgroundImage.match(/url\("?(.*?)"?\)/); if (!u) return 0; return new Promise((r) => { const i = new Image(); i.onload = i.onerror = r; i.src = u[1]; }); })))
+  .then(() => { E.wm.style.display = ""; buildTracks(); seek(0); return true; });
+const params = new URLSearchParams(location.search);
+if (params.has("render")) document.documentElement.classList.add("render");
+else {
+  const fit = () => { const k = Math.min(innerWidth / W, innerHeight / H); Object.assign(stage.style, { position: "fixed", left: "50%", top: "50%", transformOrigin: "50% 50%", transform: `translate(-50%,-50%) scale(${k})` }); };
+  addEventListener("resize", fit); fit();
+  const at = params.has("t") ? parseFloat(params.get("t")) : null;
+  window.ready.then(() => { if (at != null) { seek(at); return; } const t0 = performance.now(); const loop = () => { seek((performance.now() - t0) / 1000); requestAnimationFrame(loop); }; requestAnimationFrame(loop); });
+}
+</script>
+</body>
+</html>
