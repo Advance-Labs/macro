@@ -213,9 +213,12 @@ fn a_pending_request_waits_even_when_its_tool_reports_after_it() {
     ];
     assert_eq!(phase(&parts, false), Some(TurnPhase::Waiting));
     let answered = [
-        permission(1, PermissionOutcome::Selected {
-            option_id: "allow".to_owned(),
-        }),
+        permission(
+            1,
+            PermissionOutcome::Selected {
+                option_id: "allow".to_owned(),
+            },
+        ),
         run("a", "ask", ToolStatus::Running),
     ];
     assert_eq!(phase(&answered, false), Some(TurnPhase::Working));
