@@ -84,24 +84,64 @@ fn a_patch_changes_only_the_kinds_it_names() {
 }
 
 #[test]
-fn patches_read_camel_case_and_allow_omitted_kinds() {
-    let request: UpdateTeamRecordingPolicyRequest =
-        serde_json::from_str(r#"{"blocked":{"oneOnOneMeetings":true}}"#).unwrap();
+fn patches_read_camel_case_and_allow_omitted_fields() {
+    let request: UpdateTeamCallPolicyRequest =
+        serde_json::from_str(r#"{"recordingBlocked":{"oneOnOneMeetings":true}}"#).unwrap();
     assert_eq!(
-        request.blocked,
-        CallKindsPatch {
-            one_on_one_meetings: Some(true),
-            ..CallKindsPatch::default()
+        request,
+        UpdateTeamCallPolicyRequest {
+            recording_blocked: CallKindsPatch {
+                one_on_one_meetings: Some(true),
+                ..CallKindsPatch::default()
+            },
+            huddle_sharing_blocked: None,
+        }
+    );
+    let request: UpdateCallSettingsRequest =
+        serde_json::from_str(r#"{"refuseOneOnOneRecording":true}"#).unwrap();
+    assert_eq!(
+        request,
+        UpdateCallSettingsRequest {
+            refuse_one_on_one_recording: Some(true),
+            ..UpdateCallSettingsRequest::default()
         }
     );
 }
 
 #[test]
+fn huddles_start_shared_only_when_chosen_and_not_blocked() {
+    for (share_by_default, blocked, shares) in [
+        (true, false, true),
+        (false, false, false),
+        (true, true, false),
+        (false, true, false),
+    ] {
+        let sharing = HuddleSharing {
+            share_by_default,
+            blocked,
+        };
+        assert_eq!(sharing.shares_by_default(), shares);
+    }
+    assert!(HuddleSharing::default().shares_by_default());
+}
+
+#[test]
+fn untouched_preferences_record_share_and_refuse_nothing() {
+    let preferences = CallPreferences::default();
+    assert_eq!(preferences.recording, RecordingRules::default());
+    assert_eq!(preferences.huddle_sharing, HuddleSharing::default());
+    assert!(!preferences.refuses_one_on_one_recording);
+}
+
+#[test]
 fn settings_serialize_camel_case() {
-    let settings = CallRecordingSettings {
+    let settings = CallSettings {
         record_by_default: only(CallKind::Huddle),
-        team: Some(TeamRecordingPolicy {
-            blocked: only(CallKind::ExternalMeeting),
+        share_huddles_by_default: false,
+        refuse_one_on_one_recording: true,
+        team: Some(TeamCallPolicy {
+            recording_blocked: only(CallKind::ExternalMeeting),
+            huddle_sharing_blocked: true,
             can_edit: false,
         }),
     };
@@ -114,13 +154,16 @@ fn settings_serialize_camel_case() {
                 "internalMeetings": false,
                 "externalMeetings": false,
             },
+            "shareHuddlesByDefault": false,
+            "refuseOneOnOneRecording": true,
             "team": {
-                "blocked": {
+                "recordingBlocked": {
                     "huddles": false,
                     "oneOnOneMeetings": false,
                     "internalMeetings": false,
                     "externalMeetings": true,
                 },
+                "huddleSharingBlocked": true,
                 "canEdit": false,
             },
         })

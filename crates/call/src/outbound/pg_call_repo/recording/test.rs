@@ -8,7 +8,8 @@ use uuid::Uuid;
 use super::super::test::{CALL1, USER_A, USER_B, USER_C, give_user_a_team, repo};
 use crate::domain::ports::CallRepository;
 use crate::domain::recording::{
-    CallKinds, CallKindsPatch, MeetingAttendance, MeetingKindChange, RecordingRules,
+    CallKinds, CallKindsPatch, CallPreferences, HuddleSharing, MeetingAttendance,
+    MeetingKindChange, RecordingRules, UpdateCallSettingsRequest, UpdateTeamCallPolicyRequest,
 };
 
 const TEAM_ID: Uuid = Uuid::from_u128(0x7ea3_0000_0000_0000_0000_0000_0000_00c1);
@@ -21,12 +22,15 @@ async fn user_a_on_a_team(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     fixtures(path = "../../../../fixtures", scripts("call_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
 )]
-async fn missing_rows_record_everything_and_block_nothing(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
+async fn missing_rows_record_share_and_block_nothing(pool: Pool<Postgres>) -> anyhow::Result<()> {
     user_a_on_a_team(&pool).await?;
     let repo = repo(pool);
     for team in [None, Some(TEAM_ID), Some(Uuid::now_v7())] {
+        assert_eq!(
+            repo.get_call_preferences(USER_A.deref().copied(), team)
+                .await?,
+            CallPreferences::default()
+        );
         assert_eq!(
             repo.get_recording_rules(USER_A.deref().copied(), team)
                 .await?,
@@ -40,48 +44,67 @@ async fn missing_rows_record_everything_and_block_nothing(
     fixtures(path = "../../../../fixtures", scripts("call_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
 )]
-async fn default_patches_merge_one_kind_at_a_time(pool: Pool<Postgres>) -> anyhow::Result<()> {
+async fn settings_patches_merge_one_setting_at_a_time(pool: Pool<Postgres>) -> anyhow::Result<()> {
     user_a_on_a_team(&pool).await?;
     let repo = repo(pool);
-    let huddles_off = repo
-        .update_recording_defaults(
-            USER_A.deref().copied(),
-            CallKindsPatch {
+    repo.update_call_preferences(
+        USER_A.deref().copied(),
+        UpdateCallSettingsRequest {
+            record_by_default: CallKindsPatch {
                 huddles: Some(false),
                 ..CallKindsPatch::default()
             },
-        )
-        .await?;
-    assert_eq!(
-        huddles_off,
-        CallKinds {
-            huddles: false,
-            ..CallKinds::ALL
-        }
-    );
-    // A patch for another kind keeps the earlier one.
-    let both_off = repo
-        .update_recording_defaults(
-            USER_A.deref().copied(),
-            CallKindsPatch {
+            ..UpdateCallSettingsRequest::default()
+        },
+    )
+    .await?;
+    // Patches to other settings keep the earlier ones.
+    repo.update_call_preferences(
+        USER_A.deref().copied(),
+        UpdateCallSettingsRequest {
+            record_by_default: CallKindsPatch {
                 external_meetings: Some(false),
                 ..CallKindsPatch::default()
             },
-        )
+            share_huddles_by_default: Some(false),
+            refuse_one_on_one_recording: None,
+        },
+    )
+    .await?;
+    repo.update_call_preferences(
+        USER_A.deref().copied(),
+        UpdateCallSettingsRequest {
+            refuse_one_on_one_recording: Some(true),
+            ..UpdateCallSettingsRequest::default()
+        },
+    )
+    .await?;
+    let preferences = repo
+        .get_call_preferences(USER_A.deref().copied(), None)
         .await?;
     assert_eq!(
-        both_off,
-        CallKinds {
-            huddles: false,
-            external_meetings: false,
-            ..CallKinds::ALL
+        preferences,
+        CallPreferences {
+            recording: RecordingRules {
+                record_by_default: CallKinds {
+                    huddles: false,
+                    external_meetings: false,
+                    ..CallKinds::ALL
+                },
+                blocked: CallKinds::NONE,
+            },
+            huddle_sharing: HuddleSharing {
+                share_by_default: false,
+                blocked: false,
+            },
+            refuses_one_on_one_recording: true,
         }
     );
-    let rules = repo
-        .get_recording_rules(USER_A.deref().copied(), None)
-        .await?;
-    assert_eq!(rules.record_by_default, both_off);
-    assert_eq!(rules.blocked, CallKinds::NONE);
+    assert_eq!(
+        repo.get_recording_rules(USER_A.deref().copied(), None)
+            .await?,
+        preferences.recording
+    );
     Ok(())
 }
 
@@ -92,54 +115,234 @@ async fn default_patches_merge_one_kind_at_a_time(pool: Pool<Postgres>) -> anyho
 async fn team_blocks_apply_only_to_their_team(pool: Pool<Postgres>) -> anyhow::Result<()> {
     user_a_on_a_team(&pool).await?;
     let repo = repo(pool);
-    let blocked = repo
-        .update_team_recording_blocks(
-            &TEAM_ID,
-            CallKindsPatch {
+    repo.update_team_call_policy(
+        &TEAM_ID,
+        UpdateTeamCallPolicyRequest {
+            recording_blocked: CallKindsPatch {
                 one_on_one_meetings: Some(true),
                 internal_meetings: Some(true),
                 ..CallKindsPatch::default()
             },
-        )
-        .await?;
-    assert_eq!(
-        blocked,
-        CallKinds {
-            one_on_one_meetings: true,
-            internal_meetings: true,
-            ..CallKinds::NONE
-        }
-    );
-    let unblocked = repo
-        .update_team_recording_blocks(
-            &TEAM_ID,
-            CallKindsPatch {
+            huddle_sharing_blocked: Some(true),
+        },
+    )
+    .await?;
+    repo.update_team_call_policy(
+        &TEAM_ID,
+        UpdateTeamCallPolicyRequest {
+            recording_blocked: CallKindsPatch {
                 internal_meetings: Some(false),
                 huddles: Some(true),
                 ..CallKindsPatch::default()
             },
-        )
+            huddle_sharing_blocked: None,
+        },
+    )
+    .await?;
+    let team = repo
+        .get_call_preferences(USER_A.deref().copied(), Some(TEAM_ID))
         .await?;
     assert_eq!(
-        unblocked,
+        team.recording.blocked,
         CallKinds {
             huddles: true,
             one_on_one_meetings: true,
             ..CallKinds::NONE
         }
     );
+    assert!(team.huddle_sharing.blocked);
+    assert!(!team.huddle_sharing.shares_by_default());
+    let no_team = repo
+        .get_call_preferences(USER_A.deref().copied(), None)
+        .await?;
+    assert_eq!(no_team.recording.blocked, CallKinds::NONE);
+    assert!(!no_team.huddle_sharing.blocked);
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn only_people_who_refuse_are_listed(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    user_a_on_a_team(&pool).await?;
+    let repo = repo(pool);
+    let people = [USER_A.to_string(), USER_B.to_string()];
+    assert!(repo.get_one_on_one_refusers(&people).await?.is_empty());
+    repo.update_call_preferences(
+        USER_A.deref().copied(),
+        UpdateCallSettingsRequest {
+            refuse_one_on_one_recording: Some(true),
+            ..UpdateCallSettingsRequest::default()
+        },
+    )
+    .await?;
     assert_eq!(
-        repo.get_recording_rules(USER_A.deref().copied(), Some(TEAM_ID))
-            .await?
-            .blocked,
-        unblocked
+        repo.get_one_on_one_refusers(&people).await?,
+        vec![USER_A.to_string()]
+    );
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn direct_messages_list_their_current_participants(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let dm = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO comms_channels (id, name, channel_type, owner_id, created_at, updated_at)
+           VALUES ($1, NULL, 'direct_message', $2, now(), now())"#,
+    )
+    .bind(dm)
+    .bind(USER_A.as_ref())
+    .execute(&pool)
+    .await?;
+    for (user_id, left) in [
+        (USER_A.as_ref(), false),
+        (USER_B.as_ref(), false),
+        ("bot-123", false),
+        (USER_C.as_ref(), true),
+    ] {
+        sqlx::query(
+            r#"INSERT INTO comms_channel_participants (channel_id, user_id, role, left_at)
+               VALUES ($1, $2, 'member', CASE WHEN $3 THEN now() END)"#,
+        )
+        .bind(dm)
+        .bind(user_id)
+        .bind(left)
+        .execute(&pool)
+        .await?;
+    }
+    let repo = repo(pool);
+    let mut participants = repo
+        .get_direct_message_participants(&dm)
+        .await?
+        .expect("a direct message");
+    participants.sort();
+    let mut expected = vec![
+        USER_A.to_string(),
+        USER_B.to_string(),
+        "bot-123".to_string(),
+    ];
+    expected.sort();
+    assert_eq!(participants, expected);
+    // The fixture's channels are public.
+    assert_eq!(
+        repo.get_direct_message_participants(&Uuid::from_u128(0xc01))
+            .await?,
+        None
     );
     assert_eq!(
-        repo.get_recording_rules(USER_A.deref().copied(), None)
-            .await?
-            .blocked,
-        CallKinds::NONE
+        repo.get_direct_message_participants(&Uuid::now_v7())
+            .await?,
+        None
     );
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn refusals_hold_only_until_the_one_on_one_is_decided(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    let repo = repo(pool);
+    let refused = vec![USER_B.to_string()];
+    let refusals = |repo: &super::super::PgCallRepo| {
+        let repo = repo.clone();
+        async move {
+            Ok::<_, anyhow::Error>(
+                repo.get_call_record_by_call_id(&CALL1)
+                    .await?
+                    .expect("live call")
+                    .one_on_one_recording_refused_by,
+            )
+        }
+    };
+    assert!(refusals(&repo).await?.is_empty());
+    assert!(repo.record_one_on_one_refusals(&CALL1, &refused).await?);
+    assert_eq!(refusals(&repo).await?, refused);
+
+    // A third person ends the one-on-one, and with it the refusal.
+    repo.add_participant(&CALL1, USER_C.deref().copied())
+        .await?;
+    assert!(repo.mark_call_more_than_two(&CALL1).await?.is_some());
+    assert!(refusals(&repo).await?.is_empty());
+    assert!(!repo.record_one_on_one_refusals(&CALL1, &refused).await?);
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn a_transcribing_call_takes_no_refusals(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let repo = repo(pool);
+    assert!(repo.claim_meeting_transcriber(&CALL1).await?);
+    assert!(!repo.claim_meeting_transcriber(&CALL1).await?);
+    assert!(!repo.claim_meeting_transcriber(&Uuid::now_v7()).await?);
+    assert!(
+        !repo
+            .record_one_on_one_refusals(&CALL1, &[USER_B.to_string()])
+            .await?
+    );
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn everyone_who_joined_counts_as_a_participant(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let repo = repo(pool);
+    repo.remove_participant(&CALL1, USER_B.deref().copied())
+        .await?;
+    assert_eq!(
+        repo.get_meeting_participant_ids(&CALL1).await?,
+        vec![USER_A.to_string(), USER_B.to_string()]
+    );
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../../fixtures", scripts("call_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn blocking_huddle_sharing_unshares_the_teams_live_huddles(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    user_a_on_a_team(&pool).await?;
+    let repo = repo(pool);
+    let other = Uuid::now_v7();
+    repo.create_call(
+        &other,
+        &Uuid::from_u128(0xc02),
+        &other.to_string(),
+        USER_B.deref().copied(),
+    )
+    .await?
+    .expect("created");
+    let shared = |call_id: Uuid| {
+        let repo = repo.clone();
+        async move {
+            Ok::<_, anyhow::Error>(
+                repo.get_call_record_by_call_id(&call_id)
+                    .await?
+                    .expect("live call")
+                    .share_with_team,
+            )
+        }
+    };
+    assert!(shared(CALL1).await?);
+    assert!(shared(other).await?);
+    repo.unshare_live_team_huddles(&TEAM_ID).await?;
+    // Only huddles hosted by the team's members are unshared.
+    assert!(!shared(CALL1).await?);
+    assert!(shared(other).await?);
     Ok(())
 }
 

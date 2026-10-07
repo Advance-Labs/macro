@@ -4,13 +4,17 @@ import {
   SettingsPage,
   SettingsSection,
 } from '../../settings/primitives';
-import { RecordingKindRow } from '../components/recording-kind-row';
+import { CheckboxRow } from '../components/checkbox-row';
 import { useCallSettings } from '../context/call-settings-context';
 import {
-  isBlockedByTeam,
+  isHuddleSharingBlocked,
+  isRecordingBlocked,
   RECORDING_KINDS,
   recordsByDefault,
-} from '../core/recording-kinds';
+  sharesHuddlesByDefault,
+} from '../core/call-settings';
+
+const ADMINS_ONLY = 'Only team admins can change this.';
 
 export function CallSettingsView() {
   const calls = useCallSettings();
@@ -19,7 +23,7 @@ export function CallSettingsView() {
   return (
     <SettingsPage
       title="Calls"
-      description="Choose which calls start recording on their own."
+      description="Choose which calls record on their own and who can see them afterwards."
     >
       <Switch
         fallback={
@@ -38,11 +42,11 @@ export function CallSettingsView() {
                 <SettingsCard>
                   <For each={RECORDING_KINDS}>
                     {(option) => (
-                      <RecordingKindRow
+                      <CheckboxRow
                         label={option.label}
                         description={option.description}
                         checked={recordsByDefault(settings(), option.kind)}
-                        disabled={isBlockedByTeam(settings(), option.kind)}
+                        disabled={isRecordingBlocked(settings(), option.kind)}
                         disabledReason="Your team admins have blocked recording these calls."
                         onChange={(value) =>
                           calls.setRecordByDefault(option.kind, value)
@@ -53,11 +57,44 @@ export function CallSettingsView() {
                 </SettingsCard>
               </SettingsSection>
 
+              <SettingsSection
+                title="Share by default"
+                description="Shared calls let your team open the recording, transcript, and AI notes once the call ends. Meetings are never shared with your team."
+              >
+                <SettingsCard>
+                  <CheckboxRow
+                    label="Share huddles with my team"
+                    description="Huddles you start begin with “Share with team” on. Anyone in the huddle can still turn it off."
+                    checked={sharesHuddlesByDefault(settings())}
+                    disabled={isHuddleSharingBlocked(settings())}
+                    disabledReason="Your team admins have blocked sharing huddles with the team."
+                    onChange={(value) => calls.setShareHuddlesByDefault(value)}
+                  />
+                </SettingsCard>
+              </SettingsSection>
+
+              <SettingsSection
+                title="1:1 privacy"
+                description="Applies to 1:1 meetings and huddles in a two-person direct message, whoever starts them."
+              >
+                <SettingsCard>
+                  <CheckboxRow
+                    label="Don't record or transcribe my 1:1s"
+                    description="Overrides the other person's settings, and both of you see why it isn't recording. Stops applying once a third teammate or anyone from outside your team joins."
+                    checked={settings().refuseOneOnOneRecording}
+                    disabled={false}
+                    onChange={(value) =>
+                      calls.setRefuseOneOnOneRecording(value)
+                    }
+                  />
+                </SettingsCard>
+              </SettingsSection>
+
               <Show when={settings().team}>
                 {(team) => (
                   <SettingsSection
-                    title="Team recording policy"
-                    description="Block recording for everyone on your team. Blocked calls never record, whatever each person's default."
+                    title="Team policy"
+                    description="Block recording or sharing for everyone on your team. Blocks apply whatever each person's settings say."
                     actions={
                       <Show when={!team().canEdit}>
                         <span class="text-xs text-ink-muted">Admins only</span>
@@ -67,18 +104,28 @@ export function CallSettingsView() {
                     <SettingsCard>
                       <For each={RECORDING_KINDS}>
                         {(option) => (
-                          <RecordingKindRow
-                            label={`Block ${option.label.toLowerCase()}`}
+                          <CheckboxRow
+                            label={`Block recording ${option.label.toLowerCase()}`}
                             description={option.description}
-                            checked={team().blocked[option.kind]}
+                            checked={team().recordingBlocked[option.kind]}
                             disabled={!team().canEdit}
-                            disabledReason="Only team admins can change this."
+                            disabledReason={ADMINS_ONLY}
                             onChange={(blocked) =>
-                              calls.setTeamBlock(option.kind, blocked)
+                              calls.setRecordingBlocked(option.kind, blocked)
                             }
                           />
                         )}
                       </For>
+                      <CheckboxRow
+                        label="Block sharing huddles"
+                        description="No one's huddles are shared with the team, including huddles already running."
+                        checked={team().huddleSharingBlocked}
+                        disabled={!team().canEdit}
+                        disabledReason={ADMINS_ONLY}
+                        onChange={(blocked) =>
+                          calls.setHuddleSharingBlocked(blocked)
+                        }
+                      />
                     </SettingsCard>
                   </SettingsSection>
                 )}

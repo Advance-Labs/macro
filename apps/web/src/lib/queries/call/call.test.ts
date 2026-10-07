@@ -116,6 +116,7 @@ const record = (over: Partial<CallRecord>): CallRecord => ({
   startedAt: '2026-08-21T09:00:00.000Z',
   transcript: [],
   teamShareAccessLevel: null,
+  oneOnOneRecordingRefusedBy: [],
   shareWithTeam: false,
   ...over,
 });

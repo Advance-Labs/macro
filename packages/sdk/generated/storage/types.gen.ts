@@ -1804,6 +1804,51 @@ export type CallFilters = {
 };
 
 /**
+ * One flag per [`CallKind`].
+ */
+export type CallKinds = {
+    /**
+     * Standalone calls that someone outside the host's team joined.
+     */
+    externalMeetings: boolean;
+    /**
+     * Calls started from a channel.
+     */
+    huddles: boolean;
+    /**
+     * Standalone calls with three or more people, all teammates.
+     */
+    internalMeetings: boolean;
+    /**
+     * Standalone calls with only two people, both teammates.
+     */
+    oneOnOneMeetings: boolean;
+};
+
+/**
+ * A partial update to [`CallKinds`]. Omitted kinds keep their current value,
+ * so two people changing different kinds at once do not undo each other.
+ */
+export type CallKindsPatch = {
+    /**
+     * New value for standalone calls with people from outside the team.
+     */
+    externalMeetings?: boolean | null;
+    /**
+     * New value for calls started from a channel.
+     */
+    huddles?: boolean | null;
+    /**
+     * New value for standalone calls with three or more people, all teammates.
+     */
+    internalMeetings?: boolean | null;
+    /**
+     * New value for standalone calls with only two people, both teammates.
+     */
+    oneOnOneMeetings?: boolean | null;
+};
+
+/**
  * Full record of a call, unifying rows from `calls` (active) and
  * `call_records` (archived) into a single response shape.
  */
@@ -1850,6 +1895,12 @@ export type CallRecord = {
      * Whether the call is currently active (from `calls` table).
      */
     isActive: boolean;
+    /**
+     * People in this live one-on-one who refuse being recorded or
+     * transcribed in one-on-ones, which is why it is not recording. Empty
+     * otherwise, and always empty once the call has ended.
+     */
+    oneOnOneRecordingRefusedBy: Array<string>;
     /**
      * Macro-account participants (both active and historic).
      */
@@ -2019,6 +2070,26 @@ export type CallRecordTranscriptSegment = {
      * Stable DB-row id for the segment.
      */
     transcriptId: string;
+};
+
+/**
+ * The caller's call settings.
+ */
+export type CallSettings = {
+    /**
+     * Kinds of call the caller's own calls record by default.
+     */
+    recordByDefault: CallKinds;
+    /**
+     * The caller does not allow being recorded or transcribed in 1:1 meetings
+     * or two-person direct-message huddles, whoever hosts them.
+     */
+    refuseOneOnOneRecording: boolean;
+    /**
+     * Huddles the caller starts begin shared with their team.
+     */
+    shareHuddlesByDefault: boolean;
+    team?: null | TeamCallPolicy;
 };
 
 /**
@@ -12822,6 +12893,24 @@ export type TaskFilters = {
 };
 
 /**
+ * What a team's admins forbid for everyone on the team.
+ */
+export type TeamCallPolicy = {
+    /**
+     * Whether the caller may change the blocks (team admins and owners).
+     */
+    canEdit: boolean;
+    /**
+     * No one's huddles may be shared with the team.
+     */
+    huddleSharingBlocked: boolean;
+    /**
+     * Kinds of call no one on the team may record.
+     */
+    recordingBlocked: CallKinds;
+};
+
+/**
  * One teammate's out-of-office occurrence.
  */
 export type TeamOutOfOfficeItem = {
@@ -13371,6 +13460,24 @@ export type UpdateAgentRequest = {
     team_id?: string | null;
 };
 
+/**
+ * Body of `PATCH /call/settings`. Omitted fields keep their current value.
+ */
+export type UpdateCallSettingsRequest = {
+    /**
+     * Changes to the kinds of call the caller records by default.
+     */
+    recordByDefault?: CallKindsPatch;
+    /**
+     * New value for refusing to be recorded or transcribed in 1:1s.
+     */
+    refuseOneOnOneRecording?: boolean | null;
+    /**
+     * New value for starting the caller's huddles shared with their team.
+     */
+    shareHuddlesByDefault?: boolean | null;
+};
+
 export type UpdateChannelSharePermission = {
     accessLevel?: null | AccessLevel;
     /**
@@ -13488,6 +13595,21 @@ export type UpdateSharePermissionRequestV2 = {
     linkShare?: null | LinkShare;
     linkShareAccessLevel?: null | AccessLevel;
     teamShareAccessLevel?: null | AccessLevel;
+};
+
+/**
+ * Body of `PATCH /call/settings/team`. Omitted fields keep their current
+ * value.
+ */
+export type UpdateTeamCallPolicyRequest = {
+    /**
+     * New value for forbidding sharing huddles with the team.
+     */
+    huddleSharingBlocked?: boolean | null;
+    /**
+     * Changes to the kinds of call no one on the team may record.
+     */
+    recordingBlocked?: CallKindsPatch;
 };
 
 /**
@@ -15104,6 +15226,69 @@ export type GetRingStatusResponses = {
 };
 
 export type GetRingStatusResponse = GetRingStatusResponses[keyof GetRingStatusResponses];
+
+export type GetCallSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/call/settings';
+};
+
+export type GetCallSettingsErrors = {
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetCallSettingsError = GetCallSettingsErrors[keyof GetCallSettingsErrors];
+
+export type GetCallSettingsResponses = {
+    200: CallSettings;
+};
+
+export type GetCallSettingsResponse = GetCallSettingsResponses[keyof GetCallSettingsResponses];
+
+export type UpdateCallSettingsData = {
+    body: UpdateCallSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/call/settings';
+};
+
+export type UpdateCallSettingsErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UpdateCallSettingsError = UpdateCallSettingsErrors[keyof UpdateCallSettingsErrors];
+
+export type UpdateCallSettingsResponses = {
+    200: CallSettings;
+};
+
+export type UpdateCallSettingsResponse = UpdateCallSettingsResponses[keyof UpdateCallSettingsResponses];
+
+export type UpdateTeamCallPolicyData = {
+    body: UpdateTeamCallPolicyRequest;
+    path?: never;
+    query?: never;
+    url: '/call/settings/team';
+};
+
+export type UpdateTeamCallPolicyErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    403: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type UpdateTeamCallPolicyError = UpdateTeamCallPolicyErrors[keyof UpdateTeamCallPolicyErrors];
+
+export type UpdateTeamCallPolicyResponses = {
+    200: CallSettings;
+};
+
+export type UpdateTeamCallPolicyResponse = UpdateTeamCallPolicyResponses[keyof UpdateTeamCallPolicyResponses];
 
 export type CallWebhookData = {
     body?: never;

@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isBlockedByTeam,
+  type CallSettings,
+  isHuddleSharingBlocked,
+  isRecordingBlocked,
   RECORDING_KINDS,
   type RecordingKinds,
-  type RecordingSettings,
   recordsByDefault,
+  sharesHuddlesByDefault,
   withKind,
-} from './recording-kinds';
+} from './call-settings';
 
 const ALL: RecordingKinds = {
   huddles: true,
@@ -23,13 +25,22 @@ const NONE: RecordingKinds = {
 
 const settings = (
   recordByDefault: RecordingKinds,
-  blocked: RecordingKinds | null
-): RecordingSettings => ({
+  recordingBlocked: RecordingKinds | null,
+  sharing: { byDefault?: boolean; blocked?: boolean } = {}
+): CallSettings => ({
   recordByDefault,
-  team: blocked ? { blocked, canEdit: false } : null,
+  shareHuddlesByDefault: sharing.byDefault ?? true,
+  refuseOneOnOneRecording: false,
+  team: recordingBlocked
+    ? {
+        recordingBlocked,
+        huddleSharingBlocked: sharing.blocked ?? false,
+        canEdit: false,
+      }
+    : null,
 });
 
-describe('call recording kinds', () => {
+describe('call settings', () => {
   it('lists huddles, then meetings from smallest to most open', () => {
     expect(RECORDING_KINDS.map((option) => option.kind)).toEqual([
       'huddles',
@@ -43,12 +54,12 @@ describe('call recording kinds', () => {
     const chosen = settings(withKind(NONE, 'huddles', true), null);
     expect(recordsByDefault(chosen, 'huddles')).toBe(true);
     expect(recordsByDefault(chosen, 'internalMeetings')).toBe(false);
-    expect(isBlockedByTeam(chosen, 'huddles')).toBe(false);
+    expect(isRecordingBlocked(chosen, 'huddles')).toBe(false);
   });
 
   it('never records a kind the team blocks', () => {
     const blocked = settings(ALL, withKind(NONE, 'externalMeetings', true));
-    expect(isBlockedByTeam(blocked, 'externalMeetings')).toBe(true);
+    expect(isRecordingBlocked(blocked, 'externalMeetings')).toBe(true);
     expect(recordsByDefault(blocked, 'externalMeetings')).toBe(false);
     expect(recordsByDefault(blocked, 'internalMeetings')).toBe(true);
   });
@@ -58,6 +69,16 @@ describe('call recording kinds', () => {
     for (const option of RECORDING_KINDS) {
       expect(recordsByDefault(off, option.kind)).toBe(false);
     }
+  });
+
+  it('shares huddles only when chosen and the team allows it', () => {
+    expect(sharesHuddlesByDefault(settings(ALL, null))).toBe(true);
+    expect(
+      sharesHuddlesByDefault(settings(ALL, null, { byDefault: false }))
+    ).toBe(false);
+    const blocked = settings(ALL, NONE, { blocked: true });
+    expect(isHuddleSharingBlocked(blocked)).toBe(true);
+    expect(sharesHuddlesByDefault(blocked)).toBe(false);
   });
 
   it('changes one kind without mutating the input', () => {

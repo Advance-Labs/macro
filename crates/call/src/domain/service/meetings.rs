@@ -354,12 +354,22 @@ impl<
             // The session starts external, so later joins have nothing to flip.
             self.repo.mark_call_external(&call.id).await?;
         }
+        // A one-on-one waits for its second participant, whose settings
+        // decide whether it records or transcribes at all.
+        let one_on_one = kind == CallKind::OneOnOneMeeting;
         let recording = match self.host_recording_rules(&call.created_by).await {
-            Some(rules) if rules.records(kind) && self.claim_meeting_recorder(&call).await => {
+            Some(rules)
+                if !one_on_one
+                    && rules.records(kind)
+                    && self.claim_meeting_recorder(&call).await =>
+            {
                 Some(rules)
             }
             _ => None,
         };
+        if !one_on_one {
+            self.start_meeting_transcriber(&call).await;
+        }
         self.publish_call_event(&CallMacroEvent::started(CallStartedMetadata {
             call_id: call.id,
             channel_id: None,
@@ -369,23 +379,9 @@ impl<
         }));
         // Token issuance needs a room, not a running recorder or agent.
         // Only the allocation winner schedules these best-effort services.
-        let rtc = self.rtc_client.clone();
-        let repo = self.repo.clone();
-        let config = self.egress_s3_config.clone();
-        let room_name = call.room_name.clone();
-        let call_id = call.id;
-        tokio::spawn(async move {
-            let transcription = async {
-                rtc.dispatch_transcription_agent(&room_name).await
-                    .inspect_err(|error| tracing::error!(error=?error, "failed to dispatch meeting transcription agent")).ok();
-            };
-            let recording = async {
-                if let Some(rules) = recording {
-                    start_meeting_recording(&repo, rtc.as_ref(), call_id, &room_name, config.as_ref(), rules, kind).await;
-                }
-            };
-            tokio::join!(transcription, recording);
-        }.instrument(tracing::info_span!("start_meeting_media", call_id = %call_id)));
+        if let Some(rules) = recording {
+            self.spawn_meeting_recording(&call, rules, kind);
+        }
         Ok(call)
     }
 

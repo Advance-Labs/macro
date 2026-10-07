@@ -1233,7 +1233,7 @@ impl CallRepository for PgCallRepo {
             r#"
             SELECT c.id, c.channel_id, c.room_name, c.created_by, c.created_at, c.egress_id, c.recording_key, c.preview_url, c.recording_started_at,
                    (SELECT title FROM call_meetings WHERE id = c.meeting_id) AS custom_name,
-                   c.share_with_team,
+                   c.share_with_team, c.one_on_one_recording_refused_by,
                    sp.team_share_access_level AS "team_share_access_level?: AccessLevel"
             FROM calls c
             JOIN "SharePermission" sp ON sp.id = c.share_permission_id
@@ -1329,6 +1329,7 @@ impl CallRepository for PgCallRepo {
                 // Live calls report the pending toggle; canonical state is
                 // written when the call is archived.
                 share_with_team: active.share_with_team,
+                one_on_one_recording_refused_by: active.one_on_one_recording_refused_by,
                 team_share_access_level: active.team_share_access_level,
                 is_active: true,
                 status: None,
@@ -1439,6 +1440,7 @@ impl CallRepository for PgCallRepo {
             custom_name: archived.custom_name,
             summary: archived.summary,
             share_with_team: archived.team_share_access_level.is_some(),
+            one_on_one_recording_refused_by: Vec::new(),
             team_share_access_level: archived.team_share_access_level,
             is_active: false,
             status: None,
@@ -1863,6 +1865,7 @@ impl CallRepository for PgCallRepo {
                 custom_name: row.custom_name,
                 summary: row.summary,
                 share_with_team: row.share_with_team,
+                one_on_one_recording_refused_by: Vec::new(),
                 team_share_access_level: row.team_share_access_level,
                 is_active: row.is_active,
                 status: Some(call_status_from_sql(&row.status)),
@@ -2195,23 +2198,34 @@ impl CallRepository for PgCallRepo {
         user_id: MacroUserIdStr<'_>,
         team_id: Option<Uuid>,
     ) -> Result<crate::domain::recording::RecordingRules, CallError> {
-        self.load_recording_rules(user_id.as_ref(), team_id).await
+        Ok(self
+            .load_call_preferences(user_id.as_ref(), team_id)
+            .await?
+            .recording)
     }
 
-    async fn update_recording_defaults(
+    async fn get_call_preferences(
         &self,
         user_id: MacroUserIdStr<'_>,
-        patch: crate::domain::recording::CallKindsPatch,
-    ) -> Result<crate::domain::recording::CallKinds, CallError> {
-        self.patch_recording_defaults(user_id.as_ref(), patch).await
+        team_id: Option<Uuid>,
+    ) -> Result<crate::domain::recording::CallPreferences, CallError> {
+        self.load_call_preferences(user_id.as_ref(), team_id).await
     }
 
-    async fn update_team_recording_blocks(
+    async fn update_call_preferences(
+        &self,
+        user_id: MacroUserIdStr<'_>,
+        patch: crate::domain::recording::UpdateCallSettingsRequest,
+    ) -> Result<(), CallError> {
+        self.patch_call_preferences(user_id.as_ref(), patch).await
+    }
+
+    async fn update_team_call_policy(
         &self,
         team_id: &Uuid,
-        patch: crate::domain::recording::CallKindsPatch,
-    ) -> Result<crate::domain::recording::CallKinds, CallError> {
-        self.patch_team_recording_blocks(team_id, patch).await
+        patch: crate::domain::recording::UpdateTeamCallPolicyRequest,
+    ) -> Result<(), CallError> {
+        self.patch_team_call_policy(team_id, patch).await
     }
 
     async fn mark_call_more_than_two(
@@ -2237,5 +2251,36 @@ impl CallRepository for PgCallRepo {
 
     async fn claim_meeting_recorder(&self, call_id: &Uuid) -> Result<bool, CallError> {
         self.claim_recorder(call_id).await
+    }
+
+    async fn claim_meeting_transcriber(&self, call_id: &Uuid) -> Result<bool, CallError> {
+        self.claim_transcriber(call_id).await
+    }
+
+    async fn get_meeting_participant_ids(&self, call_id: &Uuid) -> Result<Vec<String>, CallError> {
+        self.load_meeting_participant_ids(call_id).await
+    }
+
+    async fn get_direct_message_participants(
+        &self,
+        channel_id: &Uuid,
+    ) -> Result<Option<Vec<String>>, CallError> {
+        self.load_direct_message_participants(channel_id).await
+    }
+
+    async fn get_one_on_one_refusers(&self, user_ids: &[String]) -> Result<Vec<String>, CallError> {
+        self.load_one_on_one_refusers(user_ids).await
+    }
+
+    async fn record_one_on_one_refusals(
+        &self,
+        call_id: &Uuid,
+        refused_by: &[String],
+    ) -> Result<bool, CallError> {
+        self.store_one_on_one_refusals(call_id, refused_by).await
+    }
+
+    async fn unshare_live_team_huddles(&self, team_id: &Uuid) -> Result<(), CallError> {
+        self.unshare_live_huddles(team_id).await
     }
 }

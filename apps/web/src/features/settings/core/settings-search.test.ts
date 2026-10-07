@@ -25,7 +25,15 @@ describe('individual settings search', () => {
   it('finds call recording controls on the Calls page', () => {
     expect(search('block recording')[0]).toMatchObject({
       tab: 'Calls',
-      target: 'team-recording-policy',
+      target: 'team-policy',
+    });
+    expect(search('opt out transcribe')[0]).toMatchObject({
+      tab: 'Calls',
+      target: '1-1-privacy',
+    });
+    expect(search('share huddles')[0]).toMatchObject({
+      tab: 'Calls',
+      target: 'share-by-default',
     });
     expect(search('record huddles')[0]).toMatchObject({
       tab: 'Calls',

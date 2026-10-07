@@ -1,22 +1,24 @@
-//! Persistence for recording defaults, team recording blocks, and the flags
-//! that track who a live standalone call has had and whether it has recorded.
+//! Persistence for call settings, team call policies, and the flags that track
+//! who a live standalone call has had and whether it has recorded.
 
 #[cfg(test)]
 mod test;
 
 use super::*;
 use crate::domain::recording::{
-    CallKinds, CallKindsPatch, MeetingAttendance, MeetingKindChange, RecordingRules,
+    CallKinds, CallPreferences, HuddleSharing, MeetingAttendance, MeetingKindChange,
+    RecordingRules, UpdateCallSettingsRequest, UpdateTeamCallPolicyRequest,
 };
 
 impl PgCallRepo {
     #[tracing::instrument(err, skip(self))]
-    pub(super) async fn load_recording_rules(
+    pub(super) async fn load_call_preferences(
         &self,
         user_id: &str,
         team_id: Option<Uuid>,
-    ) -> Result<RecordingRules, CallError> {
-        // Absent rows keep the column defaults: record everything, block nothing.
+    ) -> Result<CallPreferences, CallError> {
+        // Absent rows keep the column defaults: record and share everything,
+        // refuse nothing, block nothing.
         let row = sqlx::query!(
             r#"
             SELECT
@@ -24,141 +26,151 @@ impl PgCallRepo {
                 COALESCE(p.record_one_on_one_meetings, TRUE) AS "record_one_on_one_meetings!",
                 COALESCE(p.record_internal_meetings, TRUE) AS "record_internal_meetings!",
                 COALESCE(p.record_external_meetings, TRUE) AS "record_external_meetings!",
-                COALESCE(t.block_huddles, FALSE) AS "block_huddles!",
-                COALESCE(t.block_one_on_one_meetings, FALSE) AS "block_one_on_one_meetings!",
-                COALESCE(t.block_internal_meetings, FALSE) AS "block_internal_meetings!",
-                COALESCE(t.block_external_meetings, FALSE) AS "block_external_meetings!"
+                COALESCE(p.share_huddles, TRUE) AS "share_huddles!",
+                COALESCE(p.refuse_one_on_one_recording, FALSE)
+                    AS "refuse_one_on_one_recording!",
+                COALESCE(t.block_recording_huddles, FALSE) AS "block_recording_huddles!",
+                COALESCE(t.block_recording_one_on_one_meetings, FALSE)
+                    AS "block_recording_one_on_one_meetings!",
+                COALESCE(t.block_recording_internal_meetings, FALSE)
+                    AS "block_recording_internal_meetings!",
+                COALESCE(t.block_recording_external_meetings, FALSE)
+                    AS "block_recording_external_meetings!",
+                COALESCE(t.block_huddle_sharing, FALSE) AS "block_huddle_sharing!"
             FROM (SELECT 1) AS anchor
-            LEFT JOIN call_recording_preferences p ON p.user_id = $1
-            LEFT JOIN call_team_recording_policies t ON t.team_id = $2
+            LEFT JOIN call_preferences p ON p.user_id = $1
+            LEFT JOIN call_team_policies t ON t.team_id = $2
             "#,
             user_id,
             team_id,
         )
         .fetch_one(&self.pool)
         .await?;
-        Ok(RecordingRules {
-            record_by_default: CallKinds {
-                huddles: row.record_huddles,
-                one_on_one_meetings: row.record_one_on_one_meetings,
-                internal_meetings: row.record_internal_meetings,
-                external_meetings: row.record_external_meetings,
+        Ok(CallPreferences {
+            recording: RecordingRules {
+                record_by_default: CallKinds {
+                    huddles: row.record_huddles,
+                    one_on_one_meetings: row.record_one_on_one_meetings,
+                    internal_meetings: row.record_internal_meetings,
+                    external_meetings: row.record_external_meetings,
+                },
+                blocked: CallKinds {
+                    huddles: row.block_recording_huddles,
+                    one_on_one_meetings: row.block_recording_one_on_one_meetings,
+                    internal_meetings: row.block_recording_internal_meetings,
+                    external_meetings: row.block_recording_external_meetings,
+                },
             },
-            blocked: CallKinds {
-                huddles: row.block_huddles,
-                one_on_one_meetings: row.block_one_on_one_meetings,
-                internal_meetings: row.block_internal_meetings,
-                external_meetings: row.block_external_meetings,
+            huddle_sharing: HuddleSharing {
+                share_by_default: row.share_huddles,
+                blocked: row.block_huddle_sharing,
             },
+            refuses_one_on_one_recording: row.refuse_one_on_one_recording,
         })
     }
 
     #[tracing::instrument(err, skip(self))]
-    pub(super) async fn patch_recording_defaults(
+    pub(super) async fn patch_call_preferences(
         &self,
         user_id: &str,
-        patch: CallKindsPatch,
-    ) -> Result<CallKinds, CallError> {
-        // Each kind is merged in SQL so concurrent patches to different kinds
-        // both land.
-        let row = sqlx::query!(
+        patch: UpdateCallSettingsRequest,
+    ) -> Result<(), CallError> {
+        // Each setting is merged in SQL so concurrent patches to different
+        // settings both land.
+        let record = patch.record_by_default;
+        sqlx::query!(
             r#"
-            INSERT INTO call_recording_preferences (
+            INSERT INTO call_preferences (
                 user_id,
                 record_huddles,
                 record_one_on_one_meetings,
                 record_internal_meetings,
-                record_external_meetings
+                record_external_meetings,
+                share_huddles,
+                refuse_one_on_one_recording
             )
             VALUES (
                 $1,
                 COALESCE($2, TRUE),
                 COALESCE($3, TRUE),
                 COALESCE($4, TRUE),
-                COALESCE($5, TRUE)
+                COALESCE($5, TRUE),
+                COALESCE($6, TRUE),
+                COALESCE($7, FALSE)
             )
             ON CONFLICT (user_id) DO UPDATE SET
-                record_huddles = COALESCE($2, call_recording_preferences.record_huddles),
+                record_huddles = COALESCE($2, call_preferences.record_huddles),
                 record_one_on_one_meetings =
-                    COALESCE($3, call_recording_preferences.record_one_on_one_meetings),
+                    COALESCE($3, call_preferences.record_one_on_one_meetings),
                 record_internal_meetings =
-                    COALESCE($4, call_recording_preferences.record_internal_meetings),
+                    COALESCE($4, call_preferences.record_internal_meetings),
                 record_external_meetings =
-                    COALESCE($5, call_recording_preferences.record_external_meetings),
+                    COALESCE($5, call_preferences.record_external_meetings),
+                share_huddles = COALESCE($6, call_preferences.share_huddles),
+                refuse_one_on_one_recording =
+                    COALESCE($7, call_preferences.refuse_one_on_one_recording),
                 updated_at = now()
-            RETURNING
-                record_huddles,
-                record_one_on_one_meetings,
-                record_internal_meetings,
-                record_external_meetings
             "#,
             user_id,
-            patch.huddles,
-            patch.one_on_one_meetings,
-            patch.internal_meetings,
-            patch.external_meetings,
+            record.huddles,
+            record.one_on_one_meetings,
+            record.internal_meetings,
+            record.external_meetings,
+            patch.share_huddles_by_default,
+            patch.refuse_one_on_one_recording,
         )
-        .fetch_one(&self.pool)
+        .execute(&self.pool)
         .await?;
-        Ok(CallKinds {
-            huddles: row.record_huddles,
-            one_on_one_meetings: row.record_one_on_one_meetings,
-            internal_meetings: row.record_internal_meetings,
-            external_meetings: row.record_external_meetings,
-        })
+        Ok(())
     }
 
     #[tracing::instrument(err, skip(self))]
-    pub(super) async fn patch_team_recording_blocks(
+    pub(super) async fn patch_team_call_policy(
         &self,
         team_id: &Uuid,
-        patch: CallKindsPatch,
-    ) -> Result<CallKinds, CallError> {
-        let row = sqlx::query!(
+        patch: UpdateTeamCallPolicyRequest,
+    ) -> Result<(), CallError> {
+        let recording = patch.recording_blocked;
+        sqlx::query!(
             r#"
-            INSERT INTO call_team_recording_policies (
+            INSERT INTO call_team_policies (
                 team_id,
-                block_huddles,
-                block_one_on_one_meetings,
-                block_internal_meetings,
-                block_external_meetings
+                block_recording_huddles,
+                block_recording_one_on_one_meetings,
+                block_recording_internal_meetings,
+                block_recording_external_meetings,
+                block_huddle_sharing
             )
             VALUES (
                 $1,
                 COALESCE($2, FALSE),
                 COALESCE($3, FALSE),
                 COALESCE($4, FALSE),
-                COALESCE($5, FALSE)
+                COALESCE($5, FALSE),
+                COALESCE($6, FALSE)
             )
             ON CONFLICT (team_id) DO UPDATE SET
-                block_huddles = COALESCE($2, call_team_recording_policies.block_huddles),
-                block_one_on_one_meetings =
-                    COALESCE($3, call_team_recording_policies.block_one_on_one_meetings),
-                block_internal_meetings =
-                    COALESCE($4, call_team_recording_policies.block_internal_meetings),
-                block_external_meetings =
-                    COALESCE($5, call_team_recording_policies.block_external_meetings),
+                block_recording_huddles =
+                    COALESCE($2, call_team_policies.block_recording_huddles),
+                block_recording_one_on_one_meetings =
+                    COALESCE($3, call_team_policies.block_recording_one_on_one_meetings),
+                block_recording_internal_meetings =
+                    COALESCE($4, call_team_policies.block_recording_internal_meetings),
+                block_recording_external_meetings =
+                    COALESCE($5, call_team_policies.block_recording_external_meetings),
+                block_huddle_sharing = COALESCE($6, call_team_policies.block_huddle_sharing),
                 updated_at = now()
-            RETURNING
-                block_huddles,
-                block_one_on_one_meetings,
-                block_internal_meetings,
-                block_external_meetings
             "#,
             team_id,
-            patch.huddles,
-            patch.one_on_one_meetings,
-            patch.internal_meetings,
-            patch.external_meetings,
+            recording.huddles,
+            recording.one_on_one_meetings,
+            recording.internal_meetings,
+            recording.external_meetings,
+            patch.huddle_sharing_blocked,
         )
-        .fetch_one(&self.pool)
+        .execute(&self.pool)
         .await?;
-        Ok(CallKinds {
-            huddles: row.block_huddles,
-            one_on_one_meetings: row.block_one_on_one_meetings,
-            internal_meetings: row.block_internal_meetings,
-            external_meetings: row.block_external_meetings,
-        })
+        Ok(())
     }
 
     #[tracing::instrument(err, skip(self))]
@@ -172,7 +184,8 @@ impl PgCallRepo {
         // call is already past the one-on-one kind, so it never flips.
         let changed = sqlx::query!(
             r#"
-            UPDATE calls SET has_more_than_two_participants = TRUE
+            UPDATE calls
+            SET has_more_than_two_participants = TRUE, one_on_one_recording_refused_by = '{}'
             WHERE id = $1
                 AND NOT has_more_than_two_participants
                 AND NOT has_external_participants
@@ -197,7 +210,8 @@ impl PgCallRepo {
         // returned egress id is whatever attached before the flag flipped.
         let changed = sqlx::query!(
             r#"
-            UPDATE calls SET has_external_participants = TRUE
+            UPDATE calls
+            SET has_external_participants = TRUE, one_on_one_recording_refused_by = '{}'
             WHERE id = $1 AND NOT has_external_participants
             RETURNING egress_id
             "#,
@@ -239,5 +253,119 @@ impl PgCallRepo {
         .execute(&self.pool)
         .await?;
         Ok(claimed.rows_affected() > 0)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn claim_transcriber(&self, call_id: &Uuid) -> Result<bool, CallError> {
+        let claimed = sqlx::query!(
+            "UPDATE calls SET transcriber_claimed = TRUE WHERE id = $1 AND NOT transcriber_claimed",
+            call_id,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(claimed.rows_affected() > 0)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn load_meeting_participant_ids(
+        &self,
+        call_id: &Uuid,
+    ) -> Result<Vec<String>, CallError> {
+        // Rows outlive leaving, so this is everyone who has joined.
+        Ok(sqlx::query_scalar!(
+            "SELECT user_id FROM call_participants WHERE call_id = $1 ORDER BY user_id",
+            call_id,
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn load_direct_message_participants(
+        &self,
+        channel_id: &Uuid,
+    ) -> Result<Option<Vec<String>>, CallError> {
+        let is_direct_message = sqlx::query_scalar!(
+            r#"
+            SELECT channel_type = 'direct_message' AS "is_direct_message!"
+            FROM comms_channels WHERE id = $1
+            "#,
+            channel_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        if is_direct_message != Some(true) {
+            return Ok(None);
+        }
+        let participants = sqlx::query_scalar!(
+            r#"
+            SELECT user_id FROM comms_channel_participants
+            WHERE channel_id = $1 AND left_at IS NULL
+            ORDER BY user_id
+            "#,
+            channel_id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(Some(participants))
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn load_one_on_one_refusers(
+        &self,
+        user_ids: &[String],
+    ) -> Result<Vec<String>, CallError> {
+        Ok(sqlx::query_scalar!(
+            r#"
+            SELECT user_id FROM call_preferences
+            WHERE user_id = ANY($1) AND refuse_one_on_one_recording
+            ORDER BY user_id
+            "#,
+            user_ids,
+        )
+        .fetch_all(&self.pool)
+        .await?)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn store_one_on_one_refusals(
+        &self,
+        call_id: &Uuid,
+        refused_by: &[String],
+    ) -> Result<bool, CallError> {
+        // Only a call still in its one-on-one that has not started transcribing
+        // is held to the refusal; a call past it has already been decided.
+        let stored = sqlx::query!(
+            r#"
+            UPDATE calls SET one_on_one_recording_refused_by = $2
+            WHERE id = $1
+                AND NOT transcriber_claimed
+                AND NOT has_more_than_two_participants
+                AND NOT has_external_participants
+            "#,
+            call_id,
+            refused_by,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(stored.rows_affected() > 0)
+    }
+
+    #[tracing::instrument(err, skip(self))]
+    pub(super) async fn unshare_live_huddles(&self, team_id: &Uuid) -> Result<(), CallError> {
+        sqlx::query!(
+            r#"
+            UPDATE calls c SET share_with_team = FALSE
+            FROM team_user tu
+            WHERE tu.team_id = $1
+                AND tu.user_id = c.created_by
+                AND c.channel_id IS NOT NULL
+                AND c.share_with_team
+            "#,
+            team_id,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }

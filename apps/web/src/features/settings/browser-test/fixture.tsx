@@ -8,9 +8,9 @@ import { createMemo, createSignal, For, onMount, Show } from 'solid-js';
 import { render } from 'solid-js/web';
 import { CallSettingsProvider } from '../../call-settings/context/call-settings-context';
 import {
-  type RecordingSettings,
+  type CallSettings,
   withKind,
-} from '../../call-settings/core/recording-kinds';
+} from '../../call-settings/core/call-settings';
 import { CallSettingsView } from '../../call-settings/views/call-settings-view';
 import { macroDarkTheme } from '../../theme/themes/macro-dark';
 import { macroLightTheme } from '../../theme/themes/macro-light';
@@ -296,23 +296,32 @@ function FixtureSignature(props: { email: string }) {
 }
 /** Calls settings over in-memory state; `admin` decides who may edit team blocks. */
 function FixtureCalls(props: { admin: boolean }) {
-  const [settings, setSettings] = createSignal<RecordingSettings>({
+  const [settings, setSettings] = createSignal<CallSettings>({
     recordByDefault: {
       huddles: true,
       oneOnOneMeetings: false,
       internalMeetings: true,
       externalMeetings: true,
     },
+    shareHuddlesByDefault: true,
+    refuseOneOnOneRecording: false,
     team: {
-      blocked: {
+      recordingBlocked: {
         huddles: false,
         oneOnOneMeetings: false,
         internalMeetings: false,
         externalMeetings: true,
       },
+      huddleSharingBlocked: false,
       canEdit: true,
     },
   });
+  const updateTeam = (
+    change: (team: NonNullable<CallSettings['team']>) => CallSettings['team']
+  ) =>
+    setSettings((current) =>
+      current.team ? { ...current, team: change(current.team) } : current
+    );
   return (
     <CallSettingsProvider
       value={{
@@ -331,18 +340,23 @@ function FixtureCalls(props: { admin: boolean }) {
             ...current,
             recordByDefault: withKind(current.recordByDefault, kind, value),
           })),
-        setTeamBlock: (kind, blocked) =>
-          setSettings((current) =>
-            current.team
-              ? {
-                  ...current,
-                  team: {
-                    ...current.team,
-                    blocked: withKind(current.team.blocked, kind, blocked),
-                  },
-                }
-              : current
-          ),
+        setShareHuddlesByDefault: (value) =>
+          setSettings((current) => ({
+            ...current,
+            shareHuddlesByDefault: value,
+          })),
+        setRefuseOneOnOneRecording: (value) =>
+          setSettings((current) => ({
+            ...current,
+            refuseOneOnOneRecording: value,
+          })),
+        setRecordingBlocked: (kind, blocked) =>
+          updateTeam((team) => ({
+            ...team,
+            recordingBlocked: withKind(team.recordingBlocked, kind, blocked),
+          })),
+        setHuddleSharingBlocked: (blocked) =>
+          updateTeam((team) => ({ ...team, huddleSharingBlocked: blocked })),
       }}
     >
       <CallSettingsView />

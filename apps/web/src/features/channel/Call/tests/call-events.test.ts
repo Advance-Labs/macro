@@ -13,11 +13,12 @@ vi.mock('@service-connection/websocket', () => ({
 const wire = (payload: unknown) => JSON.stringify(payload);
 
 describe('isCallEventType', () => {
-  it('accepts the four call events', () => {
+  it('accepts the call events', () => {
     expect(isCallEventType('call_started')).toBe(true);
     expect(isCallEventType('call_ended')).toBe(true);
     expect(isCallEventType('call_answered')).toBe(true);
     expect(isCallEventType('call_share_with_team_toggled')).toBe(true);
+    expect(isCallEventType('call_recording_refusals_changed')).toBe(true);
   });
 
   it('rejects unrelated event types', () => {
@@ -90,6 +91,48 @@ describe('parseCallEvent', () => {
       shareWithTeam: true,
       toggledBy: 'user-3',
     });
+  });
+
+  it('parses call_recording_refusals_changed for calls without a channel', () => {
+    expect(
+      parseCallEvent(
+        'call_recording_refusals_changed',
+        wire({
+          channel_id: null,
+          call_id: 'call-1',
+          refused_by: ['macro|sam@example.com'],
+        })
+      )
+    ).toEqual({
+      type: 'call_recording_refusals_changed',
+      callId: 'call-1',
+      refusedBy: ['macro|sam@example.com'],
+    });
+    expect(
+      parseCallEvent(
+        'call_recording_refusals_changed',
+        wire({ call_id: 'call-1', refused_by: [] })
+      )
+    ).toEqual({
+      type: 'call_recording_refusals_changed',
+      callId: 'call-1',
+      refusedBy: [],
+    });
+  });
+
+  it('rejects refusal events without a list of people', () => {
+    expect(
+      parseCallEvent(
+        'call_recording_refusals_changed',
+        wire({ call_id: 'call-1', refused_by: 'macro|sam@example.com' })
+      )
+    ).toBe(null);
+    expect(
+      parseCallEvent(
+        'call_recording_refusals_changed',
+        wire({ call_id: 'call-1', refused_by: [1] })
+      )
+    ).toBe(null);
   });
 
   it('returns null for a non-call event type', () => {

@@ -6,7 +6,7 @@ import type { ActiveCallsResponse } from '@service-storage/generated/schemas/act
 import type { ActiveMeeting as ApiActiveMeeting } from '@service-storage/generated/schemas/activeMeeting';
 import type { CallActiveResponse } from '@service-storage/generated/schemas/callActiveResponse';
 import type { CallRecord } from '@service-storage/generated/schemas/callRecord';
-import type { CallRecordingSettings } from '@service-storage/generated/schemas/callRecordingSettings';
+import type { CallSettings } from '@service-storage/generated/schemas/callSettings';
 import type { CallTokenResponse as ApiCallTokenResponse } from '@service-storage/generated/schemas/callTokenResponse';
 import type { CreateMeetingRequest } from '@service-storage/generated/schemas/createMeetingRequest';
 import type { EditCallRecordRequest } from '@service-storage/generated/schemas/editCallRecordRequest';
@@ -14,18 +14,18 @@ import type { InviteMeetingUsersRequest } from '@service-storage/generated/schem
 import type { LeaveCallResponse } from '@service-storage/generated/schemas/leaveCallResponse';
 import type { Meeting as ApiMeeting } from '@service-storage/generated/schemas/meeting';
 import type { MeetingPreparation } from '@service-storage/generated/schemas/meetingPreparation';
+import type { UpdateCallSettingsRequest } from '@service-storage/generated/schemas/updateCallSettingsRequest';
 import type { UpdateMeetingRequest } from '@service-storage/generated/schemas/updateMeetingRequest';
-import type { UpdateRecordingDefaultsRequest } from '@service-storage/generated/schemas/updateRecordingDefaultsRequest';
 import type { UpdateSharePermissionRequestV2 } from '@service-storage/generated/schemas/updateSharePermissionRequestV2';
-import type { UpdateTeamRecordingPolicyRequest } from '@service-storage/generated/schemas/updateTeamRecordingPolicyRequest';
+import type { UpdateTeamCallPolicyRequest } from '@service-storage/generated/schemas/updateTeamCallPolicyRequest';
 
 export type {
   CallRecord,
-  CallRecordingSettings,
+  CallSettings,
   CreateMeetingRequest,
+  UpdateCallSettingsRequest,
   UpdateMeetingRequest,
-  UpdateRecordingDefaultsRequest,
-  UpdateTeamRecordingPolicyRequest,
+  UpdateTeamCallPolicyRequest,
 };
 
 // Rust serializes these nullable fields explicitly; Orval marks Option<T> optional.
@@ -124,27 +124,25 @@ export const callServiceClient = {
     );
   },
 
-  /** The caller's recording defaults and their team's recording blocks. */
-  getRecordingSettings() {
-    return fetchWithToken<CallRecordingSettings>(
-      `${host}/call/settings/recording`
-    );
+  /** The caller's call settings and their team's call policy. */
+  getCallSettings() {
+    return fetchWithToken<CallSettings>(`${host}/call/settings`);
   },
 
-  /** Change which kinds of the caller's own calls record by default. */
-  updateRecordingDefaults(body: UpdateRecordingDefaultsRequest) {
-    return fetchWithToken<CallRecordingSettings>(
-      `${host}/call/settings/recording`,
-      { method: 'PATCH', body: JSON.stringify(body) }
-    );
+  /** Change the caller's own call settings. */
+  updateCallSettings(body: UpdateCallSettingsRequest) {
+    return fetchWithToken<CallSettings>(`${host}/call/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
   },
 
-  /** Change which kinds of call no one on the team may record (admins only). */
-  updateTeamRecordingPolicy(body: UpdateTeamRecordingPolicyRequest) {
-    return fetchWithToken<CallRecordingSettings>(
-      `${host}/call/settings/recording/team`,
-      { method: 'PATCH', body: JSON.stringify(body) }
-    );
+  /** Change what no one on the team may record or share (admins only). */
+  updateTeamCallPolicy(body: UpdateTeamCallPolicyRequest) {
+    return fetchWithToken<CallSettings>(`${host}/call/settings/team`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
   },
 
   getCallLink(callId: string) {

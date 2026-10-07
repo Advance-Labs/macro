@@ -3,10 +3,10 @@ import { Show } from 'solid-js';
 import { SettingsRow } from '../../settings/primitives';
 
 /**
- * One kind of call with its checkbox. A disabled row stays visible but dimmed,
+ * A setting with its checkbox. A disabled row stays visible but dimmed,
  * shows a not-allowed cursor, and says why it cannot be changed.
  */
-export function RecordingKindRow(props: {
+export function CheckboxRow(props: {
   label: string;
   description: string;
   checked: boolean;

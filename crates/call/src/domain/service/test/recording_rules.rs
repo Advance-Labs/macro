@@ -5,18 +5,15 @@ use crate::domain::recording::CallKind::{
     self, ExternalMeeting, Huddle, InternalMeeting, OneOnOneMeeting,
 };
 use crate::domain::recording::{
-    CallKinds, CallKindsPatch, CallRecordingSettings, MeetingAttendance, MeetingKindChange,
-    RecordingRules, TeamRecordingPolicy, UpdateRecordingDefaultsRequest,
-    UpdateTeamRecordingPolicyRequest,
+    CallKinds, CallPreferences, MeetingAttendance, MeetingKindChange, RecordingRules,
 };
 use crate::domain::service::recording::MeetingJoiner;
-use entity_access::domain::models::{AdminTeamRole, TeamRole};
 use tokio::sync::oneshot;
 
-const HOST: &str = "host@example.com";
-const TEAMMATE: &str = "teammate@example.com";
-const OUTSIDER: &str = "outsider@example.com";
-const HOST_TEAM: Uuid = Uuid::from_u128(0x0198a1b2_c3d4_7e5f_8061_000000000001);
+pub(super) const HOST: &str = "host@example.com";
+pub(super) const TEAMMATE: &str = "teammate@example.com";
+pub(super) const OUTSIDER: &str = "outsider@example.com";
+pub(super) const HOST_TEAM: Uuid = Uuid::from_u128(0x0198a1b2_c3d4_7e5f_8061_000000000001);
 const OTHER_TEAM: Uuid = Uuid::from_u128(0x0198a1b2_c3d4_7e5f_8061_000000000002);
 const EGRESS: &str = "meeting-egress";
 
@@ -30,7 +27,7 @@ fn egress_config() -> EgressS3Config {
 }
 
 /// The host and a teammate share a team; the outsider is on another one.
-fn teams() -> TeamAccessService {
+pub(super) fn teams() -> TeamAccessService {
     TeamAccessService {
         teams: [
             (user(HOST).to_string(), HOST_TEAM),
@@ -42,7 +39,7 @@ fn teams() -> TeamAccessService {
     }
 }
 
-fn rules(record_by_default: CallKinds, blocked: CallKinds) -> RecordingRules {
+pub(super) fn rules(record_by_default: CallKinds, blocked: CallKinds) -> RecordingRules {
     RecordingRules {
         record_by_default,
         blocked,
@@ -50,7 +47,7 @@ fn rules(record_by_default: CallKinds, blocked: CallKinds) -> RecordingRules {
 }
 
 /// Exactly the kinds in `only`.
-fn kinds(only: &[CallKind]) -> CallKinds {
+pub(super) fn kinds(only: &[CallKind]) -> CallKinds {
     CallKinds {
         huddles: only.contains(&Huddle),
         one_on_one_meetings: only.contains(&OneOnOneMeeting),
@@ -70,7 +67,28 @@ fn expect_host_rules(repo: &mut MockCallRepository, times: usize, rules: Recordi
         });
 }
 
-fn service<R: CallRtcClient>(
+/// Every settings read for a huddle's host must name the host and their team.
+pub(super) fn expect_host_preferences(
+    repo: &mut MockCallRepository,
+    times: usize,
+    preferences: CallPreferences,
+) {
+    repo.expect_get_call_preferences()
+        .times(times)
+        .returning(move |host, team| {
+            assert_eq!(host, user(HOST));
+            assert_eq!(team, Some(HOST_TEAM));
+            Box::pin(async move { Ok(preferences) })
+        });
+}
+
+/// Realtime messages to a call's participants find nobody to tell.
+pub(super) fn expect_participant_events(repo: &mut MockCallRepository) {
+    repo.expect_get_participants()
+        .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+}
+
+pub(super) fn service<R: CallRtcClient>(
     repo: MockCallRepository,
     rtc: R,
     access: TeamAccessService,
@@ -99,7 +117,8 @@ fn huddle(created_by: &str) -> Call {
     started_event_call(created_by)
 }
 
-fn huddle_repo() -> MockCallRepository {
+/// A huddle [`HOST`] starts in [`STARTED_EVENT_CHANNEL_ID`].
+pub(super) fn huddle_repo() -> MockCallRepository {
     let mut repo = MockCallRepository::new();
     repo.expect_get_call_by_channel_id()
         .times(1)
@@ -121,6 +140,12 @@ fn huddle_repo() -> MockCallRepository {
     repo
 }
 
+/// The huddle's channel is not a direct message.
+pub(super) fn not_a_direct_message(repo: &mut MockCallRepository) {
+    repo.expect_get_direct_message_participants()
+        .returning(|_| Box::pin(async { Ok(None) }));
+}
+
 fn started_recording_flag(broker: &RecordingEventBroker) -> bool {
     let events = broker.events();
     let [started] = events.as_slice() else {
@@ -129,6 +154,13 @@ fn started_recording_flag(broker: &RecordingEventBroker) -> bool {
     started.envelope["metadata"]["recording_enabled"]
         .as_bool()
         .expect("recording_enabled is a bool")
+}
+
+fn recording(rules: RecordingRules) -> CallPreferences {
+    CallPreferences {
+        recording: rules,
+        ..CallPreferences::default()
+    }
 }
 
 #[tokio::test]
@@ -145,28 +177,39 @@ async fn huddles_record_only_when_the_starter_records_them_and_the_team_allows_i
         (rules(CallKinds::ALL, kinds(&[Huddle])), false),
     ] {
         let mut repo = huddle_repo();
-        expect_host_rules(&mut repo, 1, rules);
+        expect_host_preferences(&mut repo, 1, recording(rules));
+        not_a_direct_message(&mut repo);
         // The mock rejects any recorder attachment the rules did not allow.
         repo.expect_set_egress_id()
             .times(usize::from(records))
             .returning(|_, _| Box::pin(async { Ok(()) }));
         let broker = RecordingEventBroker::default();
-        service(repo, MockRtcClient::new(), teams())
-            .with_event_broker(broker.clone())
+        let service =
+            service(repo, MockRtcClient::new(), teams()).with_event_broker(broker.clone());
+        service
             .get_or_create_call(&STARTED_EVENT_CHANNEL_ID, user(HOST))
             .await
             .unwrap();
         assert_eq!(started_recording_flag(&broker), records);
+        // Transcription does not follow the recording settings.
+        assert_eq!(service.rtc_client.transcribed_rooms().len(), 1);
     }
 }
 
 #[tokio::test]
-async fn unreadable_rules_never_record() {
+async fn unreadable_settings_never_record_or_share() {
     let mut repo = huddle_repo();
-    repo.expect_get_recording_rules()
+    repo.expect_get_call_preferences()
         .times(1)
         .returning(|_, _| Box::pin(async { Err(CallError::Internal(anyhow::anyhow!("db down"))) }));
+    not_a_direct_message(&mut repo);
     repo.expect_set_egress_id().never();
+    repo.expect_patch_call_record()
+        .times(1)
+        .returning(|_, args| {
+            assert_eq!(args.live_share_with_team, Some(false));
+            Box::pin(async { Ok(()) })
+        });
     let broker = RecordingEventBroker::default();
     service(repo, MockRtcClient::new(), teams())
         .with_event_broker(broker.clone())
@@ -174,6 +217,90 @@ async fn unreadable_rules_never_record() {
         .await
         .unwrap();
     assert!(!started_recording_flag(&broker));
+}
+
+/// The huddle's channel is a direct message between `members`, of whom
+/// `refusers` refuse one-on-one recording.
+fn direct_message(repo: &mut MockCallRepository, members: &[&str], refusers: Option<&[&str]>) {
+    let members: Vec<String> = members.iter().map(|member| member.to_string()).collect();
+    repo.expect_get_direct_message_participants()
+        .returning(move |_| {
+            let members = members.clone();
+            Box::pin(async move { Ok(Some(members)) })
+        });
+    match refusers {
+        Some(refusers) => {
+            let refusers: Vec<String> = refusers.iter().map(|id| id.to_string()).collect();
+            repo.expect_get_one_on_one_refusers()
+                .times(1)
+                .returning(move |people| {
+                    // Bots never count as one of the two people.
+                    assert_eq!(people, [user(HOST).to_string(), user(TEAMMATE).to_string()]);
+                    let refusers = refusers.clone();
+                    Box::pin(async move { Ok(refusers) })
+                });
+        }
+        None => {
+            repo.expect_get_one_on_one_refusers().never();
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_two_person_direct_message_huddle_is_kept_private_when_either_member_refuses() {
+    let (host, teammate) = (user(HOST).to_string(), user(TEAMMATE).to_string());
+    let mut repo = huddle_repo();
+    expect_host_preferences(&mut repo, 1, CallPreferences::default());
+    direct_message(&mut repo, &[&host, &teammate, "bot-1"], Some(&[&teammate]));
+    repo.expect_record_one_on_one_refusals()
+        .times(1)
+        .returning(move |_, refused_by| {
+            assert_eq!(refused_by, [user(TEAMMATE).to_string()]);
+            Box::pin(async { Ok(true) })
+        });
+    repo.expect_set_egress_id().never();
+    let broker = RecordingEventBroker::default();
+    let service = service(repo, MockRtcClient::new(), teams()).with_event_broker(broker.clone());
+    service
+        .get_or_create_call(&STARTED_EVENT_CHANNEL_ID, user(HOST))
+        .await
+        .unwrap();
+    assert!(!started_recording_flag(&broker));
+    assert!(service.rtc_client.transcribed_rooms().is_empty());
+}
+
+#[tokio::test]
+async fn direct_message_huddles_record_and_transcribe_when_nobody_refuses() {
+    let (host, teammate, outsider) = (
+        user(HOST).to_string(),
+        user(TEAMMATE).to_string(),
+        user(OUTSIDER).to_string(),
+    );
+    for (members, refusers) in [
+        (vec![host.as_str(), teammate.as_str()], Some(&[][..])),
+        // A group direct message is not a one-on-one.
+        (
+            vec![host.as_str(), teammate.as_str(), outsider.as_str()],
+            None,
+        ),
+    ] {
+        let mut repo = huddle_repo();
+        expect_host_preferences(&mut repo, 1, CallPreferences::default());
+        direct_message(&mut repo, &members, refusers);
+        repo.expect_record_one_on_one_refusals().never();
+        repo.expect_set_egress_id()
+            .times(1)
+            .returning(|_, _| Box::pin(async { Ok(()) }));
+        let broker = RecordingEventBroker::default();
+        let service =
+            service(repo, MockRtcClient::new(), teams()).with_event_broker(broker.clone());
+        service
+            .get_or_create_call(&STARTED_EVENT_CHANNEL_ID, user(HOST))
+            .await
+            .unwrap();
+        assert!(started_recording_flag(&broker));
+        assert_eq!(service.rtc_client.transcribed_rooms().len(), 1);
+    }
 }
 
 fn hosted_meeting(call_id: Option<Uuid>) -> Meeting {
@@ -216,23 +343,49 @@ fn attaching_recorder(seen: MeetingAttendance) -> (MockCallRepository, oneshot::
     (repo, check)
 }
 
+/// Expect `call`'s transcriber claim, answering `claimed`.
+fn expect_transcriber_claim(repo: &mut MockCallRepository, claimed: bool) {
+    repo.expect_claim_meeting_transcriber()
+        .times(1)
+        .returning(move |_| Box::pin(async move { Ok(claimed) }));
+}
+
+/// An RTC client that expects one transcriber dispatch, signalled through the
+/// returned receiver because it runs in the background.
+fn transcribing_rtc() -> (MockCallRtcClient, oneshot::Receiver<()>) {
+    let (dispatched, dispatch) = oneshot::channel();
+    let mut dispatched = Some(dispatched);
+    let mut rtc = token_minting_rtc();
+    rtc.expect_dispatch_transcription_agent()
+        .times(1)
+        .returning(move |_| {
+            dispatched.take().unwrap().send(()).unwrap();
+            Box::pin(async { Ok(()) })
+        });
+    (rtc, dispatch)
+}
+
+async fn received(signal: oneshot::Receiver<()>) {
+    tokio::time::timeout(Duration::from_secs(2), signal)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 #[tokio::test]
-async fn a_meeting_starts_recording_only_for_the_kind_it_starts_as() {
-    for (joiner, records, recording) in [
-        (
-            MeetingJoiner::Account(user(HOST)),
-            kinds(&[OneOnOneMeeting]),
-            true,
-        ),
+async fn a_meeting_waits_for_its_second_person_unless_it_starts_external() {
+    for (joiner, records, starts_media) in [
+        (MeetingJoiner::Account(user(HOST)), CallKinds::ALL, false),
         (
             MeetingJoiner::Account(user(TEAMMATE)),
-            kinds(&[InternalMeeting, ExternalMeeting]),
+            CallKinds::ALL,
             false,
         ),
         (MeetingJoiner::Guest, kinds(&[ExternalMeeting]), true),
-        (MeetingJoiner::Guest, kinds(&[OneOnOneMeeting]), false),
+        (MeetingJoiner::Guest, kinds(&[OneOnOneMeeting]), true),
     ] {
         let guest = matches!(joiner, MeetingJoiner::Guest);
+        let recording = guest && records.contains(ExternalMeeting);
         let call = live_meeting_call(None);
         let call_id = call.id;
         let mut sequence = mockall::Sequence::new();
@@ -270,12 +423,23 @@ async fn a_meeting_starts_recording_only_for_the_kind_it_starts_as() {
         } else {
             repo.expect_claim_meeting_recorder().never();
         }
+        if starts_media {
+            expect_transcriber_claim(&mut repo, true);
+        } else {
+            repo.expect_claim_meeting_transcriber().never();
+        }
         let (started, recorder) = oneshot::channel();
+        let (transcribed, transcriber) = oneshot::channel();
         let mut rtc = MockCallRtcClient::new();
         rtc.expect_create_room()
             .returning(|_| Box::pin(async { Ok(()) }));
+        let mut transcribed = Some(transcribed);
         rtc.expect_dispatch_transcription_agent()
-            .returning(|_| Box::pin(async { Ok(()) }));
+            .times(usize::from(starts_media))
+            .returning(move |_| {
+                transcribed.take().unwrap().send(()).unwrap();
+                Box::pin(async { Ok(()) })
+            });
         let mut started = Some(started);
         rtc.expect_start_room_composite_egress()
             .times(usize::from(recording))
@@ -291,13 +455,12 @@ async fn a_meeting_starts_recording_only_for_the_kind_it_starts_as() {
             .unwrap();
         assert_eq!(started_recording_flag(&broker), recording);
         if recording {
-            tokio::time::timeout(Duration::from_secs(2), recorder)
-                .await
-                .unwrap()
-                .unwrap();
-        } else {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+            received(recorder).await;
         }
+        if starts_media {
+            received(transcriber).await;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
 
@@ -327,12 +490,28 @@ impl Flag {
     }
 }
 
+/// What a join that did not change the call's kind finds when it settles the
+/// one-on-one.
+enum Settle {
+    /// The join changed the call's kind, so it never settles.
+    Skipped,
+    /// The call is already past its one-on-one.
+    Past(MeetingAttendance),
+    /// Still a one-on-one that these people have joined, of whom `refusers`
+    /// refuse recording.
+    OneOnOne {
+        participants: Vec<String>,
+        refusers: Vec<String>,
+    },
+}
+
 /// A join to a live standalone session hosted by [`HOST`] with [`EGRESS`]
 /// attached. `external` is checked before credentials are minted and
 /// `more_than_two` after the joiner is recorded as a participant.
 fn join_live_meeting(
     external: Flag,
     more_than_two: Flag,
+    settle: Settle,
     host_rules: Option<RecordingRules>,
 ) -> MockCallRepository {
     let call = live_meeting_call(Some(EGRESS));
@@ -363,17 +542,45 @@ fn join_live_meeting(
             };
             Box::pin(async move { Ok(participant) })
         });
-    if more_than_two.times() == 0 {
-        repo.expect_mark_call_more_than_two().never();
-    } else {
-        repo.expect_mark_call_more_than_two()
-            .times(1)
-            .in_sequence(&mut sequence)
-            .returning(move |id| {
-                assert_eq!(*id, call_id);
-                let change = more_than_two.change();
-                Box::pin(async move { Ok(change) })
-            });
+    repo.expect_mark_call_more_than_two()
+        .times(1)
+        .in_sequence(&mut sequence)
+        .returning(move |id| {
+            assert_eq!(*id, call_id);
+            let change = more_than_two.change();
+            Box::pin(async move { Ok(change) })
+        });
+    match settle {
+        Settle::Skipped => {
+            repo.expect_get_meeting_attendance().never();
+        }
+        Settle::Past(seen) => {
+            repo.expect_get_meeting_attendance()
+                .times(1)
+                .returning(move |_| Box::pin(async move { Ok(Some(seen)) }));
+            repo.expect_get_meeting_participant_ids().never();
+        }
+        Settle::OneOnOne {
+            participants,
+            refusers,
+        } => {
+            repo.expect_get_meeting_attendance()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(Some(MeetingAttendance::default())) }));
+            let decides = participants.len() == 2;
+            repo.expect_get_meeting_participant_ids()
+                .times(1)
+                .returning(move |_| {
+                    let participants = participants.clone();
+                    Box::pin(async move { Ok(participants) })
+                });
+            repo.expect_get_one_on_one_refusers()
+                .times(usize::from(decides))
+                .returning(move |_| {
+                    let refusers = refusers.clone();
+                    Box::pin(async move { Ok(refusers) })
+                });
+        }
     }
     match host_rules {
         Some(host_rules) => expect_host_rules(&mut repo, 1, host_rules),
@@ -393,15 +600,22 @@ fn token_minting_rtc() -> MockCallRtcClient {
     rtc
 }
 
+fn people(ids: &[&'static str]) -> Vec<String> {
+    ids.iter().map(|id| user(id).to_string()).collect()
+}
+
 #[tokio::test]
 async fn an_outsider_joining_stops_a_recorder_the_host_does_not_keep_for_external_meetings() {
-    let repo = join_live_meeting(
+    let mut repo = join_live_meeting(
         Flag::Flips {
             egress: Some(EGRESS),
         },
         Flag::Unchanged,
+        Settle::Past(attendance(false, true)),
         Some(rules(CallKinds::ALL, kinds(&[ExternalMeeting]))),
     );
+    expect_participant_events(&mut repo);
+    expect_transcriber_claim(&mut repo, false);
     let mut sequence = mockall::Sequence::new();
     let mut rtc = MockCallRtcClient::new();
     rtc.expect_stop_egress()
@@ -422,58 +636,45 @@ async fn an_outsider_joining_stops_a_recorder_the_host_does_not_keep_for_externa
 
 #[tokio::test]
 async fn a_third_teammate_joining_stops_a_recorder_the_host_keeps_only_for_one_on_ones() {
-    let mut repo = join_live_meeting(
-        Flag::Untouched,
-        Flag::Flips {
-            egress: Some(EGRESS),
-        },
-        Some(rules(
-            kinds(&[OneOnOneMeeting, ExternalMeeting]),
-            CallKinds::NONE,
-        )),
-    );
-    repo.expect_claim_meeting_recorder().never();
-    let mut rtc = token_minting_rtc();
-    rtc.expect_stop_egress()
-        .with(mockall::predicate::eq(EGRESS))
-        .times(1)
-        .returning(|_| Box::pin(async { Ok(()) }));
-    rtc.expect_start_room_composite_egress().never();
-    // The stop is awaited, so it has happened by the time the join answers.
-    service(repo, rtc, teams())
-        .join_meeting(hosted_meeting(None).share_token, user(TEAMMATE))
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
-async fn a_team_block_on_internal_meetings_stops_a_one_on_one_recorder_when_it_grows() {
-    let mut repo = join_live_meeting(
-        Flag::Untouched,
-        Flag::Flips {
-            egress: Some(EGRESS),
-        },
-        Some(rules(CallKinds::ALL, kinds(&[InternalMeeting]))),
-    );
-    repo.expect_claim_meeting_recorder().never();
-    let mut rtc = token_minting_rtc();
-    rtc.expect_stop_egress()
-        .times(1)
-        .returning(|_| Box::pin(async { Ok(()) }));
-    service(repo, rtc, teams())
-        .join_meeting(hosted_meeting(None).share_token, user(TEAMMATE))
-        .await
-        .unwrap();
+    for host_rules in [
+        rules(kinds(&[OneOnOneMeeting, ExternalMeeting]), CallKinds::NONE),
+        // A team block on internal meetings stops it the same way.
+        rules(CallKinds::ALL, kinds(&[InternalMeeting])),
+    ] {
+        let mut repo = join_live_meeting(
+            Flag::Untouched,
+            Flag::Flips {
+                egress: Some(EGRESS),
+            },
+            Settle::Skipped,
+            Some(host_rules),
+        );
+        expect_participant_events(&mut repo);
+        expect_transcriber_claim(&mut repo, false);
+        repo.expect_claim_meeting_recorder().never();
+        let mut rtc = token_minting_rtc();
+        rtc.expect_stop_egress()
+            .with(mockall::predicate::eq(EGRESS))
+            .times(1)
+            .returning(|_| Box::pin(async { Ok(()) }));
+        rtc.expect_start_room_composite_egress().never();
+        // The stop is awaited, so it has happened by the time the join answers.
+        service(repo, rtc, teams())
+            .join_meeting(hosted_meeting(None).share_token, user(TEAMMATE))
+            .await
+            .unwrap();
+    }
 }
 
 #[tokio::test]
 async fn a_change_to_a_recorded_kind_keeps_the_running_recorder() {
-    for (external, more_than_two, joiner) in [
+    for (external, more_than_two, settle, joiner) in [
         (
             Flag::Flips {
                 egress: Some(EGRESS),
             },
             Flag::Unchanged,
+            Settle::Past(attendance(false, true)),
             OUTSIDER,
         ),
         (
@@ -481,17 +682,26 @@ async fn a_change_to_a_recorded_kind_keeps_the_running_recorder() {
             Flag::Flips {
                 egress: Some(EGRESS),
             },
+            Settle::Skipped,
             TEAMMATE,
         ),
     ] {
-        let mut repo = join_live_meeting(external, more_than_two, Some(RecordingRules::default()));
-        // The recorder that started with the call holds the claim.
+        let mut repo = join_live_meeting(
+            external,
+            more_than_two,
+            settle,
+            Some(RecordingRules::default()),
+        );
+        expect_participant_events(&mut repo);
+        // The recorder and transcriber that started earlier hold the claims.
+        expect_transcriber_claim(&mut repo, false);
         repo.expect_claim_meeting_recorder()
             .times(1)
             .returning(|_| Box::pin(async { Ok(false) }));
         let mut rtc = token_minting_rtc();
         rtc.expect_stop_egress().never();
         rtc.expect_start_room_composite_egress().never();
+        rtc.expect_dispatch_transcription_agent().never();
         service(repo, rtc, teams())
             .join_meeting(hosted_meeting(None).share_token, user(joiner))
             .await
@@ -501,23 +711,28 @@ async fn a_change_to_a_recorded_kind_keeps_the_running_recorder() {
 
 #[tokio::test]
 async fn joins_that_change_nothing_do_not_reapply_rules() {
-    for (joiner, external) in [(TEAMMATE, Flag::Untouched), (OUTSIDER, Flag::Unchanged)] {
-        let repo = join_live_meeting(external, Flag::Unchanged, None);
-        let mut rtc = token_minting_rtc();
-        rtc.expect_stop_egress().never();
-        service(repo, rtc, teams())
-            .join_meeting(hosted_meeting(None).share_token, user(joiner))
-            .await
-            .unwrap();
-    }
+    // An outsider joining a call that is already external.
+    let repo = join_live_meeting(
+        Flag::Unchanged,
+        Flag::Unchanged,
+        Settle::Past(attendance(false, true)),
+        None,
+    );
+    let mut rtc = token_minting_rtc();
+    rtc.expect_stop_egress().never();
+    service(repo, rtc, teams())
+        .join_meeting(hosted_meeting(None).share_token, user(OUTSIDER))
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
 async fn a_change_to_a_kind_recorded_on_its_own_starts_a_recorder() {
-    for (external, more_than_two, joiner, records, seen) in [
+    for (external, more_than_two, settle, joiner, records, seen) in [
         (
             Flag::Flips { egress: None },
             Flag::Unchanged,
+            Settle::Past(attendance(false, true)),
             OUTSIDER,
             kinds(&[Huddle, ExternalMeeting]),
             attendance(false, true),
@@ -525,6 +740,7 @@ async fn a_change_to_a_kind_recorded_on_its_own_starts_a_recorder() {
         (
             Flag::Untouched,
             Flag::Flips { egress: None },
+            Settle::Skipped,
             TEAMMATE,
             kinds(&[InternalMeeting]),
             attendance(true, false),
@@ -533,13 +749,16 @@ async fn a_change_to_a_kind_recorded_on_its_own_starts_a_recorder() {
         let mut repo = join_live_meeting(
             external,
             more_than_two,
+            settle,
             Some(rules(records, CallKinds::NONE)),
         );
+        expect_participant_events(&mut repo);
+        expect_transcriber_claim(&mut repo, true);
         repo.expect_claim_meeting_recorder()
             .times(1)
             .returning(|_| Box::pin(async { Ok(true) }));
         let (background, check) = attaching_recorder(seen);
-        let mut rtc = token_minting_rtc();
+        let (mut rtc, dispatch) = transcribing_rtc();
         rtc.expect_start_room_composite_egress()
             .times(1)
             .returning(|_, _| Box::pin(async { Ok(EGRESS.to_string()) }));
@@ -551,10 +770,8 @@ async fn a_change_to_a_kind_recorded_on_its_own_starts_a_recorder() {
             .join_meeting(hosted_meeting(None).share_token, user(joiner))
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(2), check)
-            .await
-            .unwrap()
-            .unwrap();
+        received(check).await;
+        received(dispatch).await;
         tokio::task::yield_now().await;
     }
 }
@@ -568,11 +785,14 @@ async fn a_stopped_recording_is_not_resumed() {
             egress: Some(EGRESS),
         },
         Flag::Unchanged,
+        Settle::Past(attendance(true, true)),
         Some(rules(
             kinds(&[OneOnOneMeeting, ExternalMeeting]),
             CallKinds::NONE,
         )),
     );
+    expect_participant_events(&mut repo);
+    expect_transcriber_claim(&mut repo, false);
     repo.expect_claim_meeting_recorder()
         .times(1)
         .returning(|_| Box::pin(async { Ok(false) }));
@@ -581,6 +801,92 @@ async fn a_stopped_recording_is_not_resumed() {
     rtc.expect_stop_egress().never();
     service(repo, rtc, teams())
         .join_meeting(hosted_meeting(None).share_token, user(OUTSIDER))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_second_teammate_starts_the_one_on_ones_transcriber_and_recorder() {
+    let mut repo = join_live_meeting(
+        Flag::Untouched,
+        Flag::Unchanged,
+        Settle::OneOnOne {
+            participants: people(&[HOST, TEAMMATE]),
+            refusers: Vec::new(),
+        },
+        Some(RecordingRules::default()),
+    );
+    expect_transcriber_claim(&mut repo, true);
+    repo.expect_claim_meeting_recorder()
+        .times(1)
+        .returning(|_| Box::pin(async { Ok(true) }));
+    repo.expect_record_one_on_one_refusals().never();
+    let (background, check) = attaching_recorder(MeetingAttendance::default());
+    let (mut rtc, dispatch) = transcribing_rtc();
+    rtc.expect_start_room_composite_egress()
+        .times(1)
+        .returning(|_, _| Box::pin(async { Ok(EGRESS.to_string()) }));
+    rtc.expect_stop_egress().never();
+    let service = service(repo, rtc, teams());
+    configure_repository_clone(&service.repo, background);
+    service
+        .join_meeting(hosted_meeting(None).share_token, user(TEAMMATE))
+        .await
+        .unwrap();
+    received(check).await;
+    received(dispatch).await;
+    tokio::task::yield_now().await;
+}
+
+#[tokio::test]
+async fn a_refusal_keeps_the_one_on_one_from_recording_or_transcribing() {
+    let mut repo = join_live_meeting(
+        Flag::Untouched,
+        Flag::Unchanged,
+        Settle::OneOnOne {
+            participants: people(&[HOST, TEAMMATE]),
+            refusers: people(&[TEAMMATE]),
+        },
+        None,
+    );
+    repo.expect_record_one_on_one_refusals()
+        .times(1)
+        .returning(|_, refused_by| {
+            assert_eq!(refused_by, people(&[TEAMMATE]));
+            Box::pin(async { Ok(true) })
+        });
+    // Everyone in the call is told why it is not recording.
+    repo.expect_get_participants()
+        .times(1)
+        .returning(|_| Box::pin(async { Ok(Vec::new()) }));
+    repo.expect_claim_meeting_transcriber().never();
+    repo.expect_claim_meeting_recorder().never();
+    let mut rtc = token_minting_rtc();
+    rtc.expect_dispatch_transcription_agent().never();
+    rtc.expect_start_room_composite_egress().never();
+    service(repo, rtc, teams())
+        .join_meeting(hosted_meeting(None).share_token, user(TEAMMATE))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+}
+
+#[tokio::test]
+async fn someone_alone_in_a_meeting_settles_nothing() {
+    let mut repo = join_live_meeting(
+        Flag::Untouched,
+        Flag::Unchanged,
+        Settle::OneOnOne {
+            participants: people(&[HOST]),
+            refusers: Vec::new(),
+        },
+        None,
+    );
+    repo.expect_claim_meeting_transcriber().never();
+    repo.expect_claim_meeting_recorder().never();
+    repo.expect_record_one_on_one_refusals().never();
+    service(repo, token_minting_rtc(), teams())
+        .join_meeting(hosted_meeting(None).share_token, user(HOST))
         .await
         .unwrap();
 }
@@ -727,131 +1033,4 @@ async fn an_unverifiable_audience_stops_an_attaching_recorder() {
         OneOnOneMeeting,
     )
     .await;
-}
-
-fn settings_repo(team: Option<Uuid>, rules: RecordingRules) -> MockCallRepository {
-    let mut repo = MockCallRepository::new();
-    repo.expect_get_recording_rules()
-        .returning(move |_, requested| {
-            assert_eq!(requested, team);
-            Box::pin(async move { Ok(rules) })
-        });
-    repo
-}
-
-#[tokio::test]
-async fn settings_show_team_blocks_and_who_may_edit_them() {
-    let host_rules = rules(
-        kinds(&[Huddle, OneOnOneMeeting, ExternalMeeting]),
-        kinds(&[ExternalMeeting]),
-    );
-    for (role, can_edit) in [
-        (TeamRole::Member, false),
-        (TeamRole::Admin, true),
-        (TeamRole::Owner, true),
-    ] {
-        let mut access = teams();
-        access.roles.insert(user(HOST).to_string(), role);
-        let settings = service(
-            settings_repo(Some(HOST_TEAM), host_rules),
-            MockCallRtcClient::new(),
-            access,
-        )
-        .get_recording_settings(user(HOST))
-        .await
-        .unwrap();
-        assert_eq!(
-            settings,
-            CallRecordingSettings {
-                record_by_default: host_rules.record_by_default,
-                team: Some(TeamRecordingPolicy {
-                    blocked: host_rules.blocked,
-                    can_edit,
-                }),
-            }
-        );
-    }
-}
-
-#[tokio::test]
-async fn settings_without_a_team_have_no_team_policy() {
-    let settings = service(
-        settings_repo(None, RecordingRules::default()),
-        MockCallRtcClient::new(),
-        TeamAccessService::default(),
-    )
-    .get_recording_settings(user(HOST))
-    .await
-    .unwrap();
-    assert_eq!(settings.record_by_default, CallKinds::ALL);
-    assert_eq!(settings.team, None);
-}
-
-#[tokio::test]
-async fn people_change_only_their_own_defaults() {
-    let patch = CallKindsPatch {
-        huddles: Some(false),
-        ..CallKindsPatch::default()
-    };
-    let mut repo = settings_repo(Some(HOST_TEAM), RecordingRules::default());
-    repo.expect_update_recording_defaults()
-        .times(1)
-        .returning(move |actor, requested| {
-            assert_eq!(actor, user(HOST));
-            assert_eq!(requested, patch);
-            Box::pin(async { Ok(CallKinds::ALL) })
-        });
-    service(repo, MockCallRtcClient::new(), teams())
-        .update_recording_defaults(
-            user(HOST),
-            UpdateRecordingDefaultsRequest {
-                record_by_default: patch,
-            },
-        )
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
-async fn team_blocks_change_the_receipts_team() {
-    let patch = CallKindsPatch {
-        external_meetings: Some(true),
-        ..CallKindsPatch::default()
-    };
-    let mut repo = settings_repo(Some(HOST_TEAM), RecordingRules::default());
-    repo.expect_update_team_recording_blocks()
-        .times(1)
-        .returning(move |team, requested| {
-            assert_eq!(*team, HOST_TEAM);
-            assert_eq!(requested, patch);
-            Box::pin(async { Ok(CallKinds::NONE) })
-        });
-    let receipt = EntityAccessReceipt::<AdminTeamRole>::dangerously_assert_authenticated_user(
-        user(HOST),
-        &HOST_TEAM.to_string(),
-        EntityType::Team,
-    );
-    service(repo, MockCallRtcClient::new(), teams())
-        .update_team_recording_policy(receipt, UpdateTeamRecordingPolicyRequest { blocked: patch })
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
-async fn team_blocks_need_a_person_behind_the_receipt() {
-    let mut repo = MockCallRepository::new();
-    repo.expect_update_team_recording_blocks().never();
-    let receipt = EntityAccessReceipt::<AdminTeamRole>::dangerously_assert_internal_user(
-        &HOST_TEAM.to_string(),
-        EntityType::Team,
-    );
-    let result = service(repo, MockCallRtcClient::new(), teams())
-        .update_team_recording_policy(
-            receipt,
-            UpdateTeamRecordingPolicyRequest {
-                blocked: CallKindsPatch::default(),
-            },
-        )
-        .await;
-    assert!(matches!(result, Err(CallError::Forbidden(_))));
 }

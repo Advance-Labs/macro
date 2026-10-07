@@ -216,9 +216,16 @@ async fn meeting_allocation_does_not_wait_for_recording_or_transcription() {
     repo.expect_get_or_create_meeting_call()
         .times(1)
         .return_once(move |_, _| Box::pin(async move { Ok((call, true)) }));
+    // A guest starts it external, so it records and transcribes at once.
+    repo.expect_mark_call_external()
+        .times(1)
+        .returning(|_| Box::pin(async { Ok(None) }));
     repo.expect_get_recording_rules()
         .times(1)
         .returning(|_, _| Box::pin(async { Ok(RecordingRules::default()) }));
+    repo.expect_claim_meeting_transcriber()
+        .times(1)
+        .returning(|_| Box::pin(async { Ok(true) }));
     repo.expect_claim_meeting_recorder()
         .times(1)
         .returning(move |id| {
@@ -279,10 +286,7 @@ async fn meeting_allocation_does_not_wait_for_recording_or_transcription() {
     configure_repository_clone(&service.repo, background_repo);
     let prepared = tokio::time::timeout(
         Duration::from_millis(200),
-        service.prepare_meeting_call(
-            &meeting,
-            MeetingJoiner::Account(user(ARCHIVED_EVENT_CREATOR)),
-        ),
+        service.prepare_meeting_call(&meeting, MeetingJoiner::Guest),
     )
     .await
     .expect("room allocation must not wait for media services")

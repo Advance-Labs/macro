@@ -8,18 +8,24 @@ export type RecordingKind =
 /** One flag per {@link RecordingKind}. */
 export type RecordingKinds = Record<RecordingKind, boolean>;
 
-export type TeamRecordingPolicy = {
+export type TeamCallPolicy = {
   /** Kinds no one on the team may record. */
-  blocked: RecordingKinds;
+  recordingBlocked: RecordingKinds;
+  /** No one's huddles may be shared with the team. */
+  huddleSharingBlocked: boolean;
   /** Team admins and owners may change the blocks. */
   canEdit: boolean;
 };
 
-export type RecordingSettings = {
+export type CallSettings = {
   /** Kinds of call the viewer's own calls record by default. */
   recordByDefault: RecordingKinds;
+  /** Huddles the viewer starts begin shared with their team. */
+  shareHuddlesByDefault: boolean;
+  /** The viewer refuses being recorded or transcribed in 1:1s. */
+  refuseOneOnOneRecording: boolean;
   /** Absent when the viewer is not on a team. */
-  team: TeamRecordingPolicy | null;
+  team: TeamCallPolicy | null;
 };
 
 export type RecordingKindOption = {
@@ -52,11 +58,11 @@ export const RECORDING_KINDS: readonly RecordingKindOption[] = [
 ];
 
 /** Whether the viewer's team forbids recording `kind`. */
-export function isBlockedByTeam(
-  settings: RecordingSettings,
+export function isRecordingBlocked(
+  settings: CallSettings,
   kind: RecordingKind
 ): boolean {
-  return settings.team?.blocked[kind] ?? false;
+  return settings.team?.recordingBlocked[kind] ?? false;
 }
 
 /**
@@ -64,10 +70,23 @@ export function isBlockedByTeam(
  * their team allows it.
  */
 export function recordsByDefault(
-  settings: RecordingSettings,
+  settings: CallSettings,
   kind: RecordingKind
 ): boolean {
-  return settings.recordByDefault[kind] && !isBlockedByTeam(settings, kind);
+  return settings.recordByDefault[kind] && !isRecordingBlocked(settings, kind);
+}
+
+/** Whether the viewer's team forbids sharing huddles with it. */
+export function isHuddleSharingBlocked(settings: CallSettings): boolean {
+  return settings.team?.huddleSharingBlocked ?? false;
+}
+
+/**
+ * Whether huddles the viewer starts begin shared with their team: they chose
+ * it and their team allows it.
+ */
+export function sharesHuddlesByDefault(settings: CallSettings): boolean {
+  return settings.shareHuddlesByDefault && !isHuddleSharingBlocked(settings);
 }
 
 /** `kinds` with one kind changed; the input is left untouched. */

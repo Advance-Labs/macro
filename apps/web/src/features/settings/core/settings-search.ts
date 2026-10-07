@@ -123,10 +123,23 @@ const SETTINGS: Setting[] = [
   },
   {
     tab: 'Calls',
-    title: 'Team recording policy',
-    target: 'Team recording policy',
+    title: 'Share by default',
+    target: 'Share by default',
+    keywords: 'share team huddles recording transcript notes visibility',
+  },
+  {
+    tab: 'Calls',
+    title: '1:1 privacy',
+    target: '1:1 privacy',
     keywords:
-      'block recording admin huddles 1:1 one-on-one internal external meetings',
+      "opt out don't record transcribe one-on-one direct message privacy",
+  },
+  {
+    tab: 'Calls',
+    title: 'Team call policy',
+    target: 'Team policy',
+    keywords:
+      'block recording sharing admin huddles 1:1 one-on-one internal external meetings',
   },
   {
     tab: 'Agents',

@@ -305,10 +305,10 @@ export const storageExcluded = [
   'getSlackImport',
   'listSlackImports',
   'registerSlackImportUploads',
-  // Call recording settings back the web app's Calls settings page.
-  'getCallRecordingSettings',
-  'updateCallRecordingDefaults',
-  'updateTeamCallRecordingPolicy',
+  // Call settings back the web app's Calls settings page.
+  'getCallSettings',
+  'updateCallSettings',
+  'updateTeamCallPolicy',
   'bulkWakeupSyncServiceDocuments',
   'callWebhook',
   'checkActiveCall',

@@ -513,6 +513,10 @@ pub struct CallRecord {
     /// live this is the pending toggle applied at archive; afterwards it
     /// mirrors `team_share_access_level`.
     pub share_with_team: bool,
+    /// People in this live one-on-one who refuse being recorded or
+    /// transcribed in one-on-ones, which is why it is not recording. Empty
+    /// otherwise, and always empty once the call has ended.
+    pub one_on_one_recording_refused_by: Vec<String>,
     /// Whether the call is currently active (from `calls` table).
     pub is_active: bool,
     /// Viewer-relative call status when fetched in the context of a specific user.

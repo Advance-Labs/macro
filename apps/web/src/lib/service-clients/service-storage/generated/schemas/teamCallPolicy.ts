@@ -7,11 +7,13 @@
 import type { CallKinds } from './callKinds';
 
 /**
- * Kinds of call no one on a team may record.
+ * What a team's admins forbid for everyone on the team.
  */
-export interface TeamRecordingPolicy {
-  /** Kinds of call blocked for everyone on the team. */
-  blocked: CallKinds;
+export interface TeamCallPolicy {
   /** Whether the caller may change the blocks (team admins and owners). */
   canEdit: boolean;
+  /** No one's huddles may be shared with the team. */
+  huddleSharingBlocked: boolean;
+  /** Kinds of call no one on the team may record. */
+  recordingBlocked: CallKinds;
 }

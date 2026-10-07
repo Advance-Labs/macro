@@ -235,6 +235,18 @@ export function setCallRecordTeamShareCache(callId: string, shared: boolean) {
   );
 }
 
+/** Mirror a live call's one-on-one recording refusals into its cached record. */
+export function setCallRecordRefusalsCache(
+  callId: string,
+  refusedBy: string[]
+) {
+  const queryKey = callKeys.record(callId).queryKey;
+  void queryClient.cancelQueries({ queryKey });
+  queryClient.setQueryData<CallRecord>(queryKey, (prev) =>
+    prev ? { ...prev, oneOnOneRecordingRefusedBy: refusedBy } : prev
+  );
+}
+
 function invalidateCallRecord(callId: string) {
   queryClient.invalidateQueries({ queryKey: callKeys.record(callId).queryKey });
 }

@@ -1,9 +1,15 @@
 //! Which calls record on their own.
 //!
 //! Each person chooses which kinds of call their recorder starts for by
-//! default, and team admins can block kinds of call for everyone on the team.
+//! default, and whether their huddles start shared with their team; team
+//! admins can block recording kinds of call, or sharing huddles, for everyone
+//! on the team.
 //! A call records only when its host records that kind by default and the
 //! host's team has not blocked it.
+//!
+//! Anyone can also refuse to be recorded or transcribed in one-on-ones: 1:1
+//! meetings and huddles in a two-person direct message. That overrides the
+//! host, but only while the call stays a one-on-one.
 //!
 //! A standalone call can change kind while it is live. Its recording stops
 //! the first time it becomes a kind its host does not record, and starts the
@@ -130,44 +136,99 @@ impl Default for RecordingRules {
     }
 }
 
-/// The caller's recording settings.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct CallRecordingSettings {
-    /// Kinds of call the caller's own calls record by default.
-    pub record_by_default: CallKinds,
-    /// The caller's team policy; absent when the caller is not on a team.
-    pub team: Option<TeamRecordingPolicy>,
+/// Whether a host's huddles are shared with their team. Standalone meetings
+/// are never shared with the team.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HuddleSharing {
+    /// Huddles the host starts begin with "Share with team" on.
+    pub share_by_default: bool,
+    /// The host's team forbids sharing its members' huddles with it.
+    pub blocked: bool,
 }
 
-/// Kinds of call no one on a team may record.
+impl HuddleSharing {
+    /// Whether a huddle hosted under these rules starts shared.
+    pub fn shares_by_default(&self) -> bool {
+        self.share_by_default && !self.blocked
+    }
+}
+
+impl Default for HuddleSharing {
+    /// Someone who never changed a setting, on a team that blocks nothing:
+    /// huddles start shared, as they did before these settings existed.
+    fn default() -> Self {
+        Self {
+            share_by_default: true,
+            blocked: false,
+        }
+    }
+}
+
+/// Everything a person's call settings decide, with their team's blocks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CallPreferences {
+    /// Whether the calls they host record.
+    pub recording: RecordingRules,
+    /// Whether the huddles they host are shared with their team.
+    pub huddle_sharing: HuddleSharing,
+    /// They do not allow being recorded or transcribed in one-on-ones.
+    pub refuses_one_on_one_recording: bool,
+}
+
+/// The caller's call settings.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct TeamRecordingPolicy {
-    /// Kinds of call blocked for everyone on the team.
-    pub blocked: CallKinds,
+pub struct CallSettings {
+    /// Kinds of call the caller's own calls record by default.
+    pub record_by_default: CallKinds,
+    /// Huddles the caller starts begin shared with their team.
+    pub share_huddles_by_default: bool,
+    /// The caller does not allow being recorded or transcribed in 1:1 meetings
+    /// or two-person direct-message huddles, whoever hosts them.
+    pub refuse_one_on_one_recording: bool,
+    /// The caller's team policy; absent when the caller is not on a team.
+    pub team: Option<TeamCallPolicy>,
+}
+
+/// What a team's admins forbid for everyone on the team.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct TeamCallPolicy {
+    /// Kinds of call no one on the team may record.
+    pub recording_blocked: CallKinds,
+    /// No one's huddles may be shared with the team.
+    pub huddle_sharing_blocked: bool,
     /// Whether the caller may change the blocks (team admins and owners).
     pub can_edit: bool,
 }
 
-/// Body of `PATCH /call/settings/recording`.
-#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+/// Body of `PATCH /call/settings`. Omitted fields keep their current value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateRecordingDefaultsRequest {
+pub struct UpdateCallSettingsRequest {
     /// Changes to the kinds of call the caller records by default.
+    #[serde(default)]
     pub record_by_default: CallKindsPatch,
+    /// New value for starting the caller's huddles shared with their team.
+    pub share_huddles_by_default: Option<bool>,
+    /// New value for refusing to be recorded or transcribed in 1:1s.
+    pub refuse_one_on_one_recording: Option<bool>,
 }
 
-/// Body of `PATCH /call/settings/recording/team`.
-#[derive(Debug, Clone, Copy, Default, serde::Deserialize)]
+/// Body of `PATCH /call/settings/team`. Omitted fields keep their current
+/// value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
 #[cfg_attr(feature = "inbound", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct UpdateTeamRecordingPolicyRequest {
-    /// Changes to the kinds of call blocked for everyone on the team.
-    pub blocked: CallKindsPatch,
+pub struct UpdateTeamCallPolicyRequest {
+    /// Changes to the kinds of call no one on the team may record.
+    #[serde(default)]
+    pub recording_blocked: CallKindsPatch,
+    /// New value for forbidding sharing huddles with the team.
+    pub huddle_sharing_blocked: Option<bool>,
 }
 
 /// A live standalone call that just became a later [`CallKind`]: its third

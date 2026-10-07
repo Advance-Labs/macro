@@ -2169,6 +2169,11 @@ export const getCallRecordResponse = zod
     isActive: zod
       .boolean()
       .describe('Whether the call is currently active (from `calls` table).'),
+    oneOnOneRecordingRefusedBy: zod
+      .array(zod.string())
+      .describe(
+        'People in this live one-on-one who refuse being recorded or\ntranscribed in one-on-ones, which is why it is not recording. Empty\notherwise, and always empty once the call has ended.'
+      ),
     participants: zod
       .array(
         zod
@@ -2490,9 +2495,9 @@ export const getRingStatusResponse = zod
   .describe('Response body for `GET \/call\/ring-status\/{call_id}`.');
 
 /**
- * @summary Read the caller's recording defaults and their team's recording blocks.
+ * @summary Read the caller's call settings and their team's call policy.
  */
-export const getCallRecordingSettingsResponse = zod
+export const getCallSettingsResponse = zod
   .object({
     recordByDefault: zod
       .object({
@@ -2512,12 +2517,28 @@ export const getCallRecordingSettingsResponse = zod
           .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
+    refuseOneOnOneRecording: zod
+      .boolean()
+      .describe(
+        'The caller does not allow being recorded or transcribed in 1:1 meetings\nor two-person direct-message huddles, whoever hosts them.'
+      ),
+    shareHuddlesByDefault: zod
+      .boolean()
+      .describe('Huddles the caller starts begin shared with their team.'),
     team: zod
       .union([
         zod.null(),
         zod
           .object({
-            blocked: zod
+            canEdit: zod
+              .boolean()
+              .describe(
+                'Whether the caller may change the blocks (team admins and owners).'
+              ),
+            huddleSharingBlocked: zod
+              .boolean()
+              .describe("No one's huddles may be shared with the team."),
+            recordingBlocked: zod
               .object({
                 externalMeetings: zod
                   .boolean()
@@ -2539,22 +2560,17 @@ export const getCallRecordingSettingsResponse = zod
                   ),
               })
               .describe('One flag per [`CallKind`].'),
-            canEdit: zod
-              .boolean()
-              .describe(
-                'Whether the caller may change the blocks (team admins and owners).'
-              ),
           })
-          .describe('Kinds of call no one on a team may record.'),
+          .describe("What a team's admins forbid for everyone on the team."),
       ])
       .optional(),
   })
-  .describe("The caller's recording settings.");
+  .describe("The caller's call settings.");
 
 /**
- * @summary Change which kinds of the caller's own calls record by default.
+ * @summary Change the caller's own call settings.
  */
-export const updateCallRecordingDefaultsBody = zod
+export const updateCallSettingsBody = zod
   .object({
     recordByDefault: zod
       .object({
@@ -2581,13 +2597,28 @@ export const updateCallRecordingDefaultsBody = zod
             'New value for standalone calls with only two people, both teammates.'
           ),
       })
+      .optional()
       .describe(
         'A partial update to [`CallKinds`]. Omitted kinds keep their current value,\nso two people changing different kinds at once do not undo each other.'
       ),
+    refuseOneOnOneRecording: zod
+      .boolean()
+      .nullish()
+      .describe(
+        'New value for refusing to be recorded or transcribed in 1:1s.'
+      ),
+    shareHuddlesByDefault: zod
+      .boolean()
+      .nullish()
+      .describe(
+        "New value for starting the caller's huddles shared with their team."
+      ),
   })
-  .describe('Body of `PATCH \/call\/settings\/recording`.');
+  .describe(
+    'Body of `PATCH \/call\/settings`. Omitted fields keep their current value.'
+  );
 
-export const updateCallRecordingDefaultsResponse = zod
+export const updateCallSettingsResponse = zod
   .object({
     recordByDefault: zod
       .object({
@@ -2607,12 +2638,28 @@ export const updateCallRecordingDefaultsResponse = zod
           .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
+    refuseOneOnOneRecording: zod
+      .boolean()
+      .describe(
+        'The caller does not allow being recorded or transcribed in 1:1 meetings\nor two-person direct-message huddles, whoever hosts them.'
+      ),
+    shareHuddlesByDefault: zod
+      .boolean()
+      .describe('Huddles the caller starts begin shared with their team.'),
     team: zod
       .union([
         zod.null(),
         zod
           .object({
-            blocked: zod
+            canEdit: zod
+              .boolean()
+              .describe(
+                'Whether the caller may change the blocks (team admins and owners).'
+              ),
+            huddleSharingBlocked: zod
+              .boolean()
+              .describe("No one's huddles may be shared with the team."),
+            recordingBlocked: zod
               .object({
                 externalMeetings: zod
                   .boolean()
@@ -2634,25 +2681,24 @@ export const updateCallRecordingDefaultsResponse = zod
                   ),
               })
               .describe('One flag per [`CallKind`].'),
-            canEdit: zod
-              .boolean()
-              .describe(
-                'Whether the caller may change the blocks (team admins and owners).'
-              ),
           })
-          .describe('Kinds of call no one on a team may record.'),
+          .describe("What a team's admins forbid for everyone on the team."),
       ])
       .optional(),
   })
-  .describe("The caller's recording settings.");
+  .describe("The caller's call settings.");
 
 /**
- * @summary Change which kinds of call no one on the caller's team may record. Team
-admins and owners only.
+ * @summary Change what no one on the caller's team may record or share. Team admins
+and owners only.
  */
-export const updateTeamCallRecordingPolicyBody = zod
+export const updateTeamCallPolicyBody = zod
   .object({
-    blocked: zod
+    huddleSharingBlocked: zod
+      .boolean()
+      .nullish()
+      .describe('New value for forbidding sharing huddles with the team.'),
+    recordingBlocked: zod
       .object({
         externalMeetings: zod
           .boolean()
@@ -2677,13 +2723,16 @@ export const updateTeamCallRecordingPolicyBody = zod
             'New value for standalone calls with only two people, both teammates.'
           ),
       })
+      .optional()
       .describe(
         'A partial update to [`CallKinds`]. Omitted kinds keep their current value,\nso two people changing different kinds at once do not undo each other.'
       ),
   })
-  .describe('Body of `PATCH \/call\/settings\/recording\/team`.');
+  .describe(
+    'Body of `PATCH \/call\/settings\/team`. Omitted fields keep their current\nvalue.'
+  );
 
-export const updateTeamCallRecordingPolicyResponse = zod
+export const updateTeamCallPolicyResponse = zod
   .object({
     recordByDefault: zod
       .object({
@@ -2703,12 +2752,28 @@ export const updateTeamCallRecordingPolicyResponse = zod
           .describe('Standalone calls with only two people, both teammates.'),
       })
       .describe('One flag per [`CallKind`].'),
+    refuseOneOnOneRecording: zod
+      .boolean()
+      .describe(
+        'The caller does not allow being recorded or transcribed in 1:1 meetings\nor two-person direct-message huddles, whoever hosts them.'
+      ),
+    shareHuddlesByDefault: zod
+      .boolean()
+      .describe('Huddles the caller starts begin shared with their team.'),
     team: zod
       .union([
         zod.null(),
         zod
           .object({
-            blocked: zod
+            canEdit: zod
+              .boolean()
+              .describe(
+                'Whether the caller may change the blocks (team admins and owners).'
+              ),
+            huddleSharingBlocked: zod
+              .boolean()
+              .describe("No one's huddles may be shared with the team."),
+            recordingBlocked: zod
               .object({
                 externalMeetings: zod
                   .boolean()
@@ -2730,17 +2795,12 @@ export const updateTeamCallRecordingPolicyResponse = zod
                   ),
               })
               .describe('One flag per [`CallKind`].'),
-            canEdit: zod
-              .boolean()
-              .describe(
-                'Whether the caller may change the blocks (team admins and owners).'
-              ),
           })
-          .describe('Kinds of call no one on a team may record.'),
+          .describe("What a team's admins forbid for everyone on the team."),
       ])
       .optional(),
   })
-  .describe("The caller's recording settings.");
+  .describe("The caller's call settings.");
 
 /**
  * Gets or creates a call for the channel. If a call already exists, joins it;

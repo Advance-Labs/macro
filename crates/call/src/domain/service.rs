@@ -62,10 +62,7 @@ use super::ports::{
     CallRecordQueryService, CallRepository, CallRtcClient, CallService, CallSummarizer,
     NoOpVoiceRepository, RecordingStorage, VoiceRepository,
 };
-use super::recording::{
-    CallKind, CallRecordingSettings, UpdateRecordingDefaultsRequest,
-    UpdateTeamRecordingPolicyRequest,
-};
+use super::recording::{CallSettings, UpdateCallSettingsRequest, UpdateTeamCallPolicyRequest};
 
 /// The concrete call service implementation.
 pub struct CallServiceImpl<
@@ -442,6 +439,9 @@ fn resolve_ring_status(
     }
 }
 
+/// Why a huddle cannot be shared with its host's team.
+const HUDDLE_SHARING_BLOCKED: &str = "Your team doesn't allow sharing huddles with the team";
+
 /// Normalize the team-share inputs of an edit on a live call into the pending
 /// share-with-team toggle: `Ok(None)` when neither input is present.
 ///
@@ -788,24 +788,39 @@ impl<
                     .await?
                 {
                     Some(call) => {
-                        // We are the creator — dispatch transcription agent (best-effort).
-                        self.rtc_client
-                            .dispatch_transcription_agent(&room_name)
-                            .await
-                            .inspect_err(|e| {
-                                tracing::error!(error=?e, "failed to dispatch transcription agent")
-                            })
-                            .ok();
+                        // We are the creator: apply the starter's settings and,
+                        // in a two-person direct message, the other member's
+                        // refusal of one-on-one recording.
+                        let start = self.huddle_start(user_id.copied(), channel_id).await;
+                        if !start.share {
+                            self.repo
+                                .patch_call_record(
+                                    &call.id,
+                                    &EditCallRecordRepoArgs {
+                                        share_permission: None,
+                                        custom_name: None,
+                                        team_share: None,
+                                        live_share_with_team: Some(false),
+                                    },
+                                )
+                                .await?;
+                        }
+                        if !start.refused_by.is_empty() {
+                            self.repo
+                                .record_one_on_one_refusals(&call.id, &start.refused_by)
+                                .await?;
+                        }
+                        if start.transcribe {
+                            self.rtc_client
+                                .dispatch_transcription_agent(&room_name)
+                                .await
+                                .inspect_err(|e| {
+                                    tracing::error!(error=?e, "failed to dispatch transcription agent")
+                                })
+                                .ok();
+                        }
 
-                        // Start recording if configured and the starter's rules allow it.
-                        let recording = match &self.egress_s3_config {
-                            Some(config)
-                                if self.host_records(user_id.as_ref(), CallKind::Huddle).await =>
-                            {
-                                Some(config)
-                            }
-                            _ => None,
-                        };
+                        let recording = self.egress_s3_config.as_ref().filter(|_| start.record);
                         if let Some(s3_config) = recording {
                             match self
                                 .rtc_client
@@ -1637,6 +1652,14 @@ impl<
                 "Calls without a channel cannot be included in team memory".to_string(),
             ));
         }
+        // Contradictory inputs are rejected further on, with or without a block.
+        if let Some(record) = &record
+            && record.channel_id.is_some()
+            && matches!(live_share_intent(team_share_request), Ok(Some(true)))
+            && self.huddle_sharing_blocked(&record.created_by).await?
+        {
+            return Err(CallError::Forbidden(HUDDLE_SHARING_BLOCKED.to_string()));
+        }
         let custom_name = request.custom_name.clone();
         let mut share_permission = request.share_permission;
 
@@ -1758,6 +1781,23 @@ impl<
                 )
                 .await?;
             (false, None)
+        } else if self.huddle_sharing_blocked(&record.created_by).await? {
+            if !record.share_with_team {
+                return Err(CallError::Forbidden(HUDDLE_SHARING_BLOCKED.to_string()));
+            }
+            // A block that arrived mid-call still lets anyone turn sharing off.
+            self.repo
+                .patch_call_record(
+                    &call_id,
+                    &EditCallRecordRepoArgs {
+                        share_permission: None,
+                        custom_name: None,
+                        team_share: None,
+                        live_share_with_team: Some(false),
+                    },
+                )
+                .await?;
+            (false, record.channel_id)
         } else {
             self.repo.toggle_share_with_team(&call_id).await?
         };
@@ -1926,29 +1966,29 @@ impl<
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn get_recording_settings(
+    async fn get_call_settings(
         &self,
         actor: MacroUserIdStr<'_>,
-    ) -> Result<CallRecordingSettings, CallError> {
-        self.recording_settings(actor).await
+    ) -> Result<CallSettings, CallError> {
+        self.call_settings(actor).await
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn update_recording_defaults(
+    async fn update_call_settings(
         &self,
         actor: MacroUserIdStr<'_>,
-        request: UpdateRecordingDefaultsRequest,
-    ) -> Result<CallRecordingSettings, CallError> {
-        self.change_recording_defaults(actor, request).await
+        request: UpdateCallSettingsRequest,
+    ) -> Result<CallSettings, CallError> {
+        self.change_call_settings(actor, request).await
     }
 
     #[tracing::instrument(err, skip(self, receipt))]
-    async fn update_team_recording_policy(
+    async fn update_team_call_policy(
         &self,
         receipt: EntityAccessReceipt<AdminTeamRole>,
-        request: UpdateTeamRecordingPolicyRequest,
-    ) -> Result<CallRecordingSettings, CallError> {
-        self.change_team_recording_policy(receipt, request).await
+        request: UpdateTeamCallPolicyRequest,
+    ) -> Result<CallSettings, CallError> {
+        self.change_team_call_policy(receipt, request).await
     }
 }
 
