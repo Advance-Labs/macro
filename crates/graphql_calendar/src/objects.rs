@@ -1,8 +1,11 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use async_graphql::{Enum, ID, SimpleObject, Union};
 use calendar_events::domain::{
-    changes::{CalendarChangesPage, CalendarEventChange, CalendarWatermark},
+    changes::{CalendarChangesPage, CalendarEventChange, CalendarWatermark, EventOccurrence},
     models::{
         AttendeeResponseStatus, CalendarAttendee, CalendarEvent, CalendarEventSourceContent,
         CalendarOccurrence, CalendarSyncStatus, ConferenceProvider, EventReminderOverride,
@@ -622,6 +625,71 @@ impl From<CalendarEventChange> for GraphqlCalendarEventChange {
             event,
         }
     }
+}
+
+/// An event's committed state after a calendar mutation.
+#[derive(SimpleObject, Clone, Debug, PartialEq, Eq)]
+pub struct GraphqlCalendarMutationPayload {
+    /// The series event after the write; null when it no longer exists or
+    /// has no visible occurrence left.
+    event: Option<Arc<GraphqlCalendarEvent>>,
+    /// Every visible occurrence of the event after the write, then each
+    /// occurrence the write removed, returned with `isCancelled: true` so a
+    /// normalized cache hides it as the response lands. Clients replace
+    /// everything they hold for the event with the uncancelled ones.
+    occurrences: Vec<GraphqlCalendarOccurrence>,
+    /// Set to the event's id when the write removed it.
+    deleted_event_id: Option<ID>,
+}
+
+impl GraphqlCalendarMutationPayload {
+    pub(crate) fn new(
+        event_id: Uuid,
+        before: Option<CalendarEventChange>,
+        after: Option<CalendarEventChange>,
+    ) -> Self {
+        let Some(after) = after else {
+            let occurrences = before
+                .map(|before| {
+                    GraphqlCalendarEventChange::from(CalendarEventChange {
+                        occurrences: before.occurrences.into_iter().map(cancelled).collect(),
+                        ..before
+                    })
+                    .occurrences
+                })
+                .unwrap_or_default();
+            return Self {
+                event: None,
+                occurrences,
+                deleted_event_id: Some(id(event_id)),
+            };
+        };
+        let kept: HashSet<String> = after
+            .occurrences
+            .iter()
+            .map(|instance| instance.occurrence.occurrence_key.clone())
+            .collect();
+        let removed = before
+            .into_iter()
+            .flat_map(|before| before.occurrences)
+            .filter(|instance| !kept.contains(&instance.occurrence.occurrence_key))
+            .map(cancelled);
+        let GraphqlCalendarEventChange { event, occurrences } = CalendarEventChange {
+            occurrences: after.occurrences.into_iter().chain(removed).collect(),
+            ..after
+        }
+        .into();
+        Self {
+            event: Some(event),
+            occurrences,
+            deleted_event_id: None,
+        }
+    }
+}
+
+fn cancelled(mut instance: EventOccurrence) -> EventOccurrence {
+    instance.occurrence.is_cancelled = true;
+    instance
 }
 
 /// One bounded page of calendar changes after a watermark.
