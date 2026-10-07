@@ -1,5 +1,7 @@
 import { ChatWithAgentButton } from '@app/features/chat/ChatWithAgentButton';
 import { useBlockEntityCommands } from '@app/features/next-soup/actions';
+import { sheetRoutineSeed } from '@app/features/routines/core/sheet-routine-template';
+import { HeaderActionButton } from '@components/app/HeaderActionButton';
 import {
   ResponsiveBlockToolbar,
   ResponsivePermissionsBadge,
@@ -9,6 +11,7 @@ import {
   SplitHeaderRight,
 } from '@components/app/split-layout/components/SplitHeader';
 import { BlockItemSplitLabel } from '@components/app/split-layout/components/SplitLabel';
+import { useSplitLayout } from '@components/app/split-layout/layout';
 import { useBlockId } from '@core/block';
 import { DocumentBlockContainer } from '@core/component/DocumentBlockContainer';
 import { BlockLiveIndicators } from '@core/component/LiveIndicators';
@@ -31,6 +34,7 @@ import { getDisplayName, tryMacroId } from '@core/user';
 import { useBlockDocumentName } from '@core/util/currentBlockDocumentName';
 import { downloadFile } from '@filesystem/download';
 import IconShared from '@icon/share.svg';
+import ClockIcon from '@phosphor/clock-clockwise.svg';
 import { Badge } from '@ui';
 import { onMount, Show } from 'solid-js';
 import { spreadsheetChatContext } from './core/chat-context';
@@ -71,6 +75,7 @@ function SpreadsheetBlockContent(props: { share?: string }) {
   const canEdit = useCanEdit();
   const userId = useUserId();
   const permissions = useGetPermissions();
+  const layout = useSplitLayout();
   const openShare = useShareModal(() => ({
     id: documentId,
     blockAlias: 'spreadsheet',
@@ -154,6 +159,28 @@ function SpreadsheetBlockContent(props: { share?: string }) {
               <>
                 <SplitHeaderRight>
                   <div class="order-[999] flex items-center">
+                    <HeaderActionButton
+                      label="Automate"
+                      tooltip="Create a routine that updates this sheet on a schedule"
+                      icon={<ClockIcon />}
+                      disabled={!store.ready()}
+                      onClick={() =>
+                        layout.popoverSplit({
+                          type: 'component',
+                          id: 'routine-compose',
+                          params: {
+                            seed: sheetRoutineSeed({
+                              documentId,
+                              documentName: name() ?? '',
+                              ...spreadsheetChatContext(
+                                store.activeSheet(),
+                                store.selection()
+                              ),
+                            }),
+                          },
+                        })
+                      }
+                    />
                     <ChatWithAgentButton
                       label="Ask Macro"
                       disabled={!store.ready()}

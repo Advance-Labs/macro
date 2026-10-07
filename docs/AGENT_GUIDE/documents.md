@@ -88,7 +88,7 @@ document permissions continue to control access to each workbook.
 
 Choose **Create → Spreadsheet**, or **New → Spreadsheet** in Files or a folder.
 Native workbooks open at `/app/spreadsheet/<uuid>` and use the normal document
-title bar with **Ask Macro** and **Share** at the top right. The **File actions**
+title bar with **Automate**, **Ask Macro**, and **Share** at the top right. The **File actions**
 ellipsis beside the title uses the same menu as documents, including rename,
 favorite, move, copy, and permission-appropriate file actions. Native spreadsheets
 use a green grid icon in file lists and search. The grid fills
@@ -395,6 +395,18 @@ the targeted thread remains visible.
 Comment-only access can post/reply; view-only access can read. Edit/delete applies
 to the author's own comments, and failures retain the input draft. Draft demos
 must be saved before persistent comments are available.
+
+## Automate a spreadsheet with a routine
+
+**Automate** sits immediately left of **Ask Macro**. Select the cells the routine
+should work on, then click it to open the routine composer prefilled with a
+starter: the name **Update <workbook>**, instructions that start with a workbook
+mention carrying the active sheet ID/name and selected range, numbered steps with
+bracketed placeholders (data sources, cells to write, who to notify), and a
+**Weekly** trigger on Monday at 9 AM. Replace the placeholders, adjust the trigger
+(for example **Daily**), and click **Create routine**. Each run is an agent session
+with the same spreadsheet tools as Ask Macro, so writes still require edit
+permission. Opening Automate replaces any unsaved generic routine draft.
 
 ## Ask Macro about a spreadsheet
 

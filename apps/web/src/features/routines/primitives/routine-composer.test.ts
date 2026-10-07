@@ -1,6 +1,7 @@
 import { createRoot, createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RoutineDraftStorage } from '../context/routine-sources';
+import type { RoutineSeed } from '../core/draft';
 import { createEmptyDraft } from '../core/routine-draft';
 import { createRoutineComposer } from './routine-composer';
 
@@ -16,7 +17,7 @@ const draft = {
 let dispose = () => {};
 afterEach(() => dispose());
 
-function setup(create: () => Promise<string>) {
+function setup(create: () => Promise<string>, seed?: RoutineSeed) {
   const storage: RoutineDraftStorage = {
     load: () => draft,
     save: vi.fn(),
@@ -37,7 +38,13 @@ function setup(create: () => Promise<string>) {
   };
   const composer = createRoot((cleanup) => {
     dispose = cleanup;
-    return createRoutineComposer(source, storage, 'default-model', onCreated);
+    return createRoutineComposer(
+      source,
+      storage,
+      'default-model',
+      onCreated,
+      seed
+    );
   });
   return { composer, storage, onCreated, source };
 }
@@ -78,6 +85,20 @@ describe('routine creation state without app providers', () => {
     resolve('created');
     await request;
     expect(onCreated).toHaveBeenCalledExactlyOnceWith('created');
+  });
+
+  it('starts from a seed instead of the restored draft', () => {
+    const seed: RoutineSeed = {
+      name: 'Update Billing',
+      prompt: 'Keep the sheet up to date.',
+      triggers: [],
+    };
+    const { composer } = setup(async () => 'created', seed);
+    expect(composer.draft()).toMatchObject({
+      ...seed,
+      enabled: true,
+      target: { kind: 'model', model: 'default-model' },
+    });
   });
 
   it('keeps an incomplete trigger in the draft without sending it to the server', async () => {

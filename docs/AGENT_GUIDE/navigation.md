@@ -554,7 +554,9 @@ with the first property chip below the prompt. **Add trigger** follows it; each
 saved trigger becomes a chip, with another **Add trigger** always at the end.
 **Start enabled** controls whether the saved routine starts listening immediately. **Create routine** opens
 its details inside the Agents pane, retaining the sidebar. Creation has no history
-tab or templates. Unsaved drafts are retained for three minutes.
+tab or templates gallery; a spreadsheet's **Automate** button opens the same
+composer with a sheet starter (see [documents](documents.md#automate-a-spreadsheet-with-a-routine)).
+Unsaved drafts are retained for three minutes.
 
 **Add trigger → Scheduled** offers Hourly, Daily, Weekly, Monthly, and Custom
 (cron) in a single anchored panel. Choose the frequency and type a time, or type

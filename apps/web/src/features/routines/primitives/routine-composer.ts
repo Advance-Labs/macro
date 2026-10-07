@@ -4,7 +4,7 @@ import type {
   RoutineCreatorSource,
   RoutineDraftStorage,
 } from '../context/routine-sources';
-import type { ScheduleDraft } from '../core/draft';
+import type { RoutineSeed, ScheduleDraft } from '../core/draft';
 import {
   createEmptyDraft,
   getErrorMessage,
@@ -15,9 +15,10 @@ export function createRoutineComposer(
   source: RoutineCreatorSource,
   storage: RoutineDraftStorage,
   defaultModel: string,
-  onCreated: (id: string) => void
+  onCreated: (id: string) => void,
+  seed?: RoutineSeed
 ) {
-  const restored = storage.load();
+  const restored = seed ? null : storage.load();
   const [draft, setDraft] = createSignal<ScheduleDraft>(
     restored
       ? {
@@ -25,7 +26,12 @@ export function createRoutineComposer(
           triggers: restored.triggers ?? [],
           enabled: restored.enabled ?? true,
         }
-      : { ...createEmptyDraft(defaultModel), triggers: [], enabled: true }
+      : {
+          ...createEmptyDraft(defaultModel),
+          triggers: [],
+          enabled: true,
+          ...seed,
+        }
   );
   const [attempted, setAttempted] = createSignal(false);
   const [submitError, setSubmitError] = createSignal<string>();

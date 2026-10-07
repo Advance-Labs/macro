@@ -19,3 +19,6 @@ export type ScheduleDraft = {
   onceAt?: string;
   timezone?: string;
 };
+
+/** Fields a caller can prefill when opening the routine composer. */
+export type RoutineSeed = Pick<ScheduleDraft, 'name' | 'prompt' | 'triggers'>;

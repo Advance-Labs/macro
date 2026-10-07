@@ -7,7 +7,7 @@ import type { SpreadsheetWorkbookSheet } from './workbook-document';
 export function spreadsheetChatContext(
   sheet: SpreadsheetWorkbookSheet,
   selection: SpreadsheetSelection | undefined
-): Record<string, string> {
+): { sheetId: string; sheetName: string; range: string } {
   const selected = !selection?.sheetId || selection.sheetId === sheet.id;
   const anchor = selected && positionFromAddress(selection?.anchor ?? 'A1');
   const focus = selected && positionFromAddress(selection?.focus ?? 'A1');

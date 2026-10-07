@@ -7,6 +7,7 @@ import type {
   RoutineCreatorSource,
   RoutineDraftStorage,
 } from '../context/routine-sources';
+import type { RoutineSeed } from '../core/draft';
 import { validateRoutineDraft } from '../core/routine-draft';
 import { createRoutineComposer } from '../primitives/routine-composer';
 
@@ -15,6 +16,7 @@ export function RoutineCreatorView(props: {
   storage: RoutineDraftStorage;
   slots: RoutineEditorSlots;
   defaultModel: string;
+  seed?: RoutineSeed;
   onCreated(id: string): void;
   onClose(): void;
 }) {
@@ -23,7 +25,8 @@ export function RoutineCreatorView(props: {
       props.source,
       props.storage,
       props.defaultModel,
-      props.onCreated
+      props.onCreated,
+      props.seed
     );
   return (
     <EntityComposer.Root

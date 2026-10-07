@@ -4,6 +4,7 @@ import type { EventEditorInitialValues } from '@app/features/calendar/components
 import type { CalendarEvent } from '@app/features/calendar/types';
 import { HomeRouteView } from '@app/features/home/route-views';
 import { parseProjectRoute } from '@app/features/projects/core/route';
+import type { RoutineSeed } from '@app/features/routines/core/draft';
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { NOT_FOUND_ROUTE_ID } from '@app/routes/app-route';
 import { LoadingBlock } from '@core/component/LoadingBlock';
@@ -399,6 +400,11 @@ registerComponent('email-compose', (params) => {
 });
 registerComponent('routine-compose', (params) => (
   <RoutineCreator
+    seed={
+      typeof params.seed === 'object' && params.seed
+        ? (params.seed as RoutineSeed)
+        : undefined
+    }
     onCreated={
       typeof params.onCreated === 'function'
         ? (params.onCreated as (id: string) => void)
