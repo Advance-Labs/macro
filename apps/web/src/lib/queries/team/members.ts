@@ -105,7 +105,9 @@ export function useSetTeamMemberPlanMutation(
           invalidateTeam(teamId);
           void invalidateAiBillingSummary();
           toast.success(
-            plan === 'max' ? 'Seat moved to Max' : 'Seat moved to Pro'
+            plan === 'max'
+              ? 'Max applies immediately. Any pending downgrade is canceled.'
+              : 'Pro is scheduled for the next renewal. This seat keeps Max until then.'
           );
         },
 

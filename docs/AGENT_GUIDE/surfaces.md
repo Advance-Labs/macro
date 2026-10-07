@@ -2276,7 +2276,18 @@ manage their subscription. Team-paid members see no plan options, including
 on Free seats. Member options stay hidden until the billing summary confirms
 they pay for their own seat. On a team, a plan change moves only the viewer's
 own seat. Max lists "10x more AI usage than Pro"; Free and Pro allowance labels
-still follow the `enable-ai-usage-billing` flag. Usage controls live in Usage.
+still follow the `enable-ai-usage-billing` flag. An upgrade to a new highest plan
+in the billing period (Free to Pro, Free to Max, or Pro to Max) resets that seat's
+AI usage to zero once the plan change completes (personal subscriptions follow
+the Stripe webhook; team seats reset immediately). Upgrades are prorated, and
+renewal dates stay the same. Max to Pro schedules the lower plan for renewal;
+the seat retains Max access and usage until then. **Keep Max** cancels a pending
+downgrade without a charge or usage reset. Returning to a previously held tier
+in the same period does not replenish usage. Earlier included usage stays
+non-billable, and upgrades preserve existing overage and spent credits.
+Use an isolated local billing fixture to verify the reset, subsequent usage,
+and replay of the same upgrade event; never change a hosted plan for verification.
+Usage controls live in Usage.
 The upgrade modal and Billing use the same plan cards and benefits, including
 the same flag-gated AI usage label and responsive card layout. The modal offers
 Pro and Max to Free accounts, only Max to Pro accounts, and no upgrade cards to

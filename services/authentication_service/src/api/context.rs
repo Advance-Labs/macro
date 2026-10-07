@@ -152,6 +152,13 @@ pub(crate) struct ApiContext {
     pub codex_connection: Option<Arc<dyn codex_connection::domain::ConnectionService>>,
     pub macro_cache_client: Arc<MacroCache>,
     pub stripe_client: Arc<stripe::Client>,
+    pub subscription_plan: Arc<
+        crate::service::subscription_plan::PlanService<
+            crate::outbound::subscription_plan::StripePlanGateway<
+                teams::outbound::customer_repo::CustomerRepositoryImpl,
+            >,
+        >,
+    >,
     pub subscription_checkout: Arc<
         crate::service::subscription_checkout::CheckoutService<
             crate::outbound::subscription_checkout::StripeCheckoutGateway<GtmInviteServiceType>,

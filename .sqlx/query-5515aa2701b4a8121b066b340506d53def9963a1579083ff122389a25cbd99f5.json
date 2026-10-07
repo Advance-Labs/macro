@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id, changed_at, previous_plan, new_plan,\n                    previous_included_cost_cents, new_included_cost_cents\n             FROM ai_billing_plan_change\n             WHERE user_id = ANY($1) AND period_start = $2 AND changed_at < $3\n             ORDER BY user_id, changed_at, previous_plan, new_plan",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "changed_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "previous_plan",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "new_plan",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "previous_included_cost_cents",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "new_included_cost_cents",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "5515aa2701b4a8121b066b340506d53def9963a1579083ff122389a25cbd99f5"
+}

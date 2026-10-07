@@ -112,14 +112,17 @@ function LiveBilling(props: { controls?: JSX.Element }) {
 
   const handleChangePlan = async (plan: PaidPlan) => {
     try {
+      const previous = state().tier;
       await changePlan.mutateAsync({ plan });
       analytics.track('plan_changed', { plan });
       toast.success(
-        plan === 'max'
-          ? aiUsageBilling().enabled
-            ? 'Upgraded to Max. Your larger AI allowance applies right away.'
-            : 'Upgraded to Max.'
-          : 'Switched to Pro.'
+        plan === previous
+          ? `Keeping your ${plan === 'max' ? 'Max' : 'Pro'} plan. Any pending downgrade is canceled.`
+          : plan === 'max'
+            ? aiUsageBilling().enabled
+              ? 'Upgraded to Max. Your AI allowance applies right away.'
+              : 'Upgraded to Max.'
+            : 'Pro will start at your next renewal. You keep Max until then.'
       );
     } catch (error) {
       console.error(error);

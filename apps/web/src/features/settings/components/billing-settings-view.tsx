@@ -97,15 +97,28 @@ export function BillingSettingsView(props: {
               </div>
 
               <Show when={props.state.canChangePlan && props.state.hasPaid}>
-                <Button
-                  class="ml-auto bg-active"
-                  size="sm"
-                  depth={2}
-                  variant="outline"
-                  onClick={props.onManage}
-                >
-                  Manage
-                </Button>
+                <div class="ml-auto flex items-center gap-2">
+                  <Show when={props.state.tier === 'max'}>
+                    <Button
+                      size="sm"
+                      depth={2}
+                      variant="outline"
+                      disabled={props.state.pending}
+                      onClick={() => props.onSelectPlan('max')}
+                    >
+                      Keep Max
+                    </Button>
+                  </Show>
+                  <Button
+                    class="bg-active"
+                    size="sm"
+                    depth={2}
+                    variant="outline"
+                    onClick={props.onManage}
+                  >
+                    Manage
+                  </Button>
+                </div>
               </Show>
             </header>
             <ul class="border-t border-t-edge-muted pt-4 flex flex-wrap gap-4 text-sm text-ink-muted">

@@ -48,7 +48,7 @@ export function BillingPlanCard(props: {
   state: Pick<
     BillingState,
     'hasPaid' | 'teamRole' | 'aiUsageEnabled' | 'pending'
-  >;
+  > & { tier?: PlanTier };
   onSelectPlan?: (plan: PaidPlanTier) => void;
 }) {
   return (
@@ -88,8 +88,10 @@ export function BillingPlanCard(props: {
             >
               {props.state.hasPaid
                 ? props.plan === 'premium'
-                  ? 'Switch to Pro'
-                  : 'Upgrade to Max'
+                  ? 'Downgrade to Pro'
+                  : props.state.tier === 'max'
+                    ? 'Keep Max'
+                    : 'Upgrade to Max'
                 : props.plan === 'premium'
                   ? 'Get Pro'
                   : 'Get Max'}
@@ -102,16 +104,17 @@ export function BillingPlanCard(props: {
             aiUsageEnabled={props.state.aiUsageEnabled}
           />
         </ul>
-        <Show
-          when={
-            props.state.hasPaid &&
-            props.onSelectPlan &&
-            (props.plan === 'max' || props.state.teamRole === 'owner')
-          }
-        >
+        <Show when={props.state.hasPaid && props.onSelectPlan}>
           <p class="text-xs text-ink-extra-muted">
-            <Show when={props.plan === 'max'}>
-              Prorated for the rest of this period.
+            <Show when={props.plan === 'max' && props.state.tier !== 'max'}>
+              Prorated for the rest of this period. AI usage resets on a new
+              highest plan.
+            </Show>
+            <Show when={props.plan === 'max' && props.state.tier === 'max'}>
+              Cancel a pending downgrade and keep your current plan and usage.
+            </Show>
+            <Show when={props.plan === 'premium'}>
+              Takes effect at your next renewal. You keep Max until then.
             </Show>
             <Show when={props.state.teamRole === 'owner'}>
               {' '}

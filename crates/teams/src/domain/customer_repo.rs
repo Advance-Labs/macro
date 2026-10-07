@@ -53,6 +53,34 @@ pub trait CustomerRepository: Clone + Send + Sync + 'static {
         to: SeatPlan,
     ) -> impl Future<Output = Result<(), CustomerError>> + Send;
 
+    /// Schedule a seat downgrade at renewal, or cancel that seat's pending change.
+    /// Current prices and entitlements remain unchanged.
+    fn schedule_seat_plan(
+        &self,
+        subscription: &stripe::SubscriptionId,
+        user: &MacroUserIdStr<'_>,
+        plan: Option<SeatPlan>,
+    ) -> impl Future<Output = Result<(), CustomerError>> + Send;
+
+    /// Replace the price on a personal subscription immediately, invoicing proration.
+    fn upgrade_personal_plan(
+        &self,
+        subscription: &stripe::SubscriptionId,
+        plan: SeatPlan,
+    ) -> impl Future<Output = Result<(), CustomerError>> + Send;
+
+    /// Member plans whose scheduled phase has actually started at the provider.
+    fn renewed_seat_plans(
+        &self,
+        subscription: &stripe::SubscriptionId,
+    ) -> impl Future<Output = Result<Vec<(String, SeatPlan)>, CustomerError>> + Send;
+
+    /// Acknowledge successfully applied renewal changes; retries remain safe.
+    fn acknowledge_renewed_seat_plans(
+        &self,
+        subscription: &stripe::SubscriptionId,
+    ) -> impl Future<Output = Result<(), CustomerError>> + Send;
+
     /// Cancels a subscription immediately. A subscription that is already
     /// cancelled or no longer exists counts as cancelled.
     fn cancel_subscription(
