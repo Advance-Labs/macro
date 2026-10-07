@@ -1,5 +1,7 @@
 import { SearchBar, ViewSidebar } from '@app/components/view-shell';
+import { SidebarBigCreateButton } from '@app/components/view-shell/SidebarCreateButton';
 import { runCreateAction } from '@app/features/command/Launcher';
+import { SidebarInviteTeam } from '@app/features/team-invitations/sidebar-invite-team';
 import { DEBUG_SETTING_KEYS, useDebugSetting } from '@app/lib/debugSettings';
 import { openNewChannelModal } from '@channel/CreateChannelModal';
 import { ChannelMutedIndicator } from '@channel/components/ChannelMutedIndicator';
@@ -75,6 +77,7 @@ import {
   RailListLoading,
   RailListLoadingMore,
 } from './ChannelsRailSection';
+import { CreateChannelsChip } from './CreateChannelsChip';
 import {
   useChannelRailItemState,
   useChannelRailScopeState,
@@ -394,6 +397,12 @@ function ExpandedHeader(props: { search: ChannelRailSearch }) {
           <ViewSidebar.Title>Chat</ViewSidebar.Title>
         </div>
       </ViewSidebar.Header>
+      <ViewSidebar.Primary>
+        <SidebarBigCreateButton
+          label="New chat"
+          onCreate={() => runCreateAction('channel')}
+        />
+      </ViewSidebar.Primary>
       <ViewSidebar.Primary>
         <ViewSidebar.Toolbar>
           <Tabs
@@ -852,6 +861,9 @@ function ExpandedBrowse() {
       </Match>
       <Match when={true}>
         <ViewSidebar.Content class="h-full overflow-hidden">
+          <CreateChannelsChip
+            channelCount={rail.sources.channels.items().length}
+          />
           <ChannelFavoritesSection />
           {/* The groups split the height left after favorites between them.
               Their half-height caps resolve against this column, not the
@@ -1137,6 +1149,7 @@ export function ExpandedChannelsRail(props: { search: ChannelRailSearch }) {
             <span>to jump sections</span>
           </footer>
         </Show>
+        <SidebarInviteTeam />
       </div>
     </>
   );

@@ -5,7 +5,7 @@ import {
   useViewControlHotkeys,
   ViewSidebar,
 } from '@app/components/view-shell';
-import { SidebarCreateButton } from '@app/components/view-shell/SidebarCreateButton';
+import { SidebarBigCreateButton } from '@app/components/view-shell/SidebarCreateButton';
 import { changeSessionArchiveState } from '@app/features/block-agent/queries/change-session-archive-state';
 import {
   type EntityActionListState,
@@ -16,6 +16,7 @@ import {
   MaybeSoupEntityActionDrawerManager,
   SoupEntityContextMenu,
 } from '@app/features/soup';
+import { SidebarInviteTeam } from '@app/features/team-invitations/sidebar-invite-team';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { MenuItem } from '@core/component/ContextMenu';
 import { useUserId } from '@core/context/user';
@@ -274,7 +275,7 @@ export function AgentsSidebar(props: AgentsSidebarProps) {
 
         <Show when={!isTouchDevice()}>
           <div class="px-(--sidebar-gutter) pt-2">
-            <SidebarCreateButton
+            <SidebarBigCreateButton
               label="New conversation"
               onCreate={props.onNewConversation}
               ref={tourTarget(AGENTS_TOUR.newChat)}
@@ -402,6 +403,7 @@ export function AgentsSidebar(props: AgentsSidebarProps) {
             </section>
           </Show>
         </ViewSidebar.Content>
+        <SidebarInviteTeam />
       </ViewSidebar.Root>
     </MaybeSoupEntityActionDrawerManager>
   );
