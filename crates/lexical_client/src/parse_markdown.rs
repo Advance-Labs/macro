@@ -396,6 +396,9 @@ pub struct AgentContext<'a> {
     /// Other channel activity, grouped by discussion, oldest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub channel: Vec<AgentContextThread<'a>>,
+    /// The prompt was posted in the person's private DM with the agent.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub direct_message: bool,
 }
 
 /// The document location of the comment thread an agent prompt was posted in.

@@ -572,6 +572,9 @@ pub struct ConversationContext {
     /// For a top-level channel prompt this is the primary context and ends
     /// with the prompt.
     pub channel: Vec<ContextThread>,
+    /// The prompt was posted in the person's private DM with the agent,
+    /// which they read live: questions and review cards reach them there.
+    pub direct_message: bool,
 }
 
 /// Do something in a session that already exists.

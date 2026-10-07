@@ -252,6 +252,8 @@ impl<Access: ContextAuthorizer, Lexical: MarkReader + QuoteReader> MessagePrompt
             prompt_message_id: Some(prompt.id),
             thread: discussion.map(|discussion| prompt_thread(discussion, &prompt)),
             channel,
+            direct_message: origin.reply_placement
+                == crate::domain::model::ReplyPlacement::Timeline,
         })
     }
 }

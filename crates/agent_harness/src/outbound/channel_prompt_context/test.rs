@@ -500,6 +500,7 @@ async fn a_top_level_channel_prompt_replies_to_nothing_and_ends_the_channel() {
 
     let context = context_from(source, Lexical::none(), &origin).await;
 
+    assert!(!context.direct_message);
     assert_eq!(context.thread, None);
     assert_eq!(context.anchor, None);
     assert_eq!(context.reply_target, Some(ReplyTarget::None));
@@ -868,4 +869,33 @@ async fn spreadsheet_discussions_carry_the_range_without_resolving_a_mark() {
             range: "B4:C9".into()
         })
     );
+}
+
+/// A private DM is read live and carries its own history in the session, so
+/// it is marked as one and brings no ambient channel messages along.
+#[tokio::test]
+async fn a_direct_message_is_marked_and_reads_no_channel_history() {
+    let parent = channel();
+    let prompt = posted(&parent, 50, None, "wolf@example.com", "what changed?", 3);
+    let origin = AnnounceOrigin {
+        reply_placement: crate::domain::model::ReplyPlacement::Timeline,
+        reuse_origin_message: false,
+        parent: parent.clone(),
+        thread_id: prompt.id,
+        message_id: prompt.id,
+    };
+
+    let mut source = MockMessageReader::new();
+    let prompt_message = prompt.clone();
+    source
+        .expect_get()
+        .returning(move |_, _| Ok(prompt_message.clone()));
+    source.expect_get_thread().never();
+    source.expect_preceding().never();
+
+    let context = context_from(source, Lexical::none(), &origin).await;
+
+    assert!(context.direct_message);
+    assert!(context.channel.is_empty());
+    assert_eq!(context.reply_target, Some(ReplyTarget::None));
 }

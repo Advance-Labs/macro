@@ -359,6 +359,21 @@ describe('composeAgentContextPrompt', () => {
     expect(text?.match(/<\/thread>/g)).toHaveLength(1);
   });
 
+  it('tells the agent a private conversation is read live', () => {
+    const text = composedContext({
+      promptMarkdown: 'what changed?',
+      parent: { type: 'channel', id: 'dm-1' },
+      replyTarget: { kind: 'none' },
+      directMessage: true,
+    });
+
+    expect(text).toContain(
+      'This prompt was posted in your private conversation with the user'
+    );
+    expect(text).toContain('AskUser');
+    expect(text).not.toContain(origin);
+  });
+
   it('does not add context when there is none', () => {
     expect(
       composeAgentContextPrompt({ promptMarkdown: 'original', channel: [] })
