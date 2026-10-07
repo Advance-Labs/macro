@@ -316,3 +316,8 @@ TypeScript · `[ui]` UI / UX conventions
   code needs an owner or other host capability, expose it through the owning
   surface context instead of borrowing `BlockContext`. (also:
   apps/web/AGENTS.md)
+- **FE-35** `[ui]` Don't use Phosphor's `robot` icon: at icon sizes it reads as a
+  pig. Agents and bots use the sparkle (`EntityIcon`'s `agent` mark); a target
+  that runs on a known model shows its provider through `ProviderIcon`.
+  (enforced: ast-grep `ts-no-phosphor-robot-icon` + `tsx-no-phosphor-robot-icon`,
+  CI error)

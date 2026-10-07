@@ -1,0 +1,27 @@
+id: ts-no-phosphor-robot-icon
+language: typescript
+# Twin of tsx-no-phosphor-robot-icon — ast-grep rules are single-language,
+# and `typescript` only scans .ts files.
+severity: error
+message: Don't use Phosphor's robot icon. Use the sparkle for agents and bots, or the agent's provider or own logo when it is known.
+note: |-
+  Rule FE-35 in docs/STYLE_GUIDE.md. At icon sizes the Phosphor robot reads
+  as a pig. Agents and bots wear the sparkle (EntityIcon's `agent` mark),
+  and a model-backed target shows its provider via ProviderIcon.
+rule:
+  kind: string
+  regex: ^['"]@phosphor[^'"]*/robot(-(thin|light|bold|fill|duotone))?\.svg['"]$
+  any:
+    - inside:
+        kind: import_statement
+        field: source
+    - inside:
+        kind: export_statement
+        field: source
+    - inside:
+        kind: arguments
+        inside:
+          kind: call_expression
+          has:
+            field: function
+            kind: import

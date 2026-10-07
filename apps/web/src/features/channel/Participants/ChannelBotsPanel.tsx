@@ -3,7 +3,7 @@ import { LoadingSpinner } from '@core/component/LoadingSpinner';
 import { toast } from '@core/component/Toast/Toast';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import PlusIcon from '@phosphor/plus.svg';
-import RobotIcon from '@phosphor/robot.svg';
+import SparkleIcon from '@phosphor/sparkle.svg';
 import UserPlusIcon from '@phosphor/user-plus.svg';
 import {
   useChannelBotsQuery,
@@ -88,7 +88,7 @@ export function ChannelBotsPanel(props: {
         fallback={
           <div class="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
             <div class="flex size-9 items-center justify-center rounded-lg bg-hover text-ink-muted">
-              <RobotIcon class="size-5" />
+              <SparkleIcon class="size-5" />
             </div>
             <div class="mt-2 text-sm font-medium">
               {search().trim() ? 'No matching bots' : 'No bots in this channel'}

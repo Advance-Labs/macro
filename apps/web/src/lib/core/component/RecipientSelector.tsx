@@ -27,7 +27,7 @@ import {
 import CheckIcon from '@phosphor/check.svg';
 import HashIcon from '@phosphor/hash.svg';
 import PaperPlaneTiltIcon from '@phosphor/paper-plane-tilt.svg';
-import RobotIcon from '@phosphor/robot.svg';
+import SparkleIcon from '@phosphor/sparkle.svg';
 import XIcon from '@phosphor/x.svg';
 import type { Bot } from '@service-storage/generated/schemas/bot';
 import { debounce } from '@solid-primitives/scheduled';
@@ -101,7 +101,7 @@ function AgentAvatar(props: { agent: Bot }) {
         when={props.agent.avatar_url}
         fallback={
           <Avatar.Fallback>
-            <RobotIcon aria-hidden="true" class="size-3.5" />
+            <SparkleIcon aria-hidden="true" class="size-3.5" />
           </Avatar.Fallback>
         }
       >
