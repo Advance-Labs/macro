@@ -1305,11 +1305,15 @@ pub async fn run() -> anyhow::Result<()> {
     // Agent sessions belong to a different bot entirely
     // (`bot_id::MACRO_NEW_BOT_ID`, served by the harness), so the two paths
     // can never answer the same mention.
+    // This host holds no authentication-service key, so its counted usage is
+    // settled by that service's reconciliation sweep rather than requested
+    // after each completion.
     let mut macro_agent_tool_context = ai_tools::build_tool_service_context_from_env(
         db.clone(),
         event_broker_tracker.clone(),
         config.enable_ai_usage_enforcement,
         config.ai_pricing(),
+        ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
     )
     .await
     .context("failed to build Macro agent tool context")?;
