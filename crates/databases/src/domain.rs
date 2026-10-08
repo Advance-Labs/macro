@@ -9,6 +9,9 @@ pub mod models;
 #[cfg(feature = "view_rows")]
 pub mod view_rows;
 
+#[cfg(feature = "ports")]
+pub mod storage;
+
 #[cfg(feature = "entity_mutation")]
 pub mod entity_mutation;
 
@@ -30,3 +33,7 @@ pub mod transfer;
 /// Retry-safe first database provisioning.
 #[cfg(feature = "ports")]
 pub mod starter;
+
+/// Atomic provisioning for an entity that owns a database.
+#[cfg(feature = "ports")]
+pub mod provisioning;

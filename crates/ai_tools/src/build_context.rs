@@ -265,7 +265,6 @@ pub async fn build_tool_service_context_from_env(
         ),
         crm::domain::service::NoOpCrmService,
         github_pull_request_service,
-        reminders::domain::service::NoOpRemindersService,
     ));
 
     let s3_client = macro_aws_config::s3_client().await;
@@ -352,7 +351,10 @@ pub async fn build_tool_service_context_from_env(
         (*entity_access_service).clone(),
         lexical_client.clone(),
         sync_client.as_ref().clone(),
-        ReqwestEditingWorkerClient::new(ai_editing_worker_url, Arc::new(reqwest::Client::new())),
+        ReqwestEditingWorkerClient::new(
+            ai_editing_worker_url.clone(),
+            Arc::new(reqwest::Client::new()),
+        ),
         env.document_permission_jwt.to_string(),
         crate::tool_context::build_message_service_with_side_effects(
             pool.clone(),
@@ -481,6 +483,19 @@ pub async fn build_tool_service_context_from_env(
         pool.clone(),
     );
 
+    let forms_tool_context = crate::tool_context::build_forms_tool_context(
+        pool.clone(),
+        &document_tool_context,
+        &databases_tool_context,
+        &calendar_tool_context,
+        Some(side_effect_clients.connection_gateway.as_ref().clone()),
+        crate::tool_context::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+        crate::tool_context::FormsToolConfig {
+            app_origin: macro_service_urls::AppServiceUrl::new()?.to_string(),
+            editing_worker_url: ai_editing_worker_url,
+        },
+    );
+
     let recorder = ai_usage::pg_recorder_with_enforcement(pool.clone(), enforcement);
 
     Ok(ToolServiceContext {
@@ -503,13 +518,19 @@ pub async fn build_tool_service_context_from_env(
         email_tool_context,
         call_tool_context,
         calendar_tool_context,
-        notification_tool_context,
-        reminders_tool_context: crate::tool_context::build_reminders_tool_context(
+        team_calendar_tool_context: crate::tool_context::build_team_calendar_tool_context(
             pool.clone(),
-            user_email_service.clone(),
-            entity_access_service.clone(),
+            macro_env_var::maybe_read_env("CALENDAR_TEAM_SHARING_ENABLED")
+                .and_then(|value| value.parse::<bool>().ok())
+                .unwrap_or(false),
         ),
+        booking_link_tool_context: crate::tool_context::build_booking_link_tool_context(
+            pool.clone(),
+            environment,
+        ),
+        notification_tool_context,
         databases_tool_context,
+        forms_tool_context,
         databases_sql_tool_context,
         import_tool_context: ToolImportToolContext::unwired(),
         chat_tool_context,

@@ -38,7 +38,7 @@ import {
   untrack,
 } from 'solid-js';
 import { match } from 'ts-pattern';
-import type { DatabaseRowsPagination } from '../context/table-source';
+import type { DatabaseRowsPagination } from '../../database/context/table-source';
 
 export type DatabaseViewQuery = DatabaseSqlQuery & {
   pagination?: DatabaseRowsPagination;

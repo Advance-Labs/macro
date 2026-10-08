@@ -205,6 +205,7 @@ export const TOKENS = {
     paste: 'canvas.paste',
     zoomIn: 'canvas.zoomIn',
     zoomOut: 'canvas.zoomOut',
+    zoomFit: 'canvas.zoomFit',
     undo: 'canvas.undo',
     redo: 'canvas.redo',
     cancel: 'canvas.cancel',
@@ -309,6 +310,8 @@ export const TOKENS = {
     agentNewSplit: 'create.agentNewSplit',
     database: 'create.database',
     databaseNewSplit: 'create.databaseNewSplit',
+    form: 'create.form',
+    formNewSplit: 'create.formNewSplit',
     close_menu: 'create.close_menu',
   },
 

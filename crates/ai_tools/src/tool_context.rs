@@ -4,6 +4,7 @@ use bots::{
     domain::service::BotServiceImpl, inbound::toolset::BotToolContext,
     outbound::pg_bots_repo::PgBotsRepo,
 };
+use calendar_events::inbound::team_toolset::TeamCalendarToolContext;
 use calendar_events::inbound::toolset::CalendarToolContext;
 use call::domain::models::{CallError, CallWebhookEvent, EgressS3Config};
 use call::domain::ports::CallRtcClient;
@@ -63,7 +64,6 @@ use notification::domain::service::SqsNotificationIngress;
 use notification::inbound::ai_tool::NotificationToolContext;
 use projects::inbound::toolset::ProjectToolContext;
 use properties::inbound::toolset::PropertiesToolContext;
-use reminders::inbound::toolset::RemindersToolContext;
 use skills::inbound::toolset::SkillToolContext;
 use soup::{domain::service::SoupImpl, inbound::toolset::SoupToolContext};
 use std::sync::Arc;
@@ -81,6 +81,9 @@ mod images;
 #[cfg(any(test, feature = "test-support"))]
 pub use images::build_image_generation_tool_context_test;
 pub use images::{ToolImageGenerationToolContext, build_image_generation_tool_context};
+
+mod forms;
+pub use forms::{FormsToolConfig, ToolFormsToolContext, build_forms_tool_context};
 
 mod initiatives;
 pub use initiatives::{ToolInitiativeToolContext, build_initiative_tool_context};
@@ -447,6 +450,27 @@ pub type ToolCalendarMutationService =
 pub type ToolCalendarToolContext =
     CalendarToolContext<ToolCalendarMutationService, ToolCalendarReadService>;
 
+/// Source-scoped team calendar domain service for read-only AI availability.
+pub type ToolTeamCalendarService = calendar_events::domain::team::CalendarTeamServiceImpl<
+    calendar_events::outbound::pg_team::PgCalendarTeamRepository,
+>;
+
+/// Team availability tool dependencies, separate from provider mutation access.
+pub type ToolTeamCalendarToolContext = TeamCalendarToolContext<ToolTeamCalendarService>;
+
+/// Construct the authorized availability service at the AI composition root.
+pub fn build_team_calendar_tool_context(
+    pool: sqlx::PgPool,
+    enabled: bool,
+) -> ToolTeamCalendarToolContext {
+    TeamCalendarToolContext {
+        service: Arc::new(calendar_events::domain::team::CalendarTeamServiceImpl::new(
+            calendar_events::outbound::pg_team::PgCalendarTeamRepository::new(pool),
+            enabled,
+        )),
+    }
+}
+
 /// Build the calendar AI tool context: reads query the local occurrence
 /// projections from `pool`; mutations call the calendar service at
 /// `calendar_service_url` with the shared internal API key.
@@ -466,6 +490,37 @@ pub fn build_calendar_tool_context(
             calendar_events::outbound::pg::PgCalendarRepository::new(pool),
         )),
     )
+}
+
+/// Settings-only scheduling service; no provider/calendar writes are exposed here.
+pub type ToolBookingLinkService = calendar_scheduling::domain::service::Service<
+    calendar_scheduling::outbound::postgres::PostgresRepository,
+    (),
+    calendar_scheduling::outbound::macro_services::MacroDirectory<ToolTeamService>,
+>;
+/// Booking-link tool dependencies.
+pub type ToolBookingLinkToolContext =
+    calendar_scheduling::inbound::toolset::BookingLinkToolContext<ToolBookingLinkService>;
+/// Construct scheduling adapters at the AI composition root.
+pub fn build_booking_link_tool_context(
+    pool: sqlx::PgPool,
+    environment: macro_env::Environment,
+) -> ToolBookingLinkToolContext {
+    calendar_scheduling::inbound::toolset::BookingLinkToolContext {
+        service: Arc::new(calendar_scheduling::domain::service::Service::new(
+            calendar_scheduling::outbound::postgres::PostgresRepository::new(pool.clone()),
+            (),
+            calendar_scheduling::outbound::macro_services::MacroDirectory(TeamRepositoryImpl::new(
+                pool,
+            )),
+        )),
+        public_origin: match environment {
+            macro_env::Environment::Production => "https://macro.com",
+            macro_env::Environment::Develop => "https://dev.macro.com",
+            macro_env::Environment::Local => "",
+        }
+        .into(),
+    }
 }
 
 /// Type alias for the CRM AI tool context.
@@ -922,7 +977,6 @@ pub type ToolSoupService = SoupImpl<
     ToolCallRecordQueryService,
     crm::domain::service::NoOpCrmService,
     ToolGithubPullRequestService,
-    reminders::domain::service::NoOpRemindersService,
 >;
 
 /// No-op notification service for properties (tools don't send assignment notifications)
@@ -1065,43 +1119,6 @@ pub type ToolNotificationService = notification::domain::service::NotificationRe
 
 /// Type alias for the notification tool context.
 pub type ToolNotificationToolContext = NotificationToolContext<ToolNotificationService>;
-
-/// Type alias for the reminders service implementation used by AI tools.
-pub type ToolRemindersService =
-    reminders::domain::email_followup::reminder_service::EmailRemindersService<
-        reminders::domain::service::RemindersServiceImpl<
-            reminders::outbound::pg_reminders_repo::PgRemindersRepo,
-        >,
-        reminders::outbound::pg_reminders_repo::PgRemindersRepo,
-        ToolUserEmailService,
-        reminders::domain::ports::SystemClock,
-    >;
-
-/// Type alias for the reminders tool context.
-pub type ToolRemindersToolContext =
-    RemindersToolContext<ToolRemindersService, ToolEntityAccessService>;
-
-/// Build the reminders tool context with the same email lifecycle as HTTP.
-///
-/// The reminder tools go through the same access receipts the HTTP API does,
-/// so this needs the entity access service as well as the repository.
-pub fn build_reminders_tool_context(
-    pool: sqlx::PgPool,
-    email_service: Arc<ToolUserEmailService>,
-    entity_access_service: Arc<ToolEntityAccessService>,
-) -> ToolRemindersToolContext {
-    let repo = reminders::outbound::pg_reminders_repo::PgRemindersRepo::new(pool);
-    RemindersToolContext::new(
-        reminders::domain::email_followup::reminder_service::EmailRemindersService::new(
-            reminders::domain::service::RemindersServiceImpl::new(repo.clone()),
-            reminders::domain::email_followup::service::EmailFollowupService::new(
-                repo,
-                (*email_service).clone(),
-            ),
-        ),
-        entity_access_service,
-    )
-}
 
 /// Table-changed fan-out for AI tool hosts, the databases crate's publisher.
 pub use databases::outbound::gateway_event_publisher::MaybeGatewayTableEventPublisher as ToolTableEventPublisher;
@@ -1597,9 +1614,11 @@ pub struct ToolServiceContext {
     pub email_tool_context: ToolEmailToolContext,
     pub call_tool_context: ToolCallToolContext,
     pub calendar_tool_context: ToolCalendarToolContext,
+    pub team_calendar_tool_context: ToolTeamCalendarToolContext,
+    pub booking_link_tool_context: ToolBookingLinkToolContext,
     pub notification_tool_context: ToolNotificationToolContext,
-    pub reminders_tool_context: ToolRemindersToolContext,
     pub databases_tool_context: ToolDatabasesToolContext,
+    pub forms_tool_context: ToolFormsToolContext,
     pub databases_sql_tool_context: ToolDatabasesSqlToolContext,
     /// Import staging/tracking tools. `unwired` in hosts that can't build
     /// the import service — calls there fail with a clear error.
@@ -1664,6 +1683,7 @@ impl ToolServiceContext {
         self.initiative_tool_context = self.initiative_tool_context.with_actor(actor);
         self.channel_tool_context = self.channel_tool_context.with_actor(actor);
         self.databases_tool_context = self.databases_tool_context.with_actor(actor);
+        self.forms_tool_context.actor = actor;
         self.databases_sql_tool_context = self.databases_sql_tool_context.with_actor(actor);
         self
     }
