@@ -1,4 +1,4 @@
-# Database performance audit — 2026-10-05–06
+# Database performance audit — 2026-10-05–08
 
 At 100,000 stored records, the table opens in **1.73 seconds cold and 1.66 seconds
 warm**, compared with 33.82 seconds cold and a Chrome crash on warm reload before
@@ -8,7 +8,8 @@ views were under 3 seconds. These are local measurements, not a production SLA.
 The initial view now loads 500 records and mounts about 25 visible rows. Filtering
 and ordering cover the entire table on the server before pagination. Opening does
 not wait for all 100,000 records to download. The Soup and engine page limits remain
-500; boards and arbitrary SQL retain their existing 20,000-row cap.
+500; boards, tables containing formula columns, and arbitrary SQL retain the
+existing engine reader and its 20,000-row cap.
 
 - Profiling PR: <https://github.com/macro-inc/macro/pull/7496>
 - Optimization PR: <https://github.com/macro-inc/macro/pull/7539>
@@ -354,6 +355,21 @@ build hook timed out in the earlier CI run. The optimized frontend, all eight WA
 modules and DSS were rebuilt before the current measurements. API traversal and
 the browser interaction/deep-read checks above passed again on `c517578d32`.
 
+### October 8 main integration
+
+Main through `9f2a13df42` is integrated, including the shared database UI, sticky
+summaries and formula columns. Local revalidation passed 822 frontend tests in
+117 files, nine browser tests, TypeScript and schema checks. Rust revalidation
+passed 244 database tests, 39 database-query service tests, one GraphQL adapter
+test, 68 complete-graph tests and 29 DSS tests with SQLX_OFFLINE unset.
+
+The integration preserves editor focus when virtualized rows cross the sticky
+header/footer and when adding or removing formulas switches readers. Formula
+tables retain the existing engine reader; a delayed or failed handoff keeps the
+displayed rows and their partial-result label until its replacement arrives.
+These are functional checks of the integration, not new opening benchmarks.
+The performance measurements and the local demo above remain on `c517578d32`.
+
 ## Remaining limits
 
 - This achieves the requested opening target on the local table fixture. Broader
@@ -371,6 +387,9 @@ the browser interaction/deep-read checks above passed again on `c517578d32`.
   handling are the next changes for sustained deep editing.
 - Boards retain the existing capped reader. They need pagination designed around
   lanes and card order; arbitrary SQL also retains its current engine limit.
+  After integration with formula columns on October 8, tables containing formulas
+  use that engine too, so their computed values, filters and sorts remain correct.
+  The opening measurements above cover tables without formula columns.
 - Aggressive scrolling still has long frames. Cell mounting/paint and cache
   backpressure remain worth profiling separately from opening latency.
 

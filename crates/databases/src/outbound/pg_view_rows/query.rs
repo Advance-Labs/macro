@@ -98,7 +98,8 @@ pub(super) fn page(
                 table
                     .columns
                     .iter()
-                    .find(|column| column.id == id)
+                    // Formula values are computed by the engine, not stored properties.
+                    .find(|column| column.id == id && column.formula.is_none())
                     .ok_or(ViewRowsError::InvalidQuery)
             })
             .collect::<Result<_, _>>()?,

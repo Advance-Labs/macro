@@ -137,7 +137,23 @@ type change never empties a value; only deleting a cell, row, column, table or
 option does. Plain number strings can become numbers; padding, leading zeros and
 ambiguous values count as values that don't fit. A date becomes its `YYYY-MM-DD`
 text. Changing a placement never changes another table that uses the same property.
-A relation can hold multiple records. **Delete column** opens a confirmation;
+A relation can hold multiple records.
+
+**Formula columns.** **Change type → Formula** opens the formula editor under the
+header. On a new, never-filled column the formula column takes its place and name;
+on any other column it is added right after it (named "Formula"). Type the formula
+(`{Unit price} * Quantity`, `Due + 7`, `Due - Started`) or click the column and
+`+ − × ÷ ( )` buttons below the input; only number, date and other formula columns
+are offered. The line under the input says whether it gives a number or a date, or
+why it does not parse (`The formula ends too soon.`, `A date can't be multiplied
+by a number.`); **Save** stays disabled until it does, and Enter saves. Names with
+spaces go in braces. Numbers added to a date count days; a date minus a date is
+the days between them. An empty number counts as 0 unless every input is empty.
+Formula columns show an ƒ icon, their cells are read-only, and their header menu
+has **Edit formula** instead of **Change type**. Values follow edits to their inputs
+at once, and sort and filter like numbers or dates. Deleting a column a formula uses
+is refused ("Total's formula uses Quantity; change that formula first").
+**Delete column** opens a confirmation;
 it removes this table’s column and values while preserving other tables.
 Drag a column header left or right to reorder it, or use **Move left / Move right**.
 To add a column next to another, right-click its header and choose **Insert left** or
@@ -551,8 +567,9 @@ A slow or failed refresh is not a reason to resend a successful mutation.
 
 Use synthetic records on an isolated local stack and the
 [database profiling harness](../../apps/web/scripts/database-profile/README.md).
-Table views filter and sort all stored records on the server before fetching
-pages of 500. Scroll near the bottom or choose **Load more** for the next page.
+Table views without formula columns filter and sort all stored records on the
+server before fetching pages of 500. Scroll near the bottom or choose **Load more**
+for the next page.
 The footer reports loaded records while more pages remain. Only visible grid
 rows are mounted, so count loaded records separately from DOM rows. Test a
 filter whose matches occur beyond the first page, and a sort whose first record
@@ -563,9 +580,10 @@ the loaded rows opens its record panel. A saved-record notice can also open a
 record that is not loaded; this does not mean it fails the current filters.
 Arrow keys and Tab must reveal and focus cells beyond the visible window.
 
-Boards and arbitrary SQL still use the existing engine reader with its
-20,000-record cap. Board lane/card ordering is applied to that result; check
-the incomplete-results notice when auditing those surfaces.
+Boards, tables containing formula columns, and arbitrary SQL still use the
+existing engine reader with its 20,000-record cap. The engine computes formula
+values before filtering and sorting. Board lane/card ordering is applied to that
+result; check the incomplete-results notice when auditing those surfaces.
 
 After loading, switch between tables and views several times, edit a cell,
 open a select picker, add and delete a temporary record, and scroll. Confirm

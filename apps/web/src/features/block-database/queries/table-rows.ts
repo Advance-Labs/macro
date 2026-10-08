@@ -194,29 +194,60 @@ export function createDatabaseRowsSource(props: {
       { equals: sameDatabaseSqlStatement }
     );
   const viewStatement = tableStatement(() => ({ view: props.view() }));
-  // Boards arrange complete lanes using card positions after reading their rows.
-  const board = () => props.view().layout.kind === 'board';
+  // The engine computes formulas and arranges complete board lanes after reading rows.
+  const engineView = () =>
+    props.view().layout.kind === 'board' ||
+    viewStatement()?.schema.databases.some((database) =>
+      database.tables.some((table) =>
+        table.columns.some((column) => column.formula)
+      )
+    );
   const pagedQuery = (props.viewQuery ?? createDatabaseViewQuery)(() =>
-    board() ? undefined : viewStatement()
+    engineView() ? undefined : viewStatement()
   );
-  const boardQuery = createDatabaseSqlQuery(
-    () => (board() ? viewStatement() : undefined),
+  const engineQuery = createDatabaseSqlQuery(
+    () => (engineView() ? viewStatement() : undefined),
     props.read
   );
-  const activeQuery = () => (board() ? boardQuery : pagedQuery);
+  const activeQuery = () => (engineView() ? engineQuery : pagedQuery);
+  const currentRead = () => {
+    const query = activeQuery();
+    const outcome = query.outcome();
+    const catalog = query.catalog();
+    if (!outcome || !catalog) return undefined;
+    const pagination = engineView() ? undefined : pagedQuery.pagination;
+    return {
+      outcome,
+      catalog,
+      hasMore: pagination?.hasMore() ?? false,
+      version: pagination?.version(),
+    };
+  };
+  // A formula schema change can switch readers; keep the grid mounted during the handoff.
+  const completed = createMemo<ReturnType<typeof currentRead>>((previous) =>
+    viewStatement() ? (currentRead() ?? previous) : undefined
+  );
+  // Accepted writes may refresh a reader after its reactive owner is disposed.
+  const shownRead = () => currentRead() ?? completed();
   const rowsQuery: DatabaseViewQuery = {
-    outcome: () => activeQuery().outcome(),
-    catalog: () => activeQuery().catalog(),
+    outcome: () => shownRead()?.outcome,
+    catalog: () => shownRead()?.catalog,
     loading: () => activeQuery().loading(),
     error: () => activeQuery().error(),
     cached: () => activeQuery().cached(),
     refresh: (reason) => activeQuery().refresh(reason),
     answerFromCache: () => activeQuery().answerFromCache(),
     pagination: pagedQuery.pagination && {
-      hasMore: () => !board() && pagedQuery.pagination!.hasMore(),
-      loading: () => !board() && pagedQuery.pagination!.loading(),
-      version: () => (board() ? undefined : pagedQuery.pagination!.version()),
-      loadMore: () => pagedQuery.pagination!.loadMore(),
+      hasMore: () => shownRead()?.hasMore ?? false,
+      loading: () =>
+        engineView() ? engineQuery.loading() : pagedQuery.pagination!.loading(),
+      version: () => shownRead()?.version,
+      loadMore: () => {
+        if (!engineView()) return pagedQuery.pagination!.loadMore();
+        return engineQuery.loading()
+          ? okAsync({ landed: false })
+          : engineQuery.refresh();
+      },
     },
   };
   // A type change gives a column a new definition. Until the read of it

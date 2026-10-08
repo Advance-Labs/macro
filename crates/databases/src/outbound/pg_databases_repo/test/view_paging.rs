@@ -37,6 +37,7 @@ async fn page_fixture(pool: &PgPool) -> (QueryTable, Vec<RowId>) {
                 placement: ColumnId::from_uuid(definition),
                 name: "Amount".into(),
                 kind: ColumnKind::Number,
+                formula: None,
             }],
         },
         rows.into_iter().map(|row| row.id).collect(),
@@ -128,6 +129,37 @@ async fn changed_versions_cannot_continue_an_old_page(pool: PgPool) {
             .await,
         Err(ViewRowsError::Stale)
     ));
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn formula_filters_and_sorts_cannot_read_missing_stored_cells(pool: PgPool) {
+    let (mut table, _) = page_fixture(&pool).await;
+    table.columns[0].formula = Some(models_databases::Formula::Number { value: 42.0 });
+    for view in [
+        ascending(&table),
+        filtered(
+            &table,
+            FilterTest::Number {
+                operator: NumberOperator::Is,
+                value: 42.0,
+            },
+        ),
+    ] {
+        let query = database_sql::compile_table_query(
+            table.id,
+            &view,
+            &Catalog {
+                tables: vec![table.clone()],
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            PgViewRows::new(pool.clone())
+                .page(&table, &query, TableVersion(0), None, 2)
+                .await,
+            Err(ViewRowsError::InvalidQuery)
+        ));
+    }
 }
 
 async fn values(
