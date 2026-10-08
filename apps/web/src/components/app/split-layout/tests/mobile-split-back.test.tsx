@@ -16,31 +16,29 @@ vi.mock('../components/SplitPanel', () => ({ SplitPanel: () => null }));
 
 import { useSplitBackInterceptor } from '../back-interceptor';
 import type { SplitId, SplitState } from '../layoutManager';
-import type { MobileSwipeLayout } from '../mobile/createMobileSwipeLayout';
+import type { MobilePaneStack } from '../mobile/createMobilePaneStack';
 import { MobileSplitContainer } from '../mobile/MobileSplitContainer';
 
-function stubSwipeLayout(
-  overrides: Partial<MobileSwipeLayout> = {}
-): MobileSwipeLayout {
+function stubPaneStack(
+  overrides: Partial<MobilePaneStack> = {}
+): MobilePaneStack {
   return {
-    slotASplitId: () => undefined,
-    slotBSplitId: () => undefined,
-    fgIsSlotA: () => true,
+    front: () => undefined,
+    behind: () => undefined,
     canGoBack: () => true,
-    completeSwipeBack: () => {},
-    completeNavigateForward: () => {},
+    completeGoBack: () => {},
     setAnimatedTrigger: () => {},
-    setForwardNavigationTrigger: () => {},
-    swipeBack: () => {},
+    setForwardTrigger: () => {},
+    goBack: () => {},
     ...overrides,
   };
 }
 
-function mountContainer(mobileSwipeLayout: MobileSwipeLayout) {
+function mountContainer(stack: MobilePaneStack) {
   return render(() => (
     <MobileSplitContainer
       splitManager={{ getSplit: () => undefined }}
-      mobileSwipeLayout={mobileSwipeLayout}
+      stack={stack}
       splits={() => [] as ReadonlyArray<SplitState>}
       panelRefs={new Map<SplitId, HTMLDivElement>()}
     />
@@ -59,23 +57,23 @@ afterEach(() => {
 
 describe('Android system Back in the mobile split container', () => {
   it('navigates back when no view claims the press', () => {
-    const swipeBack = vi.fn();
-    const { unmount } = mountContainer(stubSwipeLayout({ swipeBack }));
+    const goBack = vi.fn();
+    const { unmount } = mountContainer(stubPaneStack({ goBack }));
 
     expect(pressBack()).toBe(false);
-    expect(swipeBack).toHaveBeenCalledOnce();
+    expect(goBack).toHaveBeenCalledOnce();
     unmount();
   });
 
   it('lets the active view claim it, so a dirty draft keeps its composer', () => {
-    const swipeBack = vi.fn();
+    const goBack = vi.fn();
     const confirmDraft = vi.fn(() => true);
     const { unmount } = render(() => {
       useSplitBackInterceptor(confirmDraft);
       return (
         <MobileSplitContainer
           splitManager={{ getSplit: () => undefined }}
-          mobileSwipeLayout={stubSwipeLayout({ swipeBack })}
+          stack={stubPaneStack({ goBack })}
           splits={() => [] as ReadonlyArray<SplitState>}
           panelRefs={new Map<SplitId, HTMLDivElement>()}
         />
@@ -84,18 +82,18 @@ describe('Android system Back in the mobile split container', () => {
 
     expect(pressBack()).toBe(false);
     expect(confirmDraft).toHaveBeenCalledOnce();
-    expect(swipeBack).not.toHaveBeenCalled();
+    expect(goBack).not.toHaveBeenCalled();
     unmount();
   });
 
   it('navigates back when the view declines the press', () => {
-    const swipeBack = vi.fn();
+    const goBack = vi.fn();
     const { unmount } = render(() => {
       useSplitBackInterceptor(() => false);
       return (
         <MobileSplitContainer
           splitManager={{ getSplit: () => undefined }}
-          mobileSwipeLayout={stubSwipeLayout({ swipeBack })}
+          stack={stubPaneStack({ goBack })}
           splits={() => [] as ReadonlyArray<SplitState>}
           panelRefs={new Map<SplitId, HTMLDivElement>()}
         />
@@ -103,7 +101,7 @@ describe('Android system Back in the mobile split container', () => {
     });
 
     expect(pressBack()).toBe(false);
-    expect(swipeBack).toHaveBeenCalledOnce();
+    expect(goBack).toHaveBeenCalledOnce();
     unmount();
   });
 
@@ -114,7 +112,7 @@ describe('Android system Back in the mobile split container', () => {
       return (
         <MobileSplitContainer
           splitManager={{ getSplit: () => undefined }}
-          mobileSwipeLayout={stubSwipeLayout({ canGoBack: () => false })}
+          stack={stubPaneStack({ canGoBack: () => false })}
           splits={() => [] as ReadonlyArray<SplitState>}
           panelRefs={new Map<SplitId, HTMLDivElement>()}
         />

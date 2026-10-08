@@ -4,7 +4,7 @@ import type {
   SplitId,
   SplitState,
 } from '@components/app/split-layout/layoutManager';
-import type { MobileSwipeLayout } from '@components/app/split-layout/mobile/createMobileSwipeLayout';
+import type { MobilePaneStack } from '@components/app/split-layout/mobile/createMobilePaneStack';
 import { MobileSplitContainer } from '@components/app/split-layout/mobile/MobileSplitContainer';
 import { useAndroidBack } from '@core/mobile/androidBack';
 import { createSignal, Show } from 'solid-js';
@@ -12,17 +12,15 @@ import { createEmailComposer } from '../primitives/email-composer';
 import { createEmailEditor, setEmailEditorText } from '../tests/editor';
 
 /** Only the Back role matters here; the container never mounts a panel. */
-function stubSwipeLayout(swipeBack: () => void): MobileSwipeLayout {
+function stubPaneStack(goBack: () => void): MobilePaneStack {
   return {
-    slotASplitId: () => undefined,
-    slotBSplitId: () => undefined,
-    fgIsSlotA: () => true,
+    front: () => undefined,
+    behind: () => undefined,
     canGoBack: () => true,
-    completeSwipeBack: () => {},
-    completeNavigateForward: () => {},
+    completeGoBack: () => {},
     setAnimatedTrigger: () => {},
-    setForwardNavigationTrigger: () => {},
-    swipeBack,
+    setForwardTrigger: () => {},
+    goBack,
   };
 }
 
@@ -164,7 +162,7 @@ export function AndroidBackFixture() {
     <main class="min-h-screen bg-surface text-ink">
       <MobileSplitContainer
         splitManager={{ getSplit: () => undefined }}
-        mobileSwipeLayout={stubSwipeLayout(() => {
+        stack={stubPaneStack(() => {
           setNavigatedBack((count) => count + 1);
           setComposerOpen(false);
         })}
