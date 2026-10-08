@@ -61,8 +61,13 @@ use crate::domain::{
         TeamMember, TeamPlan, TeamRole, TeamWithMembers, ToggleAutoJoinDomainError,
         TryJoinTeamByDomainError,
     },
+    owned_entity_cleanup::ClearedTeam,
     team_repo::TeamRepository,
 };
+
+mod delete_team;
+
+use delete_team::{Journal, RecordingOwnedEntityCleanup, Step};
 
 // Historical thresholds are regression fixtures, not membership policy.
 const FORMER_FREE_MEMBER_LIMIT: i32 = 5;
@@ -132,6 +137,7 @@ struct MockTeamRepository {
     team_ids: Vec<uuid::Uuid>,
     reject_owner: bool,
     user_teams: Vec<Team>,
+    journal: Journal,
 }
 
 impl MockTeamRepository {
@@ -210,6 +216,7 @@ impl MockTeamRepository {
             team_ids: Vec::new(),
             reject_owner: false,
             user_teams: Vec::new(),
+            journal: Journal::default(),
         }
     }
 
@@ -498,9 +505,16 @@ impl TeamRepository for MockTeamRepository {
 
     fn delete_team(
         &self,
-        team_id: &uuid::Uuid,
+        cleared: &ClearedTeam,
     ) -> impl Future<Output = Result<(), TeamError>> + Send {
-        self.delete_team_calls.lock().unwrap().push(*team_id);
+        self.delete_team_calls
+            .lock()
+            .unwrap()
+            .push(cleared.team_id());
+        self.journal.record(Step::DeleteTeam {
+            team_id: cleared.team_id(),
+            bot_ids: cleared.bot_ids().to_vec(),
+        });
         let fail = self.fail_delete_team;
         async move {
             if fail {
@@ -841,6 +855,7 @@ struct MockCustomerRepository {
     fail_increment: bool,
     fail_decrement: bool,
     no_active_subscription: bool,
+    journal: Journal,
 }
 
 impl Default for MockCustomerRepository {
@@ -857,6 +872,7 @@ impl Default for MockCustomerRepository {
             fail_increment: false,
             fail_decrement: false,
             no_active_subscription: false,
+            journal: Journal::default(),
         }
     }
 }
@@ -968,9 +984,11 @@ impl CustomerRepository for MockCustomerRepository {
 
     fn cancel_subscription(
         &self,
-        _: &stripe::SubscriptionId,
+        subscription_id: &stripe::SubscriptionId,
     ) -> impl Future<Output = Result<(), CustomerError>> + Send {
-        async { unimplemented!() }
+        self.journal
+            .record(Step::CancelSubscription(subscription_id.to_string()));
+        async { Ok(()) }
     }
 }
 
@@ -1333,6 +1351,7 @@ struct PublishedTeamEvent {
 struct RecordingEventBroker {
     events: Arc<Mutex<Vec<PublishedTeamEvent>>>,
     fail_scheduling: bool,
+    journal: Journal,
 }
 
 impl RecordingEventBroker {
@@ -1363,11 +1382,16 @@ impl MacroEventBroker for RecordingEventBroker {
             ));
         }
 
-        self.events.lock().unwrap().push(PublishedTeamEvent {
+        let published = PublishedTeamEvent {
             topic: event.topic(),
             key: event.key().to_string(),
             envelope: serde_json::to_value(event.event())?,
-        });
+        };
+        let event_type = published.envelope["event_type"]
+            .as_str()
+            .unwrap_or_default();
+        self.journal.record(Step::Published(event_type.to_owned()));
+        self.events.lock().unwrap().push(published);
 
         Ok(tokio::spawn(async { Ok(()) }))
     }
@@ -2221,7 +2245,7 @@ async fn set_team_member_plan_is_a_no_op_when_already_on_plan() {
 }
 
 #[tokio::test]
-async fn set_team_member_plan_rejects_premium_to_max_without_side_effects() {
+async fn set_team_member_plan_upgrades_premium_seat_to_max_and_swaps_tier_role() {
     let team_id = uuid::Uuid::from_u128(5105);
     let admin_id = MacroUserIdStr::parse_from_str("macro|admin@example.com").unwrap();
     let member_id = "macro|member@example.com";
@@ -2237,23 +2261,38 @@ async fn set_team_member_plan_rejects_premium_to_max_without_side_effects() {
     let remove_calls = roles_service.remove_calls.clone();
     let service = build_member_plan_service(team_repo, customer_repo, roles_service);
 
-    let error = service
+    let member = service
         .set_team_member_plan(
             test_team_receipt::<AdminTeamRole>(team_id, &admin_id),
             &MacroUserIdStr::parse_from_str(member_id).unwrap(),
             SeatPlan::Max,
         )
         .await
-        .unwrap_err();
+        .unwrap();
 
-    assert!(matches!(
-        error,
-        SetTeamMemberPlanError::CustomerError(CustomerError::PlanUnavailable(SeatPlan::Max))
-    ));
-    assert!(move_calls.lock().unwrap().is_empty());
-    assert!(plan_calls.lock().unwrap().is_empty());
-    assert!(upsert_calls.lock().unwrap().is_empty());
-    assert!(remove_calls.lock().unwrap().is_empty());
+    assert_eq!(member.plan, SeatPlan::Max);
+    assert_eq!(
+        *move_calls.lock().unwrap(),
+        vec![("sub_team".to_string(), SeatPlan::Premium, SeatPlan::Max)]
+    );
+    assert_eq!(
+        *plan_calls.lock().unwrap(),
+        vec![(team_id, member_id.to_string(), SeatPlan::Max)]
+    );
+    assert_eq!(
+        *upsert_calls.lock().unwrap(),
+        vec![(
+            member_id.to_string(),
+            vec![RoleId::TeamSubscriber, RoleId::SubMax]
+        )]
+    );
+    assert_eq!(
+        *remove_calls.lock().unwrap(),
+        vec![(
+            member_id.to_string(),
+            vec![RoleId::SubHaiku, RoleId::SubSonnet, RoleId::SubOpus]
+        )]
+    );
 }
 
 #[tokio::test]
@@ -3528,6 +3567,7 @@ fn build_service_with_repo_and_broker(
         NoOpTeamCrmSettingsRepository,
     )
     .with_event_broker(event_broker)
+    .with_owned_entity_cleanup(RecordingOwnedEntityCleanup::default())
 }
 
 fn build_service_with_team(
@@ -4059,6 +4099,24 @@ async fn remove_user_from_all_teams_leaves_the_team_the_user_belongs_to() {
     let metadata = &events[0].envelope["metadata"];
     assert_eq!(metadata["member_id"], member.as_ref());
     assert_eq!(metadata["removed_by"], member.as_ref());
+}
+
+#[tokio::test]
+async fn remove_user_from_all_teams_treats_a_vanished_membership_as_left() {
+    let team_id = uuid::Uuid::from_u128(812);
+    let owner = MacroUserIdStr::parse_from_str("macro|owner@example.com").unwrap();
+    let member = MacroUserIdStr::parse_from_str("macro|member@example.com").unwrap();
+    let mut repo = MockTeamRepository::new(Vec::new(), "Team", Arc::new(Mutex::new(Vec::new())));
+    repo.user_teams = vec![account_deletion_team(team_id, &owner)];
+    // No `removed_member`: the repository reports the user is no longer on the team.
+    let remove_user_calls = repo.remove_user_calls.clone();
+    let broker = RecordingEventBroker::default();
+    let service = build_service_with_repo_and_broker(repo, broker.clone());
+
+    service.remove_user_from_all_teams(&member).await.unwrap();
+
+    assert_eq!(*remove_user_calls.lock().unwrap(), 1);
+    assert!(broker.events().is_empty());
 }
 
 #[tokio::test]

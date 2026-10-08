@@ -17,6 +17,9 @@ export {
   type ListGroupDropdownProps,
   ListSortDropdown,
   type ListSortDropdownProps,
+  type ViewLayout,
+  ViewLayoutDropdown,
+  type ViewLayoutDropdownProps,
 } from './ListDropdowns';
 export { MobileFilterDrawer } from './MobileFilterDrawer';
 export { SearchBar, type SearchBarProps } from './SearchBar';
