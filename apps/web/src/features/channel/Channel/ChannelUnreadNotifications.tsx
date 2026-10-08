@@ -1,6 +1,7 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { enableGraphqlSoup } from '@core/constant/featureFlags';
+import { compareTimelinePositions } from '@core/util/message-timeline';
 import { isTransientRequestError } from '@core/util/request-error';
 import { MessageNotificationIndexContext } from '@notifications/components/MarkMessageNotifications';
 import { compositeEntity } from '@notifications/types';
@@ -8,11 +9,15 @@ import { indexUnreadMessageNotifications } from '@notifications/unread-message-n
 import { createChannelNotificationsQuery } from '@queries/channel/notifications';
 import { queryReadyGate } from '@queries/gate';
 import { useMessageTimelineByIdsQuery } from '@queries/messages/timeline';
-import type { MessageListItem } from '@service-storage/messages';
+import type {
+  MessageListItem,
+  TimelineActivity,
+} from '@service-storage/messages';
 import { type Accessor, createMemo, type JSX } from 'solid-js';
 import type { ThreadListScrollState } from './ThreadList';
 import {
   type ThreadPlacement,
+  type ThreadPosition,
   type UnreadNotificationChip,
   type UnreadThread,
   unreadNotificationChip,
@@ -23,6 +28,10 @@ import {
 export function ChannelUnreadNotifications(props: {
   channelId: string;
   messages: Accessor<MessageListItem[]>;
+  /** Activity rows can be the first visible row, so they need positions too. */
+  activities?: Accessor<ReadonlyMap<string, TimelineActivity>>;
+  /** The actual rendered order, including activity rows. */
+  rowKeys?: Accessor<readonly string[]>;
   scrollState: Accessor<ThreadListScrollState | undefined>;
   container: Accessor<HTMLElement | undefined>;
   insets: Accessor<{ start: number; end: number }>;
@@ -70,12 +79,31 @@ export function ChannelUnreadNotifications(props: {
     }
   );
   const unreadChip = createMemo(() => {
-    const unloaded = new Map(
+    const unloaded = new Map<string, ThreadPosition>(
       (queryReadyGate(unreadRoots) ? unreadRoots.data : []).map((message) => [
         message.id,
         message,
       ])
     );
+
+    const positions = new Map<string, ThreadPosition>(
+      props.messages().map((message) => [message.id, message])
+    );
+    for (const [key, activity] of props.activities?.() ?? [])
+      positions.set(key, { id: key, created_at: activity.occurred_at });
+    const rows = props.rowKeys
+      ? props.rowKeys().flatMap((key) => {
+          const row = positions.get(key);
+          return row ? [row] : [];
+        })
+      : props.activities
+        ? [...positions.values()].sort((left, right) =>
+            compareTimelinePositions(
+              { id: left.id, createdAt: left.created_at },
+              { id: right.id, createdAt: right.created_at }
+            )
+          )
+        : props.messages();
     const scroll = props.scrollState();
     const container = props.container();
     const viewport = container?.querySelector('[data-channel-scroll]');
@@ -106,7 +134,7 @@ export function ChannelUnreadNotifications(props: {
     };
     return unreadNotificationChip(
       unread(),
-      { rows: props.messages(), unloaded },
+      { rows, unloaded },
       scroll?.didInitialScroll ? scroll.visibleRange : undefined,
       measure
     );

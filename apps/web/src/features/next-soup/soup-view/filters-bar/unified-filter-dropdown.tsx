@@ -32,7 +32,7 @@ import { PropertyValueIcon } from '@property/component/propertyValue/PropertyVal
 import { PROPERTY_OPTION_IDS, SYSTEM_PROPERTY_IDS } from '@property/constants';
 import { useGithubLinkStatusQuery } from '@queries/auth';
 import { useContacts } from '@queries/contacts/contacts';
-import { cn, Dropdown, Tooltip } from '@ui';
+import { type ButtonVariant, cn, Dropdown, Tooltip } from '@ui';
 import {
   type Accessor,
   batch,
@@ -368,9 +368,6 @@ export const VIEW_FILTER_CATEGORIES: Record<ListView, FilterCategory[]> = {
   channels: [],
   calls: [],
   folders: [],
-  // The two tabs already split reminders on the only axis they have; there is
-  // nothing further to refine by.
-  reminders: [],
   search: [],
 };
 
@@ -386,6 +383,7 @@ interface UnifiedFilterDropdownProps {
   hideTrigger?: boolean;
   /** Hide the default trigger's text label while retaining its tooltip. */
   hideLabel?: boolean;
+  variant?: ButtonVariant;
 }
 
 const READ_FILTER_OPTIONS: { id: ReadFilter; label: string }[] = [
@@ -717,8 +715,9 @@ export const UnifiedFilterDropdown = (
             <Match when={true}>
               <Tooltip label="Filter" hotkey={TOKENS.soup.filter}>
                 <Dropdown.Trigger
+                  variant={props.variant ?? 'outline'}
                   depth={2}
-                  class="bg-surface"
+                  class={props.variant === 'ghost' ? undefined : 'bg-surface'}
                   aria-label={props.hideLabel ? 'Filter' : undefined}
                 >
                   <FilterIcon />
