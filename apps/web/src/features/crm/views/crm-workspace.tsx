@@ -22,14 +22,19 @@ import { tourTarget } from '@ui/components/Tour';
 import { createSignal, type JSX, onMount, Show, Suspense } from 'solid-js';
 import { CrmListDialog } from '../components/company-list-dialog';
 import { CrmSidebar } from '../components/crm-sidebar';
+import { PipelineDialog } from '../components/pipeline-dialog';
+import { PipelineSidebar } from '../components/pipeline-sidebar';
 import { useCrmContext } from '../context/crm-context';
 import { useCrmWorkspace } from '../context/workspace-context';
 import { CRM_VIEWS } from '../core/navigation';
+import type { PeopleSort } from '../core/people';
 import type { CrmViewConfig } from '../core/saved-view';
 import { createCrmExportLoader } from '../primitives/export-source';
 import { useApplyCrmView } from './apply-view';
 import { CrmExport } from './export-companies';
 import { CrmImport } from './import-companies';
+import { CrmPeople } from './people';
+import { PipelineView } from './pipeline';
 import { CrmCompanyDetail } from './record-detail';
 import { CompanyDisplayMenu, CompanyViewsMenu } from './saved-views-menu';
 import {
@@ -162,6 +167,8 @@ export function CrmWorkspaceView(props: {
   const {
     openCreateCompany: openCreateCompanyModal,
     exportCompanies: fetchCrmExportCompanies,
+    PipelineEditor,
+    copyViewLink,
   } = useCrmContext();
   const view = useCrmWorkspace();
   const [selectedCompany, setSelectedCompany] = createSignal<{
@@ -185,6 +192,25 @@ export function CrmWorkspaceView(props: {
   const teamQuery = useCurrentTeamQuery();
   const teamId = () =>
     teamQuery.isSuccess ? teamQuery.data?.team.id : undefined;
+  const pipelinesEnabled = useCrmContext().pipelinesEnabled();
+  const canCreatePipeline = () =>
+    pipelinesEnabled() &&
+    teamQuery.isSuccess &&
+    teamQuery.data?.team.crm_enabled === true;
+  const pipelines = useCrmContext().createPipelines(() =>
+    pipelinesEnabled() ? teamId() : undefined
+  );
+  const [creatingPipeline, setCreatingPipeline] = createSignal(false);
+  const pipelineId = () =>
+    pipelinesEnabled() && view.activeTab()?.startsWith('pipeline:')
+      ? view.activeTab()?.slice('pipeline:'.length)
+      : undefined;
+  const activePipeline = () =>
+    pipelines.pipelines().find((pipeline) => pipeline.id === pipelineId());
+  const selectPipeline = (id: string) => {
+    closeCompany();
+    view.setActiveTab(`pipeline:${id}`);
+  };
   const listsEnabled = useCrmContext().listsEnabled();
   const lists = useCrmLists(() => (listsEnabled() ? teamId() : undefined));
   const personal = usePersonalCrmViews();
@@ -205,8 +231,13 @@ export function CrmWorkspaceView(props: {
     companyIds: string[];
   }>();
   const [importing, setImporting] = createSignal(false);
-  const active = () =>
-    view.activeTab() === 'people' ? 'active' : (view.activeTab() ?? 'active');
+  const active = () => view.activeTab() ?? 'active';
+  const peopleActive = () => active() === 'people';
+  const directory = useCrmContext().createPeopleSource(peopleActive);
+  const [peopleSearch, setPeopleSearch] = createSignal('');
+  const [peopleSort, setPeopleSort] =
+    createSignal<PeopleSort>('lastInteraction');
+  const [peopleDescending, setPeopleDescending] = createSignal(true);
   const [exporting, setExporting] = createSignal(false);
   const activeList = () =>
     lists.lists().find((list) => `list:${list.id}` === active());
@@ -218,6 +249,10 @@ export function CrmWorkspaceView(props: {
   const navigate = (id: string) => {
     if (!listsEnabled() && id.startsWith('list:')) id = 'active';
     closeCompany();
+    if (id === 'people') {
+      view.setActiveTab(id);
+      return;
+    }
     const saved = savedViews().find((v) => v.id === id);
     if (saved) {
       apply({ ...saved.config, viewMode: view.viewMode() });
@@ -263,7 +298,21 @@ export function CrmWorkspaceView(props: {
   });
   const sidebar = () => (
     <CrmSidebar
-      active={active()}
+      pipelines={
+        <Show when={pipelinesEnabled()}>
+          <PipelineSidebar
+            pipelines={pipelines.pipelines()}
+            activeId={pipelineId()}
+            loading={pipelines.loading()}
+            error={pipelines.error()}
+            canCreate={canCreatePipeline()}
+            onCreate={() => setCreatingPipeline(true)}
+            onSelect={selectPipeline}
+            onRetry={() => void pipelines.refresh()}
+          />
+        </Show>
+      }
+      active={pipelineId() ? `pipeline:${pipelineId()}` : active()}
       viewMode={view.viewMode()}
       onViewModeChange={(mode) => {
         closeCompany();
@@ -312,8 +361,48 @@ export function CrmWorkspaceView(props: {
             />
           )}
         </Show>
-        <Show when={!selectedCompany()}>
-          <Show when={!isTouchDevice()}>
+        <Show when={pipelineId()} keyed>
+          {(id) => (
+            <Show when={activePipeline()}>
+              {(pipeline) => (
+                <PipelineView
+                  pipeline={pipeline()}
+                  source={pipelines}
+                  Sharing={useCrmContext().PipelineSharing}
+                  Editor={PipelineEditor}
+                  onCopyLink={() =>
+                    copyViewLink({
+                      kind: 'crm',
+                      activeTab: `pipeline:${id}`,
+                    })
+                  }
+                  onBack={() => navigate('active')}
+                  navigation={
+                    <NavigationToggle onExpand={() => setCollapsed(false)}>
+                      <Suspense>{sidebar()}</Suspense>
+                    </NavigationToggle>
+                  }
+                />
+              )}
+            </Show>
+          )}
+        </Show>
+        <Show when={pipelineId() && !activePipeline()}>
+          <div class="flex flex-col items-start gap-3 p-6 text-sm text-ink-muted">
+            <p>
+              {pipelines.loading()
+                ? 'Loading pipeline…'
+                : pipelines.error()
+                  ? 'Could not load this pipeline.'
+                  : 'This pipeline is unavailable or you no longer have access.'}
+            </p>
+            <Button variant="ghost" onClick={() => navigate('active')}>
+              Back to companies
+            </Button>
+          </div>
+        </Show>
+        <Show when={!selectedCompany() && !pipelineId()}>
+          <Show when={!isTouchDevice() || peopleActive()}>
             <div class="flex h-12 shrink-0 items-center gap-3 px-4">
               <NavigationToggle onExpand={() => setCollapsed(false)}>
                 <Suspense>{sidebar()}</Suspense>
@@ -325,53 +414,77 @@ export function CrmWorkspaceView(props: {
                 <span class="truncate">{title()}</span>
               </h1>
             </div>
-            <ViewShell.Header>
-              <div class="flex min-w-0 items-center justify-between gap-3">
-                <CrmSearchBar />
-                <div class="ml-auto flex shrink-0 items-center gap-2 [&_button]:h-8 [&_button]:min-w-8 [&_button>svg]:size-4!">
-                  <SoupViewContextSort />
-                  <SoupViewContextGroup hideLabel variant="ghost" />
-                  <UnifiedFilterDropdown hideLabel variant="ghost" />
-                  <CompanyDisplayMenu />
-                  <Suspense>
-                    <CompanyViewsMenu hideLabel />
-                  </Suspense>
-                  <Show when={listsEnabled() && activeList()}>
-                    {(list) => (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setEditing({
-                            id: list().id,
-                            name: list().name,
-                            companyIds: [...list().config.companyIds],
-                          })
-                        }
-                      >
-                        Edit list
-                      </Button>
-                    )}
-                  </Show>
+            <Show when={!peopleActive()}>
+              <ViewShell.Header>
+                <div class="flex min-w-0 items-center justify-between gap-3">
+                  <CrmSearchBar />
+                  <div class="ml-auto flex shrink-0 items-center gap-2 [&_button]:h-8 [&_button]:min-w-8 [&_button>svg]:size-4!">
+                    <SoupViewContextSort />
+                    <SoupViewContextGroup hideLabel variant="ghost" />
+                    <UnifiedFilterDropdown hideLabel variant="ghost" />
+                    <CompanyDisplayMenu />
+                    <Suspense>
+                      <CompanyViewsMenu hideLabel />
+                    </Suspense>
+                    <Show when={listsEnabled() && activeList()}>
+                      {(list) => (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEditing({
+                              id: list().id,
+                              name: list().name,
+                              companyIds: [...list().config.companyIds],
+                            })
+                          }
+                        >
+                          Edit list
+                        </Button>
+                      )}
+                    </Show>
+                  </div>
                 </div>
-              </div>
-            </ViewShell.Header>
-            <Suspense>
-              <CrmFilterChips onReset={() => navigate(active())} />
-            </Suspense>
+              </ViewShell.Header>
+              <Suspense>
+                <CrmFilterChips onReset={() => navigate(active())} />
+              </Suspense>
+            </Show>
           </Show>
-          <div class="min-h-0 min-w-0 flex-1">
-            {props.children({
-              onOpenEntity: isTouchDevice() ? undefined : openCompany,
-              mobileHeaderLeading: isTouchDevice() ? (
-                <NavigationToggle onExpand={() => setCollapsed(false)}>
-                  <Suspense>{sidebar()}</Suspense>
-                </NavigationToggle>
-              ) : undefined,
-            })}
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Show
+              when={peopleActive()}
+              fallback={props.children({
+                onOpenEntity: isTouchDevice() ? undefined : openCompany,
+                mobileHeaderLeading: isTouchDevice() ? (
+                  <NavigationToggle onExpand={() => setCollapsed(false)}>
+                    <Suspense>{sidebar()}</Suspense>
+                  </NavigationToggle>
+                ) : undefined,
+              })}
+            >
+              <CrmPeople
+                directory={directory}
+                search={peopleSearch()}
+                onSearch={setPeopleSearch}
+                sort={peopleSort()}
+                onSort={setPeopleSort}
+                descending={peopleDescending()}
+                onDescending={setPeopleDescending}
+              />
+            </Show>
           </div>
         </Show>
       </ViewShell.Main>
+      <Show when={creatingPipeline() && canCreatePipeline()}>
+        <PipelineDialog
+          onClose={() => setCreatingPipeline(false)}
+          onCreate={async (input) => {
+            const pipeline = await pipelines.create(input);
+            selectPipeline(pipeline.id);
+          }}
+        />
+      </Show>
       <Show when={listsEnabled() && editing()}>
         {(initial) => {
           const companies = useQuickAccessCrmCompaniesQuery();

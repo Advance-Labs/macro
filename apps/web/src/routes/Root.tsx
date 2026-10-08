@@ -1,4 +1,4 @@
-import { ROUTER_BASE, ROUTER_BASE_CONCAT } from '@app/constants/routerBase';
+import { ROUTER_BASE } from '@app/constants/routerBase';
 import { usePendingInviteRedemption } from '@app/features/gtm-invite/usePendingInviteRedemption';
 import { GlobalShareInboxConflictDialog } from '@app/features/inbox/ShareInboxConflictDialog';
 import { IncomingMeetingInvitationsProvider } from '@app/features/meetings/incoming-meeting-invitations';
@@ -11,6 +11,7 @@ import {
 } from '@app/lib/analytics/analytics-context';
 import { PosthogProvider, usePosthog } from '@app/lib/analytics/posthog';
 import { trackSignupCompletion } from '@app/lib/analytics/signupCompletion';
+import { useCalendarCache } from '@app/lib/queries/calendar/graphql/use-calendar-cache';
 import { useInvalidateQueriesOnReconnect } from '@app/lib/queries/invalidate-on-reconnect';
 import { useSoupBackfills } from '@app/lib/queries/soup/backfill';
 import { setHotkeyRoot } from '@app/signal/hotkeyRoot';
@@ -107,8 +108,8 @@ import {
   Show,
   Suspense,
 } from 'solid-js';
-import { useReminderAlerts } from '../features/reminders/reminder-alerts';
 import { AppRouterView } from './app-router-view';
+import { usesFocusedShell } from './focused-shell';
 
 // Only first-time mobile web users see it, and only once it opens.
 const InteractiveOnboardingModal = lazyNamed(
@@ -201,7 +202,6 @@ function ConfiguredGlobalAppStateProvider(props: ParentProps) {
     onNotification
   );
   useNotificationUpdates(notificationSource);
-  useReminderAlerts(notificationSource);
 
   const blockOrchestrator = createBlockOrchestrator();
   usePendingNotificationNavigationEffect(notificationSource);
@@ -218,6 +218,11 @@ function ConfiguredGlobalAppStateProvider(props: ParentProps) {
 
 function SoupBackfillSideEffect(props: { userId: string }) {
   useSoupBackfills(props.userId);
+  return null;
+}
+
+function CalendarCacheSideEffect() {
+  useCalendarCache();
   return null;
 }
 
@@ -280,7 +285,12 @@ function UserInfoSideEffects() {
 
   return (
     <Show when={userInfo()?.id} keyed>
-      {(userId) => <SoupBackfillSideEffect userId={userId} />}
+      {(userId) => (
+        <>
+          <SoupBackfillSideEffect userId={userId} />
+          <CalendarCacheSideEffect />
+        </>
+      )}
     </Show>
   );
 }
@@ -380,18 +390,18 @@ function useBootShellHandoff(isPublicPath: () => boolean) {
   });
 }
 
-/** Meeting and booking links have a focused shell and skip app onboarding. */
+/** Public booking and form links use a focused shell and skip app onboarding. */
 function AppRouteLayout(props: RouteSectionProps) {
   const location = useLocation();
-  const isBookingPath = () =>
-    location.pathname.startsWith(`${ROUTER_BASE_CONCAT}book/`) ||
-    location.pathname.startsWith(`${ROUTER_BASE_CONCAT}booking/`);
+  const isAuthenticated = useIsAuthenticated();
+  const isFocusedPath = () =>
+    usesFocusedShell(location.pathname, isAuthenticated());
   useBootShellHandoff(
-    () => isBookingPath() || isMeetingPath(location.pathname)
+    () => isFocusedPath() || isMeetingPath(location.pathname)
   );
   return (
     <Show
-      when={!isBookingPath()}
+      when={!isFocusedPath()}
       fallback={
         <div class="h-dvh overflow-y-auto bg-page text-ink">
           {props.children}
