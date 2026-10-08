@@ -29,7 +29,9 @@ export const AgentContext: Component<AgentContextDecoratorProps> = (props) => {
         <Popover.Portal>
           <Popover.Content class="z-action-menu flex max-h-[60vh] w-[28rem] max-w-[90vw] flex-col gap-2 overflow-auto rounded-xl border border-edge-muted bg-menu p-3 text-xs text-ink-muted shadow-lg">
             <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-ink">{label()}</span>
+              <span class="font-medium text-ink">
+                Context shared with the agent
+              </span>
               <button
                 type="button"
                 onClick={() => setRaw(!raw())}
