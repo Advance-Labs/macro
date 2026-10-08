@@ -9,8 +9,10 @@ use activity::Ingest;
 use call::domain::events::CallMacroEvent;
 use channels::domain::broker_events::ChannelMacroEvent;
 use chat::domain::events::ChatMacroEvent;
+use databases::domain::events::DatabaseMacroEvent;
 use documents_hex::domain::events::DocumentMacroEvent;
 use email::domain::events::EmailMacroEvent;
+use forms::domain::events::FormMacroEvent;
 use initiative::domain::events::InitiativeMacroEvent;
 use macro_event_broker::MacroEvent as _;
 use messages::outbound::broker::MessageMacroEvent;
@@ -32,9 +34,14 @@ mod source {
             PropertyMacroEvent,
             CallMacroEvent,
             InitiativeMacroEvent,
+            DatabaseMacroEvent,
+            FormMacroEvent,
     );
 }
 pub(crate) use source::ActivitySourceEvent;
+
+mod timeline;
+pub(crate) use timeline::TimelinePublisher;
 
 /// Dispatches each event to its owning domain. Document editing sessions use
 /// the shared inactivity store; all classification and debounce policy stays
@@ -68,6 +75,8 @@ pub(crate) async fn ingest(
         ActivitySourceEvent::PropertyMacroEvent(e) => arm(e.event()),
         ActivitySourceEvent::CallMacroEvent(e) => arm(e.event()),
         ActivitySourceEvent::InitiativeMacroEvent(e) => arm(e.event()),
+        ActivitySourceEvent::DatabaseMacroEvent(e) => arm(e.event()),
+        ActivitySourceEvent::FormMacroEvent(event) => arm(event.event()),
     }
 }
 

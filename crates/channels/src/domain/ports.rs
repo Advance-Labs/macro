@@ -24,6 +24,7 @@ use crate::domain::{
     events::ChannelEvent,
 };
 use channel_sender::ChannelSender;
+use chrono::{DateTime, Utc};
 use entity_access::domain::models::{EntityAccessReceipt, MemberParticipantRole};
 use macro_user_id::user_id::MacroUserIdStr;
 use models_pagination::{CreatedAt, Query};
@@ -122,15 +123,52 @@ pub trait ChannelAttachmentRepo: Send + Sync + 'static {
     ) -> impl Future<Output = Result<Vec<RecentChannelMessage>, Self::Err>> + Send;
 }
 
+/// Reserved channel persistence shared by archive and onboarding imports.
+/// Archive operations are silent; onboarding records first-creation activity.
+/// Import authorization and durable provenance belong to the importing domain.
+pub trait HistoricalChannelRepo: Send + Sync + 'static {
+    /// Create an explicit-ID Team/Private channel with its initial members, or return
+    /// the existing compatible target without changing any of its settings or members.
+    fn create_historical_channel(
+        &self,
+        channel: &super::historical::HistoricalChannel,
+    ) -> impl Future<Output = anyhow::Result<super::historical::EnsuredChannel>> + Send;
+
+    /// Ensure a reserved Team channel for onboarding. Initial creation also writes
+    /// the owner's ordinary activity; reuse has no effects. The service authorizes
+    /// team membership and dispatches creation events only for the winning creator.
+    fn create_onboarding_channel(
+        &self,
+        channel: &super::historical::HistoricalChannel,
+    ) -> impl Future<Output = anyhow::Result<super::historical::EnsuredChannel>> + Send;
+
+    /// Insert missing members silently. Never demote roles or reactivate leavers.
+    /// Reject DMs so this operation cannot introduce a third member.
+    fn insert_historical_participants(
+        &self,
+        channel_id: Uuid,
+        participants: &[MacroUserIdStr<'static>],
+        joined_at: DateTime<Utc>,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Advance channel activity monotonically without creating ordinary activity rows.
+    fn advance_historical_activity(
+        &self,
+        channel_id: Uuid,
+        activity_at: DateTime<Utc>,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
 /// Repository for channel persistence and query data.
 #[cfg_attr(test, mockall::automock(type Err = anyhow::Error;))]
 pub trait ChannelRepo: Send + Sync + 'static {
-    /// Replace or remove the channel's static-file picture reference.
+    /// Replace or remove the channel's static-file picture reference atomically.
+    /// Returns whether the stored reference changed.
     fn set_channel_picture(
         &self,
         channel_id: Uuid,
         picture_id: Option<Uuid>,
-    ) -> impl Future<Output = Result<(), Self::Err>> + Send;
+    ) -> impl Future<Output = Result<bool, Self::Err>> + Send;
     /// Error type for repo operations.
     type Err: Into<anyhow::Error> + Send;
 
@@ -242,7 +280,16 @@ pub trait ChannelRepo: Send + Sync + 'static {
         channel_ids: &[Uuid],
     ) -> impl Future<Output = Result<(), Self::Err>> + Send;
 
-    /// Fetch an existing direct message channel.
+    /// Atomically find or create an exact two-member DM under a normalized pair lock.
+    /// Reuse preserves all settings, roles and timestamps, including historical leavers.
+    /// Historical callers must authorize reuse before writing history into the target.
+    fn ensure_dm(
+        &self,
+        pair: super::dm::DmPair,
+        creation: super::historical::DmCreation,
+    ) -> impl Future<Output = Result<super::historical::EnsuredChannel, Self::Err>> + Send;
+
+    /// Fetch an existing exact two-member DM, deterministically choosing the oldest.
     fn maybe_get_dm<'a>(
         &self,
         user_id: MacroUserIdStr<'a>,
@@ -830,7 +877,8 @@ pub trait ChannelReferenceSharePermissions: Send + Sync + 'static {
     /// Update channel share permissions according to the referenced entity's policy.
     ///
     /// Implementations must not grant access for an item the actor cannot already view.
-    /// Agent sessions require ownership and grant edit access; other references grant view.
+    /// Agent sessions require ownership and grant view access; PDFs grant comment access,
+    /// capped at the actor's own access; other references grant view.
     fn update_channel_share_permissions_for_referenced_items(
         &self,
         actor: MacroUserIdStr<'static>,

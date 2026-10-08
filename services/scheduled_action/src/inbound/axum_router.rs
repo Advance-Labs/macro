@@ -18,13 +18,15 @@ use chrono_tz::Tz;
 use entity_access::domain::models::{EditAccessLevel, OwnerAccessLevel, ViewAccessLevel};
 use entity_access::domain::ports::EntityAccessService;
 use entity_access::inbound::axum_extractors::ScheduledActionAccessExtractor;
-use entity_registry::{CreationPrincipalExtractor, NonUserOwners};
+use entity_registry::{CreationPrincipalExtractor, NonUserOwners, OwnedPurgeOutcome};
 use macro_authorization::{
     InternalOnly, MacroAuthorizationExtractor, MacroAuthorizationService, MacroAuthorizationState,
     UserOrInternal,
 };
 use macro_user_id::user_id::MacroUserIdStr;
+use macro_uuid::Uuid;
 use model::response::EmptyResponse;
+use model_owner::Owner;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -54,7 +56,7 @@ impl From<ScheduledAction> for ScheduledActionResponse {
     fn from(action: ScheduledAction) -> Self {
         let (schedule, timezone) = match &action.trigger {
             ActionTrigger::Cron { schedule, timezone } => (Some(schedule.clone()), Some(*timezone)),
-            ActionTrigger::Events { .. } => (None, None),
+            _ => (None, None),
         };
         Self {
             action,
@@ -132,12 +134,18 @@ where
             delete(delete_user_actions::<S, Svc, Auth>),
         )
         .route(
+            "/scheduled-actions/internal/{id}",
+            delete(purge_owned_action::<S, Svc, Auth>),
+        )
+        .route(
             "/scheduled-actions",
             get(list_actions::<S, Svc, Auth>).post(create_action::<S, Svc, Auth>),
         )
         .route(
             "/scheduled-actions/{id}",
-            put(update_action::<S, Svc, Auth>).delete(delete_action::<S, Svc, Auth>),
+            get(get_action::<S, Svc, Auth>)
+                .put(update_action::<S, Svc, Auth>)
+                .delete(delete_action::<S, Svc, Auth>),
         )
         .route(
             "/scheduled-actions/{id}/enabled",
@@ -165,6 +173,36 @@ where
 {
     state.service.delete_user_actions(user_id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct OwnerQuery {
+    owner: Owner,
+}
+
+/// Internal owner removal: never grants delete authority to a user or bot
+/// token. 204 once the action is gone, including when it already was. 409
+/// when another owner holds it, and nothing was deleted. 500 when the delete
+/// failed; the purge converges, so the caller retries.
+#[tracing::instrument(skip_all, fields(%id, owner.kind = ?owner.owner_type()))]
+async fn purge_owned_action<S, Svc, Auth>(
+    State(state): State<ScheduledActionRouterState<S, Svc, Auth>>,
+    _internal: MacroAuthorizationExtractor<Auth, InternalOnly>,
+    Path(id): Path<Uuid>,
+    Query(OwnerQuery { owner }): Query<OwnerQuery>,
+) -> StatusCode
+where
+    S: ScheduledActionService,
+    Auth: MacroAuthorizationService,
+{
+    match state.service.purge_owned_action(id, &owner).await {
+        Ok(OwnedPurgeOutcome::Purged) => StatusCode::NO_CONTENT,
+        Ok(OwnedPurgeOutcome::OwnedElsewhere) => StatusCode::CONFLICT,
+        Err(error) => {
+            tracing::error!(error = ?error, "unable to purge the owned scheduled action");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }
 
 #[utoipa::path(
@@ -247,6 +285,35 @@ where
             .map(ScheduledActionResponse::from)
             .collect::<Vec<_>>(),
     ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/scheduled-actions/{id}",
+    tag = "scheduled actions",
+    operation_id = "get_scheduled_action",
+    params(("id" = String, Path, description = "ID of the scheduled action")),
+    responses(
+        (status = 200, body = ScheduledActionResponse),
+        (status = 401, body = String),
+        (status = 404, body = String),
+        (status = 500, body = String),
+    )
+)]
+pub async fn get_action<S, Svc, Auth>(
+    State(state): State<ScheduledActionRouterState<S, Svc, Auth>>,
+    ScheduledActionAccessExtractor {
+        entity_access_receipt,
+        ..
+    }: ScheduledActionAccessExtractor<ViewAccessLevel, Svc, Auth>,
+) -> Result<Json<ScheduledActionResponse>, ScheduledActionApiError>
+where
+    S: ScheduledActionService,
+    Svc: EntityAccessService,
+    Auth: MacroAuthorizationService,
+{
+    let action = state.service.get_action(entity_access_receipt).await?;
+    Ok(Json(action.into()))
 }
 
 #[utoipa::path(
@@ -451,9 +518,9 @@ impl IntoResponse for ScheduledActionApiError {
             let status = match policy {
                 ActionPolicyError::NotFound => StatusCode::NOT_FOUND,
                 ActionPolicyError::UpdateConflict => StatusCode::CONFLICT,
-                ActionPolicyError::NoFutureFirings | ActionPolicyError::EventManagementDisabled => {
-                    StatusCode::BAD_REQUEST
-                }
+                ActionPolicyError::NoFutureFirings
+                | ActionPolicyError::EventManagementDisabled
+                | ActionPolicyError::ConditionsDisabled => StatusCode::BAD_REQUEST,
             };
             return (status, policy.to_string()).into_response();
         }

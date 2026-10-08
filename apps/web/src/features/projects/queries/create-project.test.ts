@@ -40,7 +40,6 @@ const due = {
 const detail = {
   id: 'project',
   name: 'Launch',
-  descriptionDocumentId: 'description',
   updatedAt: '2026-09-30T12:00:00Z',
   userAccessLevel: 'owner' as const,
   taskCount: 0,
@@ -57,6 +56,7 @@ it('sends drafted values with the create and leaves unset ones to the server', (
   expect(
     createInitiativeInput({
       name: 'Launch',
+      description: '  Ship it  ',
       shareWithTeam: false,
       properties: [
         {
@@ -75,6 +75,7 @@ it('sends drafted values with the create and leaves unset ones to the server', (
     })
   ).toEqual({
     name: 'Launch',
+    description: 'Ship it',
     shareWithTeam: false,
     propertyValues: [
       {
@@ -109,6 +110,7 @@ it('resolves as soon as the server answers, seeding the detail and refreshing li
 
   const project = await mutation.mutateAsync({
     name: 'Launch',
+    description: '  ',
     shareWithTeam: true,
     properties: [],
   });
@@ -146,6 +148,7 @@ it('rejects without refreshing when the server refuses the create', async () => 
   await expect(
     mutation.mutateAsync({
       name: 'Launch',
+      description: '',
       shareWithTeam: true,
       properties: [],
     })

@@ -4,10 +4,12 @@ import type { EntityData } from '../types/entity';
 
 const OWNER_PRINCIPAL_ROW = [
   'agent_session',
-  'automation',
+  'routine',
   'calendar_event',
   'chat',
+  'database',
   'document',
+  'form',
   'email',
   'initiative',
   'project',
@@ -20,7 +22,6 @@ const UNSHARED_ROW = [
   'channel_thread',
   'crm_company',
   'crm_contact',
-  'reminder',
 ] as const;
 
 export function isSharedWithViewer(
