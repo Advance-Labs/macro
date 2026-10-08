@@ -172,7 +172,7 @@ export function BotCreate(props: { channelId?: string; onBack: () => void }) {
   };
 
   return (
-    <div class="size-full overflow-y-auto bg-surface text-ink">
+    <div class="size-full overflow-y-auto bg-panel text-ink">
       {/* Mobile chrome insets live inside the scroll content so the page is
           full-frame, matching SettingsPage (this create view only renders
           inside the settings panel). */}

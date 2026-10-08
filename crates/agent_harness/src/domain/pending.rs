@@ -67,6 +67,19 @@ impl PendingCommands {
         self.0.get(&session).and_then(|entry| entry.clone())
     }
 
+    /// Change the turn `session` has in flight, handing back the turn as
+    /// changed. `None`, and nothing changed, when it has none.
+    pub fn update_turn(
+        &self,
+        session: AgentSessionId,
+        change: impl FnOnce(&mut InFlightTurn),
+    ) -> Option<InFlightTurn> {
+        let mut entry = self.0.get_mut(&session)?;
+        let turn = entry.as_mut()?;
+        change(turn);
+        Some(turn.clone())
+    }
+
     /// Whether `session` currently has a command admitted and unresolved.
     ///
     /// A reaper's cue to leave the session's transport alone this tick even
@@ -115,6 +128,7 @@ mod test {
             bot_id: None,
             speaks_as_chip: false,
             presented: Vec::new(),
+            held_tool_calls: Vec::new(),
         }
     }
 

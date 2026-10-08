@@ -14,6 +14,8 @@ import type {
   AgentSessionQueueResponse,
   AgentSessionResponse,
   AiAdmissionErrorBody,
+  AnswerToolApprovalRequest,
+  AnswerToolApprovalResponse,
   CompleteRequest,
   ControlRequest,
   ControlResponse,
@@ -29,7 +31,9 @@ import type {
   PreviewAgentSessionsRequest,
   PreviewAgentSessionsResponse,
   PullRequestSessionsResponse,
+  PullRequestsSessionsResponse,
   PullRequestUrl,
+  PullRequestUrls,
   RenameAgentSessionRequest,
   RetryAgentDmRequest,
   SandboxSizeBody,
@@ -41,6 +45,8 @@ import type {
   StatusResponse,
   UnlinkAgentSessionPullRequestParams,
   UpdateSharePermissionRequestV2,
+  WarmAgentSessionRequest,
+  WarmAgentSessionResponse,
 } from './schemas';
 
 /**
@@ -813,6 +819,73 @@ export const agentSessionsForPullRequest = async (
 };
 
 /**
+ * @summary List the sessions associated with each of up to 100 pull requests that the caller can view,
+with the thread each session was started from.
+ */
+export type agentSessionsForPullRequestsResponse200 = {
+  data: PullRequestsSessionsResponse;
+  status: 200;
+};
+
+export type agentSessionsForPullRequestsResponse400 = {
+  data: string;
+  status: 400;
+};
+
+export type agentSessionsForPullRequestsResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type agentSessionsForPullRequestsResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type agentSessionsForPullRequestsResponseSuccess =
+  agentSessionsForPullRequestsResponse200 & {
+    headers: Headers;
+  };
+export type agentSessionsForPullRequestsResponseError = (
+  | agentSessionsForPullRequestsResponse400
+  | agentSessionsForPullRequestsResponse401
+  | agentSessionsForPullRequestsResponse500
+) & {
+  headers: Headers;
+};
+
+export type agentSessionsForPullRequestsResponse =
+  | agentSessionsForPullRequestsResponseSuccess
+  | agentSessionsForPullRequestsResponseError;
+
+export const getAgentSessionsForPullRequestsUrl = () => {
+  return `/agent-sessions/by-pull-requests`;
+};
+
+export const agentSessionsForPullRequests = async (
+  pullRequestUrls: PullRequestUrls,
+  options?: RequestInit
+): Promise<agentSessionsForPullRequestsResponse> => {
+  const res = await fetch(getAgentSessionsForPullRequestsUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pullRequestUrls),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: agentSessionsForPullRequestsResponse['data'] = body
+    ? JSON.parse(body)
+    : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as agentSessionsForPullRequestsResponse;
+};
+
+/**
  * No per-id access extractor: a chip has to render for a session the caller
 cannot open, so access is answered per id in the body rather than
 enforced on the request. The caller learns the fields a chip shows for
@@ -883,6 +956,53 @@ export const previewAgentSessions = async (
 };
 
 /**
+ * @summary Prepare MCP connections without sending a prompt or creating a visible list row.
+ */
+export type warmAgentSessionHandlerResponse200 = {
+  data: WarmAgentSessionResponse;
+  status: 200;
+};
+
+export type warmAgentSessionHandlerResponseSuccess =
+  warmAgentSessionHandlerResponse200 & {
+    headers: Headers;
+  };
+
+export type warmAgentSessionHandlerResponse =
+  warmAgentSessionHandlerResponseSuccess;
+
+export const getWarmAgentSessionHandlerUrl = () => {
+  return `/agent-sessions/warm`;
+};
+
+export const warmAgentSessionHandler = async (
+  warmAgentSessionRequest: WarmAgentSessionRequest,
+  options?: RequestInit
+): Promise<warmAgentSessionHandlerResponse> => {
+  const res = await fetch(getWarmAgentSessionHandlerUrl(), {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(warmAgentSessionRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: warmAgentSessionHandlerResponse['data'] = body
+    ? JSON.parse(body)
+    : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as warmAgentSessionHandlerResponse;
+};
+
+/**
+ * A caller holding no grant is answered 401; an id with no session behind it
+at all is answered 404. They used to be the same answer, which left a
+client that read a session before its create had landed unable to tell a
+race it should retry from a refusal it should not.
  * @summary Get an agent session by id.
  */
 export type getAgentSessionResponse200 = {
@@ -900,6 +1020,11 @@ export type getAgentSessionResponse403 = {
   status: 403;
 };
 
+export type getAgentSessionResponse404 = {
+  data: string;
+  status: 404;
+};
+
 export type getAgentSessionResponse500 = {
   data: string;
   status: 500;
@@ -911,6 +1036,7 @@ export type getAgentSessionResponseSuccess = getAgentSessionResponse200 & {
 export type getAgentSessionResponseError = (
   | getAgentSessionResponse401
   | getAgentSessionResponse403
+  | getAgentSessionResponse404
   | getAgentSessionResponse500
 ) & {
   headers: Headers;
@@ -2087,6 +2213,78 @@ export const removeQueuedAction = async (
 };
 
 /**
+ * @summary Run a queued action next. Moves it ahead of the rest of the queue and
+cancels the turn in flight, so this entry dispatches when that turn ends.
+ */
+export type steerQueuedActionResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type steerQueuedActionResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type steerQueuedActionResponse403 = {
+  data: string;
+  status: 403;
+};
+
+export type steerQueuedActionResponse404 = {
+  data: string;
+  status: 404;
+};
+
+export type steerQueuedActionResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type steerQueuedActionResponseSuccess = steerQueuedActionResponse204 & {
+  headers: Headers;
+};
+export type steerQueuedActionResponseError = (
+  | steerQueuedActionResponse401
+  | steerQueuedActionResponse403
+  | steerQueuedActionResponse404
+  | steerQueuedActionResponse500
+) & {
+  headers: Headers;
+};
+
+export type steerQueuedActionResponse =
+  | steerQueuedActionResponseSuccess
+  | steerQueuedActionResponseError;
+
+export const getSteerQueuedActionUrl = (
+  sessionId: string,
+  actionId: string
+) => {
+  return `/agent-sessions/${sessionId}/queue/${actionId}/steer`;
+};
+
+export const steerQueuedAction = async (
+  sessionId: string,
+  actionId: string,
+  options?: RequestInit
+): Promise<steerQueuedActionResponse> => {
+  const res = await fetch(getSteerQueuedActionUrl(sessionId, actionId), {
+    ...options,
+    method: 'POST',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: steerQueuedActionResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as steerQueuedActionResponse;
+};
+
+/**
  * @summary Resize this session's sandbox and remember the size as the owner's default.
  */
 export type putAgentSessionSandboxSizeResponse200 = {
@@ -2151,6 +2349,100 @@ export const putAgentSessionSandboxSize = async (
     status: res.status,
     headers: res.headers,
   } as putAgentSessionSandboxSizeResponse;
+};
+
+/**
+ * @summary Answer a tool call the agent made in a turn somebody other than the
+session's owner prompted. Approve and deny are the owner's; cancel is
+anyone's with edit access.
+ */
+export type answerAgentSessionToolApprovalResponse200 = {
+  data: AnswerToolApprovalResponse;
+  status: 200;
+};
+
+export type answerAgentSessionToolApprovalResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type answerAgentSessionToolApprovalResponse403 = {
+  data: string;
+  status: 403;
+};
+
+export type answerAgentSessionToolApprovalResponse404 = {
+  data: string;
+  status: 404;
+};
+
+export type answerAgentSessionToolApprovalResponse409 = {
+  data: string;
+  status: 409;
+};
+
+export type answerAgentSessionToolApprovalResponse422 = {
+  data: string;
+  status: 422;
+};
+
+export type answerAgentSessionToolApprovalResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type answerAgentSessionToolApprovalResponseSuccess =
+  answerAgentSessionToolApprovalResponse200 & {
+    headers: Headers;
+  };
+export type answerAgentSessionToolApprovalResponseError = (
+  | answerAgentSessionToolApprovalResponse401
+  | answerAgentSessionToolApprovalResponse403
+  | answerAgentSessionToolApprovalResponse404
+  | answerAgentSessionToolApprovalResponse409
+  | answerAgentSessionToolApprovalResponse422
+  | answerAgentSessionToolApprovalResponse500
+) & {
+  headers: Headers;
+};
+
+export type answerAgentSessionToolApprovalResponse =
+  | answerAgentSessionToolApprovalResponseSuccess
+  | answerAgentSessionToolApprovalResponseError;
+
+export const getAnswerAgentSessionToolApprovalUrl = (
+  sessionId: string,
+  approvalId: string
+) => {
+  return `/agent-sessions/${sessionId}/tool-approvals/${approvalId}`;
+};
+
+export const answerAgentSessionToolApproval = async (
+  sessionId: string,
+  approvalId: string,
+  answerToolApprovalRequest: AnswerToolApprovalRequest,
+  options?: RequestInit
+): Promise<answerAgentSessionToolApprovalResponse> => {
+  const res = await fetch(
+    getAnswerAgentSessionToolApprovalUrl(sessionId, approvalId),
+    {
+      ...options,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      body: JSON.stringify(answerToolApprovalRequest),
+    }
+  );
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: answerAgentSessionToolApprovalResponse['data'] = body
+    ? JSON.parse(body)
+    : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as answerAgentSessionToolApprovalResponse;
 };
 
 /**

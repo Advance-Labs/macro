@@ -90,6 +90,7 @@ fn flight(record: &DmTurn) -> InFlightTurn {
         bot_id: None,
         speaks_as_chip: false,
         presented: Vec::new(),
+        held_tool_calls: Vec::new(),
     }
 }
 

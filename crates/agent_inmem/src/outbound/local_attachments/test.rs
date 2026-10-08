@@ -146,6 +146,8 @@ fn message(uri: &str) -> ChatMessage {
 fn request(messages: Vec<ChatMessage>) -> TurnRequest {
     TurnRequest {
         purpose: crate::domain::engine::TurnPurpose::Conversation,
+        session_id: agent_session::domain::model::AgentSessionId::new(),
+        awaiting: std::sync::Arc::default(),
         owner: Owner::from_principal_str("macro|test@macro.com").expect("user"),
         model: "test-model".to_owned(),
         reasoning_effort: agent::ReasoningEffort::default(),

@@ -74,6 +74,7 @@ pub(super) async fn compact_if_needed(
     connection: &ConnectionTo<Client>,
     acp_session_id: &SessionId,
     explicit: bool,
+    access: ModelAccess,
     cancel: &CancellationToken,
 ) -> Result<(), AcpError> {
     let history = state
@@ -101,6 +102,11 @@ pub(super) async fn compact_if_needed(
     }
     let source = transcript(&history[..split]);
     let input = state.turn_input(&UserPrompt::text(""));
+    // The summary runs on the session's model, so it needs the same access
+    // as the turn it makes room for.
+    if !access.allows(&input.model) {
+        return Err(model_access_error(ModelAccessError::Forbidden));
+    }
     let mut remaining = source.as_str();
     let mut summary = String::new();
     while !remaining.is_empty() {
@@ -115,6 +121,8 @@ pub(super) async fn compact_if_needed(
         ));
         let mut parts = state.engine.run_turn(TurnRequest {
             purpose: TurnPurpose::Summary,
+            session_id: state.session_id,
+            awaiting: Arc::new(AwaitingUser::default()),
             owner: state.owner.clone(),
             model: input.model.clone(),
             reasoning_effort: input.reasoning_effort,

@@ -139,6 +139,12 @@ impl DocumentService for StubDocumentService {
     ) -> Result<DocumentBasic, DocumentError> {
         unimplemented!()
     }
+    async fn internal_get_user_display_name(
+        &self,
+        _user_id: &str,
+    ) -> Result<Option<String>, DocumentError> {
+        unimplemented!()
+    }
     async fn get_document_by_team_slug(
         &self,
         _team_receipt: EntityAccessReceipt<MemberTeamRole>,
@@ -164,6 +170,13 @@ impl DocumentService for StubDocumentService {
         _receipt: EntityAccessReceipt<ViewAccessLevel>,
         _document_context: &DocumentBasic,
     ) -> Result<documents::domain::models::GithubPullRequestsResponse, DocumentError> {
+        unimplemented!()
+    }
+    async fn get_github_pull_request_tasks(
+        &self,
+        _user_id: &str,
+        _github_keys: Vec<String>,
+    ) -> Result<documents::domain::models::GithubPullRequestTasksResponse, DocumentError> {
         unimplemented!()
     }
     async fn get_project_children(

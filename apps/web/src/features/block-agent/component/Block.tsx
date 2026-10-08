@@ -1,9 +1,9 @@
+import { AgentChangesProvider } from '@app/features/changes/agent-session-changes';
 import {
-  AgentChangesProvider,
-  AgentChangesSplit,
   ChangesHandoff,
+  ChangesSplit,
   ReviewNotesDock,
-} from '@app/features/agent-changes/agent-changes';
+} from '@app/features/changes/changes';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { FloatRegionOrInline } from '@components/app/mobile/float-regions/FloatRegion';
 import { SidePanel } from '@components/app/side-panel';
@@ -30,10 +30,10 @@ import {
 } from 'solid-js';
 import { AgentSessionProvider } from '../agent-session-provider';
 import { useAgentSession } from '../context/AgentSessionContext';
-import { forgetPendingSession } from '../context/pending-session';
 import { parseAgentMessageTarget } from '../core/search-location';
 import { createAgentRouteTarget } from '../primitives/create-agent-route-target';
 import { AgentComposer } from './AgentComposer';
+import { AgentConnections } from './AgentConnections';
 import { AgentPreviewBanner } from './AgentPreviewBanner';
 import { AgentSessionReadMarker } from './AgentSessionReadMarker';
 import { AgentSplitHeader } from './AgentSplitHeader';
@@ -158,8 +158,10 @@ function AgentBlockContent(props: {
             <AgentPreviewBanner />
             {/* The Changes pane opens beside the transcript; closed, the
                 transcript keeps the whole width. */}
-            <AgentChangesSplit>
-              <Transcript searchTarget={searchTarget()} />
+            <ChangesSplit>
+              <AgentConnections>
+                <Transcript searchTarget={searchTarget()} />
+              </AgentConnections>
               {/* Full-frame mobile: composer + queue float in the bottom
                   accessory region above the dock; desktop stays inline. */}
               <AgentComposerRegion>
@@ -190,7 +192,7 @@ function AgentBlockContent(props: {
                   </div>
                 </div>
               </AgentComposerRegion>
-            </AgentChangesSplit>
+            </ChangesSplit>
           </SidePanel.Layout>
         </div>
       </StaticMarkdownContext>
@@ -211,7 +213,6 @@ export default function BlockAgent() {
   // nowhere.
   const adoptSessionId = (sessionId: string) => {
     split?.handle.adoptContentId({ type: 'agent', nextId: sessionId });
-    forgetPendingSession(blockId);
   };
 
   return (

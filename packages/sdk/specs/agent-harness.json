@@ -581,6 +581,65 @@
         }
       }
     },
+    "/agent-sessions/by-pull-requests": {
+      "post": {
+        "tags": ["agent-sessions"],
+        "summary": "List the sessions associated with each of up to 100 pull requests that the caller can view,\nwith the thread each session was started from.",
+        "operationId": "agent_sessions_for_pull_requests",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullRequestUrls"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequestsSessionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent-sessions/preview": {
       "post": {
         "tags": ["agent-sessions"],
@@ -641,10 +700,40 @@
         }
       }
     },
+    "/agent-sessions/warm": {
+      "post": {
+        "tags": ["agent-sessions"],
+        "summary": "Prepare MCP connections without sending a prompt or creating a visible list row.",
+        "operationId": "warm_agent_session_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WarmAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WarmAgentSessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent-sessions/{session_id}": {
       "get": {
         "tags": ["agent-sessions"],
         "summary": "Get an agent session by id.",
+        "description": "A caller holding no grant is answered 401; an id with no session behind it\nat all is answered 404. They used to be the same answer, which left a\nclient that read a session before its create had landed unable to tell a\nrace it should retry from a refusal it should not.",
         "operationId": "get_agent_session",
         "parameters": [
           {
@@ -670,7 +759,7 @@
             }
           },
           "401": {
-            "description": "",
+            "description": "the session exists but is not this caller's",
             "content": {
               "text/plain": {
                 "schema": {
@@ -681,6 +770,16 @@
           },
           "403": {
             "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "no session with this id: not created yet, or deleted since",
             "content": {
               "text/plain": {
                 "schema": {
@@ -1825,6 +1924,80 @@
         }
       }
     },
+    "/agent-sessions/{session_id}/queue/{action_id}/steer": {
+      "post": {
+        "tags": ["agent-sessions"],
+        "summary": "Run a queued action next. Moves it ahead of the rest of the queue and\ncancels the turn in flight, so this entry dispatches when that turn ends.",
+        "operationId": "steer_queued_action",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "ID of the agent session",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action_id",
+            "in": "path",
+            "description": "ID the action was accepted under",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Already dispatched or never queued",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent-sessions/{session_id}/sandbox-size": {
       "put": {
         "tags": ["agent-sessions"],
@@ -1875,6 +2048,117 @@
           },
           "403": {
             "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent-sessions/{session_id}/tool-approvals/{approval_id}": {
+      "post": {
+        "tags": ["agent-sessions"],
+        "summary": "Answer a tool call the agent made in a turn somebody other than the\nsession's owner prompted. Approve and deny are the owner's; cancel is\nanyone's with edit access.",
+        "operationId": "answer_agent_session_tool_approval",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "ID of the agent session",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "approval_id",
+            "in": "path",
+            "description": "ID of the held tool call",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerToolApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerToolApprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, for approve or deny; or no edit access",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already resolved",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Approve for good, for a call no person asked for",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2894,6 +3178,28 @@
           }
         }
       },
+      "AnswerToolApprovalRequest": {
+        "type": "object",
+        "description": "Request body for answering a held tool call.",
+        "required": ["answer"],
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/ToolApprovalAnswerDto",
+            "description": "The answer."
+          }
+        }
+      },
+      "AnswerToolApprovalResponse": {
+        "type": "object",
+        "description": "Response body for answering a held tool call.",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ToolApprovalStatusDto",
+            "description": "Where the call stands now."
+          }
+        }
+      },
       "BotId": {
         "type": "string"
       },
@@ -3700,6 +4006,55 @@
         "description": "Who associated a pull request with a session.",
         "enum": ["agent", "user"]
       },
+      "PullRequestLinkedSession": {
+        "type": "object",
+        "description": "A session linked to a pull request, as a viewer of that session sees it.",
+        "required": ["sessionId", "source"],
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The session id."
+          },
+          "source": {
+            "$ref": "#/components/schemas/PullRequestLinkSource",
+            "description": "Who associated the pull request with the session."
+          },
+          "threadParent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageParent",
+                "description": "The channel, task, or CRM record whose thread the session was started from, if any."
+              }
+            ]
+          }
+        }
+      },
+      "PullRequestSessions": {
+        "type": "object",
+        "description": "The sessions linked to one pull request that the caller can view.",
+        "required": ["url", "githubKey", "sessions"],
+        "properties": {
+          "githubKey": {
+            "type": "string",
+            "description": "The pull request's `owner/repo/pull/number` key."
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestLinkedSession"
+            },
+            "description": "Linked sessions the caller can view, oldest link first."
+          },
+          "url": {
+            "type": "string",
+            "description": "The requested pull request URL, canonicalized."
+          }
+        }
+      },
       "PullRequestSessionsResponse": {
         "type": "object",
         "description": "The sessions associated with a pull request.",
@@ -3723,6 +4078,34 @@
           "url": {
             "type": "string",
             "description": "The pull request's GitHub URL, such as `https://github.com/owner/repo/pull/12`."
+          }
+        }
+      },
+      "PullRequestUrls": {
+        "type": "object",
+        "description": "GitHub pull requests, by URL.",
+        "required": ["urls"],
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Pull request GitHub URLs, at most 100."
+          }
+        }
+      },
+      "PullRequestsSessionsResponse": {
+        "type": "object",
+        "description": "The sessions associated with each requested pull request.",
+        "required": ["pullRequests"],
+        "properties": {
+          "pullRequests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestSessions"
+            },
+            "description": "One entry per requested pull request, in request order."
           }
         }
       },
@@ -4024,6 +4407,16 @@
           }
         }
       },
+      "ToolApprovalAnswerDto": {
+        "type": "string",
+        "description": "How a person answers a held tool call.",
+        "enum": ["approve", "approve_and_remember", "deny", "cancel"]
+      },
+      "ToolApprovalStatusDto": {
+        "type": "string",
+        "description": "Where a held tool call stands once answered.",
+        "enum": ["pending", "approved", "denied", "cancelled", "expired"]
+      },
       "UpdateChannelSharePermission": {
         "type": "object",
         "required": ["operation", "channelId"],
@@ -4093,6 +4486,35 @@
               {
                 "$ref": "#/components/schemas/AccessLevel",
                 "description": "The explicit team access level. Omit to leave unchanged or pass `null` to disable team\nsharing. Only the actual owner may change this setting; `owner` is not an allowed level."
+              }
+            ]
+          }
+        }
+      },
+      "WarmAgentSessionRequest": {
+        "type": "object",
+        "description": "A client-minted id deduplicates warm calls without creating a conversation.",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Id reserved by this browser for its next in-memory conversation."
+          }
+        }
+      },
+      "WarmAgentSessionResponse": {
+        "type": "object",
+        "description": "A bounded best-effort warm attempt; absence means normal creation should proceed.",
+        "properties": {
+          "session": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentSessionResponse",
+                "description": "Prepared session, hidden until explicitly claimed through create."
               }
             ]
           }

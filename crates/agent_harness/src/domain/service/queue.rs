@@ -8,7 +8,7 @@ use agent_session::domain::events::{
     SessionSettledMetadata, SessionStoppedMetadata, TurnEndedMetadata, TurnStartedMetadata,
     WaitingForInputMetadata,
 };
-use agent_session::domain::model::StoredQueuedAction;
+use agent_session::domain::model::{StoredQueuedAction, TurnPrompter};
 use futures::future::BoxFuture;
 
 use super::*;
@@ -404,7 +404,8 @@ where
             }
             HarnessCommand::Deliver(DeliverAction { actor, .. })
             | HarnessCommand::EditQueued { actor, .. }
-            | HarnessCommand::RemoveQueued { actor, .. } => {
+            | HarnessCommand::RemoveQueued { actor, .. }
+            | HarnessCommand::SteerQueued { actor, .. } => {
                 let session = self.sessions.get_session(session_id).await?;
                 if session.is_archived {
                     return Err(AgentSessionError::Archived(session_id).into());
@@ -426,6 +427,7 @@ where
             HarnessCommand::Open(_)
             | HarnessCommand::DirectMessage(_)
             | HarnessCommand::Turn(_)
+            | HarnessCommand::ToolApproval(_)
             | HarnessCommand::SessionStopped { .. }
             | HarnessCommand::Delete => {}
             HarnessCommand::SetSandboxSize(_) => {
@@ -473,6 +475,9 @@ where
                 self.persist_or_rollback(session_id).await?;
                 self.publish_queue(session_id).await;
                 Ok(CommandOutcome::Completed)
+            }
+            HarnessCommand::SteerQueued { action_id, actor } => {
+                self.steer_queued(session_id, action_id, actor).await
             }
             HarnessCommand::Turn(TurnSignal::TurnEnded {
                 stop,
@@ -663,6 +668,10 @@ where
                     })
                 })
                 .await;
+                Ok(CommandOutcome::Completed)
+            }
+            HarnessCommand::ToolApproval(change) => {
+                self.tool_approval_changed(session_id, change).await;
                 Ok(CommandOutcome::Completed)
             }
             HarnessCommand::SetSandboxSize(size) => {
@@ -867,6 +876,75 @@ where
         } else {
             CommandOutcome::Completed
         })
+    }
+
+    /// Move a queued action to the front and cancel the running turn so it
+    /// flushes next. The same idea as a channel follow-up's steer, for an
+    /// entry that is already waiting: the session page queues without
+    /// interrupting, and this is the explicit interrupt.
+    ///
+    /// A failed cancel is best-effort. The entry is already at the front, so
+    /// it still drains when the current turn ends on its own.
+    /// Keep the running turn's reply honest about tool calls held for the
+    /// owner: it names the oldest one waiting, and goes back to pending once
+    /// none are. Only the managing replica knows the turn, so a change for a
+    /// session with nothing in flight here has no reply to touch.
+    async fn tool_approval_changed(&self, session_id: AgentSessionId, change: ToolApprovalChange) {
+        let mut waiting_before = None;
+        let Some(turn) = self.busy.update_turn(session_id, |turn| {
+            waiting_before = turn.held_tool_calls.first().cloned();
+            match &change {
+                ToolApprovalChange::Held(call) => turn.held_tool_calls.push(call.clone()),
+                ToolApprovalChange::Settled { approval_id } => turn
+                    .held_tool_calls
+                    .retain(|held| held.approval_id != *approval_id),
+            }
+        }) else {
+            tracing::info!(%session_id, "held tool call changed with no in-flight record");
+            return;
+        };
+        let waiting = turn.held_tool_calls.first().cloned();
+        if waiting == waiting_before {
+            return;
+        }
+        let outcome = match waiting {
+            Some(call) => ReplyOutcome::AwaitingApproval(call),
+            None => ReplyOutcome::Resumed,
+        };
+        self.resolve_reply(session_id, Some(&turn), outcome).await;
+    }
+
+    async fn steer_queued(
+        &self,
+        session_id: AgentSessionId,
+        action_id: AgentActionId,
+        actor: Option<MacroUserIdStr<'static>>,
+    ) -> Result<CommandOutcome> {
+        self.revalidate_queue(session_id).await?;
+        queue_result(self.queues.move_to_front(session_id, action_id), session_id)?;
+        self.persist_or_rollback(session_id).await?;
+        if self.busy.turn(session_id).is_some()
+            && let Err(error) = self
+                .deliver(
+                    session_id,
+                    DeliverAction {
+                        id: AgentActionId::mint(),
+                        action: AgentAction::Stop,
+                        actor,
+                        announce: None,
+                    },
+                )
+                .await
+        {
+            tracing::warn!(
+                error = ?error,
+                %session_id,
+                %action_id,
+                "failed to stop the running turn for a steered queue entry"
+            );
+        }
+        self.publish_queue(session_id).await;
+        Ok(CommandOutcome::Completed)
     }
 
     /// Cancel a running turn and post the chip on the channel follow-up that
@@ -1148,6 +1226,7 @@ where
                 bot_id: Some(session.bot_id),
                 speaks_as_chip,
                 presented: Vec::new(),
+                held_tool_calls: Vec::new(),
             };
             if let Some(store) = dm_store {
                 match store.claim(entry.action_id, &flight).await {
@@ -1202,6 +1281,38 @@ where
                 }
             }
 
+            // Recorded before delivery, since the runtime may call a tool the
+            // moment the prompt lands: the egress proxy judges every call by who
+            // prompted the turn it belongs to, and it may be serving the call on
+            // another replica.
+            if let Err(error) = self
+                .sessions
+                .set_turn_prompter(
+                    session_id,
+                    &TurnPrompter {
+                        action_id: entry.action_id,
+                        user: entry.actor.clone(),
+                    },
+                )
+                .await
+            {
+                // A claimed conversation turn fails as an undelivered one
+                // does, so its journal never shows it running.
+                if let Some(store) = dm_store {
+                    store
+                        .finish(
+                            entry.action_id,
+                            crate::domain::dm_turns::DmTurnState::Failed,
+                            ReplyOutcome::Failed,
+                        )
+                        .await?;
+                    self.resolve_reply(session_id, Some(&flight), ReplyOutcome::Failed)
+                        .await;
+                }
+                self.requeue_claimed(session_id, entry).await?;
+                return Err(error.into());
+            }
+
             let command = DeliverAction {
                 id: entry.action_id,
                 action: composed,
@@ -1224,6 +1335,7 @@ where
                         bot_id: flight.bot_id,
                         speaks_as_chip: flight.speaks_as_chip,
                         presented: flight.presented.clone(),
+                        held_tool_calls: Vec::new(),
                     };
                     self.busy.mark_turn(session_id, turn.clone());
                     self.publish_typing(session_id, &turn, true).await;

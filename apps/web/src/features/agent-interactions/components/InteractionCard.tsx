@@ -1,10 +1,10 @@
-import type {
-  MessagePart,
-  PendingInteraction,
-} from '@service-agent-fold/generated/types';
+import type { MessagePart } from '@service-agent-fold/generated/types';
 import { Show } from 'solid-js';
 import { match } from 'ts-pattern';
-import type { InteractionController } from '../context/interaction';
+import type {
+  AgentInteraction,
+  InteractionController,
+} from '../context/interaction';
 import {
   LiveQuestionCard,
   parseDraftedTool,
@@ -15,7 +15,7 @@ import { PermissionCard } from './PermissionCard';
 
 /** Full live approvals and questions shared by conversation surfaces. */
 export function InteractionCard(props: {
-  request: PendingInteraction;
+  request: AgentInteraction;
   controller: InteractionController;
   tool?: Extract<MessagePart, { kind: 'tool_use' }>;
 }) {

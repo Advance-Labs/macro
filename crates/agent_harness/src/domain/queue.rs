@@ -34,7 +34,7 @@ use dashmap::DashMap;
 use macro_user_id::user_id::MacroUserIdStr;
 use macro_uuid::Uuid;
 
-use super::model::AnnounceOrigin;
+use super::model::{AnnounceOrigin, HeldToolCall};
 
 #[cfg(test)]
 mod test;
@@ -109,6 +109,10 @@ pub struct InFlightTurn {
     /// posted, so showing the reply again updates the same messages.
     #[serde(default)]
     pub presented: Vec<Uuid>,
+    /// Tool calls this turn made that wait on the owner's approval, oldest
+    /// first. The reply names the oldest while any wait.
+    #[serde(default)]
+    pub held_tool_calls: Vec<HeldToolCall>,
 }
 
 impl InFlightTurn {
@@ -369,6 +373,31 @@ impl SessionQueues {
         } else {
             self.queues.insert(session, entries.into());
         }
+    }
+
+    /// Move a waiting entry to the front, so a steer runs it next.
+    ///
+    /// An entry that is already next is left where it is. Missing entries are
+    /// [`QueueError::NotFound`], the same answer as an edit of something that
+    /// already dispatched.
+    pub fn move_to_front(
+        &self,
+        session: AgentSessionId,
+        action_id: AgentActionId,
+    ) -> Result<(), QueueError> {
+        let mut queue = self.queues.get_mut(&session).ok_or(QueueError::NotFound)?;
+        let position = queue
+            .iter()
+            .position(|entry| entry.action_id == action_id)
+            .ok_or(QueueError::NotFound)?;
+        if position == 0 {
+            return Ok(());
+        }
+        let Some(entry) = queue.remove(position) else {
+            return Err(QueueError::NotFound);
+        };
+        queue.push_front(entry);
+        Ok(())
     }
 
     /// Remove a waiting entry.

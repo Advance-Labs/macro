@@ -1,15 +1,20 @@
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { SidebarOpenInSplitMenu } from '@components/app/app-sidebar/sidebar';
+import { rememberBootShell } from '@components/app/boot-shell';
 import { UserIcon } from '@core/component/UserIcon';
 import { useSettingsState } from '@core/constant/SettingsState';
+import { useSettingsTabAvailable } from '@core/constant/settingsTabsConfig';
 import { useEmail, useUserId } from '@core/context/user';
 import { TOKENS } from '@core/hotkey/tokens';
+import DeviceMobileDownloadIcon from '@icon/device-mobile-download.svg';
+import { useTauri } from '@macro/tauri';
 import GearIcon from '@phosphor/gear.svg';
 import GearFillIcon from '@phosphor-fill/gear-fill.svg';
 import { isRealNamePart, useOwnUserName } from '@queries/auth/user-name-self';
 import { Button, cn, pressHandlers } from '@ui';
-import { createMemo, Show } from 'solid-js';
+import { createEffect, createMemo, Show } from 'solid-js';
+import { NativeUpdateButton } from './native-update-button';
 import { NavGlyph } from './nav-glyph';
 
 /**
@@ -21,15 +26,71 @@ const AVATAR_CUTOUT =
 
 const SETTINGS_CONTENT = { type: 'component', id: 'settings' } as const;
 
+const isSettingsActive = () => {
+  const content = globalSplitManager()?.activeSplit()?.content();
+  return (
+    content?.type === SETTINGS_CONTENT.type &&
+    content.id === SETTINGS_CONTENT.id
+  );
+};
+
 /**
- * The rail's bottom action: Settings, opened like any other rail view. The
- * gear carries the signed-in account's photo as a badge, so people with
- * several accounts can still tell which one they are in.
+ * Get the mobile app: opens the Mobile App settings page, which carries the
+ * App Store QR code. Hidden wherever that page is unavailable, e.g. inside
+ * the native app.
+ */
+const MobileAppButton = () => {
+  const analytics = useAnalytics();
+  const { openSettings, openSettingsInSplit, activeTabId } = useSettingsState();
+  const isTabAvailable = useSettingsTabAvailable();
+
+  const isActive = () => isSettingsActive() && activeTabId() === 'Mobile App';
+
+  createEffect(() =>
+    rememberBootShell({ mobileApp: isTabAvailable('Mobile App') })
+  );
+
+  const open = (event: MouseEvent) => {
+    event.preventDefault();
+    analytics.track('sidebar_click', { view: 'mobile-app' });
+    if (event.shiftKey) openSettingsInSplit('Mobile App');
+    else openSettings('Mobile App');
+  };
+
+  return (
+    <Show when={isTabAvailable('Mobile App')}>
+      <Button
+        variant="ghost"
+        size="icon-md"
+        class={cn(
+          'size-10 cursor-default rounded-xl',
+          isActive() && 'bg-hover text-ink'
+        )}
+        label="Get the mobile app"
+        tooltip="Get the mobile app"
+        tooltipPlacement="right"
+        draggable={false}
+        aria-current={isActive() ? 'page' : undefined}
+        data-active={isActive() ? '' : undefined}
+        data-sidebar-next-item="mobile-app"
+        {...pressHandlers(open)}
+      >
+        <NavGlyph icon={DeviceMobileDownloadIcon} class="size-5" />
+      </Button>
+    </Show>
+  );
+};
+
+/**
+ * The rail's bottom actions: a ready app update, the mobile app link, then
+ * Settings, opened like any other rail view. The gear carries the account photo
+ * as a badge, so people with several accounts can tell which one they are in.
  */
 export const FooterActions = (props: {
   onMenuOpenChange?: (open: boolean) => void;
 }) => {
   const analytics = useAnalytics();
+  const tauri = useTauri();
   const { openSettings, openSettingsInSplit, settingsOpen, activeTabId } =
     useSettingsState();
   const userId = useUserId();
@@ -45,14 +106,6 @@ export const FooterActions = (props: {
     return parts.length > 0 ? parts.join(' ') : email();
   });
 
-  const isActive = () => {
-    const content = globalSplitManager()?.activeSplit()?.content();
-    return (
-      content?.type === SETTINGS_CONTENT.type &&
-      content.id === SETTINGS_CONTENT.id
-    );
-  };
-
   // An open settings split keeps its section; a fresh open lands on Account.
   const currentTab = () => (settingsOpen() ? activeTabId() : undefined);
 
@@ -64,7 +117,18 @@ export const FooterActions = (props: {
   };
 
   return (
-    <div class="flex w-full shrink-0 justify-center">
+    <div class="flex w-full shrink-0 flex-col items-center gap-1">
+      <Show when={tauri}>
+        {(native) => (
+          <Show when={native().nativeUpdateStatus().status === 'Ready'}>
+            <NativeUpdateButton
+              preparing={native().nativeUpdatePreparing()}
+              onRestart={() => void native().restartNativeUpdate()}
+            />
+          </Show>
+        )}
+      </Show>
+      <MobileAppButton />
       <SidebarOpenInSplitMenu
         content={() => SETTINGS_CONTENT}
         // Route through settings state so the menu reuses an open settings
@@ -79,7 +143,7 @@ export const FooterActions = (props: {
           size="icon-md"
           class={cn(
             'size-10 cursor-default rounded-xl',
-            isActive() && 'bg-hover text-ink'
+            isSettingsActive() && 'bg-hover text-ink'
           )}
           label="Settings"
           aria-description={
@@ -89,8 +153,8 @@ export const FooterActions = (props: {
           tooltipPlacement="right"
           hotkey={TOKENS.global.toggleSettings}
           draggable={false}
-          aria-current={isActive() ? 'page' : undefined}
-          data-active={isActive() ? '' : undefined}
+          aria-current={isSettingsActive() ? 'page' : undefined}
+          data-active={isSettingsActive() ? '' : undefined}
           data-sidebar-next-item="settings"
           {...pressHandlers(open)}
         >
@@ -98,7 +162,7 @@ export const FooterActions = (props: {
             <NavGlyph
               icon={GearIcon}
               iconActive={GearFillIcon}
-              filled={isActive()}
+              filled={isSettingsActive()}
               class={AVATAR_CUTOUT}
             />
             <div class="absolute -right-1.5 -bottom-1.5 size-4 rounded-full">

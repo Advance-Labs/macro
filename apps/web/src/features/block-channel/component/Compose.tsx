@@ -229,6 +229,7 @@ export function ChannelCompose() {
       void inputState.commands.send();
       return true;
     },
+    sendMessage: () => void inputState.commands.send(),
     onPasteFilesAndDirs: (files, directories) => {
       void handleFileFolderDrop(files, directories, (entries) =>
         inputState.commands.attachFiles(entries.map((e) => e.file))

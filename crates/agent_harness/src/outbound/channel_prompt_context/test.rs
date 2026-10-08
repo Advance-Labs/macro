@@ -899,3 +899,20 @@ async fn a_direct_message_is_marked_and_reads_no_channel_history() {
     assert!(context.channel.is_empty());
     assert_eq!(context.reply_target, Some(ReplyTarget::None));
 }
+
+#[tokio::test]
+async fn design_discussions_reach_the_agent_unanchored() {
+    let context = context_from(
+        reader(Some(ThreadAnchor::Fig {
+            page_id: "0:1".into(),
+            node_id: Some("12:34".into()),
+            x: 18.5,
+            y: -4.0,
+        })),
+        Lexical::mark(Err("never asked")),
+        &origin(),
+    )
+    .await;
+    assert_eq!(context.anchor, None);
+    assert!(context.thread.is_some());
+}

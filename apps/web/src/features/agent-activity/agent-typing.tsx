@@ -1,5 +1,6 @@
 import { PersonaAvatar } from '@app/features/agent-dms/components/persona-avatar';
 import { InteractionCard } from '@app/features/agent-interactions/components/InteractionCard';
+import type { AgentInteraction } from '@app/features/agent-interactions/context/interaction';
 import { createInteractionController } from '@app/features/agent-interactions/primitives/create-interaction-controller';
 import { toast } from '@core/component/Toast/Toast';
 import { useAgentSessionQuery } from '@queries/agent-session/session';
@@ -71,9 +72,12 @@ function AgentTypingEntry(props: {
   const canEdit = () =>
     queryReadyGate(sessionQuery) ? sessionQuery.data?.canEdit : undefined;
   const reply = () => (live.loaded() ? openReply(live.messages()) : undefined);
+  // A held tool call is answered from the session, not here: a turn the
+  // owner prompts, as every DM turn is, is never held for them.
   const pending = () =>
     (live.metadata()?.pendingInteractions ?? []).filter(
-      (request) => request.turn === reply()?.turn
+      (request): request is AgentInteraction =>
+        request.kind !== 'tool_approval' && request.turn === reply()?.turn
     );
   const interactions = createInteractionController({
     sessionId: () => props.sessionId,
