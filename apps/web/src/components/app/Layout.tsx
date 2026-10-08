@@ -47,33 +47,31 @@ import { isMobile } from '@core/mobile/isMobile';
 import { isNativeMobilePlatform } from '@core/mobile/isNativeMobilePlatform';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { virtualKeyboardVisible } from '@core/mobile/virtualKeyboard';
-import { updateCookie } from '@core/util/cookies';
+import { hasLoginCookie, updateCookie } from '@core/util/cookies';
 import { lazyNamed } from '@core/util/lazyNamed';
 import { isPlatform } from '@core/util/platform';
 import { useUserInfoQuery } from '@queries/auth/user-info';
 import { queryClient } from '@queries/client';
-import {
-  type RouteSectionProps,
-  useLocation,
-  useNavigate,
-} from '@solidjs/router';
+import { useLocation, useNavigate } from '@solidjs/router';
 import { type as osType } from '@tauri-apps/plugin-os';
 import { cn, ImperativeDialogHost } from '@ui';
 import {
   createEffect,
-  createMemo,
   createSignal,
   lazy,
   onCleanup,
   onMount,
+  type ParentProps,
   Show,
   Suspense,
 } from 'solid-js';
 import { ViewNavigationSlotContext } from '../view-shell/navigation-slot';
+import { AppProviders } from './AppProviders';
 import { BundleUpdateProgressBar } from './BundleUpdateProgressBar';
 import { ContentLoading } from './ContentLoading';
 import { DesktopTitleBar } from './DesktopTitleBar';
 import GlobalShortcuts from './GlobalHotkeys';
+import { InitialInteractiveOnboardingModal } from './InitialInteractiveOnboardingModal';
 import { ItemDndProvider } from './ItemDragAndDrop';
 import { FloatRegion } from './mobile/float-regions/FloatRegion';
 import { FloatRegionHost } from './mobile/float-regions/FloatRegionHost';
@@ -81,6 +79,7 @@ import { installGlassPress } from './mobile/glassPress';
 import { MobileDockRow } from './mobile/MobileDockRow';
 import { MobileViewsRow } from './mobile/MobileViewsRow';
 import { SwipeDownDismissKeyboard } from './mobile/SwipeDownDismissKeyboard';
+import { SessionExpiredRedirect } from './SessionExpiredRedirect';
 import { useAppSquishHandlers } from './useAppSquishHandlers';
 
 const StarterDatabase = lazy(async () => {
@@ -105,85 +104,14 @@ const MobileSettings = lazyNamed(
   'MobileSettings'
 );
 
-const AUTH_URLS = [
-  `${ROUTER_BASE_CONCAT}login`,
-  `${ROUTER_BASE_CONCAT}login/popup`,
-  `${ROUTER_BASE_CONCAT}login/popup/success`,
-  `${ROUTER_BASE_CONCAT}onboarding`,
-  `${ROUTER_BASE_CONCAT}setup`,
-  `${ROUTER_BASE_CONCAT}signup`,
-  `${ROUTER_BASE_CONCAT}email-signup-callback`,
-  `${ROUTER_BASE_CONCAT}welcome`,
-  `${ROUTER_BASE_CONCAT}mobile-email-signup`,
-  `${ROUTER_BASE_CONCAT}team-invite`,
-  `${ROUTER_BASE_CONCAT}invite`,
-  `${ROUTER_BASE_CONCAT}internal/invite-links`,
-];
-
-export function Layout(props: RouteSectionProps) {
-  const isAuthenticated = useIsAuthenticated();
-  const location = useLocation();
-  const sidebarVisible = createMemo(
-    () =>
-      !isTouchDevice() &&
-      isAuthenticated() === true &&
-      !AUTH_URLS.includes(location.pathname)
-  );
-
-  return (
-    <SidebarVisibilityContext.Provider value={sidebarVisible}>
-      <MobileSettingsProvider>
-        <Show when={isAuthenticated() === true}>
-          <ShowFeatureFlag flag={enableDatabases}>
-            <Suspense>
-              <StarterDatabase />
-            </Suspense>
-          </ShowFeatureFlag>
-        </Show>
-        <LayoutInner {...props} />
-      </MobileSettingsProvider>
-    </SidebarVisibilityContext.Provider>
-  );
-}
-
 /**
- * Sends first-time desktop users into the onboarding flow at /onboarding.
- * Fires from anywhere in the app (marketing SSO lands on /app, not /login),
- * but never off auth/full-screen routes — /onboarding itself included.
+ * The frame every page renders in: the macOS title bar, dialogs that can open
+ * anywhere (the paywall reads mobile settings), and the page itself. App chrome lives in `AppChrome`, inside the
+ * routes that show it.
  */
-function NewOnboardingRedirect() {
-  const userInfoQuery = useUserInfoQuery();
-  const navigate = useNavigate();
-  const location = useLocation();
-  createEffect(() => {
-    if (isMobile() || isNativeMobilePlatform()) return;
-    const data = userInfoQuery.data;
-    if (data?.authenticated !== true || data.tutorialComplete !== false) {
-      return;
-    }
-    if (AUTH_URLS.includes(location.pathname)) return;
-    // Preserve the deep link the user arrived on (a shared doc, an invite):
-    // onboarding carries it as ?next and its finish() returns there instead of
-    // the post-setup landing. Base-relative so navigate() can resolve it
-    // against the router.
-    const target =
-      location.pathname.slice(ROUTER_BASE_CONCAT.length - 1) + location.search;
-    const isGenericEntry = target === '/' || target.startsWith(DEFAULT_ROUTE);
-    navigate(
-      isGenericEntry
-        ? '/onboarding'
-        : `/onboarding?next=${encodeURIComponent(target)}`,
-      { replace: true }
-    );
-  });
-
-  return null;
-}
-
-function LayoutInner(props: RouteSectionProps) {
+export function RootFrame(props: ParentProps) {
   const hasOverlayTitleBar = isPlatform('desktop') && osType() === 'macos';
   const [navigationSlot, setNavigationSlot] = createSignal<HTMLElement>();
-  const isAuthenticated = useIsAuthenticated();
   const { paywallOpen, showPaywall } = usePaywallState();
   const { usageLimitOpen } = useAiUsageLimitState();
   const location = useLocation();
@@ -218,32 +146,117 @@ function LayoutInner(props: RouteSectionProps) {
 
   mountGlobalFocusListener();
 
-  // Route mailto: links (via openExternalUrl) to the in-app email composer.
-  registerMailtoComposerHandler();
-
   attachGlobalDOMScope(document.body);
 
   return (
-    <ViewNavigationSlotContext.Provider value={navigationSlot}>
-      <div
-        class={cn(
-          'relative flex flex-col justify-between not-touch:bg-panel w-dvw h-[calc(var(--dvh,1dvh)*100)] pl-(--safe-left) pr-(--safe-right)',
-          hasOverlayTitleBar && 'pt-[40px]'
-        )}
-      >
-        <Show when={hasOverlayTitleBar}>
-          <DesktopTitleBar navigationRef={setNavigationSlot} />
+    <MobileSettingsProvider>
+      <ViewNavigationSlotContext.Provider value={navigationSlot}>
+        <div
+          class={cn(
+            'relative flex flex-col justify-between not-touch:bg-panel w-dvw h-[calc(var(--dvh,1dvh)*100)] pl-(--safe-left) pr-(--safe-right)',
+            hasOverlayTitleBar && 'pt-[40px]'
+          )}
+        >
+          <Show when={hasOverlayTitleBar}>
+            <DesktopTitleBar navigationRef={setNavigationSlot} />
+          </Show>
+          <ImperativeDialogHost />
+          <BundleUpdateProgressBar />
+          <Show when={paywallOpen()}>
+            <Suspense>
+              <Paywall />
+            </Suspense>
+          </Show>
+          <Show when={usageLimitOpen()}>
+            <AiUsageLimitDialog />
+          </Show>
+          <div class="min-h-0 flex-1 flex flex-col">
+            {/* Route loading must not detach the frame. */}
+            <Suspense fallback={<ContentLoading />}>{props.children}</Suspense>
+          </div>
+          <SwipeDownDismissKeyboard />
+          <DevStatusBar />
+        </div>
+      </ViewNavigationSlotContext.Provider>
+    </MobileSettingsProvider>
+  );
+}
+
+/** A page's content area: the space the app chrome or a full-screen shell leaves. */
+export function PageContent(props: ParentProps) {
+  return (
+    <div class="flex-1 w-full min-h-0 font-sans text-ink caret-current">
+      {props.children}
+    </div>
+  );
+}
+
+/**
+ * Sends first-time desktop users into the onboarding flow at /onboarding.
+ * App chrome mounts it, so it fires on any app destination (marketing SSO
+ * lands on /app, not /login) and never on the onboarding pages themselves.
+ */
+function NewOnboardingRedirect() {
+  const userInfoQuery = useUserInfoQuery();
+  const navigate = useNavigate();
+  const location = useLocation();
+  createEffect(() => {
+    if (isMobile() || isNativeMobilePlatform()) return;
+    const data = userInfoQuery.data;
+    if (data?.authenticated !== true || data.tutorialComplete !== false) {
+      return;
+    }
+    // Preserve the deep link the user arrived on (a shared doc, an invite):
+    // onboarding carries it as ?next and its finish() returns there instead of
+    // the post-setup landing. Base-relative so navigate() can resolve it
+    // against the router.
+    const target =
+      location.pathname.slice(ROUTER_BASE_CONCAT.length - 1) + location.search;
+    const isGenericEntry = target === '/' || target.startsWith(DEFAULT_ROUTE);
+    navigate(
+      isGenericEntry
+        ? '/onboarding'
+        : `/onboarding?next=${encodeURIComponent(target)}`,
+      { replace: true }
+    );
+  });
+
+  return null;
+}
+
+/**
+ * The app's providers and chrome — rail, hotkeys, command menu, launcher,
+ * global modals, and the mobile dock — around a page. The split layout and
+ * signed-in form pages render in it; auth, booking, and meeting pages don't.
+ */
+export function AppChrome(props: ParentProps) {
+  const isAuthenticated = useIsAuthenticated();
+  // A login cookie shows the rail while sign-in is confirmed; a stale one
+  // goes through SessionExpiredRedirect instead of leaving the app blank.
+  const sidebarVisible = () =>
+    !isTouchDevice() &&
+    (isAuthenticated() === true ||
+      (isAuthenticated() === undefined && hasLoginCookie()));
+
+  // Route mailto: links (via openExternalUrl) to the in-app email composer.
+  registerMailtoComposerHandler();
+
+  return (
+    <AppProviders>
+      <SidebarVisibilityContext.Provider value={sidebarVisible}>
+        <Show when={isAuthenticated() === true}>
+          <ShowFeatureFlag flag={enableDatabases}>
+            <Suspense>
+              <StarterDatabase />
+            </Suspense>
+          </ShowFeatureFlag>
         </Show>
-        <ImperativeDialogHost />
-        <BundleUpdateProgressBar />
         <Suspense>
           <Show when={isAuthenticated()}>
             <NewOnboardingRedirect />
-            <Show when={!AUTH_URLS.includes(location.pathname)}>
-              <GithubReauthenticationPrompt />
-              <GmailReauthenticationPrompt />
-              <CalendarPermissionPrompt />
-            </Show>
+            <GithubReauthenticationPrompt />
+            <GmailReauthenticationPrompt />
+            <CalendarPermissionPrompt />
             <GlobalShortcuts />
             <Show when={!isTouchDevice()}>
               <GoToHotkeys />
@@ -265,48 +278,26 @@ function LayoutInner(props: RouteSectionProps) {
               <AddInboxDialog />
             </Show>
           </Show>
-          <Show
-            when={
-              isAuthenticated() === false &&
-              !AUTH_URLS.includes(location.pathname)
-            }
-          >
-            <Banner />
+          <Show when={isAuthenticated() === false}>
+            <Show when={hasLoginCookie()} fallback={<Banner />}>
+              <SessionExpiredRedirect />
+            </Show>
           </Show>
         </Suspense>
-        {/* <Show when={isAuthenticated() && isTutorialCompleted() === false}>
-        <Onboarding />
-      </Show> */}
-
-        <Show when={paywallOpen()}>
-          <Suspense>
-            <Paywall />
-          </Suspense>
-        </Show>
-        <Show when={usageLimitOpen()}>
-          <AiUsageLimitDialog />
-        </Show>
         <div class="min-h-0 flex-1 flex">
           <ItemDndProvider>
             <Show when={isSidebarVisible()}>
               <SidebarRail />
             </Show>
-
-            <div class="flex-1 w-full min-h-0 font-sans text-ink caret-current">
-              {/* Route loading must not detach the shell or mobile navigation. */}
+            <PageContent>
+              {/* Route loading must not detach the chrome or mobile navigation. */}
               <Suspense fallback={<ContentLoading />}>
                 {props.children}
               </Suspense>
-            </div>
+            </PageContent>
           </ItemDndProvider>
         </div>
-        <Show
-          when={
-            isTouchDevice() &&
-            isAuthenticated() &&
-            !AUTH_URLS.includes(location.pathname)
-          }
-        >
+        <Show when={isTouchDevice() && isAuthenticated()}>
           <FloatRegionHost />
           <Suspense>
             <UserCardDrawer />
@@ -324,19 +315,16 @@ function LayoutInner(props: RouteSectionProps) {
             <MobileDockRow />
           </FloatRegion>
         </Show>
-        <SwipeDownDismissKeyboard />
+        <InitialInteractiveOnboardingModal />
         <Suspense>
-          <Show
-            when={isAuthenticated() && !AUTH_URLS.includes(location.pathname)}
-          >
+          <Show when={isAuthenticated()}>
             <Launcher
               open={createMenuOpen()}
               onOpenChange={setCreateMenuOpen}
             />
           </Show>
         </Suspense>
-        <DevStatusBar />
-      </div>
-    </ViewNavigationSlotContext.Provider>
+      </SidebarVisibilityContext.Provider>
+    </AppProviders>
   );
 }

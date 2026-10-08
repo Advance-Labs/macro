@@ -10,7 +10,6 @@ import {
   useSolidRouterHistory,
 } from '@app/lib/split-router';
 import { globalSplitManager } from '@app/signal/splitLayout';
-import { SplitLayout } from '@components/app/split-layout/SplitLayout';
 import { createAppSplitRouterMiddleware } from '@components/app/split-layout/split-router/app-middleware';
 import { createAppPanePolicy } from '@components/app/split-layout/split-router/app-pane-policy';
 import {
@@ -31,6 +30,7 @@ import {
   agentsRoute,
   agentsViewRoute,
   appRoute,
+  authRoute,
   baseRoute,
   bookingReceiptRoute,
   calendarSplitRoute,
@@ -73,6 +73,7 @@ import {
   projectDetailRoute,
   projectTaskRoute,
   publicBookingRoute,
+  publicRoute,
   recentRoute,
   reviewsPrRoute,
   reviewsSplitRoute,
@@ -89,6 +90,13 @@ import {
   teamInviteRoute,
   welcomeRoute,
 } from './routes';
+import {
+  AppShell,
+  AuthShell,
+  FocusedShell,
+  withFormRespondShell,
+  withMeetingShell,
+} from './shells';
 
 const { Router, Route } = SplitRouter;
 
@@ -333,43 +341,59 @@ export function AppRouterView() {
       defaultRoute={() => ({ matches: [{ id: baseRoute.id, params: {} }] })}
     >
       <Route definition={baseRoute} component={BasePathComponent} />
+      <Route definition={publicRoute} component={FocusedShell}>
+        <Route
+          definition={publicBookingRoute}
+          component={PublicBookingRoutePage}
+        />
+        <Route
+          definition={bookingReceiptRoute}
+          component={BookingReceiptRoutePage}
+        />
+      </Route>
       <Route
-        definition={publicBookingRoute}
-        component={PublicBookingRoutePage}
+        definition={formRespondRoute}
+        component={withFormRespondShell(FormRespondRoutePage)}
       />
       <Route
-        definition={bookingReceiptRoute}
-        component={BookingReceiptRoutePage}
+        definition={meetRoute}
+        component={withMeetingShell(MeetingRouter)}
       />
-      <Route definition={formRespondRoute} component={FormRespondRoutePage} />
-      <Route definition={meetRoute} component={MeetingRouter} />
-      <Route definition={taskSlugRoute} component={TaskSlugPage} />
-      <Route definition={signupRoute} component={SignupPage} />
-      <Route definition={emailSignupCallbackRoute} component={EmailCallback} />
-      <Route
-        definition={inboxLinkCallbackRoute}
-        component={EmailLinkCallback}
-      />
-      <Route
-        definition={loginPopupSuccessRoute}
-        component={LoginPopupSuccess}
-      />
-      <Route definition={loginRoute} component={LoginPage} />
-      <Route definition={welcomeRoute} component={WelcomePage} />
-      <Route definition={mobileEmailSignupRoute} component={MobileWebSignup} />
-      <Route definition={onboardingRoute} component={OnboardingPage} />
-      <Route definition={inviteRoute} component={InviteWelcome} />
-      <Route
-        definition={internalInviteLinksRoute}
-        component={InviteLinksPortal}
-      />
-      <Route definition={teamInviteRoute} component={TeamInviteAcceptance} />
-      <Route
-        definition={channelInviteRoute}
-        component={ChannelInviteAcceptance}
-      />
+      <Route definition={authRoute} component={AuthShell}>
+        <Route definition={taskSlugRoute} component={TaskSlugPage} />
+        <Route definition={signupRoute} component={SignupPage} />
+        <Route
+          definition={emailSignupCallbackRoute}
+          component={EmailCallback}
+        />
+        <Route
+          definition={inboxLinkCallbackRoute}
+          component={EmailLinkCallback}
+        />
+        <Route
+          definition={loginPopupSuccessRoute}
+          component={LoginPopupSuccess}
+        />
+        <Route definition={loginRoute} component={LoginPage} />
+        <Route definition={welcomeRoute} component={WelcomePage} />
+        <Route
+          definition={mobileEmailSignupRoute}
+          component={MobileWebSignup}
+        />
+        <Route definition={onboardingRoute} component={OnboardingPage} />
+        <Route definition={inviteRoute} component={InviteWelcome} />
+        <Route
+          definition={internalInviteLinksRoute}
+          component={InviteLinksPortal}
+        />
+        <Route definition={teamInviteRoute} component={TeamInviteAcceptance} />
+        <Route
+          definition={channelInviteRoute}
+          component={ChannelInviteAcceptance}
+        />
+      </Route>
 
-      <Route definition={appRoute} component={SplitLayout}>
+      <Route definition={appRoute} component={AppShell}>
         <Route definition={driveSplitRoute} component={DriveRouteView}>
           <Route definition={driveFolderRoute}>
             <Route

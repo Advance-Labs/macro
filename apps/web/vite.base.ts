@@ -130,6 +130,46 @@ function cloudFrontCompressionLimit(): Plugin {
   };
 }
 
+const BOOT_ENTRY = resolve(__dirname, 'src/boot.ts');
+
+/**
+ * Loads `src/boot.ts` ahead of the app bundle. A second module script in
+ * index.html would be merged into the app's entry chunk by the build, so the
+ * build gets a separate `boot` entry and the page an async script for it;
+ * dev serves the module directly.
+ */
+function bootEntry(): Plugin {
+  let base = '/';
+  return {
+    name: 'boot-entry',
+    config(_config, env) {
+      if (env.command !== 'build') return;
+      return { build: { rollupOptions: { input: { boot: BOOT_ENTRY } } } };
+    },
+    configResolved(config) {
+      base = config.base.endsWith('/') ? config.base : `${config.base}/`;
+    },
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        const chunk = Object.values(ctx.bundle ?? {}).find(
+          (file) =>
+            file.type === 'chunk' && file.isEntry && file.name === 'boot'
+        );
+        if (ctx.bundle && !chunk) return;
+        const src = chunk ? `${base}${chunk.fileName}` : '/src/boot.ts';
+        return [
+          {
+            tag: 'script',
+            attrs: { type: 'module', async: true, crossorigin: true, src },
+            injectTo: 'head-prepend',
+          },
+        ];
+      },
+    },
+  };
+}
+
 export const createAppViteConfig = (): UserConfigFn => {
   return ({ command, mode }) => {
     const ENV_MODE = process.env.MODE ?? mode;
@@ -159,6 +199,7 @@ export const createAppViteConfig = (): UserConfigFn => {
         }),
         gitBranchHmrPlugin(),
         cloudFrontCompressionLimit(),
+        bootEntry(),
       ],
       define: defineEnv(ENV_MODE, command),
       clearScreen: false,
