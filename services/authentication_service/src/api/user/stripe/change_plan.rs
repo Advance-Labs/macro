@@ -43,7 +43,7 @@ pub struct ChangePlanResponse {
         (status = 402, description = "The team has no active subscription", body = ErrorResponse),
         (status = 403, description = "Only team admins change plans on a team", body = ErrorResponse),
         (status = 404, description = "No active subscription", body = ErrorResponse),
-        (status = 409, description = "Already on this plan, or more than one active subscription", body = ErrorResponse),
+        (status = 409, description = "More than one active subscription", body = ErrorResponse),
         (status = 500, body = ErrorResponse),
     )
 )]

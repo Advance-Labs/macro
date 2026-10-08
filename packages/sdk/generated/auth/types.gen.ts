@@ -3780,7 +3780,7 @@ export type ChangePlanErrors = {
      */
     404: ErrorResponse;
     /**
-     * Already on this plan, or more than one active subscription
+     * More than one active subscription
      */
     409: ErrorResponse;
     500: ErrorResponse;
