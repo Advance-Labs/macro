@@ -13,7 +13,7 @@ use cache_core::engine::{BeginOptimisticWrite, Engine, ReadResult};
 use cache_core::link_patch::{LinkOperation, LinkPathSegment, OptimisticLinkPatch};
 use cache_core::queue::{MutationClaimRequest, MutationClaimToken};
 use cache_core::store::InMemoryStorage;
-use cache_core::value::EntityKey;
+use cache_core::value::{EntityKey, canonical_json};
 use pollster::block_on;
 use serde_json::{Value as Json, json};
 
@@ -385,7 +385,7 @@ fn restored_draft_enqueues_without_a_previously_loaded_thread_query() {
             .unwrap();
         assert!(committed.revalidations.iter().any(|query| {
             query.query == PAGE_QUERY
-                && query.variables_json == serde_json::to_string(&page_variables()).unwrap()
+                && query.variables_json == canonical_json(&Json::Object(page_variables()))
         }));
     });
 }
@@ -466,7 +466,7 @@ fn restored_draft_enqueues_and_survives_restart_with_a_null_thread_lookup() {
             .unwrap();
         assert!(committed.revalidations.iter().any(|query| {
             query.query == PAGE_QUERY
-                && query.variables_json == serde_json::to_string(&page_variables()).unwrap()
+                && query.variables_json == canonical_json(&Json::Object(page_variables()))
         }));
         engine
             .write_query(
