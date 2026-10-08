@@ -10,6 +10,33 @@ export interface Settings {
   tracesBucket: string;
 }
 
+export function validateRegion(region: string): void {
+  if (region !== 'us-east-2') {
+    throw new Error(
+      'Observability must run in us-east-2, outside prod us-east-1'
+    );
+  }
+}
+
+export function validateRegionalArn(
+  arn: string,
+  service: 'sns' | 'secretsmanager',
+  region: string
+): void {
+  const parts = arn.split(':');
+  if (
+    parts[0] !== 'arn' ||
+    parts[1] !== 'aws' ||
+    parts[2] !== service ||
+    parts[3] !== region ||
+    !/^\d{12}$/.test(parts[4]) ||
+    (service === 'sns' &&
+      (parts.length !== 6 || !/^[a-zA-Z0-9_-]+$/.test(parts[5])))
+  ) {
+    throw new Error(`${service} ARN must reference ${region}`);
+  }
+}
+
 // Restrict values before interpolating into INI, nginx, shell and JMESPath.
 export function validateSettings(settings: Settings): void {
   for (const host of [settings.grafanaHost, settings.otlpHost]) {
@@ -48,9 +75,8 @@ export function validateSettings(settings: Settings): void {
       'secretArn must reference an existing Secrets Manager secret'
     );
   }
-  if (!/^[a-z]{2}-[a-z]+-\d$/.test(settings.region)) {
-    throw new Error('Invalid AWS region');
-  }
+  validateRegion(settings.region);
+  validateRegionalArn(settings.secretArn, 'secretsmanager', settings.region);
   if (!/^vol-[a-f0-9]+$/.test(settings.volumeId)) {
     throw new Error('Invalid data volume ID');
   }

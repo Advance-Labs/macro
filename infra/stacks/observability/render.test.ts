@@ -5,16 +5,21 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
 import { renderFiles, renderUserData } from './render';
-import { validateSettings, type Settings } from './settings';
+import {
+  validateRegion,
+  validateRegionalArn,
+  validateSettings,
+  type Settings,
+} from './settings';
 
 const fixture: Settings = {
-  region: 'us-east-1',
+  region: 'us-east-2',
   grafanaHost: 'grafana-dev.macro.com',
   otlpHost: 'otlp-dev.macro.com',
   allowedEmails: ['reader@macro.com', 'admin@macro.com'],
   adminEmails: ['admin@macro.com'],
   secretArn:
-    'arn:aws:secretsmanager:us-east-1:123456789012:secret:observability-test',
+    'arn:aws:secretsmanager:us-east-2:123456789012:secret:observability-test',
   volumeId: 'vol-0123456789abcdef0',
   logsBucket: 'observability-logs-test',
   tracesBucket: 'observability-traces-test',
@@ -30,9 +35,30 @@ test('invalid access lists and config injection fail closed', () => {
     { grafanaHost: 'macro.com\nfoo' },
     { otlpHost: fixture.grafanaHost },
     { secretArn: 'not-an-arn' },
+    { secretArn: fixture.secretArn.replace('us-east-2', 'us-east-1') },
+    { region: 'us-east-1' },
   ]) {
     expect(() => validateSettings({ ...fixture, ...change })).toThrow();
   }
+});
+
+test('regional dependencies stay outside the production region', () => {
+  expect(() => validateSettings(fixture)).not.toThrow();
+  expect(() => validateRegion('us-east-1')).toThrow();
+  expect(() =>
+    validateRegionalArn(
+      'arn:aws:sns:us-east-2:123456789012:alarms',
+      'sns',
+      fixture.region
+    )
+  ).not.toThrow();
+  expect(() =>
+    validateRegionalArn(
+      'arn:aws:sns:us-east-1:123456789012:alarms',
+      'sns',
+      fixture.region
+    )
+  ).toThrow();
 });
 
 test('EC2 bootstrap fits its limit and is valid shell', () => {

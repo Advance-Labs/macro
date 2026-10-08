@@ -1,9 +1,12 @@
 import * as aws from '@pulumi/aws';
 import * as pulumi from '@pulumi/pulumi';
-import { BASE_DOMAIN, MACRO_SUBDOMAIN_CERT } from '../../packages/shared';
-import { get_coparse_api_vpc } from '../../packages/vpc';
+import { createNetwork } from './network';
 import { renderUserData } from './render';
-import { validateSettings } from './settings';
+import {
+  validateRegion,
+  validateRegionalArn,
+  validateSettings,
+} from './settings';
 
 const config = new pulumi.Config();
 const stack = pulumi.getStack();
@@ -11,14 +14,13 @@ if (!['dev', 'prod'].includes(stack)) {
   throw new Error('Use the dev or prod stack to select a unique hostname');
 }
 const region = aws.config.requireRegion();
+validateRegion(region);
+const baseDomain = 'macro.com';
 const suffix = stack === 'prod' ? '' : '-dev';
-const grafanaHost = `grafana${suffix}.${BASE_DOMAIN}`;
-const otlpHost = `otlp${suffix}.${BASE_DOMAIN}`;
+const grafanaHost = `grafana${suffix}.${baseDomain}`;
+const otlpHost = `otlp${suffix}.${baseDomain}`;
 const tags = { project: 'observability', environment: stack };
 const durable = { protect: true, retainOnDelete: true };
-const vpc = get_coparse_api_vpc();
-const subnetId = vpc.privateSubnetIds[0];
-const subnet = aws.ec2.getSubnetOutput({ id: subnetId });
 const secretArn = config.require('secretArn');
 const allowedEmails = config.requireObject<string[]>('allowedEmails');
 const adminEmails = config.requireObject<string[]>('adminEmails');
@@ -35,12 +37,43 @@ validateSettings({
   logsBucket: 'validate-logs',
   tracesBucket: 'validate-traces',
 });
-if (region !== 'us-east-1') {
-  throw new Error('This stack uses the existing us-east-1 VPC and certificate');
-}
-if (!/^arn:aws:sns:us-east-1:\d{12}:[a-zA-Z0-9_-]+$/.test(alarmTopicArn)) {
-  throw new Error('alarmTopicArn must be an existing us-east-1 SNS topic');
-}
+validateRegionalArn(alarmTopicArn, 'sns', region);
+const vpc = createNetwork(region, tags);
+const subnet = vpc.privateSubnet;
+const subnetId = subnet.id;
+
+// Route53 is global; issuance and use of the certificate are both in Ohio.
+const zone = aws.route53.getZoneOutput({
+  name: baseDomain,
+  privateZone: false,
+});
+const certificate = new aws.acm.Certificate('observability', {
+  domainName: grafanaHost,
+  subjectAlternativeNames: [otlpHost],
+  validationMethod: 'DNS',
+  tags,
+});
+const validationRecords = [grafanaHost, otlpHost].map((hostname) => {
+  const option = certificate.domainValidationOptions.apply((options) => {
+    const match = options.find((entry) => entry.domainName === hostname);
+    if (!match) throw new Error(`Missing ACM validation for ${hostname}`);
+    return match;
+  });
+  return new aws.route53.Record(`observability-certificate-${hostname}`, {
+    zoneId: zone.zoneId,
+    name: option.resourceRecordName,
+    type: option.resourceRecordType,
+    records: [option.resourceRecordValue],
+    ttl: 300,
+  });
+});
+const validatedCertificate = new aws.acm.CertificateValidation(
+  'observability',
+  {
+    certificateArn: certificate.arn,
+    validationRecordFqdns: validationRecords.map((record) => record.fqdn),
+  }
+);
 
 function telemetryBucket(name: string) {
   const bucket = new aws.s3.BucketV2(
@@ -242,7 +275,7 @@ const instance = new aws.ec2.Instance(
       ),
     tags,
   },
-  { deleteBeforeReplace: true, dependsOn: [policy, ssm] }
+  { deleteBeforeReplace: true, dependsOn: [policy, ssm, ...vpc.privateReady] }
 );
 new aws.ec2.VolumeAttachment('observability-data', {
   deviceName: '/dev/sdf',
@@ -252,15 +285,19 @@ new aws.ec2.VolumeAttachment('observability-data', {
   forceDetach: false,
 });
 
-const alb = new aws.lb.LoadBalancer('observability', {
-  loadBalancerType: 'application',
-  internal: false,
-  subnets: vpc.publicSubnetIds,
-  securityGroups: [albSg.id],
-  dropInvalidHeaderFields: true,
-  desyncMitigationMode: 'strictest',
-  tags,
-});
+const alb = new aws.lb.LoadBalancer(
+  'observability',
+  {
+    loadBalancerType: 'application',
+    internal: false,
+    subnets: vpc.publicSubnetIds,
+    securityGroups: [albSg.id],
+    dropInvalidHeaderFields: true,
+    desyncMitigationMode: 'strictest',
+    tags,
+  },
+  { dependsOn: vpc.publicReady }
+);
 const target = new aws.lb.TargetGroup('observability', {
   port: 8080,
   protocol: 'HTTP',
@@ -279,7 +316,7 @@ const listener = new aws.lb.Listener('observability-https', {
   loadBalancerArn: alb.arn,
   port: 443,
   protocol: 'HTTPS',
-  certificateArn: MACRO_SUBDOMAIN_CERT,
+  certificateArn: validatedCertificate.certificateArn,
   sslPolicy: 'ELBSecurityPolicy-TLS13-1-2-2021-06',
   defaultActions: [
     {
@@ -293,10 +330,6 @@ new aws.lb.ListenerRule('observability-hosts', {
   priority: 1,
   conditions: [{ hostHeader: { values: [grafanaHost, otlpHost] } }],
   actions: [{ type: 'forward', targetGroupArn: target.arn }],
-});
-const zone = aws.route53.getZoneOutput({
-  name: BASE_DOMAIN,
-  privateZone: false,
 });
 for (const hostname of [grafanaHost, otlpHost]) {
   new aws.route53.Record(hostname, {
@@ -386,3 +419,4 @@ export const instanceId = instance.id;
 export const dataVolumeId = data.id;
 export const logsBucket = logs.bucket;
 export const tracesBucket = traces.bucket;
+export const observabilityRegion = region;

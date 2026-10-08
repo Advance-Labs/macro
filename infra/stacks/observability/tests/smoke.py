@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 
 root = Path(sys.argv[1])
+region = json.loads((root / 'bootstrap.json').read_text())['region']
 project = root.name.lower()
 compose = json.loads((root / 'compose.json').read_text())
 compose['name'] = project
@@ -40,14 +41,14 @@ for name, port in [('proxy', 8080), ('loki', 3100), ('tempo', 3200), ('prometheu
     services[name]['ports'] = [f'127.0.0.1::{port}']
 services['s3'] = {
     'image': 'localstack/localstack:4',
-    'environment': {'SERVICES': 's3', 'AWS_DEFAULT_REGION': 'us-east-1'},
+    'environment': {'SERVICES': 's3', 'AWS_DEFAULT_REGION': region},
 }
 (root / 'compose.json').write_text(json.dumps(compose))
 loki = (root / 'loki.yaml').read_text().replace(
     '  aws:\n', '  aws:\n    endpoint: s3:4566\n    insecure: true\n    s3forcepathstyle: true\n')
 (root / 'loki.yaml').write_text(loki)
 tempo = (root / 'tempo.yaml').read_text().replace(
-    'endpoint: s3.us-east-1.amazonaws.com',
+    f'endpoint: s3.{region}.amazonaws.com',
     'endpoint: s3:4566\n      insecure: true\n      forcepathstyle: true')
 (root / 'tempo.yaml').write_text(tempo)
 

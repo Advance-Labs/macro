@@ -16,8 +16,13 @@ OTEL exporter -- HTTPS + bearer token --> ALB --> nginx --> Alloy
                                                         --> Prometheus --> EBS
 ```
 
-- One `m7i.xlarge` (4 vCPU / 16 GiB) in the existing VPC's private us-east-1c
-  subnet. This is a provisional pilot size, not a capacity commitment.
+- One `m7i.xlarge` (4 vCPU / 16 GiB) in a new VPC's private `us-east-2a`
+  subnet in Ohio, separate from production in `us-east-1`. This is a provisional
+  pilot size, not a capacity commitment.
+- Independent regional dependencies: two public ALB subnets, one NAT gateway,
+  a regional ACM certificate, EBS/snapshots, S3, Secrets Manager and alarm topic.
+  An S3 gateway endpoint keeps bucket traffic off the NAT gateway. No production
+  VPC, peering, NAT or regional certificate is reused. Route53 and IAM are global.
 - Separate encrypted 300 GiB gp3 volume: Grafana SQLite and plugins,
   Prometheus TSDB, Alloy metrics WAL, Loki WAL/index/cache, Tempo WAL/blocks.
   The root disk is disposable. Volume and S3 buckets are protected and retained.
@@ -35,6 +40,13 @@ OTEL exporter -- HTTPS + bearer token --> ALB --> nginx --> Alloy
   Grafana plugin auto-install/update is disabled; upgrades go through review and
   the smoke test. Host packages receive the Ubuntu/Docker repository versions
   available at bootstrap, so plan regular patched-AMI replacements.
+
+Previously received telemetry remains accessible if the production region fails.
+Data that has not left production can still be lost, and a single Ohio host is
+not highly available. Ohio failure is not covered by these regional snapshots
+or buckets. Subsequent dual export must use independent queues and HTTPS across
+regions, and account for inter-region transfer costs and latency. A production
+region outage should not block Grafana login or secret retrieval in Ohio.
 
 ## Team authentication and security
 
@@ -96,8 +108,9 @@ Split roles/hosts when that boundary is no longer acceptable.
 
 The stack is deliberately absent from `.github/services-config.json`, so this PR
 does not enroll it in automatic deployments. Use the repository's Pulumi backend
-and AWS account `569036502058`, region `us-east-1`. Deployment requires the
-existing VPC/NAT connectivity, Route53 zone and wildcard ACM certificate.
+and AWS account `569036502058`, region `us-east-2`. Deployment requires the
+existing public `macro.com` Route53 zone; this stack creates its own VPC/NAT and
+DNS-validated regional ACM certificate. Region validation rejects `us-east-1`.
 
 1. Create a dedicated Google OAuth Web application under the company's Google
    organization with an **Internal** consent audience. Register exactly
@@ -105,13 +118,16 @@ existing VPC/NAT connectivity, Route53 zone and wildcard ACM certificate.
    `https://grafana.macro.com/login/google` for prod. Prefer separate clients and
    secrets per environment. Confirm Workspace MFA enforcement.
 2. Through the approved secret-management process, create a Secrets Manager JSON
-   secret containing `google_client_id`, `google_client_secret`,
+   secret in **us-east-2** containing `google_client_id`, `google_client_secret`,
    `grafana_secret_key`, and `otlp_token`. Generate independent cryptographically
    random values of at least 32 characters for the last two. Preserve
    `grafana_secret_key` through recovery; changing it can make stored credentials
    unreadable. Never paste secret values into shell commands, this file or PRs.
-3. Select approved users and admins. Select an existing SNS topic with a
-   confirmed, monitored subscription for infrastructure alarms.
+3. Select approved users and admins. Select an existing **us-east-2** SNS topic
+   with a confirmed, monitored subscription for infrastructure alarms. Its
+   delivery destination must remain accessible during a production outage.
+   Configuration rejects secrets and topics in another region; the host reads
+   the local secret directly, without fetching credentials from production.
 4. Set the nonsecret configuration below, substituting actual identifiers. No
    example account or placeholder is authorized automatically.
 
@@ -120,7 +136,7 @@ existing VPC/NAT connectivity, Route53 zone and wildcard ACM certificate.
 bun install --frozen-lockfile
 \cd stacks/observability
 pulumi stack select macro-inc/dev --create
-pulumi config set aws:region us-east-1
+pulumi config set aws:region us-east-2
 pulumi config set secretArn '<existing Secrets Manager ARN>'
 pulumi config set alarmTopicArn '<existing monitored SNS topic ARN>'
 pulumi config set --path 'allowedEmails[0]' '<approved-admin@macro.com>'
@@ -129,11 +145,13 @@ pulumi config set --path 'adminEmails[0]' '<approved-admin@macro.com>'
 pulumi preview --diff
 ```
 
-Review the AMI selected in the preview and pin it with `pulumi config set amiId
+Review the Ohio AMI selected in the preview and pin it with `pulumi config set amiId
 ami-...` before deployment. Without a pin, a newer Canonical Ubuntu 24.04 AMI can
 cause instance replacement on a future preview. Deploy with `pulumi up` after
 reviewing the resource plan. Allow up to 15 minutes for bootstrap/image pulls.
 Pulumi resource creation does not prove bootstrap or OAuth has succeeded.
+Do not change the region of a stack that already owns resources: that requires
+an explicit migration and recovery plan for its protected storage.
 
 Before enabling application traffic, validate all of these against AWS:
 
