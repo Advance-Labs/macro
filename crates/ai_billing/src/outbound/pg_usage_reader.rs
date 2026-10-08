@@ -48,85 +48,62 @@ impl UsageReader for PgUsageReader {
             return Ok(Vec::new());
         }
         let ids: Vec<String> = users.iter().map(|u| u.as_ref().to_string()).collect();
-        // History and cost boundaries must describe the same database snapshot,
+        // One statement gives history and usage the same database snapshot,
         // even when a webhook records another transition during this read.
-        let mut transaction = self
-            .pool
-            .begin()
-            .await
-            .map_err(|e| BillingError::Storage(e.into()))?;
-        sqlx::query!("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            .execute(&mut *transaction)
-            .await
-            .map_err(|e| BillingError::Storage(e.into()))?;
-        let history = sqlx::query!(
-            "SELECT user_id, changed_at, previous_plan, new_plan,
-                    previous_included_cost_cents, new_included_cost_cents
-             FROM ai_billing_plan_change
-             WHERE user_id = ANY($1) AND period_start = $2 AND changed_at < $3
-             ORDER BY user_id, changed_at, previous_plan, new_plan",
+        let rows = sqlx::query_file!(
+            "src/outbound/pg_usage_reader/usage.sql",
             &ids,
             period.start,
             period.end,
+            FALLBACK_PRICE_PER_MILLION_IN,
+            FALLBACK_PRICE_PER_MILLION_OUT,
+            FALLBACK_PRICE_PER_MILLION_CACHE_READ,
+            FALLBACK_PRICE_PER_MILLION_CACHE_WRITE,
         )
-        .fetch_all(&mut *transaction)
+        .fetch_all(&self.pool)
         .await
         .map_err(|e| BillingError::Storage(e.into()))?;
         let mut changes: HashMap<String, Vec<RecordedPlanChange>> = HashMap::new();
-        for row in history {
-            changes
-                .entry(row.user_id)
-                .or_default()
-                .push(RecordedPlanChange {
-                    change: PlanChange {
-                        from: parse_plan(&row.previous_plan)?,
-                        to: parse_plan(&row.new_plan)?,
-                        at: row.changed_at,
-                        period,
-                    },
-                    previous_included_cents: row.previous_included_cost_cents,
-                    new_included_cents: row.new_included_cost_cents,
-                });
-        }
-        let rows = sqlx::query!(
-            r#"WITH boundaries AS (
-                SELECT requested.user_id, $2::timestamptz AS start FROM UNNEST($1::text[]) AS requested(user_id)
-                UNION
-                SELECT user_id, changed_at FROM ai_billing_plan_change
-                WHERE user_id = ANY($1) AND period_start = $2 AND changed_at < $3
-            ), intervals AS (
-                SELECT user_id, start, LEAD(start, 1, $3) OVER (PARTITION BY user_id ORDER BY start) AS end
-                FROM boundaries
-            )
-            SELECT interval.user_id AS "user_id!", interval.start AS "start!",
-                   COALESCE(SUM(COALESCE(usage.total::float8,
-                       usage.input_tokens::float8 / 1000000.0 * $4
-                       + usage.output_tokens::float8 / 1000000.0 * $5
-                       + usage.cache_read_input_tokens::float8 / 1000000.0 * $6
-                       + usage.cache_write_input_tokens::float8 / 1000000.0 * $7
-                   )), 0)::float8 AS "usd!",
-                   EXISTS (SELECT 1 FROM ai_billing_usage_period AS policy
-                           WHERE policy.user_id = interval.user_id AND policy.period_start = $2
-                             AND policy.policy = 'public_allowance_v1') AS "public_funding!"
-            FROM intervals AS interval
-            LEFT JOIN ai_usage AS usage ON usage.user_id = interval.user_id
-                AND usage.created_at >= interval.start AND usage.created_at < interval.end
-                AND usage.count_usage = TRUE
-            GROUP BY interval.user_id, interval.start ORDER BY interval.user_id, interval.start"#,
-            &ids, period.start, period.end,
-            FALLBACK_PRICE_PER_MILLION_IN, FALLBACK_PRICE_PER_MILLION_OUT,
-            FALLBACK_PRICE_PER_MILLION_CACHE_READ, FALLBACK_PRICE_PER_MILLION_CACHE_WRITE,
-        ).fetch_all(&mut *transaction).await.map_err(|e| BillingError::Storage(e.into()))?;
         let mut segments: HashMap<String, (bool, Vec<PlanUsageSegment>)> = HashMap::new();
         for row in rows {
-            segments
-                .entry(row.user_id)
-                .or_insert_with(|| (row.public_funding, Vec::new()))
-                .1
-                .push(PlanUsageSegment {
-                    start: row.start,
-                    usd: row.usd,
-                });
+            match (
+                row.is_plan_change,
+                row.previous_plan,
+                row.new_plan,
+                row.usd,
+                row.public_funding,
+            ) {
+                (true, Some(from), Some(to), None, None) => {
+                    changes
+                        .entry(row.user_id)
+                        .or_default()
+                        .push(RecordedPlanChange {
+                            change: PlanChange {
+                                from: parse_plan(&from)?,
+                                to: parse_plan(&to)?,
+                                at: row.start,
+                                period,
+                            },
+                            previous_included_cents: row.previous_included_cost_cents,
+                            new_included_cents: row.new_included_cost_cents,
+                        });
+                }
+                (false, None, None, Some(usd), Some(public)) => {
+                    segments
+                        .entry(row.user_id)
+                        .or_insert_with(|| (public, Vec::new()))
+                        .1
+                        .push(PlanUsageSegment {
+                            start: row.start,
+                            usd,
+                        });
+                }
+                _ => {
+                    return Err(BillingError::Storage(anyhow::anyhow!(
+                        "invalid plan usage row"
+                    )));
+                }
+            }
         }
         let mut result = Vec::new();
         for (id, (public, segments)) in segments {

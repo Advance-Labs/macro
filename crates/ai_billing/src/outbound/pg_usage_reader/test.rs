@@ -629,6 +629,79 @@ async fn sequential_free_pro_max_upgrades_do_not_double_bill_public_funded_usage
     assert_eq!(position[0].chargeable_cost_cents, Some(0));
 }
 
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn batched_usage_preserves_each_change_at_a_shared_boundary(pool: PgPool) {
+    use crate::domain::{AiPricing, BillingRepo, PlanTier};
+    use crate::outbound::PgBillingRepo;
+
+    let upgraded = MacroUserIdStr::try_from("macro|batched-upgrade@example.com").unwrap();
+    let unchanged = MacroUserIdStr::try_from("macro|batched-unchanged@example.com").unwrap();
+    let empty = MacroUserIdStr::try_from("macro|batched-empty@example.com").unwrap();
+    let outside = MacroUserIdStr::try_from("macro|batched-outside@example.com").unwrap();
+    let period = current_period();
+    let at = period.start + Duration::seconds(10);
+    let billing = PgBillingRepo::new(pool.clone(), AiPricing::testing());
+
+    // Insert in reverse order: both transitions must survive the shared boundary,
+    // and neither may turn the earlier Free usage into paid overage.
+    for (from, to, old, new) in [
+        (PlanTier::Premium, PlanTier::Max, Some(2_000), 10_000),
+        (PlanTier::Free, PlanTier::Premium, None, 2_000),
+    ] {
+        billing
+            .record_plan_change(
+                &upgraded,
+                RecordedPlanChange {
+                    change: PlanChange {
+                        from,
+                        to,
+                        at,
+                        period,
+                    },
+                    previous_included_cents: old,
+                    new_included_cents: Some(new),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    billing
+        .reset_usage(&empty, period.start, at, None, PlanTier::Premium)
+        .await
+        .unwrap();
+    for (user, total, created_at) in [
+        (&upgraded, 22.0, at - Duration::seconds(1)),
+        (&upgraded, 25.0, at),
+        (&unchanged, 1.0, at),
+        (&outside, 100.0, at),
+    ] {
+        let mut usage = completion(user.clone(), AiFeature::Chat, total);
+        usage.cost.created_at = created_at;
+        insert_upgrade_usage(&pool, &usage).await;
+    }
+
+    let mut usage = PgUsageReader::new(pool)
+        .usage_cost_cents_by_user(&[unchanged.clone(), empty, upgraded.clone()], period)
+        .await
+        .unwrap();
+    usage.sort_by(|a, b| a.user.as_ref().cmp(b.user.as_ref()));
+    assert_eq!(
+        usage,
+        vec![
+            SeatUsage {
+                user: unchanged,
+                used_cents: 100,
+                chargeable_cost_cents: None,
+            },
+            SeatUsage {
+                user: upgraded,
+                used_cents: 2_500,
+                chargeable_cost_cents: Some(0),
+            },
+        ]
+    );
+}
+
 // PgUsageRepo timestamps writes with the database clock. Explicitly locate this
 // fixture's newest row on either side of the upgrade instead of relying on sleeps.
 async fn insert_upgrade_usage(pool: &PgPool, usage: &CompletionUsage) {
