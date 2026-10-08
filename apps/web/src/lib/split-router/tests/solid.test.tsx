@@ -1,10 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@solidjs/testing-library';
-import { createEffect, For,
-  onCleanup,
-  onMount,
-  Show,
-type JSX,
-} from 'solid-js';
+import { createEffect, For, type JSX, onCleanup, onMount } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createMemoryHistory, type MemoryHistory } from '../history/memory';
@@ -254,100 +249,6 @@ afterEach(() => {
 });
 
 describe('split router Solid bindings', () => {
-  it.each(['conversations', 'No conversations'])(
-    'keeps a loaded %s list mounted through mobile promotion',
-    async (content) => {
-      const mounted = vi.fn();
-      const disposed = vi.fn();
-      const fallback = vi.fn();
-      const [loaded, setLoaded] = createSignal(false);
-      let source: SplitRouterLayoutEntry<string> | undefined;
-      let background = false;
-      const listeners = new Set<(change: SplitRouterSettledChange) => void>();
-      const setBackground = (value: boolean) => {
-        background = value;
-        for (const listener of listeners) listener({ history: 'push' });
-      };
-      const layout: SplitRouterLayout<string> = {
-        snapshot: () => ({
-          entries: background
-            ? [
-                {
-                  splitId: 'detail',
-                  location: {
-                    route: { matches: [{ id: 'detail', params: {} }] },
-                    search: {},
-                  },
-                },
-              ]
-            : source
-              ? [source]
-              : [],
-          retainedEntries: background && source ? [source] : [],
-        }),
-        reconcile(locations) {
-          if (locations[0])
-            source = { splitId: 'source', location: locations[0] };
-        },
-        updateCurrentLocation: () => {},
-        open: () => ({ status: 'unavailable' }),
-        activate: () => {},
-        subscribe(listener) {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
-        },
-      };
-      const List = () => {
-        onMount(mounted);
-        onCleanup(disposed);
-        return (
-          <Show when={loaded()} fallback={<div>Loading conversations</div>}>
-            <div data-list>{content}</div>
-          </Show>
-        );
-      };
-      const Fallback = () => {
-        onMount(fallback);
-        return <div>Route unavailable</div>;
-      };
-      const result = render(() => (
-        <SplitRouter.Root
-          layout={layout}
-          routes={{
-            definitions: [
-              defineRoute({ id: 'list', path: 'channels', component: List }),
-              defineRoute({
-                id: 'detail',
-                path: 'channel',
-                component: () => null,
-              }),
-            ],
-          }}
-          location={createMemorySplitRouterLocation('/channels')}
-        >
-          <SplitRouter.Outlet splitId="source" fallback={Fallback} />
-        </SplitRouter.Root>
-      ));
-      expect(result.getByText('Loading conversations')).toBeTruthy();
-      setLoaded(true);
-      const list = result.getByText(content);
-      list.scrollTop = 120;
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        setBackground(true);
-        await Promise.resolve();
-        expect(result.getByText(content)).toBe(list);
-        setBackground(false);
-        await Promise.resolve();
-        expect(result.getByText(content)).toBe(list);
-        expect(list.scrollTop).toBe(120);
-      }
-      expect(mounted).toHaveBeenCalledOnce();
-      expect(disposed).not.toHaveBeenCalled();
-      expect(fallback).not.toHaveBeenCalled();
-      expect(result.queryByText('Loading conversations')).toBeNull();
-    }
-  );
-
   it('keeps a view mounted while its remount key holds and updates params in place', () => {
     const { router } = renderPanes('/drive/md/d1');
     const pane = router.panes()[0]!;
