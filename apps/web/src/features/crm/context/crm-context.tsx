@@ -1,9 +1,15 @@
 import type { CrmCompanyEntity } from '@entity';
-import { type Accessor, createContext, useContext } from 'solid-js';
+import {
+  type Accessor,
+  type Component,
+  createContext,
+  useContext,
+} from 'solid-js';
 import type {
   CrmDisplayOptions,
   CrmListColumnId,
 } from '../core/display-options';
+import type { CrmRecordScope } from '../core/record';
 import type {
   CompanySource,
   ContactSource,
@@ -14,17 +20,26 @@ import type {
   CrmStageInput,
   CrmStagesResult,
   DealStages,
-  EmailSource,
   ExportDefinitionsSource,
+  ItemListSource,
   ListsSource,
+  PeopleSource,
   PersonalViewsSource,
   PropertyCommands,
   TeamConfigSource,
   TeamSource,
   TeamViewsSource,
 } from './crm-sources';
+import type {
+  PipelineEditor,
+  PipelineSharing,
+  PipelinesSource,
+} from './pipelines';
 
 export type CrmContext = {
+  createPipelines(teamId: Accessor<string | undefined>): PipelinesSource;
+  PipelineEditor: PipelineEditor;
+  PipelineSharing: PipelineSharing;
   downloadCsv(content: string, filename: string): Promise<{ saved: boolean }>;
   contactInitials(name: string | null | undefined, email: string): string;
   userEmail(id: string): string;
@@ -32,7 +47,7 @@ export type CrmContext = {
   copyRecordLink(target: {
     type: 'company' | 'contact';
     id: string;
-  }): Promise<void>;
+  }): Promise<boolean>;
   createNavigation(): {
     splitId: string | undefined;
     openWithSplit(
@@ -40,21 +55,33 @@ export type CrmContext = {
       options?: { activate?: boolean; preferNewSplit?: boolean }
     ): void;
     showCompanies(): void;
-    openEmail(entity: import('@entity').EntityData): void;
+    /** Open any soup row (email, file, call, ...) in a split. */
+    openEntity(entity: import('@entity').EntityData): void;
   };
   listsEnabled(): Accessor<boolean>;
+  pipelinesEnabled(): Accessor<boolean>;
 
   feedback: { success(message: string): void; failure(message: string): void };
   createCompanyEmails(
     domains: Accessor<string[]>,
     scope: Accessor<CrmEmailScope>,
     signal: Accessor<CrmEmailSignal>
-  ): EmailSource;
+  ): ItemListSource;
   createContactEmails(
     email: Accessor<string | undefined>,
     scope: Accessor<CrmEmailScope>,
     signal: Accessor<CrmEmailSignal>
-  ): EmailSource;
+  ): ItemListSource;
+  /** Files associated with the record or attached to its emails. */
+  createRecordFiles(
+    scope: Accessor<CrmRecordScope | undefined>
+  ): ItemListSource;
+  /** Calls associated with the record. */
+  createRecordCalls(
+    scope: Accessor<CrmRecordScope | undefined>
+  ): ItemListSource;
+  /** The record's Tasks tab, scoped to tasks associated with it. */
+  RecordTasks: Component<{ scope: CrmRecordScope }>;
   createPropertyCommands(): PropertyCommands;
   hydrateCompany(company: CrmCompanyEntity): CrmCompanyEntity;
   createSettingsCommands(): CrmMutation<
@@ -84,6 +111,7 @@ export type CrmContext = {
   createCompanySource(id: Accessor<string>): CompanySource;
   createContactSource(id: Accessor<string>): ContactSource;
   createTeamSource(): TeamSource;
+  createPeopleSource(enabled: Accessor<boolean>): PeopleSource;
   createTeamConfigSource(): TeamConfigSource;
   createCapabilities(): CrmCapabilities;
   createDealStages(): DealStages;
