@@ -58,6 +58,7 @@ type ToolParserMap = {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
   };
+  CreateForm: { call: types.CreateForm; response: types.MutationResult };
   CreateImportEntity: {
     call: types.CreateImportEntity;
     response: types.CreateImportEntityResponse;
@@ -110,6 +111,7 @@ type ToolParserMap = {
     call: types.EditDocument;
     response: types.EditDocumentResponse;
   };
+  EditForm: { call: types.EditForm; response: types.MutationResult };
   EditPresentation: {
     call: types.EditPresentation;
     response: types.PresentationEditOutcome;
@@ -175,6 +177,7 @@ type ToolParserMap = {
     call: types.ListEntities;
     response: types.ListEntitiesResponse;
   };
+  ListForms: { call: types.ListForms; response: types.ListResult };
   ListImportEntities: {
     call: types.ListImportEntities;
     response: types.ListImportEntitiesResponse;
@@ -245,6 +248,7 @@ type ToolParserMap = {
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
   ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadForm: { call: types.ReadForm; response: types.ReadResult };
   ReadIllustratorDocument: {
     call: types.ReadIllustratorDocument;
     response: types.ReadIllustratorDocumentResponse;
@@ -326,6 +330,7 @@ type ToolParserMap = {
     call: types.SetEntityProperty;
     response: types.SetEntityPropertyResponse;
   };
+  SetFormAccess: { call: types.SetFormAccess; response: types.MutationResult };
   SetSenderPolicy: {
     call: types.SetSenderPolicy;
     response: types.SetSenderPolicyResponse;
@@ -407,6 +412,7 @@ const toolParserMap = {
     call: schemas.CreateDocument,
     response: schemas.CreateDocumentResponse,
   },
+  CreateForm: { call: schemas.CreateForm, response: schemas.MutationResult },
   CreateImportEntity: {
     call: schemas.CreateImportEntity,
     response: schemas.CreateImportEntityResponse,
@@ -459,6 +465,7 @@ const toolParserMap = {
     call: schemas.EditDocument,
     response: schemas.EditDocumentResponse,
   },
+  EditForm: { call: schemas.EditForm, response: schemas.MutationResult },
   EditPresentation: {
     call: schemas.EditPresentation,
     response: schemas.PresentationEditOutcome,
@@ -530,6 +537,7 @@ const toolParserMap = {
     call: schemas.ListEntities,
     response: schemas.ListEntitiesResponse,
   },
+  ListForms: { call: schemas.ListForms, response: schemas.ListResult },
   ListImportEntities: {
     call: schemas.ListImportEntities,
     response: schemas.ListImportEntitiesResponse,
@@ -618,6 +626,7 @@ const toolParserMap = {
     call: schemas.ReadDesign,
     response: schemas.ReadDesignResponse,
   },
+  ReadForm: { call: schemas.ReadForm, response: schemas.ReadResult },
   ReadIllustratorDocument: {
     call: schemas.ReadIllustratorDocument,
     response: schemas.ReadIllustratorDocumentResponse,
@@ -704,6 +713,10 @@ const toolParserMap = {
   SetEntityProperty: {
     call: schemas.SetEntityProperty,
     response: schemas.SetEntityPropertyResponse,
+  },
+  SetFormAccess: {
+    call: schemas.SetFormAccess,
+    response: schemas.MutationResult,
   },
   SetSenderPolicy: {
     call: schemas.SetSenderPolicy,
@@ -797,6 +810,7 @@ type ToolDataMap = {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
   };
+  CreateForm: { call: types.CreateForm; response: types.MutationResult };
   CreateImportEntity: {
     call: types.CreateImportEntity;
     response: types.CreateImportEntityResponse;
@@ -849,6 +863,7 @@ type ToolDataMap = {
     call: types.EditDocument;
     response: types.EditDocumentResponse;
   };
+  EditForm: { call: types.EditForm; response: types.MutationResult };
   EditPresentation: {
     call: types.EditPresentation;
     response: types.PresentationEditOutcome;
@@ -914,6 +929,7 @@ type ToolDataMap = {
     call: types.ListEntities;
     response: types.ListEntitiesResponse;
   };
+  ListForms: { call: types.ListForms; response: types.ListResult };
   ListImportEntities: {
     call: types.ListImportEntities;
     response: types.ListImportEntitiesResponse;
@@ -984,6 +1000,7 @@ type ToolDataMap = {
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
   ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadForm: { call: types.ReadForm; response: types.ReadResult };
   ReadIllustratorDocument: {
     call: types.ReadIllustratorDocument;
     response: types.ReadIllustratorDocumentResponse;
@@ -1065,6 +1082,7 @@ type ToolDataMap = {
     call: types.SetEntityProperty;
     response: types.SetEntityPropertyResponse;
   };
+  SetFormAccess: { call: types.SetFormAccess; response: types.MutationResult };
   SetSenderPolicy: {
     call: types.SetSenderPolicy;
     response: types.SetSenderPolicyResponse;
