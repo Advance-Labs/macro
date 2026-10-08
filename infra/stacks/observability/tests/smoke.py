@@ -173,18 +173,53 @@ assert jmespath.search(expression, {}) == 'Denied'
                    for item in listing.get('Contents', []))
     eventually(lambda: stored('observability-logs-test'))
     eventually(lambda: stored('observability-traces-test', trace=True))
-    docker('restart', 'loki', 'tempo', 'prometheus')
+    # A short stop deadline also exercises recovery when shutdown is interrupted.
+    docker('restart', '--timeout', '5', 'loki', 'tempo', 'prometheus')
     # Docker can assign new ephemeral host ports on restart.
     loki_url = url('loki', 3100)
     tempo_url = url('tempo', 3200)
     prometheus = url('prometheus', 9090)
     eventually(readable)
-    print('PASS: anonymous access, Google OAuth redirect, ingestion auth, write-only routes, logs/traces/metrics, S3 flush, restart recovery')
+    eventually(lambda: request(tempo_url, '/ready')[0] == 200)
+    # Only this fixture enables auth.proxy to create a Viewer without Google.
+    # Production OAuth/anonymous denial was checked above against the real INI.
+    grafana_ini = (root / 'grafana.ini').read_text()
+    assert '[auth.proxy]' not in grafana_ini
+    (root / 'grafana.ini').write_text(grafana_ini + '''
+[auth.proxy]
+enabled = true
+header_name = X-Audit-User
+header_property = email
+auto_sign_up = true
+''')
+    docker('restart', '--timeout', '5', 'grafana')
+    eventually(lambda: request(proxy, '/healthz')[0] == 200)
+    viewer = {**ui, 'X-Audit-User': 'reader@macro.com'}
+    organizations = request(proxy, '/api/user/orgs', headers=viewer)
+    assert organizations[0] == 200
+    assert json.loads(organizations[1])[0]['role'] == 'Viewer'
+    assert not json.loads(request(proxy, '/api/user', headers=viewer)[1])['isGrafanaAdmin']
+    for datasource in ['prometheus', 'loki', 'tempo']:
+        health = request(proxy, '/api/datasources/uid/' + datasource + '/health', headers=viewer)
+        assert health[0] == 200, (datasource, health[:2])
+        for method in ['GET', 'POST']:
+            for path in ['/flush', '/shutdown', '/api/v1/admin/tsdb/delete_series', '/api/v1/write', '/loki/api/v1/delete', '/otlp/v1/logs']:
+                result = request(proxy, '/api/datasources/proxy/uid/' + datasource + path, headers=viewer, method=method)
+                assert result[0] in [403, 404], (datasource, method, path, result[:2])
+    for datasource, query, expected in [
+        ('prometheus', metric_query, '42'),
+        ('loki', log_query, 'smoke-log-persisted'),
+        ('tempo', '/api/traces/' + trace_id, 'smoke-span'),
+    ]:
+        result = request(proxy, '/api/datasources/proxy/uid/' + datasource + query, headers=viewer)
+        assert result[0] == 200 and expected in result[1], (datasource, result[:2])
+    assert request(tempo_url, '/ready')[0] == 200
+    print('PASS: OAuth/roles, anonymous/token denial, three-signal queries, S3 flush, restart recovery, Viewer queries and admin-endpoint denial')
 except BaseException:
     print(docker('logs', '--tail', '35'), file=sys.stderr)
     raise
 finally:
-    docker('down', '--volumes', '--remove-orphans')
+    docker('down', '--timeout', '5', '--volumes', '--remove-orphans')
     # Container users own local fixture data; clean only this test's directory.
     subprocess.run(['docker', 'run', '--rm', '-v', f'{root}:/fixture', 'nginx:1.30.5-alpine',
                     'sh', '-c', 'rm -rf /fixture/data'], check=True, capture_output=True)

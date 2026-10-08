@@ -39,6 +39,7 @@ export function renderFiles(settings: Settings): Record<string, string> {
     'config.alloy',
     'refresh-secrets.py',
     'publish-health.py',
+    'prepare-volume.sh',
   ]) {
     files[name] = readFileSync(join(__dirname, 'assets', name), 'utf8').replace(
       /@@([A-Z_]+)@@/g,
@@ -54,7 +55,8 @@ export function renderFiles(settings: Settings): Record<string, string> {
     host: settings.grafanaHost,
   });
   const common = {
-    restart: 'unless-stopped',
+    // systemd owns boot/daemon recovery and fetches secrets before startup.
+    restart: 'on-failure',
     stop_grace_period: '60s',
     read_only: true,
     cap_drop: ['ALL'],

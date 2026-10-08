@@ -9,7 +9,7 @@ application telemetry here until a subsequent dual-export change is deployed.
 
 ```text
 Team browser -- HTTPS --> ALB --> nginx --> Grafana -- Google Workspace OAuth
-                                                 --> Loki / Tempo / Prometheus
+                                                 --> query proxy --> backends
 OTEL exporter -- HTTPS + bearer token --> ALB --> nginx --> Alloy
                                                         --> Loki --> S3 logs
                                                         --> Tempo --> S3 traces
@@ -65,6 +65,14 @@ ALB-to-host traffic is HTTP inside the VPC. Administrative access uses AWS SSM a
 the operator's IAM identity. Loki, Tempo, Prometheus and Alloy have no published
 host ports; Grafana queries them over the private Docker network. The default ALB
 action is 404. No HTTP listener is opened.
+
+Grafana data sources use a separate internal nginx listener on port 8081 that
+allows only named query endpoints and their required HTTP methods. This matters
+because Viewers can call Grafana's data-source proxy: direct backend URLs would
+also expose maintenance endpoints such as Tempo `/shutdown` and Loki `/flush`
+(including mutating GET requests). Port 8081 is not published on the host, and
+Alloy's ingestion path is separate. New data-source features may require reviewed
+additions to this query allowlist.
 
 Ingestion is a separate hostname permitting only POST to `/v1/logs`, `/v1/traces`
 and `/v1/metrics`. Alloy validates a bearer token independently of browser login.
@@ -163,6 +171,12 @@ then the new host waits for that exact volume. Bootstrap formats only a disk wit
 no filesystem/signatures. Both Docker and the stack service refuse to start if
 the data mount is missing, preventing silent writes to the root disk.
 
+Container `on-failure` policies restart crashed processes but leave host/daemon
+startup to systemd. The stack service fetches secrets before creating containers
+and retries every 30 seconds without exhausting a start limit during a secret
+service outage. `PartOf=docker.service` restarts the stack after a Docker service
+restart. Docker itself does not depend on Secrets Manager availability.
+
 Secrets are fetched on every boot and service restart. To rotate the OAuth secret
 or ingestion token, update the Secrets Manager value, then run `sudo systemctl
 restart observability`. This briefly stops ingestion and Grafana. For token
@@ -194,17 +208,27 @@ From `infra/`:
 ```bash
 bun test stacks/observability/render.test.ts
 OBSERVABILITY_SMOKE=1 bun test stacks/observability/render.test.ts
+# Optional: requires a working user systemd manager; never restarts real Docker.
+OBSERVABILITY_SYSTEMD=1 bun test stacks/observability/render.test.ts
 bunx biome check stacks/observability
 bun run check
 ```
 
 The opt-in test creates and removes its own Docker project, temporary directories
 and LocalStack S3. It uses fake credentials and loopback-only ephemeral ports. It
-checks real container startup, Google authorization redirect/PKCE, unauthenticated
-access denial, token validation, ingestion-only routing, three-signal readback,
-S3 writes and backend restart recovery. It does not simulate a real Google login,
-AWS IAM, EC2 block-device attachment, systemd boot, ALB/TLS or snapshot restore.
-Those remain deployment acceptance checks above.
+checks real container startup, Google authorization redirect/PKCE, role mapping,
+unauthenticated access denial, token validation, ingestion-only routing,
+three-signal readback, S3 writes and backend restart recovery. It then enables
+auth.proxy only in the local fixture to exercise an authenticated Viewer: all
+three data-source health checks and queries succeed, while backend maintenance
+and write endpoints are denied. Production auth.proxy is never enabled.
+
+Disk preparation tests substitute every disk utility and confirm that failed
+inspection cannot trigger formatting. The optional systemd test uses isolated
+transient user units and stand-in processes to test secret-outage recovery and
+daemon restart/crash recovery. It does not restart the machine or real Docker.
+Real Google login, AWS IAM, EC2 block-device attachment and boot, ALB/TLS and
+snapshot restore remain deployment acceptance checks above.
 
 Follow-up PRs:
 

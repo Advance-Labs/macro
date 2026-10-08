@@ -42,7 +42,37 @@ test('EC2 bootstrap fits its limit and is valid shell', () => {
   expect(script).not.toContain('@@');
   const result = spawnSync('bash', ['-n'], { input: script, encoding: 'utf8' });
   expect(result.status).toBe(0);
+  const compose = JSON.parse(renderFiles(fixture)['compose.json']);
+  for (const service of Object.values(compose.services) as {
+    restart: string;
+  }[]) {
+    expect(service.restart).toBe('on-failure');
+  }
+  expect(compose.services.proxy.ports).toEqual(['8080:8080']);
 });
+
+test('volume preparation refuses inspection failures and existing signatures', () => {
+  const result = spawnSync('python3', [join(__dirname, 'tests', 'host.py')], {
+    stdio: 'inherit',
+  });
+  expect(result.status).toBe(0);
+});
+
+test.skipIf(process.env.OBSERVABILITY_SYSTEMD !== '1')(
+  'systemd recovers from secret outages and daemon restarts',
+  () => {
+    const result = spawnSync(
+      'python3',
+      [join(__dirname, 'tests', 'host.py'), '--systemd'],
+      {
+        stdio: 'inherit',
+        timeout: 30_000,
+      }
+    );
+    expect(result.status).toBe(0);
+  },
+  35_000
+);
 
 // Explicit opt-in: creates an isolated Docker project with fake credentials.
 test.skipIf(process.env.OBSERVABILITY_SMOKE !== '1')(

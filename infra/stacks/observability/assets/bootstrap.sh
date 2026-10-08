@@ -13,32 +13,6 @@ curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awsc
 unzip -q /tmp/awscliv2.zip -d /tmp
 /tmp/aws/install
 
-# Nitro device order can change. Only touch the explicitly provisioned volume.
-volume_id='@@VOLUME_ID@@'
-device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id//-/}"
-for attempt in $(seq 1 120); do
-  if [ -b "$device" ]; then break; fi
-  sleep 5
-done
-test -b "$device"
-filesystem=$(blkid -s TYPE -o value "$device" || true)
-if [ -z "$filesystem" ]; then
-  # A disk with any existing signature/partition table is not a fresh volume.
-  test -z "$(wipefs --no-act --noheadings --output TYPE "$device")"
-  mkfs.ext4 "$device"
-elif [ "$filesystem" != ext4 ]; then
-  echo 'Refusing to format an existing data volume' >&2
-  exit 1
-fi
-uuid=$(blkid -s UUID -o value "$device")
-mkdir -p /srv/observability
-echo "UUID=$uuid /srv/observability ext4 defaults,nofail 0 2" >> /etc/fstab
-mount /srv/observability
-mountpoint -q /srv/observability
-install -d -o 472 -g 472 /srv/observability/grafana
-install -d -o 65534 -g 65534 /srv/observability/prometheus
-install -d -o 10001 -g 10001 /srv/observability/{loki,tempo,alloy}
-
 python3 - <<'PY'
 import base64, json
 from pathlib import Path
@@ -48,23 +22,44 @@ for name, content in json.loads(base64.b64decode('@@FILES@@')).items():
     (root / name).write_text(content)
 PY
 
-# Prevent Docker's restart policy from starting containers on the root disk
-# before the data volume is mounted after a reboot.
+# Nitro device order can change. Only touch the explicitly provisioned volume.
+volume_id='@@VOLUME_ID@@'
+device="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id//-/}"
+for attempt in $(seq 1 120); do
+  if [ -b "$device" ]; then break; fi
+  sleep 5
+done
+test -b "$device"
+bash /opt/observability/prepare-volume.sh "$device"
+uuid=$(blkid -s UUID -o value "$device")
+mkdir -p /srv/observability
+mount_entry="UUID=$uuid /srv/observability ext4 defaults,nofail 0 2"
+grep -Fxq "$mount_entry" /etc/fstab || echo "$mount_entry" >> /etc/fstab
+mountpoint -q /srv/observability || mount /srv/observability
+mountpoint -q /srv/observability
+test "$(findmnt --noheadings --output UUID --target /srv/observability)" = "$uuid"
+install -d -o 472 -g 472 /srv/observability/grafana
+install -d -o 65534 -g 65534 /srv/observability/prometheus
+install -d -o 10001 -g 10001 /srv/observability/{loki,tempo,alloy}
+
+# Docker may run only with the data volume mounted. Container on-failure
+# policies leave boot startup to observability.service after secrets are ready.
 mkdir -p /etc/systemd/system/docker.service.d
 cat > /etc/systemd/system/docker.service.d/observability.conf <<'EOF'
 [Unit]
 RequiresMountsFor=/srv/observability
 [Service]
 ExecStartPre=/usr/bin/mountpoint -q /srv/observability
-ExecStartPre=/usr/bin/python3 /opt/observability/refresh-secrets.py
 EOF
 cat > /etc/systemd/system/observability.service <<'EOF'
 [Unit]
 Description=Macro observability pilot
 Requires=docker.service
+PartOf=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
 RequiresMountsFor=/srv/observability
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
