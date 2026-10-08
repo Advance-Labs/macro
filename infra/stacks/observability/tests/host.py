@@ -3,7 +3,6 @@
 import argparse
 import os
 from pathlib import Path
-import re
 import shlex
 import shutil
 import subprocess
@@ -64,12 +63,12 @@ def volume_checks():
 
 
 def unit_settings(path):
-    bootstrap = (ASSETS / 'bootstrap.sh').read_text()
-    match = re.search(r"cat > " + re.escape(path) + r" <<'EOF'\n(.*?)\nEOF",
-                      bootstrap, re.DOTALL)
-    assert match, f'Unit not found in bootstrap: {path}'
+    flake = ASSETS.parent
+    unit = path.rsplit('/', 1)[-1]
+    source = run('nix', 'eval', '--raw',
+                 f'path:{flake}#nixosConfigurations.observability.config.systemd.units."{unit}".text').stdout
     settings = {}
-    for line in match[1].splitlines():
+    for line in source.splitlines():
         if '=' in line and not line.startswith('#'):
             key, value = line.split('=', 1)
             settings.setdefault(key, []).append(value)
@@ -89,15 +88,12 @@ def systemd_checks():
     # Read relationships from the deployed units, replacing only host-specific
     # mounts, commands and the Docker name. No real Docker daemon is touched.
     app_settings = unit_settings('/etc/systemd/system/observability.service')
-    docker_settings = unit_settings(
-        '/etc/systemd/system/docker.service.d/observability.conf')
-    assert docker_settings['ExecStartPre'] == [
-        '/usr/bin/mountpoint -q /srv/observability']
-    assert docker_settings['RequiresMountsFor'] == ['/srv/observability']
-    assert app_settings['RequiresMountsFor'] == ['/srv/observability']
-    assert app_settings['ExecStartPre'] == [
-        '/usr/bin/mountpoint -q /srv/observability',
-        '/usr/bin/python3 /opt/observability/refresh-secrets.py']
+    docker_settings = unit_settings('/etc/systemd/system/docker.service')
+    assert docker_settings['Upholds'] == ['observability.service']
+    assert docker_settings['StartLimitIntervalSec'] == ['0']
+    assert any('pre-start' in command for command in docker_settings['ExecStartPre'])
+    assert app_settings['ExecStartPre'][0].endswith('/bin/mountpoint -q /srv/observability')
+    assert app_settings['ExecStartPre'][1].endswith('-refresh-secrets.py')
     assert app_settings['StartLimitIntervalSec'] == ['0']
 
     prefix = 'observability-test-' + uuid.uuid4().hex
@@ -114,8 +110,10 @@ def systemd_checks():
     with tempfile.TemporaryDirectory(prefix=prefix) as directory:
         root = Path(directory)
         outage = root / 'secret-outage'
+        storage_outage = root / 'storage-outage'
         events = root / 'events'
         outage.touch()
+        storage_outage.touch()
 
         def command(script):
             return shlex.join([bash, '-c', script])
@@ -129,8 +127,10 @@ def systemd_checks():
         try:
             run('systemd-run', '--user', '--no-block', '--unit=' + docker,
                 '--property=Restart=always', '--property=RestartSec=0.2s',
-                '--property=StartLimitBurst=3',
-                '--property=StartLimitIntervalSec=60s', sleep, '120')
+                '--property=StartLimitIntervalSec=0',
+                '--property=Upholds=' + app,
+                '--property=ExecStartPre=' + command('test ! -e ' + shlex.quote(str(storage_outage))),
+                sleep, '120')
             properties = []
             for key in ['Requires', 'After', 'PartOf', 'StartLimitIntervalSec',
                         'Type', 'RemainAfterExit', 'Restart', 'RestartSec']:
@@ -147,8 +147,13 @@ def systemd_checks():
                 '--property=ExecStartPre=' + command('test ! -e ' + shlex.quote(str(outage))),
                 '--property=ExecStop=' + command('echo stop >> ' + shlex.quote(str(events))),
                 bash, '-c', 'echo start >> ' + shlex.quote(str(events)))
+            eventually(lambda: int(state(docker, 'NRestarts')) >= 4,
+                       'Docker retries late metadata/storage')
+            assert starts() == 0, 'Started before storage was ready'
+            storage_outage.unlink()
             eventually(lambda: int(state(app, 'NRestarts')) >= 6,
                        'secret fetch continues retrying')
+            print('PASS: late storage recovery starts dependent stack automatically')
             assert starts() == 0, 'Started before secrets were available'
             outage.unlink()
             eventually(lambda: active() and starts() == 1, 'secret outage recovery')

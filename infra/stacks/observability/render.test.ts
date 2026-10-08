@@ -61,13 +61,15 @@ test('regional dependencies stay outside the production region', () => {
   ).toThrow();
 });
 
-test('EC2 bootstrap fits its limit and is valid shell', () => {
+test('EC2 user data fits its limit and contains only versioned configuration', () => {
   const compressed = Buffer.from(renderUserData(fixture), 'base64');
   expect(compressed.length).toBeLessThan(16384);
-  const script = gunzipSync(compressed).toString();
-  expect(script).not.toContain('@@');
-  const result = spawnSync('bash', ['-n'], { input: script, encoding: 'utf8' });
-  expect(result.status).toBe(0);
+  const data = gunzipSync(compressed).toString();
+  expect(data).not.toContain('@@');
+  const payload = JSON.parse(data);
+  expect(payload.version).toBe(1);
+  expect(payload.volumeId).toBe(fixture.volumeId);
+  expect(payload.files).toEqual(renderFiles(fixture));
   const compose = JSON.parse(renderFiles(fixture)['compose.json']);
   for (const service of Object.values(compose.services) as {
     restart: string;
@@ -81,6 +83,17 @@ test('volume preparation refuses inspection failures and existing signatures', (
   const result = spawnSync('python3', [join(__dirname, 'tests', 'host.py')], {
     stdio: 'inherit',
   });
+  expect(result.status).toBe(0);
+});
+
+test('NixOS accepts only the expected IMDSv2 configuration', () => {
+  const result = spawnSync(
+    'python3',
+    [join(__dirname, 'tests', 'user-data.py')],
+    {
+      stdio: 'inherit',
+    }
+  );
   expect(result.status).toBe(0);
 });
 

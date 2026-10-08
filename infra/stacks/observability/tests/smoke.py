@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the rendered stack using isolated local S3 and fake credentials."""
 import json
+import ipaddress
 import os
 from pathlib import Path
 import subprocess
@@ -15,6 +16,13 @@ region = json.loads((root / 'bootstrap.json').read_text())['region']
 project = root.name.lower()
 compose = json.loads((root / 'compose.json').read_text())
 compose['name'] = project
+# Shared development hosts can exhaust Docker's default network pools. A caller
+# may reserve an unused private subnet for this isolated, disposable fixture.
+if subnet := os.environ.get('OBSERVABILITY_SMOKE_SUBNET'):
+    network = ipaddress.ip_network(subnet)
+    if network.version != 4 or not network.is_private:
+        raise SystemExit('Smoke subnet must be a private IPv4 network')
+    compose['networks'] = {'default': {'ipam': {'config': [{'subnet': str(network)}]}}}
 services = compose['services']
 for name, service in services.items():
     service['restart'] = 'no'

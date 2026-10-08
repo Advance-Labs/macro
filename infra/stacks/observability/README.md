@@ -1,7 +1,11 @@
 # Observability pilot
 
 This stack starts Grafana alongside Datadog on one private EC2 instance. It
-provisions Grafana, Loki, Tempo, Prometheus and Alloy using Docker Compose.
+provisions Grafana, Loki, Tempo, Prometheus and Alloy using Docker Compose on a
+prebuilt NixOS image. Nix declares host packages, Docker, service dependencies,
+health timers and access policy; Pulumi owns AWS resources and nonsecret app
+configuration. The existing container versions/configuration remain in `render.ts`
+and `assets/` so changing the host OS does not also change backend packaging.
 Datadog instrumentation, collection and alerts remain unchanged. Nothing sends
 application telemetry here until a subsequent dual-export change is deployed.
 
@@ -38,8 +42,9 @@ OTEL exporter -- HTTPS + bearer token --> ALB --> nginx --> Alloy
   dashboards and settings, not log/trace/metric history.
 - Container releases are pinned by version and image digest in `render.ts`.
   Grafana plugin auto-install/update is disabled; upgrades go through review and
-  the smoke test. Host packages receive the Ubuntu/Docker repository versions
-  available at bootstrap, so plan regular patched-AMI replacements.
+  the smoke test. Host packages are pinned by this stack's own `flake.lock` on
+  NixOS 26.05; reviewed lock updates and replacement AMIs deliver host patches.
+  There is no package installation, channel update or Nix build during boot.
 
 Previously received telemetry remains accessible if the production region fails.
 Data that has not left production can still be lost, and a single Ohio host is
@@ -128,7 +133,9 @@ DNS-validated regional ACM certificate. Region validation rejects `us-east-1`.
    delivery destination must remain accessible during a production outage.
    Configuration rejects secrets and topics in another region; the host reads
    the local secret directly, without fetching credentials from production.
-4. Set the nonsecret configuration below, substituting actual identifiers. No
+4. Build, publish and smoke-boot the NixOS image as described below. Set its
+   reviewed Ohio AMI ID; there is deliberately no mutable "latest image" lookup.
+5. Set the nonsecret configuration below, substituting actual identifiers. No
    example account or placeholder is authorized automatically.
 
 ```bash
@@ -137,6 +144,7 @@ bun install --frozen-lockfile
 \cd stacks/observability
 pulumi stack select macro-inc/dev --create
 pulumi config set aws:region us-east-2
+pulumi config set amiId '<reviewed NixOS AMI ID in Ohio>'
 pulumi config set secretArn '<existing Secrets Manager ARN>'
 pulumi config set alarmTopicArn '<existing monitored SNS topic ARN>'
 pulumi config set --path 'allowedEmails[0]' '<approved-admin@macro.com>'
@@ -145,9 +153,7 @@ pulumi config set --path 'adminEmails[0]' '<approved-admin@macro.com>'
 pulumi preview --diff
 ```
 
-Review the Ohio AMI selected in the preview and pin it with `pulumi config set amiId
-ami-...` before deployment. Without a pin, a newer Canonical Ubuntu 24.04 AMI can
-cause instance replacement on a future preview. Deploy with `pulumi up` after
+Deploy with `pulumi up` after
 reviewing the resource plan. Allow up to 15 minutes for bootstrap/image pulls.
 Pulumi resource creation does not prove bootstrap or OAuth has succeeded.
 Do not change the region of a stack that already owns resources: that requires
@@ -172,17 +178,61 @@ Before enabling application traffic, validate all of these against AWS:
 
 ## Operations and recovery
 
+### NixOS image build and publication
+
+From `infra/stacks/observability`, on an x86_64 Linux Nix builder:
+
+```bash
+nix build . --cores 2
+python3 nixos/publish-image.py result '<private Ohio image-artifact bucket>'
+```
+
+The build produces a UEFI VHD with the complete host configuration. KVM speeds up
+image creation; software emulation is supported but slower. The publishing command
+is an explicit AWS write: it uploads the image, imports an encrypted snapshot and
+registers a private AMI in `us-east-2`. It never launches or modifies an instance.
+It requires an existing private S3 artifact bucket in Ohio and an operator with
+the [VM Import permissions and service role](https://docs.aws.amazon.com/vm-import/latest/userguide/required-permissions.html)
+plus image registration/tagging permissions. Use `--role` for a dedicated import
+role; scope its S3 access to the artifact bucket. This role is separate from the
+runtime EC2 role. Publishing credentials never enter the image.
+
+Record the printed image SHA256, import task, snapshot and AMI ID with the release.
+If publication is interrupted, inspect those identifiers before retrying; do not
+blindly create duplicate import tasks. Retain the previous AMI and snapshot until
+the replacement has passed acceptance checks. Remove obsolete image artifacts,
+AMIs and their root snapshots through the normal infrastructure cleanup process;
+they are separate from the protected telemetry volume and its daily snapshots.
+
+Review the AMI and boot it in the pilot's private subnet before enabling ingestion.
+Check SSM access, the OS version, exact data volume mount, service health, reboot,
+secret-outage recovery and replacement/reattachment. Pin `amiId` only after review.
+The AWS image import and actual EC2 boot checks require deployment access and are
+not simulated by the local Docker tests.
+
+For host changes or security updates, update `nixos/host.nix` or the pinned input
+with `nix flake update nixpkgs`, build/test/publish a new image, then change `amiId`
+and review `pulumi preview`. Do not run an ad-hoc `nixos-rebuild switch` on the
+host: Pulumi's pinned image is the source of truth. Rolling back an AMI does not
+roll back Grafana schema migrations or telemetry state; use a tested snapshot
+recovery plan when the old application version cannot read current data.
+
+### Runtime
+
 Use SSM Session Manager with the `instanceId` output. On the host:
 
 ```bash
 sudo systemctl status observability
 sudo journalctl -u observability -u observability-health --since '30 minutes ago'
-sudo tail -n 100 /var/log/cloud-init-output.log
+sudo journalctl -u docker --since boot
 sudo docker compose -f /opt/observability/compose.json ps
 sudo docker compose -f /opt/observability/compose.json logs --tail 100
 ```
 
-Configuration is delivered in compressed EC2 user-data. Changes (including
+Nonsecret application configuration is delivered as versioned, compressed JSON
+in EC2 user-data. NixOS reads it using IMDSv2 and an explicit file allowlist; the
+standard NixOS user-data evaluator is disabled. Host services and helper scripts
+are baked into the AMI. Changes (including
 allowlists or image versions) replace the instance and cause downtime. The old
 instance is deleted before replacement, its data volume is cleanly detached,
 then the new host waits for that exact volume. Bootstrap formats only a disk with
@@ -193,7 +243,10 @@ Container `on-failure` policies restart crashed processes but leave host/daemon
 startup to systemd. The stack service fetches secrets before creating containers
 and retries every 30 seconds without exhausting a start limit during a secret
 service outage. `PartOf=docker.service` restarts the stack after a Docker service
-restart. Docker itself does not depend on Secrets Manager availability.
+restart. Docker itself does not depend on Secrets Manager availability. Its
+pre-start step fetches nonsecret metadata and mounts/verifies the exact EBS disk;
+attachment and metadata failures retry without exhausting Docker's start limit.
+Docker's `Upholds` relationship starts the stack after a delayed Docker recovery.
 
 Secrets are fetched on every boot and service restart. To rotate the OAuth secret
 or ingestion token, update the Secrets Manager value, then run `sudo systemctl
@@ -226,11 +279,14 @@ From `infra/`:
 ```bash
 bun test stacks/observability/render.test.ts
 OBSERVABILITY_SMOKE=1 bun test stacks/observability/render.test.ts
-# Optional: requires a working user systemd manager; never restarts real Docker.
+# Optional: requires Nix and a user systemd manager; never restarts real Docker.
 OBSERVABILITY_SYSTEMD=1 bun test stacks/observability/render.test.ts
 bunx biome check stacks/observability
 bun run check
 ```
+
+Build the NixOS image from this stack directory with `nix build . --cores 2`.
+The systemd test evaluates the actual units from the pinned NixOS configuration.
 
 The opt-in test creates and removes its own Docker project, temporary directories
 and LocalStack S3. It uses fake credentials and loopback-only ephemeral ports. It
@@ -241,7 +297,8 @@ auth.proxy only in the local fixture to exercise an authenticated Viewer: all
 three data-source health checks and queries succeed, while backend maintenance
 and write endpoints are denied. Production auth.proxy is never enabled.
 
-Disk preparation tests substitute every disk utility and confirm that failed
+IMDS tests reject unexpected schema versions, volume identifiers, file paths and
+regions before writing configuration. Disk preparation tests substitute every disk utility and confirm that failed
 inspection cannot trigger formatting. The optional systemd test uses isolated
 transient user units and stand-in processes to test secret-outage recovery and
 daemon restart/crash recovery. It does not restart the machine or real Docker.

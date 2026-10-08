@@ -25,6 +25,11 @@ const secretArn = config.require('secretArn');
 const allowedEmails = config.requireObject<string[]>('allowedEmails');
 const adminEmails = config.requireObject<string[]>('adminEmails');
 const alarmTopicArn = config.require('alarmTopicArn');
+// Built from this stack's pinned NixOS flake and published in Ohio.
+const amiId = config.require('amiId');
+if (!/^ami-[a-f0-9]+$/.test(amiId)) {
+  throw new Error('amiId must identify the reviewed observability NixOS image');
+}
 // Validate operator input before registering any infrastructure resources.
 validateSettings({
   region,
@@ -226,21 +231,10 @@ new aws.ec2.SecurityGroupRule('observability-alb-to-host', {
   toPort: 8080,
   sourceSecurityGroupId: hostSg.id,
 });
-const ami = aws.ec2.getAmiOutput({
-  mostRecent: true,
-  owners: ['099720109477'],
-  filters: [
-    {
-      name: 'name',
-      values: ['ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*'],
-    },
-    { name: 'virtualization-type', values: ['hvm'] },
-  ],
-});
 const instance = new aws.ec2.Instance(
   'observability',
   {
-    ami: config.get('amiId') ?? ami.id,
+    ami: amiId,
     instanceType: 'm7i.xlarge',
     subnetId,
     associatePublicIpAddress: false,

@@ -37,9 +37,6 @@ export function renderFiles(settings: Settings): Record<string, string> {
     'prometheus.yaml',
     'datasources.yaml',
     'config.alloy',
-    'refresh-secrets.py',
-    'publish-health.py',
-    'prepare-volume.sh',
   ]) {
     files[name] = readFileSync(join(__dirname, 'assets', name), 'utf8').replace(
       /@@([A-Z_]+)@@/g,
@@ -170,13 +167,13 @@ export function renderFiles(settings: Settings): Record<string, string> {
 }
 
 export function renderUserData(settings: Settings): string {
-  const files = Buffer.from(JSON.stringify(renderFiles(settings))).toString(
-    'base64'
+  const compressed = gzipSync(
+    JSON.stringify({
+      version: 1,
+      volumeId: settings.volumeId,
+      files: renderFiles(settings),
+    })
   );
-  const script = readFileSync(join(__dirname, 'assets', 'bootstrap.sh'), 'utf8')
-    .replace('@@FILES@@', files)
-    .replaceAll('@@VOLUME_ID@@', settings.volumeId);
-  const compressed = gzipSync(script);
   if (compressed.length > 16 * 1024) {
     throw new Error('Bootstrap exceeds the EC2 user-data limit');
   }
