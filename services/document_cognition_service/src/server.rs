@@ -736,6 +736,12 @@ pub async fn run() -> anyhow::Result<()> {
             config.environment,
         ),
         calendar_tool_context,
+        team_calendar_tool_context: ai_tools::build_team_calendar_tool_context(
+            db.clone(),
+            macro_env_var::maybe_read_env("CALENDAR_TEAM_SHARING_ENABLED")
+                .and_then(|value| value.parse::<bool>().ok())
+                .unwrap_or(false),
+        ),
         notification_tool_context: notification_tool_context.clone(),
         databases_tool_context,
         forms_tool_context,

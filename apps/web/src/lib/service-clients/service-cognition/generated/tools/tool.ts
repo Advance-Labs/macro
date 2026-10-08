@@ -138,6 +138,10 @@ type ToolParserMap = {
     call: types.GetEntityProperties;
     response: types.GetEntityPropertiesResponse;
   };
+  GetTeamAvailability: {
+    call: types.GetTeamAvailability;
+    response: types.TeamAvailability;
+  };
   GetThread: { call: types.GetThread; response: types.GetThreadResponse };
   ImportNotionPage: {
     call: types.ImportNotionPage;
@@ -494,6 +498,10 @@ const toolParserMap = {
   GetEntityProperties: {
     call: schemas.GetEntityProperties,
     response: schemas.GetEntityPropertiesResponse,
+  },
+  GetTeamAvailability: {
+    call: schemas.GetTeamAvailability,
+    response: schemas.TeamAvailability,
   },
   GetThread: { call: schemas.GetThread, response: schemas.GetThreadResponse },
   ImportNotionPage: {
@@ -889,6 +897,10 @@ type ToolDataMap = {
   GetEntityProperties: {
     call: types.GetEntityProperties;
     response: types.GetEntityPropertiesResponse;
+  };
+  GetTeamAvailability: {
+    call: types.GetTeamAvailability;
+    response: types.TeamAvailability;
   };
   GetThread: { call: types.GetThread; response: types.GetThreadResponse };
   ImportNotionPage: {
