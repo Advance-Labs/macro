@@ -2,8 +2,8 @@ import { Popover } from '@kobalte/core/popover';
 import type { AgentContextDecoratorProps } from '@macro-inc/lexical-core';
 import Eye from '@phosphor/eye.svg';
 import { type Component, createMemo, createSignal, For, Show } from 'solid-js';
-import { parseContext, summaryOf } from './agent-context-tree';
 import { AgentContextElement } from './AgentContextElement';
+import { parseContext, summaryOf } from './agent-context-tree';
 
 /** A small eye in the message's corner, opening what the agent was given. */
 export const AgentContext: Component<AgentContextDecoratorProps> = (props) => {

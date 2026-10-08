@@ -104,6 +104,8 @@ export * from './completeRequest';
 export * from './controlRequest';
 export * from './controlRequestAllOf';
 export * from './controlRequestAllOfActionId';
+export * from './controlRequestAllOfContext';
+export * from './controlRequestAllOfContextAnyOf';
 export * from './controlResponse';
 export * from './controlStatusDto';
 export * from './createAgentSessionRequest';
