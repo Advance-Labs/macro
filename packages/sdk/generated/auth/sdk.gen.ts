@@ -948,15 +948,9 @@ export class Sdk extends HeyApiClient {
     }
     
     /**
-     * Moves the caller's own seat between paid plans.
-     *
-     * On a team billed per seat this moves only the caller's seat (team admins
-     * and the owner may do so; teammates' seats are managed from team
-     * settings). Members of a free team, and solo subscribers, get the price on
-     * their own subscription's seat item swapped. The proration is invoiced
-     * immediately either way; roles and the AI allowance follow at once on a
-     * team and from the `customer.subscription.updated` webhook for a personal
-     * subscription.
+     * Changes the caller's paid plan. Upgrades are prorated immediately;
+     * downgrades retain the active plan until renewal. Selecting the active plan
+     * cancels a pending downgrade without charging or resetting usage.
      */
     public changePlan<ThrowOnError extends boolean = false>(options: Options<ChangePlanData, ThrowOnError>): RequestResult<ChangePlanResponses, ChangePlanErrors, ThrowOnError> {
         return (options.client ?? this.client).post<ChangePlanResponses, ChangePlanErrors, ThrowOnError>({
