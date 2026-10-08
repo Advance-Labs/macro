@@ -465,6 +465,8 @@ export const storageBacklog = [
   'meetingLookup',
   'meetingShare',
   'meetingUpdate',
+  // Mixed message and activity timelines; Channel.messages() reads messages only.
+  'messageTimelineEntries',
   'postActivity',
   'presaveDocumentHandler',
   'saveDocumentHandler',

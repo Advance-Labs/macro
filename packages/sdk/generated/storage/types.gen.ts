@@ -2594,6 +2594,20 @@ export type ChannelParticipantRemovedMetadata = {
 };
 
 /**
+ * Metadata for a channel picture update, including removals.
+ */
+export type ChannelPictureChangedMetadata = {
+    /**
+     * User who changed the picture.
+     */
+    actor: MacroUserIdStr;
+    /**
+     * Channel whose picture changed.
+     */
+    channel_id: string;
+};
+
+/**
  * Preview entry for a single channel id.
  */
 export type ChannelPreview = (ChannelPreviewData & {
@@ -2671,6 +2685,12 @@ export type ChannelThreadFilters = {
  * Events that can be published to [`MacroChannelsTopic`].
  */
 export type ChannelTopicEvent = {
+    event_type: 'channel.picture_changed';
+    /**
+     * A channel's profile picture changed.
+     */
+    metadata: ChannelPictureChangedMetadata;
+} | {
     event_type: 'channel.created';
     /**
      * A channel was created.
@@ -8714,11 +8734,11 @@ export type MessageChange = {
  */
 export type MessageCursor = {
     /**
-     * Last root creation time.
+     * Last message creation time or activity occurrence time.
      */
     created_at: string;
     /**
-     * Last root UUID, used to break timestamp ties.
+     * Last entry UUID, used to break timestamp ties across both sources.
      */
     id: string;
 };
@@ -9048,6 +9068,36 @@ export type MessageThreadPreview = {
      * Total live reply count.
      */
     reply_count: number;
+};
+
+/**
+ * One chronological entry in a parent's timeline.
+ */
+export type MessageTimelineEntry = {
+    /**
+     * The message and thread state.
+     */
+    message: MessageListItem;
+    type: 'message';
+} | {
+    /**
+     * The recorded activity.
+     */
+    activity: TimelineActivity;
+    type: 'activity';
+};
+
+/**
+ * A bounded, newest-first window of a parent's messages and activity, ordered
+ * by the server on one `(timestamp, id)` keyset.
+ */
+export type MessageTimelinePage = {
+    /**
+     * Messages and activity, newest first.
+     */
+    entries: Array<MessageTimelineEntry>;
+    next_cursor?: null | MessageCursor;
+    previous_cursor?: null | MessageCursor;
 };
 
 /**
@@ -13353,6 +13403,32 @@ export type ThreadState = {
      * User who owns this discussion, including imported discussions.
      */
     user_id: string;
+};
+
+/**
+ * A displayable fact returned together with a message page.
+ */
+export type TimelineActivity = {
+    /**
+     * Durable action tag. Unknown tags remain representable during rollouts.
+     */
+    action: string;
+    /**
+     * Principal who performed the action.
+     */
+    actor_id: string;
+    /**
+     * Stable activity identity, independent of message ids.
+     */
+    id: string;
+    /**
+     * Immutable chronological position.
+     */
+    occurred_at: string;
+    /**
+     * The action's stored payload.
+     */
+    payload?: unknown;
 };
 
 /**
@@ -20319,6 +20395,27 @@ export type EntityMessagePatchThreadResponses = {
 };
 
 export type EntityMessagePatchThreadResponse = EntityMessagePatchThreadResponses[keyof EntityMessagePatchThreadResponses];
+
+export type MessageTimelineEntriesData = {
+    body?: never;
+    path: {
+        parent_type: string;
+        parent_id: string;
+    };
+    query?: {
+        /**
+         * Serialized MessageTimelineQuery; absent selects the latest roots.
+         */
+        selection?: string | null;
+    };
+    url: '/messages/{parent_type}/{parent_id}/timeline';
+};
+
+export type MessageTimelineEntriesResponses = {
+    200: MessageTimelinePage;
+};
+
+export type MessageTimelineEntriesResponse = MessageTimelineEntriesResponses[keyof MessageTimelineEntriesResponses];
 
 export type EntityMessageTypingData = {
     body: TypingInput;

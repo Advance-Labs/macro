@@ -39,6 +39,7 @@ dependencies = [
  "tokio-retry",
  "tokio-util",
  "tracing",
+ "utoipa",
  "uuid",
  "workspace-hack",
 ]
@@ -12170,6 +12171,7 @@ dependencies = [
 name = "messages"
 version = "0.1.0"
 dependencies = [
+ "activity",
  "async-trait",
  "axum",
  "bot_id",
@@ -12177,6 +12179,7 @@ dependencies = [
  "chrono",
  "connection_gateway_client",
  "entity_access",
+ "futures",
  "initiative",
  "macro_authorization",
  "macro_db_migrator",

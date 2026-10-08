@@ -292,6 +292,7 @@ use utoipa::OpenApi;
 
         // messages (channels and documents)
         messages::inbound::axum_router::timeline,
+        messages::inbound::axum_router::timeline_entries,
         messages::inbound::axum_router::create,
         messages::inbound::axum_router::get_message,
         messages::inbound::axum_router::edit,
@@ -798,6 +799,8 @@ use utoipa::OpenApi;
             messages::domain::ports::MessageDirection,
             messages::domain::ports::MessageTimelineQuery,
             messages::domain::ports::MessagePage,
+            messages::domain::ports::MessageTimelinePage,
+            messages::domain::ports::MessageTimelineEntry,
             messages::domain::ports::MessagePatch,
             messages::domain::ports::AttachmentChange,
             messages::domain::ports::MessageEvent,
