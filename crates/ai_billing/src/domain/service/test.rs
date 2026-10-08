@@ -3347,7 +3347,8 @@ async fn assert_upgrade_resets_snapshot_and_gate(pool: sqlx::PgPool, from: PlanT
         pricing,
     )
     .with_enforcement(AiUsageEnforcement::Enabled);
-    let now = Utc::now();
+    // PostgreSQL stores timestamps at microsecond precision.
+    let now = DateTime::from_timestamp_micros(Utc::now().timestamp_micros()).unwrap();
     let period = BillingPeriod {
         start: now - chrono::Duration::days(1),
         end: now + chrono::Duration::days(29),
