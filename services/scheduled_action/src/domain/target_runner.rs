@@ -12,12 +12,15 @@ use agent_session::domain::{
 };
 use anyhow::{Context, Result};
 use bot_id::BotId;
+use chrono_tz::Tz;
+use macro_user_id::user_id::MacroUserIdStr;
+use trigger_context::{ContextPerson, RoutineContext, RoutineFiring, TriggerContext};
 
 use super::{
-    event_trigger::EventReference,
+    event_trigger::{ActionTrigger, EventReference, RoutineTrigger},
     execution::ExecutionHandle,
-    models::{AgentTask, ExecutionResource, ExecutionResourceType, ScheduledAction},
-    ports::ScheduledAgentRunner,
+    models::{AgentTask, ExecutionResource, ExecutionResourceType, Schedule, ScheduledAction},
+    ports::{RoutineEventReader, RoutineRun, ScheduledAgentRunner},
 };
 
 const INITIAL_POLL_DELAY: Duration = Duration::from_secs(1);
@@ -29,17 +32,20 @@ const SCHEDULED_GUIDANCE: &str = "You are executing a user routine that has alre
 /// Executes every routine through the agent-session domain.
 /// The shared executor bounds preparation and polling by its original deadline,
 /// drops in-flight reads on timeout/shutdown, and invokes `cancel` separately.
-pub struct TargetRunner<Sessions> {
+pub struct TargetRunner<Sessions, Events> {
     sessions: Arc<Sessions>,
+    events: Arc<Events>,
 }
 
-impl<Sessions> TargetRunner<Sessions> {
-    pub fn new(sessions: Arc<Sessions>) -> Self {
-        Self { sessions }
+impl<Sessions, Events> TargetRunner<Sessions, Events> {
+    pub fn new(sessions: Arc<Sessions>, events: Arc<Events>) -> Self {
+        Self { sessions, events }
     }
 }
 
-impl<Sessions: RoutineSessions> ScheduledAgentRunner for TargetRunner<Sessions> {
+impl<Sessions: RoutineSessions, Events: RoutineEventReader> ScheduledAgentRunner
+    for TargetRunner<Sessions, Events>
+{
     async fn prepare(&self, action: &ScheduledAction, handle: &mut ExecutionHandle) -> Result<()> {
         let task = task(action)?;
         let (bot_id, model) = task.resolve_target()?.session_target();
@@ -93,7 +99,7 @@ impl<Sessions: RoutineSessions> ScheduledAgentRunner for TargetRunner<Sessions> 
         &self,
         action: &ScheduledAction,
         handle: &ExecutionHandle,
-        event: Option<&EventReference>,
+        firing: RoutineRun<'_>,
     ) -> Result<()> {
         let task = task(action)?;
         let (bot_id, _) = task.resolve_target()?.session_target();
@@ -107,11 +113,15 @@ impl<Sessions: RoutineSessions> ScheduledAgentRunner for TargetRunner<Sessions> 
             "expected prepared agent session"
         );
         let identity = session_action(action, handle, bot_id)?;
+        let context = self.context(action, &identity.owner, firing).await?;
+        // The ids of an event the context could not describe are all the agent has.
+        let unread_event = firing.event().filter(|_| context.is_none());
         let accepted = self
             .sessions
             .prompt(PromptRoutineSession {
                 action: identity.clone(),
-                prompt: first_prompt(&task, event)?,
+                prompt: first_prompt(&task, unread_event)?,
+                context,
             })
             .await?;
         if accepted.action_id != identity.action_id {
@@ -130,7 +140,49 @@ impl<Sessions: RoutineSessions> ScheduledAgentRunner for TargetRunner<Sessions> 
     }
 }
 
-impl<Sessions: RoutineSessions> TargetRunner<Sessions> {
+impl<Sessions: RoutineSessions, Events: RoutineEventReader> TargetRunner<Sessions, Events> {
+    /// None when the triggering event could not be read; the run goes ahead
+    /// with the event's ids in the prompt instead.
+    async fn context(
+        &self,
+        action: &ScheduledAction,
+        owner: &MacroUserIdStr<'static>,
+        firing: RoutineRun<'_>,
+    ) -> Result<Option<TriggerContext>> {
+        let firing = match firing {
+            RoutineRun::Scheduled { scheduled_for } => RoutineFiring::Scheduled {
+                scheduled_for,
+                schedule: schedule(&action.trigger),
+            },
+            RoutineRun::Manual { requested_at } => RoutineFiring::Manual { requested_at },
+            RoutineRun::Event(run) => match self.events.read_event(owner, run).await {
+                // The classifier answers with a probability, never a reason.
+                Ok(event) => RoutineFiring::Event {
+                    event: Box::new(event),
+                    condition: None,
+                },
+                Err(error) => {
+                    tracing::warn!(
+                        error = ?error,
+                        action_id = ?action.id,
+                        "routine event unreadable; prompting with its ids"
+                    );
+                    return Ok(None);
+                }
+            },
+        };
+        Ok(Some(TriggerContext::Routine(RoutineContext {
+            routine_id: action.id.context("persisted action required")?,
+            name: action.name.clone(),
+            owner: ContextPerson {
+                id: owner.as_ref().to_owned(),
+                name: owner.email_str().to_owned(),
+                email: Some(owner.email_str().to_owned()),
+            },
+            firing,
+        })))
+    }
+
     async fn await_completion(&self, identity: RoutineSessionAction) -> Result<()> {
         let mut delay = INITIAL_POLL_DELAY;
         let mut failures = 0;
@@ -188,6 +240,25 @@ fn retain_resource(handle: &mut ExecutionHandle) {
         resource_type: ExecutionResourceType::Agent,
         id: handle.session_id.to_string(),
     });
+}
+
+/// Every schedule the routine states, since any of them may have come due.
+fn schedule(trigger: &ActionTrigger) -> String {
+    let cron =
+        |schedule: &Schedule, timezone: &Tz| format!("cron `{}` in {timezone}", schedule.as_str());
+    match trigger {
+        ActionTrigger::Cron { schedule, timezone } => cron(schedule, timezone),
+        ActionTrigger::Multiple { triggers } => triggers
+            .as_slice()
+            .iter()
+            .filter_map(|trigger| match trigger {
+                RoutineTrigger::Cron { schedule, timezone } => Some(cron(schedule, timezone)),
+                RoutineTrigger::Events { .. } => None,
+            })
+            .collect::<Vec<_>>()
+            .join("; "),
+        ActionTrigger::Events { .. } => String::new(),
+    }
 }
 
 fn first_prompt(task: &AgentTask, event: Option<&EventReference>) -> Result<String> {

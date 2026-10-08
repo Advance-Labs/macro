@@ -1099,6 +1099,9 @@ pub struct ControlEvent {
     /// `None` means "no user is responsible", not "unknown" - a bot's own
     /// actions are attributed to the bot, which this field does not carry.
     pub actor: Option<MacroUserIdStr<'static>>,
+    /// Why the agent is being asked, when a runtime forwards a triggered
+    /// prompt. Users driving a session directly supply none.
+    pub context: Option<trigger_context::TriggerContext>,
 }
 
 /// What accepting a control operation did with it.

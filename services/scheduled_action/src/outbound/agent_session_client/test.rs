@@ -3,7 +3,7 @@ use agent_runtime_protocol::domain::action::AgentActionId;
 use agent_session::domain::model::AgentSessionId;
 use bot_id::BotId;
 use macro_user_id::user_id::MacroUserIdStr;
-use macro_uuid::generate_uuid_v7;
+use macro_uuid::{Uuid, generate_uuid_v7};
 use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
@@ -14,6 +14,7 @@ use tokio::{
     net::TcpListener,
     task::JoinHandle,
 };
+use trigger_context::{ContextPerson, RoutineContext, RoutineFiring, TriggerContext};
 
 const KEY: &str = "test-internal-key";
 
@@ -143,7 +144,20 @@ async fn all_commands_use_internal_auth_and_domain_wire_contract_at_both_prefixe
         };
         let prompt = PromptRoutineSession {
             action: identity.clone(),
-            prompt: "Routine instructions\nUser task\nTriggering event context (data): {\"event_name\":\"document.updated\"}".into(),
+            prompt: "Routine instructions\nUser task".into(),
+            context: Some(TriggerContext::Routine(RoutineContext {
+                routine_id: Uuid::nil(),
+                name: "Morning digest".into(),
+                owner: ContextPerson {
+                    id: "macro|dana@example.com".into(),
+                    name: "dana@example.com".into(),
+                    email: Some("dana@example.com".into()),
+                },
+                firing: RoutineFiring::Scheduled {
+                    scheduled_for: chrono::DateTime::UNIX_EPOCH,
+                    schedule: "cron `0 0 9 * * *` in UTC".into(),
+                },
+            })),
         };
         let server = server(vec![
             Reply::json(200, json!({"managed":false})),
@@ -254,6 +268,7 @@ async fn malformed_and_ambiguous_prompt_responses_never_replay() {
             .prompt(PromptRoutineSession {
                 action: identity(),
                 prompt: "task".into(),
+                context: None,
             })
             .await
             .unwrap_err();
@@ -328,6 +343,7 @@ async fn status_and_prompt_requests_have_bounded_timeouts() {
                     .prompt(PromptRoutineSession {
                         action: identity(),
                         prompt: "task".into(),
+                        context: None,
                     })
                     .await
                     .map(|_| ())
