@@ -3156,6 +3156,10 @@
                     "description": "The id the caller already speculated this action under, when it has\none. Adopted as the accepted id, so a client that renders the action\noptimistically promotes that entry in place instead of retracting it\nand re-speculating under a server id. Re-sending the same id is not a\nsecond action: see [`ControlResponse`].\n\nNamed rather than flattened so it cannot collide with the action's own\nfields, which are tagged under `type`."
                   }
                 ]
+              },
+              "context": {
+                "type": ["object", "null"],
+                "description": "Why the agent is being asked. Only a runtime forwarding a triggered\nprompt may send it; a user's request carrying it is refused."
               }
             }
           }
