@@ -2308,7 +2308,15 @@ saved state. Paid team members who are not the payer see
 `Only the account that pays for this plan can change automatic reload.` and
 cannot save. After a failed automatic reload the dialog shows `Your last
 automatic reload could not be charged. Update your payment method, then save to
-try again.`; saving retries. Existing postpaid usage billing is shown separately
+try again.`; saving retries. When a reload or usage charge is instead waiting
+on the payer to authenticate it with their bank (3-D Secure), the feature it
+belongs to pauses the same way and the Usage page shows a payer-only card, **A
+payment needs your confirmation**, naming the amount and feature with a
+`Confirm payment` link that opens the Stripe-hosted invoice in a new tab (or
+`Use the link Stripe emailed you.` when no page was supplied). The Auto-Reload
+dialog's notice says the same for a reload. Confirming resumes the feature once
+Stripe reports the payment; saving the dialog with a working card retries the
+same invoice instead. Existing postpaid usage billing is shown separately
 and can be turned off by the payer; while it is on, credits reload automatically
 when the balance drops below the minimum. Local **Developer tools** offer
 `Preview Free plan` and `Preview paid plan` to display either Usage page with

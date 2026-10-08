@@ -129,7 +129,30 @@ booked) or failed (reloads are suspended). A provider failure marks the reload
 failed and sets `auto_reload_suspended_at`; overage remains the fallback until
 the payer saves their settings again. A failed reload whose invoice reached
 Stripe keeps that invoice, and the next reservation after reloads are re-enabled
-retries it rather than opening a second one. `PATCH /ai-billing/auto-reload`
+retries it rather than opening a second one.
+
+Invoices Stripe cannot simply collect are recovered rather than left pending.
+Both `ai_overage_charge` and `ai_credit_reload` carry `requires_action`,
+`voided`, and `uncollectible` alongside `pending`/`paid`/`failed`, mapped from
+the provider's report (`InvoiceOutcome`) by the webhook
+(`invoice.payment_action_required`, `invoice.voided`,
+`invoice.marked_uncollectible`, plus the paid/failed events), by the collector's
+own payment attempt, and by reconciliation. A payment that needs the customer to
+authenticate (3-D Secure) pauses the feature like a decline, stores the
+Stripe-hosted invoice page on the row, and is reported by `GET
+/ai-billing/summary` as `payment_action` (kind, amount, `hosted_invoice_url`) so
+the Usage page can link to it; re-enabling the feature retries that invoice with
+the payer's current card. Voided and uncollectible invoices are closed: they
+stop blocking reloads, counting against the monthly limit, and covering usage,
+and they pause the feature. `paid` and `voided` are final; `uncollectible` only
+moves to one of those, so a late failure never revives a write-off while a late
+payment still books. The newest reload's outcome decides the reload suspension
+as the newest charge's does for overage: a paid reload resumes reloads.
+Settlement first reconciles invoices with no conclusive report for an hour
+(`stale_invoices` → `PaymentGateway::invoice_outcome`, which reads the invoice
+and its payment intent), at most once per payer per ten minutes per process, so
+a lost webhook cannot block reloads or keep covering usage indefinitely.
+`PATCH /ai-billing/auto-reload`
 (payer on a paid plan only) is how overage is turned on: enabling validates and
 stores the thresholds, sets `overage_enabled`, uses the monthly limit as the
 per-period overage cap (the offered maximum when there is no limit), clears both

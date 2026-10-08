@@ -2,9 +2,11 @@ use super::*;
 use crate::domain::ledger::{ReloadState, plan_reload, plan_settlement};
 use crate::domain::models::{
     AllowanceStore, AutoReloadThresholds, CreditReloadStatus, DenyReason, OpenPeriodStart,
-    PayerScope, PeriodAllowance, PeriodLedger, PlanTier, SeatGeneration,
+    PayerScope, PaymentAction, PeriodAllowance, PeriodLedger, PlanTier, SeatGeneration,
 };
-use crate::domain::ports::{CreditReloadRequest, PendingReload, ResolvedReload, SettlementOutcome};
+use crate::domain::ports::{
+    CreditReloadRequest, PendingReload, ResolvedReload, SettlementOutcome, StaleInvoice,
+};
 use chrono::TimeZone;
 use macro_user_id::cowlike::CowLike;
 use macro_uuid::Uuid;
@@ -150,6 +152,8 @@ struct FakeCharge {
     amount_cents: i64,
     status: OverageChargeStatus,
     invoice: Option<String>,
+    hosted_invoice_url: Option<String>,
+    updated_at: DateTime<Utc>,
 }
 
 /// One `ai_credit_reload` row.
@@ -159,7 +163,9 @@ struct FakeReload {
     amount_cents: i64,
     status: CreditReloadStatus,
     invoice: Option<String>,
+    hosted_invoice_url: Option<String>,
     created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 
 #[derive(Default)]
@@ -183,13 +189,12 @@ impl RepoState {
     fn ledger(&self, period_start: DateTime<Utc>) -> PeriodLedger {
         PeriodLedger {
             credits_consumed_cents: self.consumed.get(&period_start).copied().unwrap_or(0),
-            // An invoiced charge can still collect even after a failure.
+            // A charge Stripe may still collect keeps covering its usage.
             overage_charged_cents: self
                 .charges
                 .iter()
                 .filter(|c| {
-                    c.period_start == period_start
-                        && (c.status != OverageChargeStatus::Failed || c.invoice.is_some())
+                    c.period_start == period_start && c.status.may_collect(c.invoice.is_some())
                 })
                 .map(|c| c.amount_cents)
                 .sum(),
@@ -238,6 +243,17 @@ impl FakeRepo {
     }
     fn period_writes(&self) -> Vec<(String, DateTime<Utc>, DateTime<Utc>)> {
         self.state.lock().unwrap().period_writes.clone()
+    }
+    /// Backdate every row's last change, as if the webhook had been silent
+    /// since.
+    fn age_invoices(&self, by: chrono::Duration) {
+        let mut s = self.state.lock().unwrap();
+        for c in s.charges.iter_mut() {
+            c.updated_at -= by;
+        }
+        for r in s.reloads.iter_mut() {
+            r.updated_at -= by;
+        }
     }
 }
 
@@ -419,12 +435,15 @@ impl BillingRepo for FakeRepo {
         let owed = s.charges.iter().position(|c| {
             c.period_start == period_start
                 && ((c.status == OverageChargeStatus::Pending && c.invoice.is_none())
-                    || (c.status == OverageChargeStatus::Failed
-                        && overage_active
+                    || (matches!(
+                        c.status,
+                        OverageChargeStatus::Failed | OverageChargeStatus::RequiresAction
+                    ) && overage_active
                         && (c.invoice.is_some() || c.amount_cents <= plan.charge_overage_cents)))
         });
         let pending_charge = if let Some(i) = owed {
             s.charges[i].status = OverageChargeStatus::Pending;
+            s.charges[i].updated_at = Utc::now();
             let c = &s.charges[i];
             Some(PendingCharge {
                 id: c.id,
@@ -439,6 +458,8 @@ impl BillingRepo for FakeRepo {
                 amount_cents: plan.charge_overage_cents,
                 status: OverageChargeStatus::Pending,
                 invoice: None,
+                hosted_invoice_url: None,
+                updated_at: Utc::now(),
             });
             Some(PendingCharge {
                 id,
@@ -462,6 +483,7 @@ impl BillingRepo for FakeRepo {
         let mut s = self.state.lock().unwrap();
         for c in s.charges.iter_mut().filter(|c| c.id == charge_id) {
             c.status = status;
+            c.updated_at = Utc::now();
             if let Some(inv) = stripe_invoice_id {
                 c.invoice = Some(inv.to_string());
             }
@@ -471,16 +493,20 @@ impl BillingRepo for FakeRepo {
     async fn resolve_overage_invoice(
         &self,
         stripe_invoice_id: &str,
-        status: OverageChargeStatus,
+        outcome: &InvoiceOutcome,
     ) -> Result<Option<MacroUserIdStr<'static>>> {
+        let next = outcome.charge_status();
         let mut s = self.state.lock().unwrap();
-        let found = s.charges.iter_mut().find(|c| {
-            c.invoice.as_deref() == Some(stripe_invoice_id)
-                && c.status != OverageChargeStatus::Paid
-                && c.status != status
-        });
+        let found = s
+            .charges
+            .iter_mut()
+            .find(|c| c.invoice.as_deref() == Some(stripe_invoice_id) && c.status.accepts(next));
         Ok(found.map(|c| {
-            c.status = status;
+            c.status = next;
+            c.updated_at = Utc::now();
+            if let Some(url) = outcome.hosted_invoice_url() {
+                c.hosted_invoice_url = Some(url.to_string());
+            }
             user("payer@x.com")
         }))
     }
@@ -508,7 +534,8 @@ impl BillingRepo for FakeRepo {
         Ok(())
     }
     /// Mirrors the Postgres adapter: a stale uninvoiced reload is handed
-    /// back, any other pending reload blocks, otherwise plan a new one.
+    /// back, a failed or action-required one with an invoice is retried, any
+    /// other collectible reload blocks, otherwise plan a new one.
     async fn reserve_credit_reload(
         &self,
         _payer: &MacroUserIdStr<'_>,
@@ -526,22 +553,39 @@ impl BillingRepo for FakeRepo {
         }
 
         let stale_before = now - chrono::Duration::minutes(10);
-        let pending: Vec<&FakeReload> = s
-            .reloads
-            .iter()
-            .filter(|r| r.status == CreditReloadStatus::Pending)
+        let open: Vec<usize> = (0..s.reloads.len())
+            .filter(|&i| {
+                let r = &s.reloads[i];
+                r.status != CreditReloadStatus::Paid && r.status.may_collect(r.invoice.is_some())
+            })
             .collect();
-        if let Some(orphan) = pending
-            .iter()
-            .find(|r| r.invoice.is_none() && r.created_at < stale_before)
-        {
+        if let Some(&i) = open.iter().find(|&&i| {
+            let r = &s.reloads[i];
+            r.status == CreditReloadStatus::Pending
+                && r.invoice.is_none()
+                && r.created_at < stale_before
+        }) {
+            let orphan = &s.reloads[i];
             return Ok(Some(PendingReload {
                 id: orphan.id,
                 amount_cents: orphan.amount_cents,
                 stripe_invoice_id: orphan.invoice.clone(),
             }));
         }
-        if !pending.is_empty() {
+        if let Some(&i) = open
+            .iter()
+            .find(|&&i| s.reloads[i].status != CreditReloadStatus::Pending)
+        {
+            let r = &mut s.reloads[i];
+            r.status = CreditReloadStatus::Pending;
+            r.updated_at = now;
+            return Ok(Some(PendingReload {
+                id: r.id,
+                amount_cents: r.amount_cents,
+                stripe_invoice_id: r.invoice.clone(),
+            }));
+        }
+        if !open.is_empty() {
             return Ok(None);
         }
 
@@ -552,7 +596,7 @@ impl BillingRepo for FakeRepo {
             .reloads
             .iter()
             .filter(|r| {
-                r.status != CreditReloadStatus::Failed
+                r.status.may_collect(r.invoice.is_some())
                     && month.start <= r.created_at
                     && r.created_at < month.end
             })
@@ -575,7 +619,9 @@ impl BillingRepo for FakeRepo {
             amount_cents,
             status: CreditReloadStatus::Pending,
             invoice: None,
+            hosted_invoice_url: None,
             created_at: now,
+            updated_at: now,
         });
         Ok(Some(PendingReload {
             id,
@@ -592,6 +638,7 @@ impl BillingRepo for FakeRepo {
         let mut s = self.state.lock().unwrap();
         for r in s.reloads.iter_mut().filter(|r| r.id == reload_id) {
             r.status = status;
+            r.updated_at = Utc::now();
             if let Some(inv) = stripe_invoice_id {
                 r.invoice = Some(inv.to_string());
             }
@@ -610,23 +657,27 @@ impl BillingRepo for FakeRepo {
     async fn resolve_credit_reload_invoice(
         &self,
         stripe_invoice_id: &str,
-        status: CreditReloadStatus,
+        outcome: &InvoiceOutcome,
     ) -> Result<Option<ResolvedReload>> {
+        let next = outcome.reload_status();
         let mut s = self.state.lock().unwrap();
-        let found = s.reloads.iter_mut().find(|r| {
-            r.invoice.as_deref() == Some(stripe_invoice_id)
-                && r.status != CreditReloadStatus::Paid
-                && r.status != status
-        });
+        let found = s
+            .reloads
+            .iter_mut()
+            .find(|r| r.invoice.as_deref() == Some(stripe_invoice_id) && r.status.accepts(next));
         let resolved = found.map(|r| {
-            r.status = status;
+            r.status = next;
+            r.updated_at = Utc::now();
+            if let Some(url) = outcome.hosted_invoice_url() {
+                r.hosted_invoice_url = Some(url.to_string());
+            }
             ResolvedReload {
                 payer: user("payer@x.com"),
                 amount_cents: r.amount_cents,
             }
         });
         if let Some(resolved) = &resolved
-            && status == CreditReloadStatus::Paid
+            && next == CreditReloadStatus::Paid
             && !s.purchases.iter().any(|r| r == stripe_invoice_id)
         {
             s.purchases.push(stripe_invoice_id.to_string());
@@ -638,6 +689,96 @@ impl BillingRepo for FakeRepo {
         self.state.lock().unwrap().auto_reload_suspended = true;
         Ok(())
     }
+    async fn clear_auto_reload_suspension(&self, _payer: &MacroUserIdStr<'_>) -> Result<()> {
+        self.state.lock().unwrap().auto_reload_suspended = false;
+        Ok(())
+    }
+    async fn latest_reload_status(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+    ) -> Result<Option<CreditReloadStatus>> {
+        Ok(self.state.lock().unwrap().reloads.last().map(|r| r.status))
+    }
+    async fn stale_invoices(
+        &self,
+        _payer: &MacroUserIdStr<'_>,
+        before: DateTime<Utc>,
+    ) -> Result<Vec<StaleInvoice>> {
+        let s = self.state.lock().unwrap();
+        let mut stale: Vec<(DateTime<Utc>, StaleInvoice)> = s
+            .charges
+            .iter()
+            .filter(|c| {
+                c.status != OverageChargeStatus::Paid
+                    && c.status.may_collect(c.invoice.is_some())
+                    && c.updated_at < before
+            })
+            .filter_map(|c| {
+                Some((
+                    c.updated_at,
+                    StaleInvoice {
+                        kind: PaymentActionKind::OverageCharge,
+                        stripe_invoice_id: c.invoice.clone()?,
+                    },
+                ))
+            })
+            .chain(
+                s.reloads
+                    .iter()
+                    .filter(|r| {
+                        r.status != CreditReloadStatus::Paid
+                            && r.status.may_collect(r.invoice.is_some())
+                            && r.updated_at < before
+                    })
+                    .filter_map(|r| {
+                        Some((
+                            r.updated_at,
+                            StaleInvoice {
+                                kind: PaymentActionKind::CreditReload,
+                                stripe_invoice_id: r.invoice.clone()?,
+                            },
+                        ))
+                    }),
+            )
+            .collect();
+        stale.sort_by_key(|(at, _)| *at);
+        Ok(stale.into_iter().map(|(_, invoice)| invoice).collect())
+    }
+    async fn payment_action(&self, _payer: &MacroUserIdStr<'_>) -> Result<Option<PaymentAction>> {
+        let s = self.state.lock().unwrap();
+        let charge = s
+            .charges
+            .iter()
+            .filter(|c| c.status == OverageChargeStatus::RequiresAction)
+            .map(|c| {
+                (
+                    c.updated_at,
+                    PaymentAction {
+                        kind: PaymentActionKind::OverageCharge,
+                        amount_cents: c.amount_cents,
+                        hosted_invoice_url: c.hosted_invoice_url.clone(),
+                    },
+                )
+            });
+        let reload = s
+            .reloads
+            .iter()
+            .filter(|r| r.status == CreditReloadStatus::RequiresAction)
+            .map(|r| {
+                (
+                    r.updated_at,
+                    PaymentAction {
+                        kind: PaymentActionKind::CreditReload,
+                        amount_cents: r.amount_cents,
+                        hosted_invoice_url: r.hosted_invoice_url.clone(),
+                    },
+                )
+            });
+        Ok(charge
+            .chain(reload)
+            .max_by_key(|(at, _)| *at)
+            .map(|(_, action)| action))
+    }
 }
 
 /// How the fake provider answers the next payment attempts.
@@ -647,9 +788,15 @@ enum PayOutcome {
     Paid,
     /// Card declined: the invoice stays open for Stripe's retries.
     Declined,
+    /// The payment needs the customer to authenticate.
+    ActionRequired,
+    /// Stripe had already voided the invoice.
+    Voided,
     /// The provider could not be reached.
     Error,
 }
+
+const HOSTED_INVOICE_URL: &str = "https://invoice.stripe.test/i/in_authenticate";
 
 #[derive(Debug, Clone, Copy, Default)]
 enum PeriodReply {
@@ -669,11 +816,24 @@ struct FakePayments {
     payments: Arc<Mutex<Vec<(Uuid, String)>>>,
     period_reply: Arc<Mutex<PeriodReply>>,
     period_requests: Arc<Mutex<Vec<(String, SubscriptionScope)>>>,
+    /// What a reconciliation read reports per invoice; unknown invoices are
+    /// inconclusive.
+    invoice_outcomes: Arc<Mutex<HashMap<String, InvoiceOutcome>>>,
+    invoice_reads: Arc<Mutex<Vec<String>>>,
 }
 
 impl FakePayments {
     fn set_pay(&self, outcome: PayOutcome) {
         *self.pay_outcome.lock().unwrap() = outcome;
+    }
+    fn set_invoice_outcome(&self, invoice: &str, outcome: InvoiceOutcome) {
+        self.invoice_outcomes
+            .lock()
+            .unwrap()
+            .insert(invoice.to_string(), outcome);
+    }
+    fn invoice_reads(&self) -> Vec<String> {
+        self.invoice_reads.lock().unwrap().clone()
     }
     fn set_period(&self, reply: PeriodReply) {
         *self.period_reply.lock().unwrap() = reply;
@@ -718,16 +878,32 @@ impl PaymentGateway for FakePayments {
         charge_id: Uuid,
         invoice_id: &str,
         _scope: SubscriptionScope,
-    ) -> Result<bool> {
+    ) -> Result<InvoiceOutcome> {
         self.payments
             .lock()
             .unwrap()
             .push((charge_id, invoice_id.to_string()));
         match *self.pay_outcome.lock().unwrap() {
-            PayOutcome::Paid => Ok(true),
-            PayOutcome::Declined => Ok(false),
+            PayOutcome::Paid => Ok(InvoiceOutcome::Paid),
+            PayOutcome::Declined => Ok(InvoiceOutcome::PaymentFailed),
+            PayOutcome::ActionRequired => Ok(InvoiceOutcome::ActionRequired {
+                hosted_invoice_url: Some(HOSTED_INVOICE_URL.to_string()),
+            }),
+            PayOutcome::Voided => Ok(InvoiceOutcome::Voided),
             PayOutcome::Error => Err(BillingError::Payment(anyhow::anyhow!("card declined"))),
         }
+    }
+    async fn invoice_outcome(&self, invoice_id: &str) -> Result<Option<InvoiceOutcome>> {
+        self.invoice_reads
+            .lock()
+            .unwrap()
+            .push(invoice_id.to_string());
+        Ok(self
+            .invoice_outcomes
+            .lock()
+            .unwrap()
+            .get(invoice_id)
+            .cloned())
     }
     async fn subscription_period(
         &self,
@@ -1109,6 +1285,8 @@ async fn disabled_settlement_does_not_retry_pending_or_failed_charges() {
                 amount_cents: 1_000,
                 status,
                 invoice: invoice.clone(),
+                hosted_invoice_url: None,
+                updated_at: Utc::now(),
             });
 
             svc.update_overage(&payer, true, 10_000).await.unwrap();
@@ -1416,7 +1594,9 @@ async fn a_declined_card_leaves_the_invoice_open_for_the_webhook() {
     assert_eq!(charges[0].status, OverageChargeStatus::Pending);
     let invoice = charges[0].invoice.clone().unwrap();
 
-    svc.mark_overage_invoice(&invoice, false).await.unwrap();
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(snap.overage_suspended);
     // Stripe may still retry the open invoice, so it remains coverage.
@@ -1554,24 +1734,32 @@ async fn overage_invoice_webhooks_update_suspension() {
     svc.update_overage(&payer, true, 5_000).await.unwrap();
     let invoice = repo.charges()[0].invoice.clone().unwrap();
 
-    svc.mark_overage_invoice(&invoice, false).await.unwrap();
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     assert!(svc.snapshot(&payer).await.unwrap().overage_suspended);
 
     // Stripe's own retry collected it.
-    svc.mark_overage_invoice(&invoice, true).await.unwrap();
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(!snap.overage_suspended);
     assert_eq!(snap.overage_charged_cents, 1_575);
 
     // Paid is terminal: a late or duplicate failure changes nothing.
-    svc.mark_overage_invoice(&invoice, false).await.unwrap();
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(!snap.overage_suspended);
     assert_eq!(snap.overage_charged_cents, 1_575);
     assert_eq!(repo.charges()[0].status, OverageChargeStatus::Paid);
 
     // Unknown invoices are ignored.
-    svc.mark_overage_invoice("in_unknown", false).await.unwrap();
+    svc.mark_overage_invoice("in_unknown", &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     assert!(!svc.snapshot(&payer).await.unwrap().overage_suspended);
 }
 
@@ -1594,15 +1782,21 @@ async fn out_of_order_invoice_webhooks_follow_the_newest_charge() {
     );
 
     // B fails: suspended.
-    svc.mark_overage_invoice(&b, false).await.unwrap();
+    svc.mark_overage_invoice(&b, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     assert!(svc.snapshot(&payer).await.unwrap().overage_suspended);
     // A late `paid` for the older A must not lift B's suspension.
-    svc.mark_overage_invoice(&a, true).await.unwrap();
+    svc.mark_overage_invoice(&a, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(snap.overage_suspended);
     assert_eq!(snap.overage_charged_cents, 3_675);
     // B eventually collects: cleared, everything covered.
-    svc.mark_overage_invoice(&b, true).await.unwrap();
+    svc.mark_overage_invoice(&b, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(!snap.overage_suspended);
     assert_eq!(snap.overage_charged_cents, 3_675);
@@ -1620,8 +1814,12 @@ async fn out_of_order_invoice_webhooks_follow_the_newest_charge() {
         charges[0].invoice.clone().unwrap(),
         charges[1].invoice.clone().unwrap(),
     );
-    svc.mark_overage_invoice(&b, true).await.unwrap();
-    svc.mark_overage_invoice(&a, false).await.unwrap();
+    svc.mark_overage_invoice(&b, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
+    svc.mark_overage_invoice(&a, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
     let snap = svc.snapshot(&payer).await.unwrap();
     assert!(!snap.overage_suspended);
     // A remains coverage because its invoice can still collect. Settlement
@@ -1817,17 +2015,22 @@ async fn a_failed_reload_pauses_reloads_and_falls_back_to_overage() {
     assert_eq!(repo.reloads().len(), 1);
     assert_eq!(payments.opened_reloads().len(), 1);
 
-    // Saving the reload settings clears the pause and reloads right away.
+    // Saving the reload settings clears the pause and reloads right away,
+    // retrying the failed reload on its still-open invoice rather than
+    // opening a second one Stripe could also collect. That invoice was
+    // sized while the 1_575 was still uncovered, so it collects 11_575.
     let snap = svc
         .update_auto_reload(&payer, true, AutoReloadThresholds::default())
         .await
         .unwrap();
     assert!(snap.auto_reload.active);
     let reloads = repo.reloads();
-    assert_eq!(reloads.len(), 2);
-    assert_eq!(reloads[1].status, CreditReloadStatus::Paid);
-    assert_eq!(reloads[1].amount_cents, 10_000);
-    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert_eq!(reloads.len(), 1);
+    assert_eq!(reloads[0].status, CreditReloadStatus::Paid);
+    assert_eq!(reloads[0].amount_cents, 11_575);
+    assert_eq!(payments.opened_reloads().len(), 1);
+    assert_eq!(payments.payments().len(), 4);
+    assert_eq!(snap.credit_balance_cents, 11_575);
 }
 
 #[tokio::test]
@@ -1966,7 +2169,7 @@ async fn reload_invoice_webhooks_book_credits_once() {
         .unwrap();
     let invoice = repo.reloads()[0].invoice.clone().unwrap();
     assert_eq!(repo.state.lock().unwrap().balance, 10_000);
-    svc.mark_credit_reload_invoice(&invoice, true)
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
         .await
         .unwrap();
     assert_eq!(repo.state.lock().unwrap().balance, 10_000);
@@ -1980,17 +2183,17 @@ async fn reload_invoice_webhooks_book_credits_once() {
         .unwrap();
     let invoice = repo.reloads()[0].invoice.clone().unwrap();
     assert_eq!(repo.state.lock().unwrap().balance, 500);
-    svc.mark_credit_reload_invoice(&invoice, true)
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
         .await
         .unwrap();
     assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Paid);
     assert_eq!(repo.state.lock().unwrap().balance, 10_000);
 
     // Paid is terminal: a duplicate or a late failure changes nothing.
-    svc.mark_credit_reload_invoice(&invoice, true)
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
         .await
         .unwrap();
-    svc.mark_credit_reload_invoice(&invoice, false)
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
         .await
         .unwrap();
     assert_eq!(repo.state.lock().unwrap().balance, 10_000);
@@ -1998,7 +2201,7 @@ async fn reload_invoice_webhooks_book_credits_once() {
     assert!(!svc.snapshot(&payer).await.unwrap().auto_reload.suspended);
 
     // Unknown invoices are ignored.
-    svc.mark_credit_reload_invoice("in_unknown", false)
+    svc.mark_credit_reload_invoice("in_unknown", &InvoiceOutcome::PaymentFailed)
         .await
         .unwrap();
     assert!(!svc.snapshot(&payer).await.unwrap().auto_reload.suspended);
@@ -2015,7 +2218,7 @@ async fn a_failed_reload_invoice_webhook_pauses_reloads_only() {
         .unwrap();
     let invoice = repo.reloads()[0].invoice.clone().unwrap();
 
-    svc.mark_credit_reload_invoice(&invoice, false)
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
         .await
         .unwrap();
     assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Failed);
@@ -2031,6 +2234,418 @@ async fn a_failed_reload_invoice_webhook_pauses_reloads_only() {
     svc.settle(&payer).await.unwrap();
     assert_eq!(repo.reloads().len(), 1);
     assert_eq!(repo.state.lock().unwrap().balance, 500);
+}
+
+#[tokio::test]
+async fn a_reload_needing_authentication_pauses_reloads_and_reports_the_page() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::ActionRequired);
+
+    let snap = svc
+        .update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let reloads = repo.reloads();
+    assert_eq!(reloads.len(), 1);
+    assert_eq!(reloads[0].status, CreditReloadStatus::RequiresAction);
+    assert_eq!(
+        reloads[0].hosted_invoice_url.as_deref(),
+        Some(HOSTED_INVOICE_URL)
+    );
+    // Not a decline, but nothing happens until the payer acts: paused like one.
+    assert!(snap.auto_reload.suspended);
+    assert!(!snap.auto_reload.active);
+    assert_eq!(snap.credit_balance_cents, 500);
+    // Overage itself is untouched by a reload awaiting authentication.
+    assert!(snap.overage_enabled);
+    assert!(!snap.overage_suspended);
+    assert_eq!(
+        snap.payment_action,
+        Some(PaymentAction {
+            kind: PaymentActionKind::CreditReload,
+            amount_cents: 9_500,
+            hosted_invoice_url: Some(HOSTED_INVOICE_URL.to_string()),
+        })
+    );
+
+    // Paused: no second reload is reserved and the invoice is not retried.
+    svc.settle(&payer).await.unwrap();
+    assert_eq!(repo.reloads().len(), 1);
+    assert_eq!(payments.payments().len(), 1);
+
+    // The payer authenticates on the hosted page: the webhook books the
+    // credits and reloads resume.
+    let invoice = reloads[0].invoice.clone().unwrap();
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Paid);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert!(!snap.auto_reload.suspended);
+    assert!(snap.auto_reload.active);
+    assert_eq!(snap.payment_action, None);
+}
+
+#[tokio::test]
+async fn re_enabling_retries_an_authentication_pending_reload_with_the_current_card() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::ActionRequired);
+    svc.update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let reserved = repo.reloads()[0].clone();
+    assert_eq!(reserved.status, CreditReloadStatus::RequiresAction);
+
+    // The payer puts a working card on file and saves again: the same reload
+    // and invoice are retried rather than a second one opened.
+    payments.set_pay(PayOutcome::Paid);
+    let snap = svc
+        .update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let reloads = repo.reloads();
+    assert_eq!(reloads.len(), 1);
+    assert_eq!(reloads[0].id, reserved.id);
+    assert_eq!(reloads[0].status, CreditReloadStatus::Paid);
+    assert_eq!(payments.opened_reloads().len(), 1);
+    assert_eq!(
+        payments.payments(),
+        vec![
+            (reserved.id, reserved.invoice.clone().unwrap()),
+            (reserved.id, reserved.invoice.clone().unwrap()),
+        ]
+    );
+    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert!(snap.auto_reload.active);
+    assert_eq!(snap.payment_action, None);
+}
+
+#[tokio::test]
+async fn an_overage_charge_needing_authentication_pauses_overage_and_reports_the_page() {
+    let (svc, repo, payments, _) = premium_service(3_500);
+    let payer = user("payer@x.com");
+    repo.pause_reloads();
+    payments.set_pay(PayOutcome::ActionRequired);
+
+    let snap = svc.update_overage(&payer, true, 10_000).await.unwrap();
+    let charges = repo.charges();
+    assert_eq!(charges.len(), 1);
+    assert_eq!(charges[0].amount_cents, 1_575);
+    assert_eq!(charges[0].status, OverageChargeStatus::RequiresAction);
+    assert_eq!(
+        charges[0].hosted_invoice_url.as_deref(),
+        Some(HOSTED_INVOICE_URL)
+    );
+    assert!(snap.overage_suspended);
+    // The chunk keeps covering its usage while Stripe can still collect it.
+    assert_eq!(snap.overage_charged_cents, 1_575);
+    assert_eq!(snap.uncovered_cents, 0);
+    assert_eq!(snap.blocked_reason, Some(DenyReason::OveragePaymentFailed));
+    assert_eq!(
+        snap.payment_action,
+        Some(PaymentAction {
+            kind: PaymentActionKind::OverageCharge,
+            amount_cents: 1_575,
+            hosted_invoice_url: Some(HOSTED_INVOICE_URL.to_string()),
+        })
+    );
+
+    // Suspended: nothing more is reserved or attempted.
+    svc.settle(&payer).await.unwrap();
+    assert_eq!(repo.charges().len(), 1);
+    assert_eq!(payments.payments().len(), 1);
+
+    // Authenticated: the webhook lifts the suspension.
+    let invoice = charges[0].invoice.clone().unwrap();
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
+    assert_eq!(repo.charges()[0].status, OverageChargeStatus::Paid);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert!(!snap.overage_suspended);
+    assert_eq!(snap.blocked_reason, None);
+    assert_eq!(snap.payment_action, None);
+}
+
+#[tokio::test]
+async fn a_voided_reload_invoice_stops_blocking_and_counting() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::Declined);
+    let capped = thresholds(1_000, 10_000, Some(12_000));
+    svc.update_auto_reload(&payer, true, capped).await.unwrap();
+    let first = repo.reloads()[0].clone();
+    assert_eq!(first.status, CreditReloadStatus::Pending);
+    let invoice = first.invoice.clone().unwrap();
+
+    // Stripe gave up on it: reloads pause until the payer acts.
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Voided)
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Voided);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert!(snap.auto_reload.suspended);
+    assert_eq!(snap.payment_action, None);
+    // A void is final: a late decline or payment report changes nothing.
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Voided);
+    assert_eq!(repo.state.lock().unwrap().balance, 500);
+
+    // Saving again reserves a fresh reload: the voided one neither blocks,
+    // is retried, nor counts against the month (9_500 would otherwise leave
+    // only 2_500 under the cap).
+    payments.set_pay(PayOutcome::Paid);
+    let snap = svc.update_auto_reload(&payer, true, capped).await.unwrap();
+    let reloads = repo.reloads();
+    assert_eq!(reloads.len(), 2);
+    assert_eq!(reloads[1].status, CreditReloadStatus::Paid);
+    assert_eq!(reloads[1].amount_cents, 9_500);
+    assert_eq!(payments.opened_reloads().len(), 2);
+    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert!(snap.auto_reload.active);
+}
+
+#[tokio::test]
+async fn a_voided_overage_invoice_uncovers_its_usage_and_pauses_overage() {
+    let (svc, repo, payments, _) = premium_service(3_500);
+    let payer = user("payer@x.com");
+    repo.pause_reloads();
+    payments.set_pay(PayOutcome::Declined);
+    let snap = svc.update_overage(&payer, true, 10_000).await.unwrap();
+    assert_eq!(snap.overage_charged_cents, 1_575);
+    let invoice = repo.charges()[0].invoice.clone().unwrap();
+
+    svc.mark_overage_invoice(&invoice, &InvoiceOutcome::Voided)
+        .await
+        .unwrap();
+    assert_eq!(repo.charges()[0].status, OverageChargeStatus::Voided);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert!(snap.overage_suspended);
+    assert_eq!(snap.overage_charged_cents, 0);
+    assert_eq!(snap.uncovered_cents, 1_575);
+
+    // Re-enabling reserves a new chunk for the uncovered usage; the voided
+    // one is not retried.
+    payments.set_pay(PayOutcome::Paid);
+    let snap = svc.update_overage(&payer, true, 10_000).await.unwrap();
+    let charges = repo.charges();
+    assert_eq!(charges.len(), 2);
+    assert_eq!(charges[0].status, OverageChargeStatus::Voided);
+    assert_eq!(charges[1].status, OverageChargeStatus::Paid);
+    assert_eq!(charges[1].amount_cents, 1_575);
+    assert_eq!(snap.overage_charged_cents, 1_575);
+    assert!(!snap.overage_suspended);
+}
+
+#[tokio::test]
+async fn a_written_off_invoice_only_moves_to_paid_or_voided() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::Declined);
+    svc.update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let invoice = repo.reloads()[0].invoice.clone().unwrap();
+
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Uncollectible)
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Uncollectible);
+    assert!(svc.snapshot(&payer).await.unwrap().auto_reload.suspended);
+
+    // A late decline or authentication request cannot revive a write-off...
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::PaymentFailed)
+        .await
+        .unwrap();
+    svc.mark_credit_reload_invoice(
+        &invoice,
+        &InvoiceOutcome::ActionRequired {
+            hosted_invoice_url: Some(HOSTED_INVOICE_URL.to_string()),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Uncollectible);
+    assert_eq!(svc.snapshot(&payer).await.unwrap().payment_action, None);
+
+    // ...but a late payment still books the credits and resumes reloads.
+    svc.mark_credit_reload_invoice(&invoice, &InvoiceOutcome::Paid)
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Paid);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert!(!snap.auto_reload.suspended);
+}
+
+#[tokio::test]
+async fn the_collector_closes_an_invoice_stripe_already_voided() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::Error);
+    svc.update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let failed = repo.reloads()[0].clone();
+    assert_eq!(failed.status, CreditReloadStatus::Failed);
+    assert!(failed.invoice.is_some());
+
+    // Stripe voided the invoice meanwhile (its void webhook was lost). The
+    // retry on re-save finds that out and closes the row instead of failing
+    // on the same dead invoice every time the payer saves.
+    payments.set_pay(PayOutcome::Voided);
+    let snap = svc
+        .update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    assert_eq!(repo.reloads().len(), 1);
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Voided);
+    assert!(snap.auto_reload.suspended);
+
+    payments.set_pay(PayOutcome::Paid);
+    let snap = svc
+        .update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let reloads = repo.reloads();
+    assert_eq!(reloads.len(), 2);
+    assert_eq!(reloads[1].status, CreditReloadStatus::Paid);
+    assert_eq!(snap.credit_balance_cents, 10_000);
+}
+
+/// A service over the same fakes with no memory of recent reconciliations,
+/// as another process (or this one after the backoff) would be.
+fn fresh(svc: &Service) -> Service {
+    Service {
+        reconciled: Arc::default(),
+        ..svc.clone()
+    }
+}
+
+#[tokio::test]
+async fn stale_invoices_are_read_back_from_the_provider() {
+    let (svc, repo, payments, _) = premium_service(0);
+    let payer = user("payer@x.com");
+    repo.set_balance(500);
+    payments.set_pay(PayOutcome::Declined);
+    svc.update_auto_reload(&payer, true, AutoReloadThresholds::default())
+        .await
+        .unwrap();
+    let invoice = repo.reloads()[0].invoice.clone().unwrap();
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Pending);
+
+    // A fresh row is left to the webhook.
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert!(payments.invoice_reads().is_empty());
+
+    // An hour on with no webhook, the provider says the payment is waiting
+    // on the customer: the row and the summary learn that here.
+    repo.age_invoices(chrono::Duration::hours(2));
+    payments.set_invoice_outcome(
+        &invoice,
+        InvoiceOutcome::ActionRequired {
+            hosted_invoice_url: Some(HOSTED_INVOICE_URL.to_string()),
+        },
+    );
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(payments.invoice_reads(), vec![invoice.clone()]);
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::RequiresAction);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert!(snap.auto_reload.suspended);
+    assert_eq!(
+        snap.payment_action
+            .as_ref()
+            .and_then(|action| action.hosted_invoice_url.as_deref()),
+        Some(HOSTED_INVOICE_URL)
+    );
+
+    // The row just moved, so it is not stale again for another hour; and
+    // within the backoff this process does not even look.
+    svc.settle(&payer).await.unwrap();
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(payments.invoice_reads().len(), 1);
+
+    // The customer paid on the hosted page but that webhook was lost too:
+    // reconciliation books the credits and resumes reloads, and the
+    // settlement that follows runs on the new balance.
+    repo.age_invoices(chrono::Duration::hours(2));
+    payments.set_invoice_outcome(&invoice, InvoiceOutcome::Paid);
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(payments.invoice_reads().len(), 2);
+    assert_eq!(repo.reloads().len(), 1);
+    assert_eq!(repo.reloads()[0].status, CreditReloadStatus::Paid);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert_eq!(snap.credit_balance_cents, 10_000);
+    assert!(!snap.auto_reload.suspended);
+    assert_eq!(snap.payment_action, None);
+
+    // Final rows are never read again.
+    repo.age_invoices(chrono::Duration::hours(2));
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(payments.invoice_reads().len(), 2);
+}
+
+#[tokio::test]
+async fn reconciliation_closes_a_charge_the_provider_voided_and_leaves_inconclusive_ones() {
+    let (svc, repo, payments, _) = premium_service(3_500);
+    let payer = user("payer@x.com");
+    repo.pause_reloads();
+    payments.set_pay(PayOutcome::Declined);
+    svc.update_overage(&payer, true, 10_000).await.unwrap();
+    let invoice = repo.charges()[0].invoice.clone().unwrap();
+    repo.age_invoices(chrono::Duration::hours(2));
+
+    // Nothing conclusive at the provider yet: the row stays as it is and
+    // keeps covering its usage.
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(payments.invoice_reads(), vec![invoice.clone()]);
+    assert_eq!(repo.charges()[0].status, OverageChargeStatus::Pending);
+    assert_eq!(repo.charges().len(), 1);
+
+    // Voided: it stops covering the usage and overage pauses, so nothing is
+    // re-reserved for that usage until the payer re-enables it.
+    payments.set_invoice_outcome(&invoice, InvoiceOutcome::Voided);
+    fresh(&svc).settle(&payer).await.unwrap();
+    assert_eq!(repo.charges()[0].status, OverageChargeStatus::Voided);
+    assert_eq!(repo.charges().len(), 1);
+    let snap = svc.snapshot(&payer).await.unwrap();
+    assert!(snap.overage_suspended);
+    assert_eq!(snap.overage_charged_cents, 0);
+    assert_eq!(snap.uncovered_cents, 1_575);
+}
+
+#[tokio::test]
+async fn disabled_settlement_never_reconciles_invoices() {
+    let (svc, repo, payments, _) = premium_service_with(AiUsageBilling::Disabled, 3_500);
+    let payer = user("payer@x.com");
+    let period = BillingPeriod::current(None, Utc::now());
+    repo.state.lock().unwrap().charges.push(FakeCharge {
+        id: macro_uuid::generate_uuid_v7(),
+        period_start: period.start,
+        amount_cents: 1_000,
+        status: OverageChargeStatus::Pending,
+        invoice: Some("in_stuck".to_string()),
+        hosted_invoice_url: None,
+        updated_at: Utc::now() - chrono::Duration::days(3),
+    });
+    payments.set_invoice_outcome("in_stuck", InvoiceOutcome::Voided);
+
+    svc.settle(&payer).await.unwrap();
+    assert!(payments.invoice_reads().is_empty());
+    assert_eq!(repo.charges()[0].status, OverageChargeStatus::Pending);
 }
 
 #[tokio::test]
