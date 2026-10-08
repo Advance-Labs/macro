@@ -401,7 +401,9 @@ Closing the popover without submitting keeps the underlying view open.
 
 Opening a project keeps the Tasks workspace and its navigation. The top bar
 shows the Projects return breadcrumb and the project name, with the same Share
-and side-panel controls as task detail. Choose Overview or Tasks using the inset
+and side-panel controls as task detail. `Project actions` (the dots button
+after the name) opens the row context menu's entries for this project,
+including `Delete` for its owner. Choose Overview or Tasks using the inset
 tabs in that top bar. In Tasks, an outlined circular search button expands into
 a focused `Search in <project name>` field. Close or Escape clears the query and
 restores focus to the button. The task toolbar stays the same height and scrolls

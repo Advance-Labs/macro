@@ -6,7 +6,7 @@ import { EntityDetailBreadcrumbSkeleton } from './EntityDetailBreadcrumbSkeleton
 
 /** The shared Tasks detail chrome for tasks and native projects. */
 export function EntityDetailTopBar(
-  props: ParentProps<{ navigation?: JSX.Element }>
+  props: ParentProps<{ navigation?: JSX.Element; titleMenu?: JSX.Element }>
 ) {
   return (
     <ViewShell.TopBar
@@ -18,7 +18,9 @@ export function EntityDetailTopBar(
       <ViewBreadcrumbs.Outlet
         aria-label="Task location"
         fallback={<EntityDetailBreadcrumbSkeleton />}
-      />
+      >
+        {props.titleMenu}
+      </ViewBreadcrumbs.Outlet>
       <Show when={props.navigation}>
         <div class="min-w-0 overflow-x-auto touch:order-last touch:w-full">
           {props.navigation}
