@@ -14401,6 +14401,7 @@ version = "0.1.0"
 dependencies = [
  "ai_toolset",
  "anyhow",
+ "async-trait",
  "axum",
  "futures",
  "macro_authorization",
