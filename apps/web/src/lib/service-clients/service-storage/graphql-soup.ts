@@ -355,8 +355,8 @@ function createGraphqlSoupWebSocketClient(
   });
   return createGraphqlSoupConnection({
     resolveUrl: resolveWebSocketUrl,
-    onConnected: () => {
-      onConnected();
+    onConnected: (recovered) => {
+      onConnected(recovered);
       connections += 1;
       if (connections === 1) return;
       for (const listener of reconnectListeners) listener();
