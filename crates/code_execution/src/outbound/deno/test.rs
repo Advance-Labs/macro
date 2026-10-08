@@ -176,3 +176,37 @@ async fn rejects_replies_not_owned_by_the_execution() {
     }
     service.shutdown().await;
 }
+
+#[tokio::test]
+#[ignore = "requires pinned Deno runtime"]
+async fn retains_the_response_pump_error_diagnostic() {
+    let (_root, service) = setup(Limits::default()).await;
+    let mut handle = service
+        .execute(ExecuteRequest {
+            // A forged call is known to the host but has no SDK promise. The
+            // response pump must report its diagnostic when the reply arrives.
+            source: r#"Deno.stdout.writeSync(new TextEncoder().encode(JSON.stringify({type: 'call', id: 1, method: 'test', args: {}}) + '\n')); await new Promise(() => {});"#.into(),
+            timeout_ms: 5000,
+        })
+        .unwrap();
+    while !matches!(
+        handle.events.recv().await.unwrap().kind,
+        EventKind::HostCall { .. }
+    ) {}
+    handle
+        .replies
+        .send(HostReply {
+            id: CallId(1),
+            result: HostResult::Ok { value: Value::Null },
+        })
+        .await
+        .unwrap();
+    loop {
+        if let EventKind::Finished { outcome } = handle.events.recv().await.unwrap().kind {
+            assert!(matches!(outcome, Outcome::Failed { error }
+                if error.message.contains("Unexpected host reply")));
+            break;
+        }
+    }
+    service.shutdown().await;
+}

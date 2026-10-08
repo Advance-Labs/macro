@@ -298,10 +298,24 @@ fn receipt(record: &ExecutionRecord) -> ExecutionReceipt {
 }
 
 async fn active_turn(inner: &Inner, identity: &ExecutionIdentity) -> bool {
-    matches!(
-        tokio::time::timeout(std::time::Duration::from_secs(1), inner.turns.active(identity.session)).await,
-        Ok(Ok(Some(turn))) if turn == identity.turn
-    )
+    // Retry transient pool contention without admitting a tool until shared
+    // state confirms the original turn. A confirmed Stop never needs a retry.
+    for attempt in 0..3 {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            inner.turns.active(identity.session),
+        )
+        .await
+        {
+            Ok(Ok(turn)) => return turn == Some(identity.turn),
+            Ok(Err(error)) => tracing::warn!(?error, attempt, "could not read active session turn"),
+            Err(_) => tracing::warn!(attempt, "active session turn lookup timed out"),
+        }
+        if attempt < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    }
+    false
 }
 
 fn record_size(record: &ExecutionRecord) -> Result<usize, CodeModeError> {

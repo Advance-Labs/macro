@@ -6,6 +6,6 @@
  */
 
 /**
- * Identity minted by the backend before a code execution begins.
+ * Caller-selected UUID persisted in tool input before execution begins.
  */
 export type ExecutionId = string;

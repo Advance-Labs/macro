@@ -3481,7 +3481,7 @@
       "ExecutionId": {
         "type": "string",
         "format": "uuid",
-        "description": "Identity minted by the backend before a code execution begins."
+        "description": "Caller-selected UUID persisted in tool input before execution begins."
       },
       "ExecutionRecord": {
         "type": "object",

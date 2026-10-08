@@ -91,7 +91,7 @@ try {
   };
   void pump().catch((error) => {
     emit({ type: "error", message: String(error) });
-    exit(1);
+    exit(0);
   });
   const value = await new AsyncFunction(
     "host",

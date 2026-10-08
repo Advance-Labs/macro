@@ -481,3 +481,56 @@ async fn shared_turn_changes_cancel_execution_without_mcp_cancellation() {
         );
     }
 }
+
+enum TurnLookup {
+    Active,
+    Stopped,
+    Unavailable,
+    Slow,
+}
+
+struct FlakyTurns(Mutex<std::collections::VecDeque<TurnLookup>>);
+
+#[async_trait]
+impl ExecutionTurns for FlakyTurns {
+    async fn active(&self, _: AgentSessionId) -> Result<Option<macro_uuid::Uuid>, CodeModeError> {
+        let next = self.0.lock().unwrap().pop_front().unwrap();
+        match next {
+            TurnLookup::Active => Ok(Some(macro_uuid::Uuid::from_u128(1))),
+            TurnLookup::Stopped => Ok(None),
+            TurnLookup::Unavailable => Err(CodeModeError::Unavailable),
+            TurnLookup::Slow => {
+                std::future::pending::<()>().await;
+                unreachable!()
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn turn_checks_retry_transient_failures_but_require_confirmed_active_state() {
+    use TurnLookup::*;
+    for (lookups, expected) in [
+        (vec![Unavailable, Slow, Active], true),
+        (vec![Stopped], false),
+        (vec![Unavailable, Stopped], false),
+        (vec![Unavailable, Unavailable, Unavailable], false),
+    ] {
+        let turns = Arc::new(FlakyTurns(Mutex::new(lookups.into())));
+        let service = CodeModeService::new(
+            Some(Arc::new(TestExecutor)),
+            Arc::new(TestTools::default()),
+            Arc::new(MemoryStore::default()),
+            turns.clone(),
+        );
+        let session = test_agent_session(AgentSessionId::TEST_A);
+        let identity = ExecutionIdentity {
+            session: session.id,
+            owner: session.owner_user().unwrap().clone(),
+            bot: session.bot_id,
+            turn: macro_uuid::Uuid::from_u128(1),
+        };
+        assert_eq!(active_turn(&service.0, &identity).await, expected);
+        assert!(turns.0.lock().unwrap().is_empty());
+    }
+}
