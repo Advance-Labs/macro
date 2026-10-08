@@ -846,7 +846,7 @@ impl Storage for TursoStorage {
                     require_changed(changed, 1)?;
                     self.fault_after(TestFaultSite::Put, index)?;
                 }
-                write_search_documents(&connection, &entries)
+                write_derived_rows(&connection, &entries)
             })
         })();
         self.latch_result(result)
@@ -877,7 +877,7 @@ impl Storage for TursoStorage {
                     )?;
                     self.fault_after(TestFaultSite::Put, index)?;
                 }
-                write_search_documents(&connection, &entries)?;
+                write_derived_rows(&connection, &entries)?;
                 write_projection_mutations(&connection, projections)
             })
         })();
@@ -915,7 +915,7 @@ impl Storage for TursoStorage {
                     )?;
                     self.fault_after(TestFaultSite::Delete, index)?;
                 }
-                Ok(())
+                calendar::delete_ranges(&connection, &keys)
             })
         })();
         self.latch_result(result)
@@ -1447,7 +1447,7 @@ impl Storage for TursoStorage {
                         self.fault_after(TestFaultSite::Complete, index)?;
                     }
                 }
-                write_search_documents(&connection, &entries)?;
+                write_derived_rows(&connection, &entries)?;
                 write_projection_mutations(&connection, projections)?;
                 require_changed(
                     driver::execute(
@@ -1525,7 +1525,7 @@ impl Storage for TursoStorage {
                         self.fault_after(TestFaultSite::Complete, index)?;
                     }
                 }
-                write_search_documents(&connection, &entries)?;
+                write_derived_rows(&connection, &entries)?;
                 write_projection_mutations(&connection, projections)?;
                 require_changed(
                     driver::execute(
@@ -1630,6 +1630,7 @@ impl Storage for TursoStorage {
                 driver::execute(&connection, "DELETE FROM search_documents", Vec::new())?;
                 driver::execute(&connection, "DELETE FROM index_documents", Vec::new())?;
                 driver::execute(&connection, "DELETE FROM records", Vec::new())?;
+                calendar::clear(&connection)?;
                 self.fault_after(TestFaultSite::Clear, 2)?;
                 Ok(())
             })
@@ -1741,6 +1742,7 @@ impl PredicateIndexStorage for TursoStorage {
                         key,
                     )?;
                 }
+                calendar::delete_ranges(&connection, &keys)?;
                 write_projection_mutations(&connection, projections)
             })
         })();
@@ -3085,7 +3087,7 @@ fn initialize(
     enable_foreign_keys(connection).map_err(TursoStorageError::initialization)?;
     if fresh {
         driver::write_transaction(connection, || {
-            for sql in CREATE_SCHEMA {
+            for sql in CREATE_SCHEMA.into_iter().chain(calendar::CREATE_SCHEMA) {
                 driver::execute(connection, sql, Vec::new())?;
             }
             driver::execute(
@@ -3104,6 +3106,7 @@ fn initialize(
                 vec![text(&STORAGE_SCHEMA_VERSION.to_string())],
             )?;
             save_search_projection_version(connection)?;
+            calendar::save_projection_version(connection)?;
             page_retention::save_version(connection)?;
             Ok(())
         })
@@ -3172,13 +3175,17 @@ fn initialize(
     ] {
         driver::validate(connection, sql).map_err(TursoStorageError::initialization)?;
     }
-    for sql in INDEX_FACTS_DELETE {
+    for sql in INDEX_FACTS_DELETE
+        .into_iter()
+        .chain(calendar::VALIDATED_SQL)
+    {
         driver::validate(connection, sql).map_err(TursoStorageError::initialization)?;
     }
     validate_queue_consistency(connection)?;
     validate_optimistic_shadow_consistency(connection)?;
     page_retention::compact_legacy_pages(connection)?;
-    ensure_search_projection_version(connection)
+    ensure_search_projection_version(connection)?;
+    calendar::ensure_projection_version(connection)
 }
 
 fn save_search_projection_version(connection: &Arc<Connection>) -> Result<(), TursoStorageError> {
@@ -3753,7 +3760,8 @@ fn validate_frozen_schema(connection: &Arc<Connection>) -> Result<(), TursoStora
         connection,
         "optimistic_uncertain_attributes",
         "optimistic_index_documents",
-    )
+    )?;
+    calendar::validate_schema(connection)
 }
 
 const SQLITE_SEQUENCE_TABLE: &str = "sqlite_sequence";
@@ -3799,6 +3807,14 @@ fn validate_allowed_schema_objects(connection: &Arc<Connection>) -> Result<(), T
         "search_documents_browse_idx",
         "sort_facts_lookup_idx",
     ];
+    let expected = expected
+        .into_iter()
+        .chain(calendar::TABLES)
+        .collect::<Vec<_>>();
+    let named_indexes = named_indexes
+        .into_iter()
+        .chain(calendar::NAMED_INDEXES)
+        .collect::<Vec<_>>();
     let support = [SQLITE_SEQUENCE_TABLE, TURSO_AUTOINCREMENT_TABLE];
     let mut seen = vec![false; expected.len()];
     let mut named_index_seen = vec![false; named_indexes.len()];
@@ -4684,6 +4700,7 @@ struct EncodedRecord {
     key: RecordKey,
     value: Vec<u8>,
     search_documents: Vec<SearchDocument>,
+    calendar_range: Option<cache_core::calendar::CalendarRangeRow>,
 }
 
 fn prepare_records(
@@ -4696,6 +4713,7 @@ fn prepare_records(
                 key: RecordKey::from_entity(&key)?,
                 value: encode_record(&record),
                 search_documents: project_search_documents(&key, &record),
+                calendar_range: cache_core::calendar::project_calendar_range(&key, &record),
             })
         })
         .collect()
@@ -4790,6 +4808,15 @@ fn upsert_search_documents_batch(
         )?;
     }
     Ok(())
+}
+
+/// Writes every derived row of upserted records in the records' transaction.
+fn write_derived_rows(
+    connection: &Arc<Connection>,
+    entries: &[EncodedRecord],
+) -> Result<(), TursoStorageError> {
+    write_search_documents(connection, entries)?;
+    calendar::write_ranges(connection, entries)
 }
 
 fn write_search_documents(
@@ -5156,6 +5183,7 @@ impl TursoStorage {
 
 mod alternatives;
 mod bounded_selection;
+mod calendar;
 mod conjunction;
 mod integrity;
 mod mutation_retry;

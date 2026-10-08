@@ -30,8 +30,16 @@ import type {
   TeamSource,
   TeamViewsSource,
 } from './crm-sources';
+import type {
+  PipelineEditor,
+  PipelineSharing,
+  PipelinesSource,
+} from './pipelines';
 
 export type CrmContext = {
+  createPipelines(teamId: Accessor<string | undefined>): PipelinesSource;
+  PipelineEditor: PipelineEditor;
+  PipelineSharing: PipelineSharing;
   downloadCsv(content: string, filename: string): Promise<{ saved: boolean }>;
   contactInitials(name: string | null | undefined, email: string): string;
   userEmail(id: string): string;
@@ -51,6 +59,7 @@ export type CrmContext = {
     openEntity(entity: import('@entity').EntityData): void;
   };
   listsEnabled(): Accessor<boolean>;
+  pipelinesEnabled(): Accessor<boolean>;
 
   feedback: { success(message: string): void; failure(message: string): void };
   createCompanyEmails(

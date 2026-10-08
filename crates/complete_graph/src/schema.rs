@@ -21,7 +21,9 @@ use graphql_activity::{
     ActivitySubscriptionService, GraphqlActivityEvent, GraphqlActivityOverview,
     GraphqlActivityPage, NoOpActivityReader, NoOpActivitySubscriptionService,
     resolve_activity_feed, resolve_activity_overview, resolve_database_activity,
+    resolve_form_activity,
 };
+use graphql_calendar::{CalendarMutationRoot, GraphqlCalendarQuery};
 use graphql_channel::{
     ChannelActivityAuthorizer, ChannelActivityMutationService, ChannelMutationRoot,
     NoOpChannelActivityMutationService,
@@ -96,6 +98,7 @@ pub struct CompleteMutationRoot<
     GraphqlEmailMutation<ES, SoupEmailThreadMutationOutput<E>>,
     graphql_email::GraphqlEmailSendMutation<ES, SoupEmailThreadMutationOutput<E>>,
     InitiativeMutationRoot<E>,
+    CalendarMutationRoot,
 );
 
 impl<
@@ -120,6 +123,7 @@ impl<
             GraphqlEmailMutation::<ES, SoupEmailThreadMutationOutput<E>>::new(),
             graphql_email::GraphqlEmailSendMutation::<ES, SoupEmailThreadMutationOutput<E>>::default(),
             InitiativeMutationRoot::<E>::default(),
+            CalendarMutationRoot,
         )
     }
 }
@@ -767,6 +771,19 @@ where
             .await
     }
 
+    /// The newest activity on a form the authenticated user can edit, newest
+    /// first. Forms are not Soup items, so this stands in for the `activity`
+    /// edge Soup entities carry.
+    async fn form_activity(
+        &self,
+        ctx: &Context<'_>,
+        form_id: ID,
+        limit: Option<i32>,
+    ) -> async_graphql::Result<Vec<GraphqlActivityEvent>> {
+        let access = Arc::<EAS>::from_ref(ctx.data::<St>()?);
+        resolve_form_activity::<AcR, EAS>(ctx, &*access, &self.user_id, form_id, limit).await
+    }
+
     /// The authenticated user's activity over the trailing year, bucketed
     /// into local dates in the requested time zone.
     async fn activity_overview(
@@ -775,6 +792,12 @@ where
         input: ActivityOverviewInput,
     ) -> async_graphql::Result<GraphqlActivityOverview> {
         resolve_activity_overview::<AcR>(ctx, &self.user_id, input).await
+    }
+
+    /// Authenticated user calendar fields supplied by `graphql_calendar`.
+    #[graphql(flatten)]
+    async fn calendar(&self) -> GraphqlCalendarQuery {
+        GraphqlCalendarQuery::new(self.user_id.clone())
     }
 
     /// Authenticated user email catalog fields supplied by `graphql_email`.

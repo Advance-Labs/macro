@@ -348,6 +348,7 @@ fn restored_draft_enqueues_without_a_previously_loaded_thread_query() {
 
         let mut engine = Engine::new(engine.into_storage());
         let selection = cache_core::record_selection::RecordSelection::parse(
+            cache_core::meta::bundled_schema_ref(),
             "fragment Draft on GraphqlSoupEmailMessage { id bodyHtmlSanitized }",
             "Draft",
         )
@@ -426,6 +427,7 @@ fn restored_draft_enqueues_and_survives_restart_with_a_null_thread_lookup() {
 
         let mut engine = Engine::new(engine.into_storage());
         let selection = cache_core::record_selection::RecordSelection::parse(
+            cache_core::meta::bundled_schema_ref(),
             "fragment Draft on GraphqlSoupEmailMessage { id bodyHtmlSanitized }",
             "Draft",
         )
@@ -797,6 +799,7 @@ fn identity_binding_keeps_newer_edits_readable_across_commit_and_restart() {
             "newer body"
         );
         let selection = cache_core::record_selection::RecordSelection::parse(
+            cache_core::meta::bundled_schema_ref(),
             "fragment Draft on GraphqlSoupEmailMessage { id bodyHtmlSanitized }",
             "Draft",
         )

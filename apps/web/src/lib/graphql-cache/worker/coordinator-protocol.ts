@@ -10,6 +10,8 @@ import {
   isValidCacheSearchNowMs,
   isValidCacheSearchProfile,
   isValidCacheSearchQuery,
+  isValidCalendarCommitArgs,
+  isValidCalendarRangeArgs,
   isValidNormalizedRecordKey,
   isWorkerMessage,
   MAX_RECONCILIATION_BASELINE,
@@ -562,12 +564,19 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
           'linkPatches',
           'revalidations',
           'identityBindings',
+          'uncertainCalendarEventKeys',
           'clientMetadata',
           'createdAtMs',
           'owner',
           'nowMs',
           'leaseExpiresAtMs',
         ]) &&
+        (value.uncertainCalendarEventKeys === undefined ||
+          (Array.isArray(value.uncertainCalendarEventKeys) &&
+            value.uncertainCalendarEventKeys.length <= 256 &&
+            value.uncertainCalendarEventKeys.every(
+              isValidNormalizedRecordKey
+            ))) &&
         isOptionalString(value.originOpId) &&
         isString(value.uuid) &&
         isString(value.query) &&
@@ -743,6 +752,16 @@ export function isCacheRequest(value: unknown): value is CacheRequest {
             )))
       );
     }
+    case 'calendar-range':
+      return (
+        hasOnlyKeys(value, ['id', 'kind', 'request']) &&
+        isValidCalendarRangeArgs(value.request)
+      );
+    case 'calendar-commit':
+      return (
+        hasOnlyKeys(value, ['id', 'kind', 'commit']) &&
+        isValidCalendarCommitArgs(value.commit)
+      );
     case 'inspect-query':
       return (
         hasOnlyKeys(value, [
@@ -1334,7 +1353,7 @@ export function tabIdFromLivenessLockName(
  * and the engine checks its WASM before touching storage.
  */
 export const CACHE_STORAGE_VERSION = {
-  schemaCompatibilityEpoch: 3,
+  schemaCompatibilityEpoch: 4,
   formatVersion: 3,
   storageSchemaVersion: 11,
 } as const;
