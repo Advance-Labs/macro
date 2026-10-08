@@ -65,23 +65,25 @@ export default function BlockCode() {
                 mode={mode()}
                 onModeChange={setMode}
               />
-              <Show
-                when={spreadsheet()}
-                fallback={
-                  <CodeContent
-                    text={blockText() ?? ''}
-                    fileType={blockMetadata()?.fileType}
-                    readOnly={readOnly()}
-                    mode={mode()}
-                    onTextChange={setBlockText}
-                    onSave={(text) => saveCodeDocument(documentId, text)}
-                  />
-                }
-              >
-                <Suspense fallback={<SpreadsheetSkeleton />}>
-                  <UploadedWorkbook />
-                </Suspense>
-              </Show>
+              <div class="relative min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+                <Show
+                  when={spreadsheet()}
+                  fallback={
+                    <CodeContent
+                      text={blockText() ?? ''}
+                      fileType={blockMetadata()?.fileType}
+                      readOnly={readOnly()}
+                      mode={mode()}
+                      onTextChange={setBlockText}
+                      onSave={(text) => saveCodeDocument(documentId, text)}
+                    />
+                  }
+                >
+                  <Suspense fallback={<SpreadsheetSkeleton />}>
+                    <UploadedWorkbook />
+                  </Suspense>
+                </Show>
+              </div>
             </div>
           </SidePanel.Layout>
         </div>

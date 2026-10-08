@@ -23,14 +23,23 @@ import type {
   ExportDefinitionsSource,
   ItemListSource,
   ListsSource,
+  PeopleSource,
   PersonalViewsSource,
   PropertyCommands,
   TeamConfigSource,
   TeamSource,
   TeamViewsSource,
 } from './crm-sources';
+import type {
+  PipelineEditor,
+  PipelineSharing,
+  PipelinesSource,
+} from './pipelines';
 
 export type CrmContext = {
+  createPipelines(teamId: Accessor<string | undefined>): PipelinesSource;
+  PipelineEditor: PipelineEditor;
+  PipelineSharing: PipelineSharing;
   downloadCsv(content: string, filename: string): Promise<{ saved: boolean }>;
   contactInitials(name: string | null | undefined, email: string): string;
   userEmail(id: string): string;
@@ -38,7 +47,7 @@ export type CrmContext = {
   copyRecordLink(target: {
     type: 'company' | 'contact';
     id: string;
-  }): Promise<void>;
+  }): Promise<boolean>;
   createNavigation(): {
     splitId: string | undefined;
     openWithSplit(
@@ -50,6 +59,7 @@ export type CrmContext = {
     openEntity(entity: import('@entity').EntityData): void;
   };
   listsEnabled(): Accessor<boolean>;
+  pipelinesEnabled(): Accessor<boolean>;
 
   feedback: { success(message: string): void; failure(message: string): void };
   createCompanyEmails(
@@ -101,6 +111,7 @@ export type CrmContext = {
   createCompanySource(id: Accessor<string>): CompanySource;
   createContactSource(id: Accessor<string>): ContactSource;
   createTeamSource(): TeamSource;
+  createPeopleSource(enabled: Accessor<boolean>): PeopleSource;
   createTeamConfigSource(): TeamConfigSource;
   createCapabilities(): CrmCapabilities;
   createDealStages(): DealStages;

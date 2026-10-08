@@ -9,15 +9,16 @@ import {
   StaticMarkdownContext,
 } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
 import { GithubLabelPills } from '@entity/components/GithubLabelPill';
+import { PrAgentSessionsChip } from '@entity/views/PrAgentSessionsChip';
 import { DebouncedNotificationReadMarker } from '@notifications';
 import {
   type GithubPullRequestWithDetails,
   useRefreshGithubPullRequest,
 } from '@queries/storage/github-pull-requests';
 import { githubPullRequestChangesKeys } from '@queries/storage/keys';
-import { useQueryClient } from '@tanstack/solid-query';
 import { Button, cn, Layer, Scroll } from '@ui';
 import { type Accessor, createMemo, Show, Suspense } from 'solid-js';
+import { MergePullRequestButton } from '../component/MergePullRequestButton';
 import { PrChangesProvider } from '../component/PrChanges';
 import {
   PrDescriptionSkeleton,
@@ -34,6 +35,7 @@ import { PrTimeline } from '../component/PrTimeline';
 import { PrSidePanelSections } from '../component/sidepanel/PrSidePanelSections';
 import { createPrDiscussionSource } from '../data/prDiscussionSource';
 import {
+  invalidatePrForeignEntity,
   type PrForeignEntityData,
   prForeignEntityQueryKey,
   usePrForeignEntityQuery,
@@ -48,7 +50,6 @@ import { prDisplayName, prHtmlUrl } from '../util/prKey';
 
 /** Share PR query state without coupling the host's header to the detail body. */
 export function usePrDetail(foreignEntityId: Accessor<string>) {
-  const queryClient = useQueryClient();
   const query = usePrForeignEntityQuery(foreignEntityId);
   // Detail-lifetime local Macro discussion (prototype-only, lost on reload).
   const discussionSource = createPrDiscussionSource();
@@ -59,15 +60,6 @@ export function usePrDetail(foreignEntityId: Accessor<string>) {
     return pullRequest?.additions != null && pullRequest.deletions != null
       ? { additions: pullRequest.additions, deletions: pullRequest.deletions }
       : undefined;
-  };
-  const invalidateRefreshedPullRequest = async () => {
-    const id = foreignEntityId();
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: prForeignEntityQueryKey(id) }),
-      queryClient.invalidateQueries({
-        queryKey: githubPullRequestChangesKeys.summary(id).queryKey,
-      }),
-    ]);
   };
   useRefreshGithubPullRequest(
     () => {
@@ -82,7 +74,13 @@ export function usePrDetail(foreignEntityId: Accessor<string>) {
         url: pullRequest.url,
       };
     },
-    () => void invalidateRefreshedPullRequest()
+    () => {
+      const id = foreignEntityId();
+      return [
+        prForeignEntityQueryKey(id),
+        githubPullRequestChangesKeys.summary(id).queryKey,
+      ];
+    }
   );
   return { query, data, discussionSource, changeCounts };
 }
@@ -188,9 +186,18 @@ export function PrDetailContent(props: PrDetailBodyProps) {
   );
 }
 
-export function PrDetailActions() {
+export function PrDetailActions(props: { detail?: PrForeignEntityData }) {
   return (
     <div class="ml-auto flex shrink-0 items-center gap-2">
+      <Show when={props.detail}>
+        {(detail) => (
+          <MergePullRequestButton
+            target={{ ...detail().prRef, title: detail().pullRequest.name }}
+            status={detail().pullRequest.status}
+            onMerged={() => invalidatePrForeignEntity(detail().id)}
+          />
+        )}
+      </Show>
       <ChangesToggle />
       <SidePanel.Toggle />
     </div>
@@ -228,7 +235,7 @@ export function StandalonePrDetail(props: { foreignEntityId: string }) {
               <span class="min-w-0 truncate text-sm font-semibold">
                 {name()}
               </span>
-              <PrDetailActions />
+              <PrDetailActions detail={detail.data()} />
             </ViewShell.TopBar>
             <PrDetailContent
               foreignEntityId={props.foreignEntityId}
@@ -332,6 +339,12 @@ function PrMetadata(props: {
           </Show>
         </Layer>
       </Show>
+      <Layer depth={2}>
+        <PrAgentSessionsChip
+          url={props.pullRequest?.url ?? prHtmlUrl(props.prRef)}
+          class="border-edge-muted bg-surface px-2 text-sm font-normal"
+        />
+      </Layer>
       <GithubLabelPills
         labels={props.pullRequest?.labels ?? []}
         class="contents"

@@ -644,10 +644,10 @@ impl FusionAuthEnv {
 /// Values the services' `macro_config` loaders require but that only exist in
 /// Doppler's `lcl_personal` config. Without these a `--no-doppler` stack's
 /// containers crash at startup ("missing required value") before any of the
-/// integration the value backs is ever exercised. Each entry is a deterministic
-/// local stub: good enough to boot, never a real secret, and only meaningful
-/// for the specific integration it names (which won't work locally anyway —
-/// that's what `--env-file` / `run_dev` are for).
+/// integration the value backs is ever exercised. Entries are deterministic
+/// local fixtures or third-party placeholders, never deployed secrets. Local
+/// authentication fixtures must support real requests; third-party integrations
+/// need `--env-file` / `run_dev` for working credentials.
 ///
 /// Unlike the rest of [`LocalEnv`], these are a FALLBACK layer: the resolver
 /// applies them below Doppler (see `env_layer::resolve`), so a developer with
@@ -712,24 +712,43 @@ impl BootStubEnv {
             "local-github-client-secret".into(),
         );
         env.insert("GITHUB_IDP_ID".into(), identity::GITHUB_IDP_ID.into());
+        // HMAC key for signed account-link OAuth state; the loader rejects
+        // anything under 32 bytes.
+        env.insert(
+            "ACCOUNT_LINK_STATE_SECRET".into(),
+            "local-account-link-state-secret-0123456789".into(),
+        );
         env.insert("STRIPE_SECRET_KEY".into(), "local-stripe-secret".into());
         env.insert("STRIPE_PRICE_ID".into(), "local-stripe-price".into());
         env.insert(
             "STRIPE_WEBHOOK_SECRET_KEY".into(),
             "local-stripe-webhook-secret".into(),
         );
-        // macro_auth's `JwtValidationArgs` (used by every service that mounts
-        // the auth middleware) reads these at boot. The keys are only parsed
-        // when a Macro API token is actually validated — normal local auth
-        // uses FusionAuth JWTs — so dummies are fine.
+        // ai_billing's mandatory pricing (crates/ai_billing/src/config.rs). Every
+        // host that composes billing refuses to boot without all four; these
+        // mirror the published plan table ($5 free cap, $15 Pro, $150 Max,
+        // list price + 25%). Doppler's shared_ai configs are authoritative.
+        env.insert(
+            "AI_USAGE_FREE_INCLUDED_ALLOWANCE_CENTS".into(),
+            "500".into(),
+        );
+        env.insert("AI_USAGE_INCLUDED_ALLOWANCE_CENTS".into(), "1500".into());
+        env.insert(
+            "AI_USAGE_MAX_INCLUDED_ALLOWANCE_CENTS".into(),
+            "15000".into(),
+        );
+        env.insert("AI_USAGE_OVERAGE_MARKUP_PERCENT".into(), "25".into());
+        // Browser clients exchange FusionAuth sessions for Macro API tokens
+        // for actions such as enabling CRM. Both issuance and validation need
+        // the same usable local key pair, even without Doppler.
         env.insert("MACRO_API_TOKEN_ISSUER".into(), "local".into());
         env.insert(
             "MACRO_API_TOKEN_PUBLIC_KEY".into(),
-            "local-macro-api-token-public-key".into(),
+            identity::MACRO_API_TOKEN_PUBLIC_KEY.into(),
         );
         env.insert(
             "MACRO_API_TOKEN_PRIVATE_SECRET_KEY".into(),
-            "local-macro-api-token-private-key".into(),
+            identity::MACRO_API_TOKEN_PRIVATE_KEY.into(),
         );
         env.insert("MACRO_API_TOKEN_EXPIRY_SECONDS".into(), "3600".into());
         // email_service's GCP pubsub queue (gmail watch notifications) and

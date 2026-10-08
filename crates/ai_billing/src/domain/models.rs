@@ -1,6 +1,6 @@
 //! Plans, billing periods, settings, and the API-facing snapshot.
 
-use super::pricing::INCLUDED_ALLOWANCE_CENTS;
+use super::pricing::AiPricing;
 pub use ai_usage::NON_BILLABLE_AI_FEATURES;
 use chrono::{DateTime, Datelike, Months, TimeZone, Utc};
 use macro_user_id::user_id::MacroUserIdStr;
@@ -12,7 +12,7 @@ use thiserror::Error;
 use utoipa::ToSchema;
 
 /// Whether usage past a payer's allowance is settled: prepaid credits consumed
-/// and overage collected through Stripe. Hosts load it from
+/// and automatic credit reloads collected through Stripe. Hosts load it from
 /// `ENABLE_AI_USAGE_BILLING` at startup. It is independent of quota admission
 /// ([`AiUsageEnforcement`](ai_usage::AiUsageEnforcement)) and of the deployment
 /// environment.
@@ -21,7 +21,7 @@ pub enum AiUsageBilling {
     /// Never consume credits, reserve overage, or collect payment.
     #[default]
     Disabled,
-    /// Settle uncovered usage from credits, then collect overage.
+    /// Settle uncovered usage from credits, with optional automatic reloads.
     Enabled,
 }
 
@@ -38,7 +38,7 @@ impl AiUsageBilling {
 #[serde(rename_all = "snake_case")]
 pub enum UsagePolicy {
     /// Aggregate per-period settlement in [`super::ledger`]: the at-cost
-    /// allowance, then credits and overage at the markup.
+    /// allowance, then prepaid credits at the markup.
     Legacy,
     /// Per-attempt exact-money policy in [`super::policy`]: the same allowance
     /// at public price, then public usage at the same markup.
@@ -52,6 +52,14 @@ pub const CREDIT_PACKS_CENTS: [i64; 4] = [1_000, 2_500, 5_000, 10_000];
 pub const OVERAGE_LIMIT_MIN_CENTS: i64 = 500;
 /// Largest per-period overage cap a payer may set.
 pub const OVERAGE_LIMIT_MAX_CENTS: i64 = 500_000;
+/// Credit balance below which an automatic reload fires, unless the payer
+/// has set their own minimum.
+pub const AUTO_RELOAD_DEFAULT_MINIMUM_CENTS: i64 = 1_000;
+/// Credit balance an automatic reload tops up to, unless the payer has set
+/// their own target.
+pub const AUTO_RELOAD_DEFAULT_TARGET_CENTS: i64 = 10_000;
+/// Largest automatic reload target a payer may set.
+pub const AUTO_RELOAD_TARGET_MAX_CENTS: i64 = 500_000;
 /// Accrued overage is charged once it reaches this much (or when the period
 /// ends), so a payer sees a few predictable charges rather than one per
 /// completion.
@@ -79,12 +87,12 @@ pub const MIN_STRIPE_CHARGE_CENTS: i64 = 50;
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum PlanTier {
-    /// No subscription. AI on the free model only; metered elsewhere.
+    /// No subscription. AI on the free model only, hard-capped at the
+    /// configured free allowance each calendar month; no credits or overage.
     Free,
     /// The $40/seat/month plan (recorded as the legacy `sub_opus` role).
     Premium,
-    /// The $200/seat/month plan. Its AI allowance equals Premium's until GTM
-    /// defines a Max allowance.
+    /// The $200/seat/month plan, with its own configured AI allowance.
     Max,
 }
 
@@ -98,17 +106,15 @@ impl PlanTier {
         }
     }
 
-    /// AI usage included per seat per period, in cents at provider cost
-    /// ([`INCLUDED_ALLOWANCE_CENTS`] for every paid plan, nothing for Free).
-    pub const fn included_ai_cents_per_seat(self) -> i64 {
-        if self.is_paid() {
-            INCLUDED_ALLOWANCE_CENTS
-        } else {
-            0
-        }
+    /// AI usage included per seat per period, in cents at provider cost: this
+    /// tier's configured allowance ([`AiPricing::included_allowance_cents_for`]).
+    /// For Free this is the whole monthly cap.
+    pub const fn included_ai_cents_per_seat(self, pricing: AiPricing) -> i64 {
+        pricing.included_allowance_cents_for(self)
     }
 
-    /// Whether this tier pays for AI at all (credits and overage need a plan).
+    /// Whether this tier pays for AI beyond its allowance (credits and overage
+    /// need a plan). Free is hard-capped at its allowance instead.
     pub const fn is_paid(self) -> bool {
         !matches!(self, PlanTier::Free)
     }
@@ -175,6 +181,33 @@ impl BillingPeriod {
             }
         }
         Self::calendar_month(now)
+    }
+
+    /// The stored anchor when it contains `now`.
+    pub fn covering(
+        anchor: Option<(DateTime<Utc>, DateTime<Utc>)>,
+        now: DateTime<Utc>,
+    ) -> Option<Self> {
+        let (start, end) = anchor?;
+        (start <= now && now < end).then_some(Self { start, end })
+    }
+
+    /// The part of this subscription window to store and meter after the
+    /// stored anchor.
+    ///
+    /// The start moves up to the anchor's end because the store refuses a start
+    /// that overlaps the stored window. `None` when that part does not contain
+    /// `now`, because it is then not a period to meter.
+    pub fn adopted(
+        self,
+        anchor: Option<(DateTime<Utc>, DateTime<Utc>)>,
+        now: DateTime<Utc>,
+    ) -> Option<Self> {
+        let start = match anchor {
+            Some((_, stored_end)) => self.start.max(stored_end),
+            None => self.start,
+        };
+        Self::covering(Some((start, self.end)), now)
     }
 
     /// The period immediately before this one, assuming the same length in
@@ -357,13 +390,13 @@ impl Entitlement {
     }
 
     /// Included AI for this user's seat, in cents at provider cost.
-    pub fn included_ai_cents(&self) -> i64 {
-        self.tier.included_ai_cents_per_seat()
+    pub fn included_ai_cents(&self, pricing: AiPricing) -> i64 {
+        self.tier.included_ai_cents_per_seat(pricing)
     }
 
     /// Each billed seat with its own included AI. Unused allowance never moves
     /// between seats; only credits and overage are shared by the payer.
-    pub fn seat_allowances(&self) -> Vec<SeatAllowance> {
+    pub fn seat_allowances(&self, pricing: AiPricing) -> Vec<SeatAllowance> {
         self.billed_users
             .iter()
             .enumerate()
@@ -371,7 +404,7 @@ impl Entitlement {
                 let tier = self.seat_tiers.get(index).copied().unwrap_or(self.tier);
                 SeatAllowance {
                     user: user.clone(),
-                    included_cents: tier.included_ai_cents_per_seat(),
+                    included_cents: tier.included_ai_cents_per_seat(pricing),
                 }
             })
             .collect()
@@ -381,27 +414,98 @@ impl Entitlement {
     pub fn is_payer(&self, user: &MacroUserIdStr<'_>) -> bool {
         self.payer.as_ref() == user.as_ref()
     }
+
+    /// Paid and finite: usage is metered against a subscription period.
+    pub fn is_metered(&self) -> bool {
+        self.tier.is_paid() && !self.unlimited
+    }
+}
+
+/// When and how far a payer's credit balance is automatically reloaded.
+///
+/// The legacy `overage_enabled` storage field now controls only automatic reloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AutoReloadThresholds {
+    /// Reload once the effective balance drops below this, in customer cents.
+    pub minimum_cents: i64,
+    /// Reload the balance back up to this, in customer cents.
+    pub target_cents: i64,
+    /// Most a payer will be reloaded per UTC calendar month, in customer
+    /// cents. `None` means no limit.
+    pub monthly_limit_cents: Option<i64>,
+}
+
+impl Default for AutoReloadThresholds {
+    fn default() -> Self {
+        Self {
+            minimum_cents: AUTO_RELOAD_DEFAULT_MINIMUM_CENTS,
+            target_cents: AUTO_RELOAD_DEFAULT_TARGET_CENTS,
+            monthly_limit_cents: None,
+        }
+    }
+}
+
+impl AutoReloadThresholds {
+    /// Reject thresholds that could never produce a chargeable reload or
+    /// that exceed the offered range.
+    pub fn validate(&self) -> Result<()> {
+        if self.minimum_cents <= 0 {
+            return Err(BillingError::InvalidAutoReload(
+                "minimum balance must be positive",
+            ));
+        }
+        if self.target_cents < self.minimum_cents + MIN_STRIPE_CHARGE_CENTS {
+            return Err(BillingError::InvalidAutoReload(
+                "target balance must be at least $0.50 above the minimum balance",
+            ));
+        }
+        if self.target_cents > AUTO_RELOAD_TARGET_MAX_CENTS {
+            return Err(BillingError::InvalidAutoReload(
+                "target balance exceeds the largest offered reload",
+            ));
+        }
+        // Keep the offered minimum monthly reload budget.
+        if self
+            .monthly_limit_cents
+            .is_some_and(|limit| limit < OVERAGE_LIMIT_MIN_CENTS)
+        {
+            return Err(BillingError::InvalidAutoReload(
+                "monthly spend limit must be at least $5",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The payer's overage settings, Stripe period anchor, and open-seat generation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BillingSettings {
-    /// Whether usage past allowance and credits is billed as overage.
+    /// Legacy storage name for the automatic reload opt-in. Never authorizes direct charges.
     pub overage_enabled: bool,
     /// Per-period cap on overage, in customer cents.
     pub overage_limit_cents: i64,
     /// Set when an overage charge failed to collect.
     pub overage_suspended_at: Option<DateTime<Utc>>,
-    /// The subscription period last synced from Stripe.
+    /// When and how far credits are automatically reloaded.
+    pub auto_reload: AutoReloadThresholds,
+    /// Set when an automatic reload failed to collect.
+    pub auto_reload_suspended_at: Option<DateTime<Utc>>,
+    /// The subscription period last observed from Stripe (webhook or read-through).
     pub period_anchor: Option<(DateTime<Utc>, DateTime<Utc>)>,
     /// Generation of the payer's open-seat roster. Zero when no account row exists.
     pub seat_generation: SeatGeneration,
 }
 
 impl BillingSettings {
-    /// Whether overage can currently be charged.
+    /// Direct usage charges are permanently disabled, regardless of stored legacy settings.
     pub fn overage_active(&self) -> bool {
-        self.overage_enabled && self.overage_suspended_at.is_none() && self.overage_limit_cents > 0
+        false
+    }
+
+    /// Whether credits are automatically reloaded: the payer opted in and no
+    /// reload has failed since the payer last re-enabled it.
+    pub fn auto_reload_active(&self) -> bool {
+        self.overage_enabled && self.auto_reload_suspended_at.is_none()
     }
 }
 
@@ -442,6 +546,21 @@ pub enum OverageChargeStatus {
     Failed,
 }
 
+/// Lifecycle of an automatic credit reload pushed to Stripe.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum CreditReloadStatus {
+    /// Reserved; Stripe not yet confirmed.
+    Pending,
+    /// Collected and booked as credits.
+    Paid,
+    /// Collection failed and automatic reloads are suspended.
+    Failed,
+}
+
 /// Why a request was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, strum::Display)]
 #[serde(rename_all = "snake_case")]
@@ -449,6 +568,9 @@ pub enum OverageChargeStatus {
 pub enum DenyReason {
     /// The plan's included AI is used up and no credits or overage remain.
     AllowanceExhausted,
+    /// The free plan's monthly AI is used up. Free has no credits or overage;
+    /// only an upgrade (or the next month) lifts it.
+    FreeAllowanceExhausted,
     /// Overage is on but the payer's per-period cap has been reached.
     OverageLimitReached,
     /// An overage charge failed; overage is paused until the payer re-enables it.
@@ -460,6 +582,7 @@ impl DenyReason {
     pub fn code(self) -> &'static str {
         match self {
             DenyReason::AllowanceExhausted => "ai_allowance_exhausted",
+            DenyReason::FreeAllowanceExhausted => "ai_free_allowance_exhausted",
             DenyReason::OverageLimitReached => "ai_overage_limit_reached",
             DenyReason::OveragePaymentFailed => "ai_overage_payment_failed",
         }
@@ -469,13 +592,16 @@ impl DenyReason {
     pub fn message(self) -> &'static str {
         match self {
             DenyReason::AllowanceExhausted => {
-                "You've used this period's included AI. Add credits or turn on usage billing to keep going."
+                "You've used this period's included AI. Add credits or turn on automatic reload to keep going."
+            }
+            DenyReason::FreeAllowanceExhausted => {
+                "You've used this month's free AI. Upgrade to a paid plan to keep going."
             }
             DenyReason::OverageLimitReached => {
                 "You've reached your AI spending limit for this period. Raise the limit or add credits to keep going."
             }
             DenyReason::OveragePaymentFailed => {
-                "Your last AI usage charge didn't go through. Update your payment method and re-enable usage billing."
+                "Your last automatic credit reload didn't go through. Update your payment method and re-enable automatic reload."
             }
         }
     }
@@ -488,6 +614,22 @@ pub enum AllowanceDecision {
     Allow,
     /// Refuse, for the given reason.
     Deny(DenyReason),
+}
+
+/// The payer's automatic reload settings, as shown in Billing settings.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AutoReloadSnapshot {
+    /// Reload once the effective balance drops below this, in customer cents.
+    pub minimum_balance_cents: i64,
+    /// Reload the balance back up to this, in customer cents.
+    pub target_balance_cents: i64,
+    /// Most reloaded per UTC calendar month, in customer cents. `null` when
+    /// there is no limit.
+    pub monthly_spend_limit_cents: Option<i64>,
+    /// Whether reloads are paused after a failed reload charge.
+    pub suspended: bool,
+    /// Whether reloads will fire: the payer opted in and reloads are not suspended.
+    pub active: bool,
 }
 
 /// The payer's current-period position, as shown in Billing settings and used
@@ -517,7 +659,7 @@ pub struct UsageSnapshot {
     pub credits_consumed_cents: i64,
     /// Shared prepaid credit balance, in customer cents.
     pub credit_balance_cents: i64,
-    /// Whether overage billing is on.
+    /// Legacy API name for the automatic reload opt-in. Never authorizes direct charges.
     pub overage_enabled: bool,
     /// Per-period overage cap, in customer cents.
     pub overage_limit_cents: i64,
@@ -525,6 +667,9 @@ pub struct UsageSnapshot {
     pub overage_charged_cents: i64,
     /// Whether overage is paused after a failed charge.
     pub overage_suspended: bool,
+    /// Automatic credit reload settings. `active` means the payer opted in and
+    /// reloads are not suspended.
+    pub auto_reload: AutoReloadSnapshot,
     /// Team-wide usage beyond per-seat allowances, at the overage markup, that
     /// is not yet covered by shared credits or charges (awaiting settlement).
     /// Customer cents.
@@ -553,6 +698,13 @@ pub enum BillingError {
     /// Outside the allowed overage cap range.
     #[error("overage limit must be between ${} and ${}", OVERAGE_LIMIT_MIN_CENTS / 100, OVERAGE_LIMIT_MAX_CENTS / 100)]
     InvalidOverageLimit,
+    /// Direct usage billing has been retired; only prepaid credits fund extra usage.
+    #[error("direct usage billing is no longer available; use automatic credit reload")]
+    DirectUsageBillingDisabled,
+    /// Automatic reload thresholds that could never charge or exceed the
+    /// offered range ([`AutoReloadThresholds::validate`]).
+    #[error("invalid automatic reload settings: {0}")]
+    InvalidAutoReload(&'static str),
     /// The payer has no Stripe customer to bill.
     #[error("no payment account on file")]
     NoStripeCustomer,

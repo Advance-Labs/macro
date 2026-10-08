@@ -1,6 +1,9 @@
 use super::*;
-use crate::domain::models::{OVERAGE_CHARGE_THRESHOLD_CENTS, PayerScope};
-use crate::domain::pricing::extra_customer_cents;
+use crate::domain::models::{
+    AUTO_RELOAD_TARGET_MAX_CENTS, BillingError, OVERAGE_CHARGE_THRESHOLD_CENTS,
+    OVERAGE_LIMIT_MIN_CENTS, PayerScope,
+};
+use crate::domain::pricing::AiPricing;
 use chrono::{TimeZone, Utc};
 
 fn user(email: &str) -> MacroUserIdStr<'static> {
@@ -19,7 +22,8 @@ fn policy(active: bool, limit: i64, ended: bool) -> SettlementPolicy {
 /// `used` and `included` are cost cents; the rest is customer money.
 fn state(used: i64, included: i64, consumed: i64, charged: i64, balance: i64) -> SettlementState {
     SettlementState {
-        chargeable_customer_cents: extra_customer_cents((used - included).max(0)),
+        chargeable_customer_cents: AiPricing::testing()
+            .extra_customer_cents((used - included).max(0)),
         credits_consumed_cents: consumed,
         overage_charged_cents: charged,
         credit_balance_cents: balance,
@@ -27,10 +31,19 @@ fn state(used: i64, included: i64, consumed: i64, charged: i64, balance: i64) ->
 }
 
 #[test]
-fn included_allowance_is_the_same_at_cost_for_every_paid_seat() {
-    assert_eq!(PlanTier::Premium.included_ai_cents_per_seat(), 2_000);
-    assert_eq!(PlanTier::Max.included_ai_cents_per_seat(), 2_000);
-    assert_eq!(PlanTier::Free.included_ai_cents_per_seat(), 0);
+fn included_allowance_is_each_plans_configured_amount_at_cost() {
+    assert_eq!(
+        PlanTier::Premium.included_ai_cents_per_seat(AiPricing::testing()),
+        2_000
+    );
+    assert_eq!(
+        PlanTier::Max.included_ai_cents_per_seat(AiPricing::testing()),
+        10_000
+    );
+    assert_eq!(
+        PlanTier::Free.included_ai_cents_per_seat(AiPricing::testing()),
+        500
+    );
 
     let mut team = Entitlement::personal(user("owner@x.com"), PlanTier::Premium);
     team.billed_users.push(user("a@x.com"));
@@ -41,9 +54,9 @@ fn included_allowance_is_the_same_at_cost_for_every_paid_seat() {
         team_id: macro_uuid::generate_uuid_v7(),
     };
     assert_eq!(team.seats(), 3);
-    assert_eq!(team.included_ai_cents(), 2_000);
+    assert_eq!(team.included_ai_cents(AiPricing::testing()), 2_000);
     assert_eq!(
-        team.seat_allowances()
+        team.seat_allowances(AiPricing::testing())
             .into_iter()
             .map(|seat| seat.included_cents)
             .collect::<Vec<_>>(),
@@ -62,8 +75,8 @@ fn mixed_seat_plans_keep_one_allowance_per_seat() {
         team_id: macro_uuid::generate_uuid_v7(),
     };
     assert_eq!(team.seats(), 3);
-    assert_eq!(team.included_ai_cents(), 2_000);
-    let allowances = team.seat_allowances();
+    assert_eq!(team.included_ai_cents(AiPricing::testing()), 2_000);
+    let allowances = team.seat_allowances(AiPricing::testing());
     assert_eq!(
         allowances
             .iter()
@@ -71,13 +84,13 @@ fn mixed_seat_plans_keep_one_allowance_per_seat() {
             .collect::<Vec<_>>(),
         vec!["macro|owner@x.com", "macro|a@x.com", "macro|b@x.com"]
     );
-    // Max has no allowance of its own yet: every paid seat gets the same at-cost amount.
+    // Each seat gets its own plan's at-cost allowance.
     assert_eq!(
         allowances
             .into_iter()
             .map(|seat| seat.included_cents)
             .collect::<Vec<_>>(),
-        vec![2_000, 2_000, 2_000]
+        vec![2_000, 10_000, 2_000]
     );
     assert_eq!(team.tier, PlanTier::Premium);
 }
@@ -159,7 +172,97 @@ fn settling_in_chunks_books_the_same_money_as_settling_once() {
     assert_eq!(second.consume_credits_cents, 525);
     assert_eq!(
         first.consume_credits_cents + second.consume_credits_cents,
-        extra_customer_cents(1_500)
+        AiPricing::testing().extra_customer_cents(1_500)
+    );
+}
+
+fn reload_state(balance: i64, uncovered: i64, spent: i64) -> ReloadState {
+    ReloadState {
+        credit_balance_cents: balance,
+        uncovered_cents: uncovered,
+        spent_this_month_cents: spent,
+    }
+}
+
+fn thresholds(minimum: i64, target: i64, monthly_limit: Option<i64>) -> AutoReloadThresholds {
+    AutoReloadThresholds {
+        minimum_cents: minimum,
+        target_cents: target,
+        monthly_limit_cents: monthly_limit,
+    }
+}
+
+#[test]
+fn no_reload_at_or_above_the_minimum() {
+    let t = thresholds(1_000, 10_000, None);
+    assert_eq!(plan_reload(reload_state(1_000, 0, 0), &t), None);
+    assert_eq!(plan_reload(reload_state(5_000, 0, 0), &t), None);
+    // Uncovered usage is subtracted first, but 1_500 - 500 still meets the minimum.
+    assert_eq!(plan_reload(reload_state(1_500, 500, 0), &t), None);
+}
+
+#[test]
+fn reload_tops_the_effective_balance_up_to_the_target() {
+    let t = thresholds(1_000, 10_000, None);
+    assert_eq!(plan_reload(reload_state(999, 0, 0), &t), Some(9_001));
+    assert_eq!(plan_reload(reload_state(500, 0, 0), &t), Some(9_500));
+    // Uncovered usage past the balance leaves a negative effective balance
+    // that the reload also has to cover.
+    assert_eq!(plan_reload(reload_state(500, 2_000, 0), &t), Some(11_500));
+}
+
+#[test]
+fn monthly_limit_caps_the_reload() {
+    let t = thresholds(1_000, 10_000, Some(5_000));
+    assert_eq!(plan_reload(reload_state(0, 0, 0), &t), Some(5_000));
+    assert_eq!(plan_reload(reload_state(0, 0, 3_000), &t), Some(2_000));
+    // The limit is spent (or overspent): nothing left to reload.
+    assert_eq!(plan_reload(reload_state(0, 0, 5_000), &t), None);
+    assert_eq!(plan_reload(reload_state(0, 0, 6_000), &t), None);
+}
+
+#[test]
+fn reload_below_the_stripe_minimum_is_skipped() {
+    // Only 49 cents of monthly room left.
+    let t = thresholds(1_000, 10_000, Some(5_000));
+    assert_eq!(plan_reload(reload_state(0, 0, 4_951), &t), None);
+    assert_eq!(plan_reload(reload_state(0, 0, 4_950), &t), Some(50));
+}
+
+#[test]
+fn default_thresholds_are_valid() {
+    let defaults = AutoReloadThresholds::default();
+    assert_eq!(defaults, thresholds(1_000, 10_000, None));
+    assert!(defaults.validate().is_ok());
+}
+
+#[test]
+fn thresholds_reject_each_invalid_setting() {
+    let invalid = [
+        thresholds(0, 10_000, None),
+        thresholds(-1, 10_000, None),
+        thresholds(1_000, 1_049, None),
+        thresholds(1_000, AUTO_RELOAD_TARGET_MAX_CENTS + 1, None),
+        thresholds(1_000, 10_000, Some(0)),
+        thresholds(1_000, 10_000, Some(-1)),
+        thresholds(1_000, 10_000, Some(OVERAGE_LIMIT_MIN_CENTS - 1)),
+    ];
+    for t in invalid {
+        assert!(
+            matches!(t.validate(), Err(BillingError::InvalidAutoReload(_))),
+            "{t:?} should be invalid"
+        );
+    }
+
+    assert!(thresholds(1_000, 1_050, None).validate().is_ok());
+    assert!(
+        thresholds(
+            1_000,
+            AUTO_RELOAD_TARGET_MAX_CENTS,
+            Some(OVERAGE_LIMIT_MIN_CENTS)
+        )
+        .validate()
+        .is_ok()
     );
 }
 
@@ -173,9 +276,18 @@ fn snapshot_for(
     let u = user("me@x.com");
     let ent = Entitlement::personal(u.clone(), tier);
     let period = BillingPeriod::calendar_month(Utc::now());
-    let chargeable = extra_customer_cents((used - ent.included_ai_cents()).max(0));
+    let chargeable = AiPricing::testing()
+        .extra_customer_cents((used - ent.included_ai_cents(AiPricing::testing())).max(0));
     build_snapshot(
-        &u, &ent, &settings, period, used, chargeable, ledger, balance,
+        &u,
+        &ent,
+        &settings,
+        period,
+        used,
+        chargeable,
+        ledger,
+        balance,
+        AiPricing::testing(),
     )
 }
 
@@ -240,7 +352,7 @@ fn gate_counts_unsettled_usage_against_credits() {
 }
 
 #[test]
-fn gate_uses_overage_room_and_reports_the_cap() {
+fn gate_never_counts_legacy_overage_room_as_funding() {
     let settings = BillingSettings {
         overage_enabled: true,
         overage_limit_cents: 2_000,
@@ -253,10 +365,13 @@ fn gate_uses_overage_room_and_reports_the_cap() {
         PeriodLedger::default(),
         0,
     );
-    // 1_500 cost over is 1_575 owed against 2_000 of room: 425 left pays for 404 cost cents.
+    // The historical cap cannot fund any of the 1_575 uncovered cents.
     assert_eq!(s.uncovered_cents, 1_575);
-    assert_eq!(s.remaining_cents, 404);
-    assert_eq!(decide(&s), AllowanceDecision::Allow);
+    assert_eq!(s.remaining_cents, 0);
+    assert_eq!(
+        decide(&s),
+        AllowanceDecision::Deny(DenyReason::AllowanceExhausted)
+    );
 
     let s = snapshot_for(
         PlanTier::Premium,
@@ -271,7 +386,7 @@ fn gate_uses_overage_room_and_reports_the_cap() {
     assert_eq!(s.remaining_cents, 0);
     assert_eq!(
         decide(&s),
-        AllowanceDecision::Deny(DenyReason::OverageLimitReached)
+        AllowanceDecision::Deny(DenyReason::AllowanceExhausted)
     );
 }
 
@@ -291,11 +406,11 @@ fn a_single_cent_of_headroom_does_not_pay_for_marked_up_usage() {
 }
 
 #[test]
-fn gate_reports_failed_payment_when_suspended() {
+fn gate_reports_failed_reload_when_suspended() {
     let settings = BillingSettings {
         overage_enabled: true,
         overage_limit_cents: 2_000,
-        overage_suspended_at: Some(Utc::now()),
+        auto_reload_suspended_at: Some(Utc::now()),
         ..Default::default()
     };
     let s = snapshot_for(
@@ -312,16 +427,91 @@ fn gate_reports_failed_payment_when_suspended() {
 }
 
 #[test]
-fn free_and_unlimited_are_never_blocked() {
+fn snapshot_reports_auto_reload_settings_and_activity() {
     let s = snapshot_for(
-        PlanTier::Free,
+        PlanTier::Premium,
         BillingSettings::default(),
-        99_999,
+        0,
         PeriodLedger::default(),
         0,
     );
+    assert_eq!(s.auto_reload.minimum_balance_cents, 1_000);
+    assert_eq!(s.auto_reload.target_balance_cents, 10_000);
+    assert_eq!(s.auto_reload.monthly_spend_limit_cents, None);
+    assert!(!s.auto_reload.suspended);
+    assert!(!s.auto_reload.active, "overage off: reloads never fire");
+
+    let settings = BillingSettings {
+        overage_enabled: true,
+        overage_limit_cents: 2_000,
+        auto_reload: thresholds(2_000, 20_000, Some(50_000)),
+        ..Default::default()
+    };
+    let s = snapshot_for(
+        PlanTier::Premium,
+        settings.clone(),
+        0,
+        PeriodLedger::default(),
+        0,
+    );
+    assert_eq!(s.auto_reload.minimum_balance_cents, 2_000);
+    assert_eq!(s.auto_reload.target_balance_cents, 20_000);
+    assert_eq!(s.auto_reload.monthly_spend_limit_cents, Some(50_000));
+    assert!(s.auto_reload.active);
+
+    let s = snapshot_for(
+        PlanTier::Premium,
+        BillingSettings {
+            auto_reload_suspended_at: Some(Utc::now()),
+            ..settings
+        },
+        0,
+        PeriodLedger::default(),
+        0,
+    );
+    assert!(s.auto_reload.suspended);
+    assert!(!s.auto_reload.active);
+}
+
+#[test]
+fn free_users_are_hard_capped_at_the_free_allowance() {
+    let s = snapshot_for(
+        PlanTier::Free,
+        BillingSettings::default(),
+        499,
+        PeriodLedger::default(),
+        0,
+    );
+    assert_eq!(s.included_cents, 500);
+    assert_eq!(s.remaining_cents, 1);
     assert_eq!(decide(&s), AllowanceDecision::Allow);
 
+    // Leftover credits or an (impossible) overage setting never extend the cap.
+    let s = snapshot_for(
+        PlanTier::Free,
+        BillingSettings {
+            overage_enabled: true,
+            overage_limit_cents: 10_000,
+            ..Default::default()
+        },
+        500,
+        PeriodLedger::default(),
+        5_000,
+    );
+    assert_eq!(s.remaining_cents, 0);
+    assert_eq!(
+        decide(&s),
+        AllowanceDecision::Deny(DenyReason::FreeAllowanceExhausted)
+    );
+    assert_eq!(s.blocked_reason, Some(DenyReason::FreeAllowanceExhausted));
+    assert_eq!(
+        DenyReason::FreeAllowanceExhausted.code(),
+        "ai_free_allowance_exhausted"
+    );
+}
+
+#[test]
+fn unlimited_is_never_blocked() {
     let u = user("ent@x.com");
     let mut ent = Entitlement::personal(u.clone(), PlanTier::Premium);
     ent.unlimited = true;
@@ -331,9 +521,10 @@ fn free_and_unlimited_are_never_blocked() {
         &BillingSettings::default(),
         BillingPeriod::calendar_month(Utc::now()),
         99_999,
-        extra_customer_cents(97_999),
+        AiPricing::testing().extra_customer_cents(97_999),
         PeriodLedger::default(),
         0,
+        AiPricing::testing(),
     );
     assert_eq!(decide(&s), AllowanceDecision::Allow);
     assert_eq!(s.remaining_cents, i64::MAX);
@@ -362,10 +553,11 @@ fn team_member_is_not_the_payer() {
         0,
         PeriodLedger::default(),
         0,
+        AiPricing::testing(),
     );
     assert!(!s.can_manage_billing);
     assert_eq!(s.seats, 2);
-    assert_eq!(s.included_cents, 2_000);
+    assert_eq!(s.included_cents, 10_000);
 }
 
 #[test]
@@ -417,6 +609,79 @@ fn billing_period_falls_back_to_the_calendar_month() {
     assert_eq!(
         BillingPeriod::current(Some((period.end, period.start)), now),
         period
+    );
+}
+
+#[test]
+fn billing_period_covering_needs_an_anchor_that_contains_now() {
+    let start = Utc.with_ymd_and_hms(2026, 4, 10, 0, 0, 0).unwrap();
+    let end = Utc.with_ymd_and_hms(2026, 5, 10, 0, 0, 0).unwrap();
+    let inside = Utc.with_ymd_and_hms(2026, 4, 18, 12, 0, 0).unwrap();
+
+    assert_eq!(
+        BillingPeriod::covering(Some((start, end)), inside),
+        Some(BillingPeriod { start, end })
+    );
+    assert_eq!(
+        BillingPeriod::covering(Some((start, end)), start),
+        Some(BillingPeriod { start, end }),
+        "the start is inclusive"
+    );
+    assert_eq!(BillingPeriod::covering(None, inside), None, "missing");
+    assert_eq!(
+        BillingPeriod::covering(Some((start, end)), end),
+        None,
+        "ended: the end is exclusive"
+    );
+    assert_eq!(
+        BillingPeriod::covering(
+            Some((start, end)),
+            Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap()
+        ),
+        None,
+        "future"
+    );
+    assert_eq!(
+        BillingPeriod::covering(Some((end, start)), inside),
+        None,
+        "inverted"
+    );
+}
+
+#[test]
+fn billing_period_adopted_starts_at_the_stored_end_and_contains_now() {
+    let subscription = BillingPeriod {
+        start: Utc.with_ymd_and_hms(2026, 2, 3, 0, 0, 0).unwrap(),
+        end: Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
+    };
+    let now = Utc.with_ymd_and_hms(2026, 2, 20, 12, 0, 0).unwrap();
+
+    assert_eq!(
+        subscription.adopted(None, now),
+        Some(BillingPeriod {
+            start: Utc.with_ymd_and_hms(2026, 2, 3, 0, 0, 0).unwrap(),
+            end: Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
+        }),
+        "no anchor"
+    );
+    assert_eq!(
+        subscription.adopted(
+            Some((
+                Utc.with_ymd_and_hms(2026, 1, 15, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2026, 2, 15, 0, 0, 0).unwrap(),
+            )),
+            now
+        ),
+        Some(BillingPeriod {
+            start: Utc.with_ymd_and_hms(2026, 2, 15, 0, 0, 0).unwrap(),
+            end: Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
+        }),
+        "overlapping anchor"
+    );
+    assert_eq!(
+        subscription.adopted(None, Utc.with_ymd_and_hms(2026, 3, 10, 0, 0, 0).unwrap()),
+        None,
+        "ended before now"
     );
 }
 

@@ -31,7 +31,15 @@ async fn configured_recorders_preserve_analytics_and_count_only_enabled_billable
         (enabled, UsageContext::system(AiFeature::Chat)),
     ] {
         assert!(recorder.tracking().is_some());
-        recorder.record(context.into_event("claude-opus-5".into(), 1_000_000, 0));
+        recorder.record(context.into_event(
+            "claude-opus-5".into(),
+            ai_usage::UsageAmount::Tokens {
+                input: 1_000_000,
+                output: 0,
+                cache_read: 0,
+                cache_write: 0,
+            },
+        ));
     }
 
     let analytics = ai_usage::outbound::PgUsageRepo::new(pool.clone());
@@ -73,10 +81,18 @@ async fn configured_composition_skips_billing_only_for_disabled_or_exempt_work()
         .unwrap();
     pool.close().await;
     let user = MacroUserIdStr::try_from("macro|quota@example.com".to_owned()).unwrap();
-    let disabled = pg_admission_service(pool.clone(), AiUsageEnforcement::Disabled);
+    let disabled = pg_admission_service(
+        pool.clone(),
+        AiUsageEnforcement::Disabled,
+        AiPricing::testing(),
+    );
     assert_eq!(disabled.admit(&user, AiFeature::Chat).await, Ok(()));
 
-    let enabled = pg_admission_service(pool.clone(), AiUsageEnforcement::Enabled);
+    let enabled = pg_admission_service(
+        pool.clone(),
+        AiUsageEnforcement::Enabled,
+        AiPricing::testing(),
+    );
     for feature in ai_usage::NON_BILLABLE_AI_FEATURES {
         assert_eq!(enabled.admit(&user, feature).await, Ok(()));
     }

@@ -68,6 +68,10 @@ pub async fn test_model_access(ctx: &ApiContext) -> DcsChatModelAccess {
 pub struct MockConnectionRepo;
 
 impl MockConnectionRepo {
+    #[expect(
+        clippy::new_ret_no_self,
+        reason = "tests take the mock as the trait object ApiContext stores"
+    )]
     pub fn new() -> Arc<dyn ConnectionRepo> {
         Arc::new(Self)
     }
@@ -134,6 +138,10 @@ pub struct MockStreamRepo {
 }
 
 impl MockStreamRepo {
+    #[expect(
+        clippy::new_ret_no_self,
+        reason = "tests take the mock as the trait object ApiContext stores"
+    )]
     pub fn new() -> Arc<dyn StreamRepo> {
         let (tx, _) = broadcast::channel(16);
         Arc::new(Self { tx })
@@ -166,7 +174,9 @@ impl StreamRepo for MockStreamRepo {
 pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Arc<ApiContext> {
     let config = Config::new_empty_for_test();
     let enforcement = config.enable_ai_usage_enforcement;
-    let admission = ai_billing::composition::pg_admission_service(pool.clone(), enforcement);
+    let pricing = config.ai_pricing();
+    let admission =
+        ai_billing::composition::pg_admission_service(pool.clone(), enforcement, pricing);
     let recorder = ai_usage::pg_recorder_with_enforcement(pool.clone(), enforcement);
     use aws_sdk_sqs;
     use channels::{
@@ -260,7 +270,6 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
         ),
         crm::domain::service::NoOpCrmService,
         github_pull_request_service,
-        reminders::domain::service::NoOpRemindersService,
     ));
 
     let ingress_queue = SqsQueue::new(
@@ -454,6 +463,24 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
         pool.clone(),
     );
 
+    let calendar_tool_context = ai_tools::build_calendar_tool_context(
+        pool.clone(),
+        macro_service_urls::ServiceUrl::owned("http://localhost:0").into(),
+        "test-internal-api-key".to_string(),
+    );
+    let forms_tool_context = ai_tools::build_forms_tool_context(
+        pool.clone(),
+        &document_tool_context,
+        &databases_tool_context,
+        &calendar_tool_context,
+        None,
+        ai_tools::MaybeToolEventBroker::Real(macro_event_broker.clone()),
+        ai_tools::FormsToolConfig {
+            app_origin: "https://macro.test".into(),
+            editing_worker_url: "http://localhost:8933".into(),
+        },
+    );
+
     let tool_service_context = ai_tools::ToolServiceContext {
         search_service_client: search_service_client.clone(),
         email_service_client: email_service_client_external.clone(),
@@ -471,18 +498,19 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
         properties_tool_context: properties_tool_context.clone(),
         email_tool_context: email_tool_context.clone(),
         call_tool_context: call_tool_context.clone(),
+        booking_link_tool_context: ai_tools::build_booking_link_tool_context(
+            pool.clone(),
+            macro_env::Environment::Local,
+        ),
         calendar_tool_context: ai_tools::build_calendar_tool_context(
             pool.clone(),
             macro_service_urls::ServiceUrl::owned("http://localhost:0").into(),
             "test-internal-api-key".to_string(),
         ),
+        team_calendar_tool_context: ai_tools::build_team_calendar_tool_context(pool.clone(), true),
         notification_tool_context: notification_tool_context.clone(),
-        reminders_tool_context: ai_tools::build_reminders_tool_context(
-            pool.clone(),
-            user_email_service.clone(),
-            entity_access_service.clone(),
-        ),
         databases_tool_context,
+        forms_tool_context,
         databases_sql_tool_context,
         import_tool_context: ai_tools::ToolImportToolContext::unwired(),
         chat_tool_context,
@@ -559,6 +587,9 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
                 Arc::new(creator),
                 recorder.clone(),
             )
+            .with_slack_source(Arc::new(
+                import::outbound::mcp_slack_source::McpSlackSource::new(mcp_selector.clone()),
+            ))
             .with_admission(admission.clone()),
         );
         let onboarding_service = Arc::new(onboarding::domain::service::OnboardingServiceImpl::new(
@@ -644,8 +675,14 @@ pub async fn test_api_context(pool: sqlx::Pool<sqlx::Postgres>) -> std::sync::Ar
                     teams::outbound::team_repo::TeamRepositoryImpl::new(pool.clone()),
                 ),
                 ai_billing::outbound::PgUsageReader::new(pool.clone()),
-                ai_billing::outbound::PgBillingRepo::new(pool.clone()),
-                ai_billing::outbound::NoOpPaymentGateway,
+                ai_billing::outbound::PgBillingRepo::new(pool.clone(), pricing),
+                ai_billing::outbound::HttpPaymentGateway::new(Arc::new(
+                    authentication_service_client::AuthServiceClient::new(
+                        "testing".to_string(),
+                        "http://127.0.0.1:9".to_string(),
+                    ),
+                )),
+                pricing,
             )
             .with_enforcement(enforcement),
         ),

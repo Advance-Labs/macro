@@ -511,6 +511,26 @@ export type AiAdmissionErrorBody = {
     error: string;
 };
 
+/**
+ * Request body for answering a held tool call.
+ */
+export type AnswerToolApprovalRequest = {
+    /**
+     * The answer.
+     */
+    answer: ToolApprovalAnswerDto;
+};
+
+/**
+ * Response body for answering a held tool call.
+ */
+export type AnswerToolApprovalResponse = {
+    /**
+     * Where the call stands now.
+     */
+    status: ToolApprovalStatusDto;
+};
+
 export type BotId = string;
 
 /**
@@ -1150,6 +1170,39 @@ export type PromptAttachment = {
 export type PullRequestLinkSource = 'agent' | 'user';
 
 /**
+ * A session linked to a pull request, as a viewer of that session sees it.
+ */
+export type PullRequestLinkedSession = {
+    /**
+     * The session id.
+     */
+    sessionId: string;
+    /**
+     * Who associated the pull request with the session.
+     */
+    source: PullRequestLinkSource;
+    threadParent?: null | MessageParent;
+};
+
+/**
+ * The sessions linked to one pull request that the caller can view.
+ */
+export type PullRequestSessions = {
+    /**
+     * The pull request's `owner/repo/pull/number` key.
+     */
+    githubKey: string;
+    /**
+     * Linked sessions the caller can view, oldest link first.
+     */
+    sessions: Array<PullRequestLinkedSession>;
+    /**
+     * The requested pull request URL, canonicalized.
+     */
+    url: string;
+};
+
+/**
  * The sessions associated with a pull request.
  */
 export type PullRequestSessionsResponse = {
@@ -1167,6 +1220,26 @@ export type PullRequestUrl = {
      * The pull request's GitHub URL, such as `https://github.com/owner/repo/pull/12`.
      */
     url: string;
+};
+
+/**
+ * GitHub pull requests, by URL.
+ */
+export type PullRequestUrls = {
+    /**
+     * Pull request GitHub URLs, at most 100.
+     */
+    urls: Array<string>;
+};
+
+/**
+ * The sessions associated with each requested pull request.
+ */
+export type PullRequestsSessionsResponse = {
+    /**
+     * One entry per requested pull request, in request order.
+     */
+    pullRequests: Array<PullRequestSessions>;
 };
 
 /**
@@ -1370,6 +1443,16 @@ export type StatusResponse = {
     ephemeral: boolean;
 };
 
+/**
+ * How a person answers a held tool call.
+ */
+export type ToolApprovalAnswerDto = 'approve' | 'approve_and_remember' | 'deny' | 'cancel';
+
+/**
+ * Where a held tool call stands once answered.
+ */
+export type ToolApprovalStatusDto = 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired';
+
 export type UpdateChannelSharePermission = {
     accessLevel?: null | AccessLevel;
     /**
@@ -1393,6 +1476,23 @@ export type UpdateSharePermissionRequestV2 = {
     linkShare?: null | LinkShare;
     linkShareAccessLevel?: null | AccessLevel;
     teamShareAccessLevel?: null | AccessLevel;
+};
+
+/**
+ * A client-minted id deduplicates warm calls without creating a conversation.
+ */
+export type WarmAgentSessionRequest = {
+    /**
+     * Id reserved by this browser for its next in-memory conversation.
+     */
+    id: string;
+};
+
+/**
+ * A bounded best-effort warm attempt; absence means normal creation should proceed.
+ */
+export type WarmAgentSessionResponse = {
+    session?: null | AgentSessionResponse;
 };
 
 /**
@@ -1652,6 +1752,27 @@ export type AgentSessionsForPullRequestResponses = {
 
 export type AgentSessionsForPullRequestResponse = AgentSessionsForPullRequestResponses[keyof AgentSessionsForPullRequestResponses];
 
+export type AgentSessionsForPullRequestsData = {
+    body: PullRequestUrls;
+    path?: never;
+    query?: never;
+    url: '/agent-sessions/by-pull-requests';
+};
+
+export type AgentSessionsForPullRequestsErrors = {
+    400: string;
+    401: string;
+    500: string;
+};
+
+export type AgentSessionsForPullRequestsError = AgentSessionsForPullRequestsErrors[keyof AgentSessionsForPullRequestsErrors];
+
+export type AgentSessionsForPullRequestsResponses = {
+    200: PullRequestsSessionsResponse;
+};
+
+export type AgentSessionsForPullRequestsResponse = AgentSessionsForPullRequestsResponses[keyof AgentSessionsForPullRequestsResponses];
+
 export type PreviewAgentSessionsData = {
     body: PreviewAgentSessionsRequest;
     path?: never;
@@ -1675,6 +1796,19 @@ export type PreviewAgentSessionsResponses = {
 };
 
 export type PreviewAgentSessionsResponse2 = PreviewAgentSessionsResponses[keyof PreviewAgentSessionsResponses];
+
+export type WarmAgentSessionHandlerData = {
+    body: WarmAgentSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/agent-sessions/warm';
+};
+
+export type WarmAgentSessionHandlerResponses = {
+    200: WarmAgentSessionResponse;
+};
+
+export type WarmAgentSessionHandlerResponse = WarmAgentSessionHandlerResponses[keyof WarmAgentSessionHandlerResponses];
 
 export type DeleteAgentSessionData = {
     body?: never;
@@ -2220,6 +2354,48 @@ export type PutAgentSessionSandboxSizeResponses = {
 };
 
 export type PutAgentSessionSandboxSizeResponse = PutAgentSessionSandboxSizeResponses[keyof PutAgentSessionSandboxSizeResponses];
+
+export type AnswerAgentSessionToolApprovalData = {
+    body: AnswerToolApprovalRequest;
+    path: {
+        /**
+         * ID of the agent session
+         */
+        session_id: string;
+        /**
+         * ID of the held tool call
+         */
+        approval_id: string;
+    };
+    query?: never;
+    url: '/agent-sessions/{session_id}/tool-approvals/{approval_id}';
+};
+
+export type AnswerAgentSessionToolApprovalErrors = {
+    401: string;
+    /**
+     * Not the owner, for approve or deny; or no edit access
+     */
+    403: string;
+    404: string;
+    /**
+     * Already resolved
+     */
+    409: string;
+    /**
+     * Approve for good, for a call no person asked for
+     */
+    422: string;
+    500: string;
+};
+
+export type AnswerAgentSessionToolApprovalError = AnswerAgentSessionToolApprovalErrors[keyof AnswerAgentSessionToolApprovalErrors];
+
+export type AnswerAgentSessionToolApprovalResponses = {
+    200: AnswerToolApprovalResponse;
+};
+
+export type AnswerAgentSessionToolApprovalResponse = AnswerAgentSessionToolApprovalResponses[keyof AnswerAgentSessionToolApprovalResponses];
 
 export type DisconnectData = {
     body: EmptyRequest;

@@ -61,7 +61,7 @@ dashmap = { workspace = true }
 macro_uuid = { path = "../macro_uuid" }
 messages = { path = "../messages", features = ["ports", "schema"] }
 mockall = { workspace = true, optional = true }
-agent_fold = { path = "../agent_fold" }
+agent_fold = { path = "../folds/agent_fold" }
 # Only the domain vocabulary; `outbound` would pull rdkafka into every
 # consumer of this crate.
 macro_event_broker = { path = "../macro_event_broker", default-features = false }
@@ -81,6 +81,7 @@ model-entity = { path = "../model-entity", optional = true }
 model_owner = { path = "../model_owner" }
 models_permissions = { path = "../models_permissions" }
 share_permission_db_utils = { path = "../share_permission_db_utils", optional = true }
+shared_entity_registry = { path = "../entity_registry/shared_entity_registry" }
 clap = { workspace = true, optional = true }
 macro_authorization = { path = "../macro_authorization", default-features = false, optional = true }
 macro_user_id = { path = "../macro_user_id" }
@@ -114,7 +115,7 @@ bot_id = { path = "../bot_id", features = ["test-utils"] }
 harness_id = { path = "../harness_id", features = ["test-utils"] }
 model_user = { path = "../model_user" }
 non_empty = { path = "../non_empty" }
-agent_fold = { path = "../agent_fold", features = ["test-utils"] }
+agent_fold = { path = "../folds/agent_fold", features = ["test-utils"] }
 axum = { workspace = true, features = ["ws"] }
 macro_db_migrator = { path = "../macro_db_migrator" }
 opentelemetry = { workspace = true, features = ["trace"] }

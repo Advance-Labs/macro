@@ -20,6 +20,7 @@ import { InputProvider } from '@channel/Input/context';
 import { Input } from '@channel/Input/Input';
 import type { InputAttachmentData, InputCommands } from '@channel/Input/types';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
+import { preloadAgentFold } from '@core/agent-fold/client';
 import { buildConfig } from '@core/component/LexicalMarkdown/builder/MarkdownConfigBuilder';
 import { ComposerEditor } from '@core/component/LexicalMarkdown/component/ComposerEditor';
 import type { AgentCommandItem } from '@core/component/LexicalMarkdown/plugins';
@@ -30,7 +31,14 @@ import { useTouchOutsideToDismissKeyboard } from '@core/mobile/useTouchOutsideTo
 import { handleFileFolderDrop } from '@core/util/upload';
 import { $insertReferencedPaste } from '@macro-inc/lexical-core';
 import { Button, ComposerSurface, SendButton } from '@ui';
-import { createSignal, type JSX, onCleanup, onMount, Show } from 'solid-js';
+import {
+  createEffect,
+  createSignal,
+  type JSX,
+  onCleanup,
+  onMount,
+  Show,
+} from 'solid-js';
 
 /**
  * Id of the agent input's text-area wrapper. Exposed so callers (e.g. the
@@ -45,6 +53,12 @@ export interface AgentInputProps {
   placeholder?: string;
   /** Context to seed in the composer without sending it. */
   initialInput?: string;
+  /**
+   * Controlled composer text. Set with `onDraftChange` when a parent keeps
+   * the unsent message (an agent session draft).
+   */
+  draft?: string;
+  onDraftChange?: (draft: string) => void;
   /** The agent is working: the send button becomes a stop square. */
   busy?: boolean;
   /**
@@ -114,7 +128,13 @@ export interface AgentInputProps {
 }
 
 export function AgentInput(props: AgentInputProps) {
-  const [markdown, setMarkdown] = createSignal(props.initialInput ?? '');
+  const [owned, setOwned] = createSignal(props.initialInput ?? '');
+  const controlled = () => props.onDraftChange !== undefined;
+  const markdown = () => (controlled() ? (props.draft ?? '') : owned());
+  const setMarkdown = (value: string) => {
+    if (props.onDraftChange) props.onDraftChange(value);
+    else setOwned(value);
+  };
   const [isDraggedOver, setIsDraggedOver] = createSignal(false);
   let containerRef: HTMLDivElement | undefined;
   const [layout, setLayout] = createSignal<HTMLDivElement>();
@@ -167,6 +187,7 @@ export function AgentInput(props: AgentInputProps) {
     if (!canSend()) return;
     const content = markdown().trim();
     const attached = attachments();
+    setMarkdown('');
     editor.controls.clear();
     props.onSend(content, attached);
   };
@@ -238,6 +259,13 @@ export function AgentInput(props: AgentInputProps) {
     })
     .onChange(setMarkdown);
 
+  // A parent can restore or clear the draft after the editor has mounted.
+  createEffect(() => {
+    const next = markdown();
+    if (next !== editor.controls.getMarkdown())
+      editor.controls.setMarkdown(next);
+  });
+
   const { isCompact, hasMultilineContent } = createComposerLayout(
     editor.buildHandle().lexical,
     {
@@ -297,6 +325,7 @@ export function AgentInput(props: AgentInputProps) {
       <div
         ref={containerRef}
         data-keep-keyboard
+        onFocusIn={() => void preloadAgentFold()}
         class="flex flex-col gap-1.5"
         classList={{ 'opacity-50': props.readOnly }}
       >
@@ -359,7 +388,7 @@ export function AgentInput(props: AgentInputProps) {
                 >
                   <ComposerEditor
                     config={editor}
-                    initialValue={props.initialInput}
+                    initialValue={markdown()}
                     disabled={props.readOnly}
                     placeholder={
                       props.placeholder ??
