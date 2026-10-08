@@ -54,6 +54,7 @@ entity_access = { path = "../../crates/entity_access" }
 entity_registry = { path = "../../crates/entity_registry/entity_registry", default-features = false }
 entity_registry_db_utils = { path = "../../crates/entity_registry/entity_registry_db_utils" }
 futures = { workspace = true }
+http-body-util = { workspace = true }
 github = { path = "../../crates/github", default-features = false, features = [
   "outbound",
   "ports",

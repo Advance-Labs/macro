@@ -15,6 +15,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::Barrier;
 
+struct NoAppEgress;
+
+impl agent_egress::domain::service::EgressService for NoAppEgress {
+    async fn proxy(
+        &self,
+        _: &SessionToken,
+        _: agent_egress::domain::model::EgressTarget,
+        _: agent_egress::domain::model::ProxyRequest,
+    ) -> Result<agent_egress::domain::model::ProxyResponse, agent_egress::domain::error::EgressError>
+    {
+        panic!("internal tools must not be routed to a third-party app");
+    }
+}
+
 #[derive(Clone)]
 struct TestContext {
     gate: Arc<Barrier>,
@@ -157,10 +171,15 @@ async fn authenticated_mcp_runs_typescript_parallel_tools_and_persists_ui_result
     .await;
     let doc = &docs["result"]["structuredContent"]["tools"][0];
     assert_eq!(doc["name"], "LookupFixture");
+    // JSON Schema references must remain text: Gemini interprets `$ref` keys
+    // in structured tool responses as references to multimedia attachments.
+    let output_schema: serde_json::Value =
+        serde_json::from_str(doc["output_schema"].as_str().unwrap()).unwrap();
     assert_eq!(
-        doc["output_schema"]["$defs"]["LookupResult"]["properties"]["owner"]["type"],
+        output_schema["$defs"]["LookupResult"]["properties"]["owner"]["type"],
         "string"
     );
+    assert_eq!(output_schema["$ref"], "#/$defs/LookupResult");
     let source = "const values: string[] = ['first', 'second']; const rows = await Promise.all(values.map(value => sdk.LookupFixture({value}))); return rows.map(row => row.value);";
     let (_, response) = rpc(app.clone(), Some("session-secret"), "tools/call", json!({"name": "ExecuteCode", "arguments": {"execution_id": ExecutionId::mint(), "source": source}})).await;
     assert_ne!(response["result"]["isError"], true, "{response}");
@@ -182,6 +201,65 @@ async fn authenticated_mcp_runs_typescript_parallel_tools_and_persists_ui_result
             session.owner_user().unwrap().to_string()
         );
     }
+    // The default agent uses an in-process MCP client, not the HTTP listener.
+    // Exercise its real connector and authenticated router as well as the wire.
+    use agent_inmem::domain::mcp::McpToolConnector as _;
+    let connector = agent_inmem::outbound::acp_mcp::AcpMcpConnector::new(
+        agent_inmem::outbound::egress_mcp::EgressMcpClient::new(
+            Arc::new(NoAppEgress),
+            "http://localhost/agent-harness-egress",
+        )
+        .with_internal_mcp(crate::internal_mcp_handler(app.clone())),
+    );
+    let entry = |token| {
+        agent_client_protocol::schema::v1::McpServerHttp::new(
+            "macro_internal",
+            "http://localhost/agent-harness-egress/mcp/internal",
+        )
+        .headers(vec![agent_client_protocol::schema::v1::HttpHeader::new(
+            "Authorization",
+            format!("Bearer {token}"),
+        )])
+    };
+    assert!(
+        connector
+            .connect(vec![entry("wrong-session")])
+            .await
+            .is_none()
+    );
+    let remote = connector
+        .connect(vec![entry("session-secret")])
+        .await
+        .expect("the default agent must discover internal code tools");
+    let docs = remote
+        .try_tool_call(
+            (),
+            RequestContext::new(session.owner_user().unwrap().clone()),
+            "mcp__macro_internal__DescribeCodeTools",
+            &json!({"names": ["LookupFixture"]}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(docs["tools"][0]["name"], "LookupFixture");
+    let response = remote
+        .try_tool_call(
+            (),
+            RequestContext::new(session.owner_user().unwrap().clone()),
+            "mcp__macro_internal__ExecuteCode",
+            &json!({"execution_id": ExecutionId::mint(), "source": source}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let receipt = response;
+    assert_eq!(receipt["result"], json!(["first", "second"]));
+    let execution =
+        ExecutionId::from_uuid(receipt["executionId"].as_str().unwrap().parse().unwrap());
+    assert_eq!(
+        store.get(session.id, execution).await.unwrap().calls.len(),
+        2
+    );
     let (_, failed) = rpc(app.clone(), Some("session-secret"), "tools/call", json!({"name": "ExecuteCode", "arguments": {"execution_id": ExecutionId::mint(), "source": "await sdk.SendEmail({}); return true;"}})).await;
     assert_ne!(failed["result"]["isError"], true, "{failed}");
     assert_eq!(failed["result"]["structuredContent"]["status"], "failed");

@@ -11203,32 +11203,29 @@ export interface CodeToolsDescription {
   /**
    * Registered methods; schemas are null in the compact catalog.
    */
-  tools: ToolDocumentation[];
+  tools: CodeToolDescription[];
 }
 /**
- * SDK method documentation derived from the registered tool's schemas.
+ * A model-facing contract with schemas encoded as JSON text. Provider tool
+ * results can reserve object keys such as `$ref` for multimedia references.
  */
-export interface ToolDocumentation {
+export interface CodeToolDescription {
   /**
-   * The exact method name in `sdk.<name>(input)`.
+   * Exact method name under `sdk`.
    */
   name: string;
   /**
-   * Existing tool description, including use-case guidance.
+   * When and how to use this method.
    */
   description: string;
   /**
-   * Full input JSON schema, including any definitions it references.
+   * JSON-encoded input schema, including definitions; null in the catalog.
    */
-  input_schema: {
-    [k: string]: unknown;
-  };
+  input_schema?: string | null;
   /**
-   * Full output JSON schema.
+   * JSON-encoded output schema, including definitions; null in the catalog.
    */
-  output_schema: {
-    [k: string]: unknown;
-  };
+  output_schema?: string | null;
 }
 /**
  * Run an async TypeScript function body in an isolated Deno sandbox. First use DescribeCodeTools to learn SDK methods. Call them as await sdk.ToolName({...}); use Promise.all for independent calls. Return a JSON-compatible value for the model; only that value and an execution receipt are returned, while real inner calls retain their normal Macro UI. No imports, filesystem, network, environment, subprocesses, or npm. Await all calls before returning. Human-interactive tools and subagents must be called directly. A failure or cancellation does not undo completed writes; never replay writes blindly.

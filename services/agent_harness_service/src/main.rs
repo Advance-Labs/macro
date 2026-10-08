@@ -210,6 +210,28 @@ fn macro_mcp_endpoint(base_url: &McpServiceUrl) -> Result<url::Url, url::ParseEr
     url::Url::parse(&format!("{}/mcp", base_url.trim_end_matches('/')))
 }
 
+// Share the exact authenticated internal router between the listener and the
+// in-process MCP transport; internal tools are not third-party egress apps.
+fn internal_mcp_handler(
+    app: axum::Router,
+) -> agent_inmem::outbound::egress_mcp::InternalMcpHandler {
+    use http_body_util::BodyExt as _;
+    use tower::ServiceExt as _;
+    Arc::new(move |request| {
+        let app = app.clone();
+        Box::pin(async move {
+            let response = match app.oneshot(request.map(axum::body::Body::new)).await {
+                Ok(response) => response,
+                Err(never) => match never {},
+            };
+            response.map(|body| {
+                body.map_err(|error| -> agent_egress::domain::model::BoxError { Box::new(error) })
+                    .boxed_unsync()
+            })
+        })
+    })
+}
+
 async fn run() -> anyhow::Result<()> {
     agent_harness::install_tls_provider();
     // AWS first, because the config's secrets resolve through Secrets Manager.
@@ -498,18 +520,6 @@ async fn run() -> anyhow::Result<()> {
     // against it, so the two must be the same string.
     let egress_base_url = AgentHarnessEgressUrl::new()?.to_string();
 
-    // One connector for the agent and the telemetry catalog. It pools each
-    // server's session for the life of the egress token, so a replaced agent
-    // task and the catalog's listing reuse the handshake instead of opening
-    // a second set of clients and dropping them when the listing ends.
-    let mcp_connector = Arc::new(AcpMcpConnector::new(EgressMcpClient::new(
-        Arc::clone(&egress),
-        &egress_base_url,
-    )));
-    let tool_catalog: Arc<dyn agent_session::domain::ports::SessionToolCatalog> =
-        Arc::new(McpToolCatalog::new(Arc::clone(&mcp_connector)));
-    let sessions = sessions.with_tool_catalog(Arc::clone(&tool_catalog));
-
     let tool_context = ai_tools::build_tool_service_context_from_env(
         pool.clone(),
         event_broker_tracker.clone(),
@@ -568,6 +578,37 @@ async fn run() -> anyhow::Result<()> {
                 session_repo.clone(),
             )),
         ));
+    let session_pull_requests: Arc<dyn agent_session::domain::pull_request::SessionPullRequests> =
+        Arc::new(
+            agent_session::domain::pull_request::SessionPullRequestService::new(
+                session_repo.clone(),
+                ConnectionGatewayAgentSessionRealtime::new(
+                    connection_gateway.clone(),
+                    session_audience.clone(),
+                ),
+            ),
+        );
+    let internal_mcp = internal_mcp::router(
+        Arc::new(session_repo.clone()),
+        session_pull_requests.clone(),
+        url::Url::parse(&egress_base_url)?
+            .host_str()
+            .context("egress URL needs a host")?
+            .to_owned(),
+        code_mode_enabled.then(|| code_mode.clone()),
+    );
+    // One connector for the agent and the telemetry catalog. It pools each
+    // server's session for the life of the egress token, so a replaced agent
+    // task and the catalog's listing reuse the handshake instead of opening
+    // a second set of clients and dropping them when the listing ends.
+    let mcp_connector = Arc::new(AcpMcpConnector::new(
+        EgressMcpClient::new(Arc::clone(&egress), &egress_base_url)
+            .with_internal_mcp(internal_mcp_handler(internal_mcp.clone())),
+    ));
+    let tool_catalog: Arc<dyn agent_session::domain::ports::SessionToolCatalog> =
+        Arc::new(McpToolCatalog::new(Arc::clone(&mcp_connector)));
+    let sessions = sessions.with_tool_catalog(Arc::clone(&tool_catalog));
+
     let inmem_model_engine: Arc<dyn TurnEngine> =
         Arc::new(RigTurnEngine::new(pool.clone(), tool_context).with_gate(owner_tool_gate));
     // A model provider cannot fetch images from a private local-stack hostname.
@@ -661,16 +702,6 @@ async fn run() -> anyhow::Result<()> {
             GithubSyncClientImpl::default(),
         ),
     ));
-    let session_pull_requests: Arc<dyn agent_session::domain::pull_request::SessionPullRequests> =
-        Arc::new(
-            agent_session::domain::pull_request::SessionPullRequestService::new(
-                session_repo.clone(),
-                ConnectionGatewayAgentSessionRealtime::new(
-                    connection_gateway.clone(),
-                    session_audience.clone(),
-                ),
-            ),
-        );
     let session_working_branches: Arc<
         dyn agent_session::domain::working_branch::SessionWorkingBranches,
     > = Arc::new(
@@ -681,15 +712,6 @@ async fn run() -> anyhow::Result<()> {
                 session_audience.clone(),
             ),
         ),
-    );
-    let internal_mcp = internal_mcp::router(
-        Arc::new(session_repo.clone()),
-        session_pull_requests.clone(),
-        url::Url::parse(&egress_base_url)?
-            .host_str()
-            .context("egress URL needs a host")?
-            .to_owned(),
-        code_mode_enabled.then(|| code_mode.clone()),
     );
     let cursor_manager = CursorContainerManager::new(
         cursor_keys.clone(),

@@ -112,7 +112,32 @@ pub struct CodeToolsDescription {
     /// How to execute methods and interpret discovery results.
     pub instructions: String,
     /// Registered methods; schemas are null in the compact catalog.
-    pub tools: Vec<ToolDocumentation>,
+    pub tools: Vec<CodeToolDescription>,
+}
+
+/// A model-facing contract with schemas encoded as JSON text. Provider tool
+/// results can reserve object keys such as `$ref` for multimedia references.
+#[derive(Serialize, JsonSchema)]
+pub struct CodeToolDescription {
+    /// Exact method name under `sdk`.
+    pub name: String,
+    /// When and how to use this method.
+    pub description: String,
+    /// JSON-encoded input schema, including definitions; null in the catalog.
+    pub input_schema: Option<String>,
+    /// JSON-encoded output schema, including definitions; null in the catalog.
+    pub output_schema: Option<String>,
+}
+
+impl From<ToolDocumentation> for CodeToolDescription {
+    fn from(tool: ToolDocumentation) -> Self {
+        Self {
+            name: tool.name,
+            description: tool.description,
+            input_schema: (!tool.input_schema.is_null()).then(|| tool.input_schema.to_string()),
+            output_schema: (!tool.output_schema.is_null()).then(|| tool.output_schema.to_string()),
+        }
+    }
 }
 
 impl ToolAnnotated for DescribeCodeTools {
@@ -129,8 +154,8 @@ impl AsyncTool<CodeModeToolContext> for DescribeCodeTools {
         _request: RequestContext,
     ) -> ToolResult<Self::Output> {
         Ok(CodeToolsDescription {
-            instructions: "Methods are async: await sdk.ToolName(input). Input and output schemas include their definitions. Null schemas mean this is the compact catalog; request exact names for details. Use Promise.all for independent calls, await every call, and return JSON. The SDK enforces the session owner's permissions. Use ordinary direct tools for human interaction or subagents. console.log is diagnostic only; use return for model-visible data.".into(),
-            tools: context.service.describe(&self.names).map_err(tool_error)?,
+            instructions: "Methods are async: await sdk.ToolName(input). Input and output schemas are JSON-encoded strings including their definitions. Null schemas mean this is the compact catalog; request exact names for details. Use Promise.all for independent calls, await every call, and return JSON. The SDK enforces the session owner's permissions. Use ordinary direct tools for human interaction or subagents. console.log is diagnostic only; use return for model-visible data.".into(),
+            tools: context.service.describe(&self.names).map_err(tool_error)?.into_iter().map(CodeToolDescription::from).collect(),
         })
     }
 }

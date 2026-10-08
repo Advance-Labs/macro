@@ -9975,8 +9975,8 @@ export const CodeToolsDescription = z.object({
     z.object({
       name: z.string(),
       description: z.string(),
-      input_schema: z.any(),
-      output_schema: z.any(),
+      input_schema: z.union([z.string(), z.null()]).optional(),
+      output_schema: z.union([z.string(), z.null()]).optional(),
     })
   ),
 });

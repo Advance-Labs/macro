@@ -475,6 +475,7 @@ dependencies = [
  "github_pull_requests",
  "harness_id",
  "harnesses",
+ "http-body-util",
  "initiative",
  "kafka_util",
  "lexical_client",

@@ -11,6 +11,8 @@ The general runner lives in [`code_execution`](../../crates/code_execution/src/l
 execution policy, durable call records, and session-authorized record API. The
 harness service composes the adapters and exposes the tools on its existing
 session-authenticated internal MCP endpoint.
+The in-process agent uses that same authenticated router through its MCP transport;
+internal tools never go through the third-party app egress resolver.
 
 ## Execution and the existing components
 
@@ -79,7 +81,9 @@ streaming UI. The awaited `ProgramExecutor` path does not allocate or publish th
 
 1. Call `DescribeCodeTools` with `{names: []}` for the allowed method catalog.
 2. Request up to five exact names to receive their descriptions and complete input
-   and output JSON schemas, including referenced definitions.
+   and output JSON schemas, including referenced definitions, as JSON-encoded
+   strings. Keeping schemas as text avoids provider-reserved `$ref` objects in
+   tool responses (Gemini treats them as multimedia references).
 3. Call `ExecuteCode` with a fresh UUID `execution_id`, an async TypeScript `source`
    body using `await sdk.ToolName(input)`, and an explicit JSON-compatible `return`.
 
