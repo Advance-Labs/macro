@@ -11,6 +11,7 @@ import {
 } from '@solidjs/testing-library';
 import type { JSX } from 'solid-js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentKind } from '../core/agent-kind';
 import {
   buildAgentRoster,
   type PersistedAgentLike,
@@ -22,6 +23,7 @@ import { NewChatPage } from './NewChatPage';
 const mocks = vi.hoisted(() => ({
   touch: false,
   freePlan: false,
+  modelsPending: false,
   openSettings: vi.fn(),
   capabilitiesPending: false,
   attachments: [] as InputAttachmentData[],
@@ -116,10 +118,10 @@ vi.mock('@queries/agents/models', () => ({
     enabled: () => boolean
   ) => ({
     get isSuccess() {
-      return enabled();
+      return enabled() && !mocks.modelsPending;
     },
     get isPending() {
-      return false;
+      return mocks.modelsPending;
     },
     get isError() {
       return false;
@@ -211,12 +213,14 @@ function page(
   connected = true,
   agents: PersistedAgentLike[] = [],
   availabilityLoading = false,
-  runtimes: RuntimeLike[] = []
+  runtimes: RuntimeLike[] = [],
+  kind?: AgentKind
 ) {
   const onStart = vi.fn();
   render(() => (
     <NewChatPage
       compact={mocks.touch}
+      kind={kind}
       roster={buildAgentRoster({
         agents,
         runtimes,
@@ -271,6 +275,7 @@ describe('agent-led new conversation', () => {
   beforeEach(() => {
     mocks.capabilitiesPending = false;
     mocks.freePlan = false;
+    mocks.modelsPending = false;
     mocks.touch = false;
     mocks.attachments = [];
     mocks.recentIds = [MACRO_CODER_BOT_ID];
@@ -368,6 +373,17 @@ describe('agent-led new conversation', () => {
       modelOverride: 'chat-default',
     });
   });
+  it('flags a send before the model catalog loads as a model fallback', () => {
+    mocks.modelsPending = true;
+    const send = page();
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(send).toHaveBeenCalledWith({
+      prompt: 'Prompt',
+      botId: undefined,
+      repoUrl: undefined,
+      modelFallback: true,
+    });
+  });
   it('selects a coding agent, keeps the draft, and only sends the repository to coding agents', async () => {
     const send = page();
     fireEvent.input(screen.getByRole('textbox', { name: 'Draft' }), {
@@ -407,6 +423,45 @@ describe('agent-led new conversation', () => {
       repoUrl: 'https://github.com/macro-inc/macro',
       repoBranch: 'feature/home',
     });
+  });
+  it('offers only chat agents in Work and keeps the composer compact', async () => {
+    const send = page(true, [], false, [], 'agent');
+    expect(
+      screen.getByRole('heading', { name: 'What should we work on?' })
+    ).toBeTruthy();
+    expect(screen.getByTestId('drawer').hasAttribute('hidden')).toBe(true);
+    openAgents();
+    expect(
+      screen.getByRole('menuitem', { name: /^Chat default$/ })
+    ).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Cursor/ })).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(send).toHaveBeenCalledWith({
+      prompt: 'Prompt',
+      botId: undefined,
+      repoUrl: undefined,
+      modelOverride: 'chat-default',
+    });
+  });
+  it('offers only coding agents in Code and opens the repository drawer', async () => {
+    const send = page(true, [], false, [], 'coder');
+    expect(
+      screen.getByRole('heading', { name: 'What should we build?' })
+    ).toBeTruthy();
+    expect(screen.getByTestId('drawer').hasAttribute('hidden')).toBe(false);
+    openAgents();
+    expect(screen.getByRole('menuitem', { name: /Cursor/ })).toBeTruthy();
+    expect(
+      screen.queryByRole('menuitem', { name: /^Chat default$/ })
+    ).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'Prompt', botId: CURSOR_BOT_ID })
+    );
   });
   it('restores an unsent draft after the page remounts', () => {
     page();

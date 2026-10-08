@@ -22,12 +22,17 @@ export function createRetirableCacheHost(inner: CacheHost): CacheHost {
     readRecordsByKeys: (args) => current.readRecordsByKeys(args),
     search: (args) => current.search(args),
     entityFilter: (args) => current.entityFilter(args),
+    calendarRange: (args) => current.calendarRange(args),
+    calendarCommit: (args) => current.calendarCommit(args),
     writeQuery: (args) => current.writeQuery(args),
     hydrateQuery: (args) => current.hydrateQuery(args),
     enqueueOptimisticMutation: (args, claim) =>
       current.enqueueOptimisticMutation(args, claim),
     inspectQueryVariants: (args) => current.inspectQueryVariants(args),
     inspectQuery: (args) => current.inspectQuery(args),
+    inspectMutations: () =>
+      current.inspectMutations?.() ??
+      Promise.reject(new Error('Queue inspection is unavailable')),
     claimNextMutation: (owner, nowMs, leaseExpiresAtMs) =>
       current.claimNextMutation(owner, nowMs, leaseExpiresAtMs),
     deferOptimisticWrite: (

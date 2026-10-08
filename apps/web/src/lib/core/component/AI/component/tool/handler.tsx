@@ -14,6 +14,11 @@ import { Dynamic } from 'solid-js/web';
 import { configureAgentHandler, listAgentsHandler } from './Agents';
 import { bashCodeExecutionHandler } from './BashCodeExecution';
 import {
+  createBookingLinkHandler,
+  editBookingLinkHandler,
+  listBookingLinksHandler,
+} from './BookingLinks';
+import {
   configureBotHandler,
   createBotHandler,
   deleteBotHandler,
@@ -60,6 +65,7 @@ import {
 } from './DocumentComments';
 import { editDocumentHandler } from './EditDocument';
 import { editTagHandler } from './EditTag';
+import { lazyFormsToolHandlers } from './FormsHandlers';
 import { generateImageHandler } from './GenerateImage';
 import { getThreadHandler } from './GetThread';
 import {
@@ -125,6 +131,7 @@ import {
   readSpreadsheetHandler,
 } from './Spreadsheet';
 import { subagentHandler } from './Subagent';
+import { getTeamAvailabilityHandler } from './TeamAvailability';
 import { textEditorCodeExecutionHandler } from './TextEditorCodeExecution';
 import {
   type RenderContext,
@@ -166,12 +173,17 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   IssueBotCredential: issueBotCredentialHandler,
   ListBots: listBotsHandler,
   ManageBotChannelAccess: manageBotChannelAccessHandler,
+  ...lazyFormsToolHandlers,
+  ListBookingLinks: listBookingLinksHandler,
+  CreateBookingLink: createBookingLinkHandler,
+  EditBookingLink: editBookingLinkHandler,
   CreateCalendarEvent: createCalendarEventHandler,
   CreateConfirmedCalendarEvent: createConfirmedCalendarEventHandler,
   UpdateCalendarEvent: updateCalendarEventHandler,
   DeleteCalendarEvent: deleteCalendarEventHandler,
   ListCalendarEvents: listCalendarEventsHandler,
   ListCalendars: listCalendarsHandler,
+  GetTeamAvailability: getTeamAvailabilityHandler,
   CreateImportEntity: createImportEntityHandler,
   DeleteImportEntity: deleteImportEntityHandler,
   ImportNotionPage: importNotionPageHandler,

@@ -12,8 +12,10 @@ Repeat with the default model and with an explicit model/effort selection.
 The first visible output and the first answer text should appear as they arrive;
 later chunks can arrive in batches. Reasoning or a tool row should not delay the
 first prose. Verify a second prompt and a reload preserve the complete answer.
-Selected model and effort must be confirmed before the first prompt; settings
-already confirmed by the runtime do not need another control request.
+A model selected before the first prompt is part of the create request, and the
+runtime starts on it; no model change appears in the new session's transcript.
+A selected effort is confirmed before the first prompt; settings the runtime
+already reports do not need another control request.
 
 Repeat from a fresh tab using Home, Agents, and a document's Chat action.
 Focusing an agent composer prepares its transcript renderer locally; focus alone
@@ -564,7 +566,7 @@ documents:
 
 Quota admission uses the backend's default-off `ENABLE_AI_USAGE_ENFORCEMENT`
 policy once configured by the host; it is independent of environment. Settlement
-(credit consumption and Stripe overage collection) is gated by the separate
+(credit consumption and automatic credit reloads) is gated by the separate
 default-off `ENABLE_AI_USAGE_BILLING` policy, also independent of environment.
 With admission enabled, cognition chat
 and structured completion return 402 for exhausted allowance or 503 with
@@ -597,7 +599,7 @@ protocol error with a stable `code` and `retryable` flag, not an HTTP status.
 A direct AI tool/MCP or AI-edit refusal is a failed tool result even if the outer
 transport succeeds. No worker/provider edit should happen after refusal. Ordinary
 manual editing, deterministic tools/imports, and the exempt Memory, AiProjection,
-CallSummary, and Dictation features are not blocked by quota. Optional naming or
+CallSummary, Dictation, and ChatRename features are not blocked by quota. Optional naming or
 trigger inference may be skipped without blocking successful primary work; it
 must not make a fallback model call. Managed sessions use their persisted owner
 for quota, not a collaborating sender. Externally funded runtimes skip session
@@ -837,14 +839,30 @@ in-process agent; sandboxed ones wait as long when their MCP client accepts prog
 four minutes otherwise). A declined or cancelled call does not run and the agent says so. The Magic Chip
 reads `Waiting for approval`. The agent's hidden context names the owner and the prompter.
 
+## Forms authoring and sharing
+
+With Forms enabled, ask the agent to create a complete form, including ordered
+sections and qualification screeners. Creation starts closed and members-only.
+The expandable tool result shows the saved questions, builder link, respondent
+link, and actual response availability. Edits use granular CRDT updates
+to preserve unrelated human changes. Partial outcomes have recovery guidance;
+a link by itself is not a completed or open form.
+
+`SetFormAccess` executes immediately for the form owner, using the same settings
+and channel-sharing services as the browser. There is no custom review card.
+Channel Edit also grants access to the entire response database. Settings and
+channel grants are separate writes; inspect any partial outcome before retrying.
+See [Forms](forms.md#forms-through-the-ai-tools) for screeners, booking link reveal,
+supported edits and retry behavior.
+
 ## In channels
 
 Mention `@Macro` in any channel message. Without the `enable-chat-v3-agents` rollout it is
 the classic in-channel reply; with it, the same mention opens an **agent session** — a
 dedicated transcript at `/app/agent/<uuid>` whose replies also stream back into the thread.
-`@coder` / `@cursor` always open a session. There is only ever one Macro entry in the
-mention menu; which of the two answers is the rollout's decision, not a second choice in
-the menu.
+`@cursor` opens a session. Macro Coding Agent (`@coder`) is unavailable in mention
+suggestions. There is only ever one Macro entry in the mention menu; which of the
+two answers is the rollout's decision, not a second choice in the menu.
 
 ## Agent sessions
 
@@ -1032,10 +1050,13 @@ select people or channels, choose their access level, and send the session with
 an optional message using the same Share dialog and mobile drawer as tasks.
 Sessions also support **Share** from entity list menus and the entity sharing
 shortcut. **People with access** lists the owner and shared conversations;
-the owner can change or remove a conversation's access. **Link sharing** offers
+the owner can change or remove a conversation's access. When that list holds
+nobody but the owner — what a participant who cannot read the other grants
+sees — the section is titled **Owner** instead. **Link sharing** offers
 None / Public / Team and an access level. **Team access** shares directly with
 the owner's team when one exists. On mobile these controls are in the Share,
-People, and Link tabs. View and Comment allow reading; Edit also allows
+People, and Link tabs, and the People tab is likewise named Owner when only the
+owner is listed. View and Comment allow reading; Edit also allows
 controlling the session. View-only sessions keep the composer, model selector,
 and queued-message controls disabled. **Copy Share Link** remains in the header. Cancel
 closes the composer without sending.
@@ -1482,3 +1503,25 @@ To verify, start a Macro conversation as a free user with a previously saved
 paid-model preference: the composer should show Gemini and send that model.
 In a live session, confirm the model options contain only Gemini. Backend tests
 also exercise direct ACP model-change requests, downgrade, and resume.
+
+## Booking links
+
+Ask the AI to find or reuse an existing booking link before creating another.
+`ListBookingLinks` returns personal links, current team IDs, full settings and
+shareable URLs (including paused links). It also supplies the revision used to
+protect edits from concurrent settings changes.
+
+Booking links are confirmed in conversation, with no special booking form. The AI
+first explains the proposed meeting details, ownership and named hosts, time zone,
+availability and date exceptions, booking rules, guest questions and whether the
+link accepts bookings. It asks whether to proceed and waits for your reply before
+calling `CreateBookingLink` or `EditBookingLink`. An initial request to create a
+link is not approval of the proposal. IDs and revisions are discovered through
+tools; you should never be asked to enter a team ID, host ID or JSON.
+
+A successful result returns the saved URL. Link creation itself sends no calendar
+invitations; guests receive an invitation when they book. Editing hours affects
+only that link. If another edit makes the revision stale, the AI reads the latest
+settings and confirms a fresh proposal. Identical retries reuse the saved link.
+Old pending booking review requests can be dismissed so the agent can resume with
+conversational confirmation.

@@ -4,6 +4,7 @@
 
 import type { ResultError } from '@core/util/result';
 import { err, ok, type Result } from 'neverthrow';
+import { bookingLinkHistory } from '../../booking-link-history';
 import * as schemas from './schemas';
 import type * as types from './types';
 
@@ -36,6 +37,10 @@ type ToolParserMap = {
     call: types.ContentSearch;
     response: types.SearchToolResponse;
   };
+  CreateBookingLink: {
+    call: types.CreateBookingLink;
+    response: types.BookingLinkResult;
+  };
   CreateBot: { call: types.CreateBot; response: types.CreateBotResponse };
   CreateCalendarEvent: {
     call: types.CreateCalendarEvent;
@@ -53,6 +58,7 @@ type ToolParserMap = {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
   };
+  CreateForm: { call: types.CreateForm; response: types.MutationResult };
   CreateImportEntity: {
     call: types.CreateImportEntity;
     response: types.CreateImportEntityResponse;
@@ -97,10 +103,15 @@ type ToolParserMap = {
     call: types.DisplayResults;
     response: types.DisplayResultsResponse;
   };
+  EditBookingLink: {
+    call: types.EditBookingLink;
+    response: types.BookingLinkResult;
+  };
   EditDocument: {
     call: types.EditDocument;
     response: types.EditDocumentResponse;
   };
+  EditForm: { call: types.EditForm; response: types.MutationResult };
   EditPresentation: {
     call: types.EditPresentation;
     response: types.PresentationEditOutcome;
@@ -127,6 +138,10 @@ type ToolParserMap = {
     call: types.GetEntityProperties;
     response: types.GetEntityPropertiesResponse;
   };
+  GetTeamAvailability: {
+    call: types.GetTeamAvailability;
+    response: types.TeamAvailability;
+  };
   GetThread: { call: types.GetThread; response: types.GetThreadResponse };
   ImportNotionPage: {
     call: types.ImportNotionPage;
@@ -137,6 +152,10 @@ type ToolParserMap = {
     response: types.IssueBotCredentialResponse;
   };
   ListAgents: { call: types.ListAgents; response: types.ListAgentsResponse };
+  ListBookingLinks: {
+    call: types.ListBookingLinks;
+    response: types.ListBookingLinksResult;
+  };
   ListBots: { call: types.ListBots; response: types.ListBotsResponse };
   ListCalendarEvents: {
     call: types.ListCalendarEvents;
@@ -162,6 +181,7 @@ type ToolParserMap = {
     call: types.ListEntities;
     response: types.ListEntitiesResponse;
   };
+  ListForms: { call: types.ListForms; response: types.ListResult };
   ListImportEntities: {
     call: types.ListImportEntities;
     response: types.ListImportEntitiesResponse;
@@ -232,6 +252,7 @@ type ToolParserMap = {
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
   ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadForm: { call: types.ReadForm; response: types.ReadResult };
   ReadIllustratorDocument: {
     call: types.ReadIllustratorDocument;
     response: types.ReadIllustratorDocumentResponse;
@@ -313,6 +334,7 @@ type ToolParserMap = {
     call: types.SetEntityProperty;
     response: types.SetEntityPropertyResponse;
   };
+  SetFormAccess: { call: types.SetFormAccess; response: types.MutationResult };
   SetSenderPolicy: {
     call: types.SetSenderPolicy;
     response: types.SetSenderPolicyResponse;
@@ -373,6 +395,10 @@ const toolParserMap = {
     call: schemas.ContentSearch,
     response: schemas.SearchToolResponse,
   },
+  CreateBookingLink: {
+    call: schemas.CreateBookingLink,
+    response: schemas.BookingLinkResult,
+  },
   CreateBot: { call: schemas.CreateBot, response: schemas.CreateBotResponse },
   CreateCalendarEvent: {
     call: schemas.CreateCalendarEvent,
@@ -390,6 +416,7 @@ const toolParserMap = {
     call: schemas.CreateDocument,
     response: schemas.CreateDocumentResponse,
   },
+  CreateForm: { call: schemas.CreateForm, response: schemas.MutationResult },
   CreateImportEntity: {
     call: schemas.CreateImportEntity,
     response: schemas.CreateImportEntityResponse,
@@ -434,10 +461,15 @@ const toolParserMap = {
     call: schemas.DisplayResults,
     response: schemas.DisplayResultsResponse,
   },
+  EditBookingLink: {
+    call: schemas.EditBookingLink,
+    response: schemas.BookingLinkResult,
+  },
   EditDocument: {
     call: schemas.EditDocument,
     response: schemas.EditDocumentResponse,
   },
+  EditForm: { call: schemas.EditForm, response: schemas.MutationResult },
   EditPresentation: {
     call: schemas.EditPresentation,
     response: schemas.PresentationEditOutcome,
@@ -467,6 +499,10 @@ const toolParserMap = {
     call: schemas.GetEntityProperties,
     response: schemas.GetEntityPropertiesResponse,
   },
+  GetTeamAvailability: {
+    call: schemas.GetTeamAvailability,
+    response: schemas.TeamAvailability,
+  },
   GetThread: { call: schemas.GetThread, response: schemas.GetThreadResponse },
   ImportNotionPage: {
     call: schemas.ImportNotionPage,
@@ -479,6 +515,10 @@ const toolParserMap = {
   ListAgents: {
     call: schemas.ListAgents,
     response: schemas.ListAgentsResponse,
+  },
+  ListBookingLinks: {
+    call: schemas.ListBookingLinks,
+    response: schemas.ListBookingLinksResult,
   },
   ListBots: { call: schemas.ListBots, response: schemas.ListBotsResponse },
   ListCalendarEvents: {
@@ -505,6 +545,7 @@ const toolParserMap = {
     call: schemas.ListEntities,
     response: schemas.ListEntitiesResponse,
   },
+  ListForms: { call: schemas.ListForms, response: schemas.ListResult },
   ListImportEntities: {
     call: schemas.ListImportEntities,
     response: schemas.ListImportEntitiesResponse,
@@ -593,6 +634,7 @@ const toolParserMap = {
     call: schemas.ReadDesign,
     response: schemas.ReadDesignResponse,
   },
+  ReadForm: { call: schemas.ReadForm, response: schemas.ReadResult },
   ReadIllustratorDocument: {
     call: schemas.ReadIllustratorDocument,
     response: schemas.ReadIllustratorDocumentResponse,
@@ -680,6 +722,10 @@ const toolParserMap = {
     call: schemas.SetEntityProperty,
     response: schemas.SetEntityPropertyResponse,
   },
+  SetFormAccess: {
+    call: schemas.SetFormAccess,
+    response: schemas.MutationResult,
+  },
   SetSenderPolicy: {
     call: schemas.SetSenderPolicy,
     response: schemas.SetSenderPolicyResponse,
@@ -751,6 +797,10 @@ type ToolDataMap = {
     call: types.ContentSearch;
     response: types.SearchToolResponse;
   };
+  CreateBookingLink: {
+    call: types.CreateBookingLink;
+    response: types.BookingLinkResult;
+  };
   CreateBot: { call: types.CreateBot; response: types.CreateBotResponse };
   CreateCalendarEvent: {
     call: types.CreateCalendarEvent;
@@ -768,6 +818,7 @@ type ToolDataMap = {
     call: types.CreateDocument;
     response: types.CreateDocumentResponse;
   };
+  CreateForm: { call: types.CreateForm; response: types.MutationResult };
   CreateImportEntity: {
     call: types.CreateImportEntity;
     response: types.CreateImportEntityResponse;
@@ -812,10 +863,15 @@ type ToolDataMap = {
     call: types.DisplayResults;
     response: types.DisplayResultsResponse;
   };
+  EditBookingLink: {
+    call: types.EditBookingLink;
+    response: types.BookingLinkResult;
+  };
   EditDocument: {
     call: types.EditDocument;
     response: types.EditDocumentResponse;
   };
+  EditForm: { call: types.EditForm; response: types.MutationResult };
   EditPresentation: {
     call: types.EditPresentation;
     response: types.PresentationEditOutcome;
@@ -842,6 +898,10 @@ type ToolDataMap = {
     call: types.GetEntityProperties;
     response: types.GetEntityPropertiesResponse;
   };
+  GetTeamAvailability: {
+    call: types.GetTeamAvailability;
+    response: types.TeamAvailability;
+  };
   GetThread: { call: types.GetThread; response: types.GetThreadResponse };
   ImportNotionPage: {
     call: types.ImportNotionPage;
@@ -852,6 +912,10 @@ type ToolDataMap = {
     response: types.IssueBotCredentialResponse;
   };
   ListAgents: { call: types.ListAgents; response: types.ListAgentsResponse };
+  ListBookingLinks: {
+    call: types.ListBookingLinks;
+    response: types.ListBookingLinksResult;
+  };
   ListBots: { call: types.ListBots; response: types.ListBotsResponse };
   ListCalendarEvents: {
     call: types.ListCalendarEvents;
@@ -877,6 +941,7 @@ type ToolDataMap = {
     call: types.ListEntities;
     response: types.ListEntitiesResponse;
   };
+  ListForms: { call: types.ListForms; response: types.ListResult };
   ListImportEntities: {
     call: types.ListImportEntities;
     response: types.ListImportEntitiesResponse;
@@ -947,6 +1012,7 @@ type ToolDataMap = {
   ReadChat: { call: types.ReadChat; response: types.ReadChatResponse };
   ReadContent: { call: types.ReadContent; response: types.ReadContentResponse };
   ReadDesign: { call: types.ReadDesign; response: types.ReadDesignResponse };
+  ReadForm: { call: types.ReadForm; response: types.ReadResult };
   ReadIllustratorDocument: {
     call: types.ReadIllustratorDocument;
     response: types.ReadIllustratorDocumentResponse;
@@ -1028,6 +1094,7 @@ type ToolDataMap = {
     call: types.SetEntityProperty;
     response: types.SetEntityPropertyResponse;
   };
+  SetFormAccess: { call: types.SetFormAccess; response: types.MutationResult };
   SetSenderPolicy: {
     call: types.SetSenderPolicy;
     response: types.SetSenderPolicyResponse;
@@ -1078,7 +1145,9 @@ function deserializeTool<T extends NamedTool>(
     ]);
   }
   const parser = toolParserMap[tool.name as ToolName];
-  const maybeToolCall = parser[direction].safeParse(tool.json);
+  const maybeToolCall = parser[direction].safeParse(
+    bookingLinkHistory(tool.name, direction, tool.json)
+  );
   if (maybeToolCall.success) {
     return ok({
       id: tool.id,
