@@ -5,7 +5,9 @@ mod chat;
 mod entity_mutation;
 mod message;
 mod model_access;
+mod selected_model;
 
 pub use chat::ChatServiceImpl;
 pub use message::MessageServiceImpl;
 pub use model_access::ModelAccessServiceImpl;
+pub use selected_model::SelectedModelService;

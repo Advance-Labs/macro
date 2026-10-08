@@ -24,11 +24,10 @@ describe('plan model choice', () => {
     expect(catalogOffersModelChoice(paidCatalog)).toBe(true);
   });
 
-  it('lands an upgraded plan on Opus when nothing was chosen', () => {
+  it('lands a paid plan with no pick on Opus', () => {
     expect(
       resolveUpgradedModel({
         paid: true,
-        sawFreePlan: true,
         explicit: false,
         catalog: paidCatalog,
         currentModel: Model.sonnet55,
@@ -40,7 +39,6 @@ describe('plan model choice', () => {
     expect(
       resolveUpgradedModel({
         paid: true,
-        sawFreePlan: true,
         preferred: FREE_DEFAULT_MODEL,
         explicit: true,
         catalog: paidCatalog,
@@ -49,11 +47,10 @@ describe('plan model choice', () => {
     ).toBe(FREE_DEFAULT_MODEL);
   });
 
-  it('keeps any other chosen model across the upgrade', () => {
+  it('keeps any other chosen model', () => {
     expect(
       resolveUpgradedModel({
         paid: true,
-        sawFreePlan: true,
         preferred: 'fireworks/kimi-k3',
         explicit: true,
         catalog: paidCatalog,
@@ -62,28 +59,26 @@ describe('plan model choice', () => {
     ).toBe('fireworks/kimi-k3');
   });
 
-  it('leaves a paid user who was never on the free plan on the catalog default', () => {
-    expect(
-      resolveUpgradedModel({
-        paid: true,
-        sawFreePlan: false,
-        explicit: false,
-        catalog: paidCatalog,
-        currentModel: Model.sonnet55,
-      })
-    ).toBe(Model.sonnet55);
-  });
-
   it('keeps the free catalog default while the user is still on the free plan', () => {
     expect(
       resolveUpgradedModel({
         paid: false,
-        sawFreePlan: true,
         preferred: Model.sonnet55,
         explicit: true,
         catalog: [FREE_DEFAULT_MODEL],
         currentModel: FREE_DEFAULT_MODEL,
       })
     ).toBe(FREE_DEFAULT_MODEL);
+  });
+
+  it('does not invent a model while the catalog is still empty', () => {
+    expect(
+      resolveUpgradedModel({
+        paid: true,
+        explicit: false,
+        catalog: [],
+        currentModel: undefined,
+      })
+    ).toBeUndefined();
   });
 });

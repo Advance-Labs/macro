@@ -164,12 +164,16 @@ export const cognitionExcluded = [
   'getChatsForAttachmentHandler',
   'getCitationHandler',
   'getMemoryHandler',
+  // Composer model preference is a web-app internal.
+  'getSelectedModel',
   'healthHandler',
   'listMcpServers',
   'listPipedreamMcpConnections',
   'mcpAuthCallback',
   'mcpOauthClientMetadata',
   'rejectToolCall',
+  // Composer model preference is a web-app internal.
+  'rememberSelectedModel',
   // Channel discovery shares the app-only import workflow below.
   'discoverHandler',
   'runImportHandler',

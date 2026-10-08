@@ -545,6 +545,102 @@
         }
       }
     },
+    "/chats/selected-model": {
+      "get": {
+        "tags": ["chats"],
+        "summary": "The model the signed-in user's composer should open on.",
+        "operationId": "get_selected_model",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedModelResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["chats"],
+        "summary": "Record a model the signed-in user picked while other models were available.",
+        "operationId": "remember_selected_model",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RememberSelectedModelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chats/{chat_id}": {
       "get": {
         "tags": ["chats"],
@@ -4371,6 +4467,17 @@
           }
         }
       },
+      "RememberSelectedModelRequest": {
+        "type": "object",
+        "description": "Body for recording a composer model choice.",
+        "required": ["modelId"],
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "description": "Provider-qualified model id."
+          }
+        }
+      },
       "Role": {
         "type": "string",
         "description": "The role of a message participant.",
@@ -4428,6 +4535,21 @@
           "failed",
           "dismissed"
         ]
+      },
+      "SelectedModelResponse": {
+        "type": "object",
+        "description": "The model the composer should open on.",
+        "required": ["modelId", "explicit"],
+        "properties": {
+          "explicit": {
+            "type": "boolean",
+            "description": "Whether the user picked `model_id`."
+          },
+          "modelId": {
+            "type": "string",
+            "description": "Provider-qualified model id."
+          }
+        }
       },
       "SendChatMessagePayload": {
         "allOf": [

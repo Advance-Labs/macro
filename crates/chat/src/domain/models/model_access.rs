@@ -24,3 +24,31 @@ pub const PAID_DEFAULT_MODEL: &str = "anthropic/claude-sonnet-5-5";
 
 /// The only model available to free (non-professional) users.
 pub const FREE_MODEL: &str = "google/gemini-3.8-flash";
+
+/// Model a paid composer opens on when the user has never picked one.
+///
+/// [`PAID_DEFAULT_MODEL`] stays the catalog default for sessions that already
+/// have one. This is only the landing model for a composer with no saved pick.
+pub const UPGRADE_MODEL: &str = "anthropic/claude-opus-5-5";
+
+/// In-memory composer models that are not part of [`CHAT_MODELS`].
+///
+/// Kept in step with `agent_inmem`'s routed catalog. Gemini is already in
+/// [`CHAT_MODELS`], so it is not repeated here.
+pub const EXTRA_COMPOSER_MODELS: &[&str] = &[
+    "fireworks/kimi-k3",
+    "fireworks/deepseek-v4-pro-0813",
+    "fireworks/muse-glimmer-30b",
+    "fireworks/glm-5p3",
+    "fireworks/glm-5p3-flash",
+    "fireworks/qwen3p8-max",
+    "fireworks/minimax-m3",
+    "cerebras/gpt-oss-120b",
+    "fireworks/nemotron-lightning-3p5-30b-a3b",
+];
+
+/// Whether `model_id` is a model the composer can remember.
+#[must_use]
+pub fn is_composer_model(model_id: &str) -> bool {
+    CHAT_MODELS.contains(&model_id) || EXTRA_COMPOSER_MODELS.contains(&model_id)
+}

@@ -43,6 +43,9 @@ use chat::inbound::http::router::{
     GetChatPermissionsResponse, PatchChatRequest, RejectToolCallRequest, UpdateToolCallRequest,
     UpdateToolResponseRequest,
 };
+use chat::inbound::http::selected_model::{
+    self as selected_model, RememberSelectedModelRequest, SelectedModelResponse,
+};
 
 use model::{
     chat::{
@@ -71,6 +74,8 @@ use utoipa::OpenApi;
         paths(
             health::health_handler,
             chat_router::get_chat_handler,
+            selected_model::get_selected_model_handler,
+            selected_model::remember_selected_model_handler,
             chat_router::create_chat_handler,
             chat_router::copy_chat_handler,
             chat_router::get_chat_permissions_handler,
@@ -152,6 +157,8 @@ use utoipa::OpenApi;
                 // Chat Response
                 GetChatPermissionsResponse,
                 GetChatResponse,
+                SelectedModelResponse,
+                RememberSelectedModelRequest,
 
                 // Tool Operations
                 UpdateToolCallRequest,

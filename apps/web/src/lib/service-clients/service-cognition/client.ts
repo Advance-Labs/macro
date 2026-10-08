@@ -25,6 +25,8 @@ import type { GetChatsForAttachmentResponse } from './generated/schemas/getChats
 import type { HttpSendChatMessageRequest } from './generated/schemas/httpSendChatMessageRequest';
 import type { PatchChatRequest } from './generated/schemas/patchChatRequest';
 import type { ProjectionStateResponse } from './generated/schemas/projectionStateResponse';
+import type { RememberSelectedModelRequest } from './generated/schemas/rememberSelectedModelRequest';
+import type { SelectedModelResponse } from './generated/schemas/selectedModelResponse';
 import type { SendChatMessageResponse } from './generated/schemas/sendChatMessageResponse';
 import type { ServerResponse } from './generated/schemas/serverResponse';
 import type { StartAuthRequest } from './generated/schemas/startAuthRequest';
@@ -506,6 +508,24 @@ export const cognitionApiServiceClient = {
         method: 'POST',
         body: JSON.stringify(args),
         errorResponseHandler: aiUsageErrorResponseHandler,
+      })
+    ).map((result) => result);
+  },
+
+  /** The model the signed-in user's composer should open on. */
+  async getSelectedModel() {
+    return (
+      await dcsFetch<SelectedModelResponse>(`/chats/selected-model`, {
+        method: 'GET',
+      })
+    ).map((result) => result);
+  },
+
+  async putSelectedModel(args: RememberSelectedModelRequest) {
+    return (
+      await dcsFetch<SelectedModelResponse>(`/chats/selected-model`, {
+        method: 'PUT',
+        body: JSON.stringify(args),
       })
     ).map((result) => result);
   },

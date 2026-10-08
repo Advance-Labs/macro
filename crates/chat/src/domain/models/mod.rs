@@ -10,4 +10,10 @@ pub use chat::{
 };
 pub use error::{ChatErr, Result};
 pub use message::{PatchChatMessageArgs, ResolvedMessageContent, WebCitation};
-pub use model_access::{CHAT_MODELS, FREE_MODEL, PAID_DEFAULT_MODEL};
+pub use model_access::{
+    CHAT_MODELS, EXTRA_COMPOSER_MODELS, FREE_MODEL, PAID_DEFAULT_MODEL, UPGRADE_MODEL,
+    is_composer_model,
+};
+
+mod selected_model;
+pub use selected_model::ComposerModel;

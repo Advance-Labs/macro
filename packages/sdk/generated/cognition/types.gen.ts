@@ -1190,6 +1190,16 @@ export type RejectToolCallRequest = {
 };
 
 /**
+ * Body for recording a composer model choice.
+ */
+export type RememberSelectedModelRequest = {
+    /**
+     * Provider-qualified model id.
+     */
+    modelId: string;
+};
+
+/**
  * The role of a message participant.
  */
 export type Role = 'user' | 'assistant' | 'system';
@@ -1226,6 +1236,20 @@ export type RunImportRequest = {
  * Lifecycle of a gather run (one per user × source).
  */
 export type RunStatus = 'running' | 'ready' | 'importing' | 'completed' | 'failed' | 'dismissed';
+
+/**
+ * The model the composer should open on.
+ */
+export type SelectedModelResponse = {
+    /**
+     * Whether the user picked `model_id`.
+     */
+    explicit: boolean;
+    /**
+     * Provider-qualified model id.
+     */
+    modelId: string;
+};
 
 export type SendChatMessagePayload = JwtPayload & {
     /**
@@ -2047,6 +2071,47 @@ export type GetChatHistoryBatchMessagesHandlerResponses = {
 };
 
 export type GetChatHistoryBatchMessagesHandlerResponse = GetChatHistoryBatchMessagesHandlerResponses[keyof GetChatHistoryBatchMessagesHandlerResponses];
+
+export type GetSelectedModelData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chats/selected-model';
+};
+
+export type GetSelectedModelErrors = {
+    401: string;
+    500: string;
+};
+
+export type GetSelectedModelError = GetSelectedModelErrors[keyof GetSelectedModelErrors];
+
+export type GetSelectedModelResponses = {
+    200: SelectedModelResponse;
+};
+
+export type GetSelectedModelResponse = GetSelectedModelResponses[keyof GetSelectedModelResponses];
+
+export type RememberSelectedModelData = {
+    body: RememberSelectedModelRequest;
+    path?: never;
+    query?: never;
+    url: '/chats/selected-model';
+};
+
+export type RememberSelectedModelErrors = {
+    400: string;
+    401: string;
+    500: string;
+};
+
+export type RememberSelectedModelError = RememberSelectedModelErrors[keyof RememberSelectedModelErrors];
+
+export type RememberSelectedModelResponses = {
+    200: SelectedModelResponse;
+};
+
+export type RememberSelectedModelResponse = RememberSelectedModelResponses[keyof RememberSelectedModelResponses];
 
 export type GetChatData = {
     body?: never;

@@ -7,10 +7,7 @@ import {
   useChatInputContext,
 } from '@core/component/AI/context';
 import { peekPendingSend } from '@core/component/AI/signal/pendingSend';
-import {
-  getChatInputStoredState,
-  getSoupInputStoredModel,
-} from '@core/component/AI/util/storage';
+import { getChatInputStoredState } from '@core/component/AI/util/storage';
 import type { EditorConfigBuilder } from '@core/component/LexicalMarkdown/builder/MarkdownConfigBuilder';
 import {
   cleanup,
@@ -136,6 +133,14 @@ vi.mock('@core/context/user', () => ({
   useUserId: () => () => 'soup-model-test-user',
   useLicenseStatus: () => () => 'active',
 }));
+vi.mock('@queries/composer-model', () => ({
+  useComposerModelPreference: () => ({
+    loaded: () => false,
+    modelId: () => undefined,
+    explicit: () => false,
+    remember: vi.fn(),
+  }),
+}));
 vi.mock('@core/component/AI/signal/attachment', () => ({
   useAttachments: () => ({ attached: () => [], setAttached: vi.fn() }),
   useGetChatAttachmentInfo: () => ({}),
@@ -217,7 +222,7 @@ it('preserves a real soup composer selection when creating and opening its first
   });
   const composer = render(() => <SoupChatInput />);
   fireEvent.click(
-    screen.getByRole('button', { name: 'Choose model, Sonnet 5.5' })
+    screen.getByRole('button', { name: 'Choose model, Opus 5.5' })
   );
   const dialog = await screen.findByRole('dialog', { name: 'Select model' });
   fireEvent.click(within(dialog).getByRole('button', { name: 'GPT-5.6' }));
@@ -232,7 +237,6 @@ it('preserves a real soup composer selection when creating and opening its first
   expect(getChatInputStoredState('selected-first-chat').model).toBe(
     Model.gpt56
   );
-  expect(getSoupInputStoredModel()).toBe(Model.gpt56);
   composer.unmount();
   mocks.send.mockResolvedValue({ error: true });
   const chat = render(() => (
@@ -259,7 +263,7 @@ it('preserves a real soup composer selection when creating and opening its first
   chat.unmount();
   render(() => <SoupChatInput />);
   expect(
-    screen.getByRole('button', { name: 'Choose model, GPT-5.6' })
+    screen.getByRole('button', { name: 'Choose model, Opus 5.5' })
   ).toBeTruthy();
 });
 vi.mock('@core/component/LexicalMarkdown/builder/MarkdownShell', () => ({

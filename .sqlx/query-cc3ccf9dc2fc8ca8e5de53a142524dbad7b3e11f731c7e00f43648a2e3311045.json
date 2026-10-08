@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO user_selected_model (user_id, model_id)\n            VALUES ($1, $2)\n            ON CONFLICT (user_id) DO UPDATE\n            SET model_id = EXCLUDED.model_id,\n                updated_at = now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc3ccf9dc2fc8ca8e5de53a142524dbad7b3e11f731c7e00f43648a2e3311045"
+}

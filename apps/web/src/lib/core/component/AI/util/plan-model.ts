@@ -1,16 +1,15 @@
 import { FREE_DEFAULT_MODEL, Model, type TModel } from '../constant/model';
 
 /**
- * Model a paid plan should land on after an upgrade when the user never
- * picked one. The paid catalog default stays Sonnet; Opus is only the
- * upgrade landing spot.
+ * Model a paid composer opens on when the user has never picked one.
+ * The paid catalog default stays Sonnet; Opus is only this landing spot.
  */
 export const UPGRADE_MODEL: TModel = Model.opus55;
 
 /**
  * A stored id counts as a choice when the user picked it, or when it cannot
  * be the free plan's only model. Gemini saved while it was the only option
- * does not count: that plan cannot record a real selection of it.
+ * does not count.
  */
 export function modelChoiceIsExplicit(
   model: string | undefined,
@@ -32,14 +31,12 @@ export function catalogOffersModelChoice(modelIds: readonly string[]): boolean {
 /**
  * Model the Macro composer should run.
  *
- * An explicit pick wins, including Gemini chosen once other models were
- * available. After a free plan, no such pick switches the composer to
- * {@link UPGRADE_MODEL}. Anyone who has not been on the free plan keeps the
- * catalog's current model.
+ * A saved pick wins, including Gemini chosen once other models were
+ * available. With no pick, a paid plan lands on {@link UPGRADE_MODEL}.
+ * A free plan keeps the catalog's current model.
  */
 export function resolveUpgradedModel(input: {
   paid: boolean;
-  sawFreePlan: boolean;
   preferred?: string;
   explicit: boolean;
   catalog: readonly string[];
@@ -57,7 +54,7 @@ export function resolveUpgradedModel(input: {
   if (input.explicit && listed(input.preferred)) return input.preferred;
 
   const noChoice = !input.sessionExplicit && !input.explicit;
-  if (noChoice && input.paid && input.sawFreePlan && input.catalog.length > 0) {
+  if (noChoice && input.paid && input.catalog.length > 0) {
     return UPGRADE_MODEL;
   }
 

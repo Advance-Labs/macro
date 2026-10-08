@@ -1,5 +1,5 @@
 use super::{ROUTED_MODELS, advertised_models, display_name};
-use chat::domain::models::CHAT_MODELS;
+use chat::domain::models::{CHAT_MODELS, is_composer_model};
 
 #[test]
 fn advertised_models_keep_chat_then_append_routed() {
@@ -21,6 +21,13 @@ fn advertised_models_keep_chat_then_append_routed() {
             .collect::<Vec<_>>()
             .as_slice()
     );
+}
+
+#[test]
+fn every_advertised_model_can_be_remembered() {
+    for model in advertised_models() {
+        assert!(is_composer_model(model), "{model}");
+    }
 }
 
 #[test]

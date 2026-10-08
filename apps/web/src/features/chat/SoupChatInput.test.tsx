@@ -83,19 +83,18 @@ vi.mock('@core/component/AI/signal/pendingSend', () => ({
   setPendingSendData: mocks.pending,
 }));
 vi.mock('@core/component/AI/util/storage', () => ({
-  getSoupInputStoredModel: () => undefined,
-  storeSoupInputModel: vi.fn(),
   storeChatStateImmediate: mocks.storeModel,
-  explicitSoupModel: () => undefined,
-  rememberSoupModelChoice: vi.fn(),
-  resolveSoupInitialModel: () => undefined,
-}));
-vi.mock('@core/component/AI/util/saw-free-plan', () => ({
-  hasSawFreePlan: () => false,
-  noteSawFreePlan: vi.fn(),
 }));
 vi.mock('@core/component/AI/util/plan-model', () => ({
   UPGRADE_MODEL: 'anthropic/claude-opus-5-5',
+}));
+vi.mock('@queries/composer-model', () => ({
+  useComposerModelPreference: () => ({
+    loaded: () => false,
+    modelId: () => undefined,
+    explicit: () => false,
+    remember: vi.fn(),
+  }),
 }));
 vi.mock('@core/context/user', () => ({
   useUserId: () => () => 'user',

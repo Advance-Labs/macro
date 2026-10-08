@@ -31,7 +31,6 @@ const mocks = vi.hoisted(() => ({
   recentUrls: [] as string[],
   preferredInmemModel: undefined as string | undefined,
   preferredExplicit: false,
-  sawFreePlan: false,
   rememberInmemModel: vi.fn((id: string) => {
     mocks.preferredInmemModel = id;
     mocks.preferredExplicit = true;
@@ -65,19 +64,16 @@ vi.mock('../primitives/recent-repositories', () => ({
     remember: vi.fn(),
   }),
 }));
-vi.mock('../primitives/preferred-inmem-model', () => ({
-  createPreferredInmemModel: () => ({
-    model: () => mocks.preferredInmemModel,
+vi.mock('@queries/composer-model', () => ({
+  useComposerModelPreference: () => ({
+    loaded: () => true,
+    modelId: () => mocks.preferredInmemModel,
     explicit: () =>
       mocks.preferredExplicit ||
       Boolean(
         mocks.preferredInmemModel &&
           mocks.preferredInmemModel !== 'google/gemini-3.8-flash'
       ),
-    sawFreePlan: () => mocks.sawFreePlan,
-    noteFreePlan: () => {
-      mocks.sawFreePlan = true;
-    },
     remember: mocks.rememberInmemModel,
   }),
 }));
@@ -298,7 +294,6 @@ describe('agent-led new conversation', () => {
     mocks.recentUrls = [];
     mocks.preferredInmemModel = undefined;
     mocks.preferredExplicit = false;
-    mocks.sawFreePlan = false;
     mocks.repositories = [
       { url: 'https://github.com/macro-inc/macro', defaultBranch: 'develop' },
     ];
@@ -388,7 +383,7 @@ describe('agent-led new conversation', () => {
       prompt: 'Prompt',
       botId: undefined,
       repoUrl: undefined,
-      modelOverride: 'chat-default',
+      modelOverride: 'anthropic/claude-opus-5-5',
     });
   });
   it('flags a send before the model catalog loads as a model fallback', () => {
@@ -449,9 +444,7 @@ describe('agent-led new conversation', () => {
     ).toBeTruthy();
     expect(screen.getByTestId('drawer').hasAttribute('hidden')).toBe(true);
     openAgents();
-    expect(
-      screen.getByRole('menuitem', { name: /^Chat default$/ })
-    ).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /^Opus 5\.5/ })).toBeTruthy();
     expect(screen.queryByRole('menuitem', { name: /Cursor/ })).toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
@@ -460,7 +453,7 @@ describe('agent-led new conversation', () => {
       prompt: 'Prompt',
       botId: undefined,
       repoUrl: undefined,
-      modelOverride: 'chat-default',
+      modelOverride: 'anthropic/claude-opus-5-5',
     });
   });
   it('offers only coding agents in Code and opens the repository drawer', async () => {
@@ -657,7 +650,7 @@ describe('agent-led new conversation', () => {
   it('shows the model beside the agent and sends a hovered model choice only once', async () => {
     const send = page();
     expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain(
-      'Chat default'
+      'Opus 5.5'
     );
     await hoverAgent('Cursor');
     expect(screen.queryByText('Use agent default')).toBeNull();
@@ -847,8 +840,7 @@ describe('agent-led new conversation', () => {
       'Sonnet 5.5'
     );
   });
-  it('switches to Opus after upgrade when no model was chosen', () => {
-    mocks.sawFreePlan = true;
+  it('opens a paid composer with no saved model on Opus', () => {
     const send = page();
     expect(screen.getByRole('button', { name: 'Agent' }).textContent).toBe(
       'Opus 5.5'
@@ -860,8 +852,7 @@ describe('agent-led new conversation', () => {
       })
     );
   });
-  it('keeps Gemini chosen from a paid catalog after upgrade', () => {
-    mocks.sawFreePlan = true;
+  it('keeps Gemini chosen from a paid catalog', () => {
     mocks.preferredInmemModel = 'google/gemini-3.8-flash';
     mocks.preferredExplicit = true;
     const send = page();
@@ -935,7 +926,7 @@ describe('agent-led new conversation', () => {
     await selectAgent(/Cursor/);
     expect(mocks.openSettings).toHaveBeenCalledWith('Harness');
     expect(screen.getByRole('button', { name: 'Agent' }).textContent).toContain(
-      'Chat default'
+      'Opus 5.5'
     );
     expect(screen.getByTestId('drawer').hasAttribute('hidden')).toBe(true);
   });

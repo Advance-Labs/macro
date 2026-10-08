@@ -10,11 +10,12 @@ use axum::{
     routing::{get, post},
 };
 use bots::outbound::pg_bots_repo::PgBotsRepo;
-use chat::domain::service::ChatServiceImpl;
+use chat::domain::service::{ChatServiceImpl, SelectedModelService};
 use chat::inbound::http::router::{
     ChatRouterState, chat_create_router, chat_id_router, chat_view_router,
 };
-use chat::outbound::postgres::PgChatRepo;
+use chat::inbound::http::selected_model::{SelectedModelRouterState, selected_model_router};
+use chat::outbound::postgres::{PgChatRepo, PgSelectedModelRepo};
 use entity_access::domain::service::EntityAccessServiceImpl;
 use entity_access::outbound::PgAccessRepository;
 use entity_registry::OwnerGrantPolicy;
@@ -72,7 +73,15 @@ pub fn router(state: ApiContext) -> Router<ApiContext> {
     let require_user =
         axum::middleware::from_fn_with_state(state.clone(), require_authenticated_user);
 
+    let selected_model_state = SelectedModelRouterState::new(
+        SelectedModelService::new(PgSelectedModelRepo::new(state.db.clone())),
+        state.authorization_state.clone(),
+        state.user_permissions_service.clone(),
+    );
+
     Router::new()
+        // Static path, so it is not captured by `/{chat_id}`.
+        .merge(selected_model_router(selected_model_state))
         // Create route — no ensure_chat_exists; the handler's authorization
         // extractor enforces authentication.
         // Note: free users are intentionally no longer capped by chat/document count,

@@ -280,13 +280,12 @@ the shimmer.
   (Sonnet 5, Opus 5, Fable 5.1) are not offered.
   Selecting a model here selects
   the default runtime and applies that model to the next send, retracting the repository drawer.
-  A model chosen from that catalog is remembered in local storage as the
-  default for Macro's in-memory agent until another model entry is picked.
-  Gemini on the free plan is the only model, so selecting it is not remembered.
-  After a free plan, a user who never picked a model lands on **Opus 5.5**.
+  A model chosen from that catalog is saved on the server as the default for
+  Macro's in-memory agent until another model entry is picked.
+  Gemini on the free plan is the only model, so selecting it is not saved.
+  A paid plan with no saved pick lands on **Opus 5.5**.
   A model they did pick, including Gemini chosen while other models were
-  available, stays selected. Users who have never been on the free plan keep
-  the catalog's current model.
+  available, stays selected.
   The built-in Macro agent is the only agent excluded from these sections; its models remain available.
   Unavailable paired agents stay visible with a reason.
   If Macro is unavailable, its catalog stays searchable but
@@ -734,8 +733,8 @@ existing text sizing.
   in dev, heavy models carry a `2.5× usage` / `5× usage` hint.
   On the free plan everything but `Gemini 3.8 Flash` is
   dimmed with a lock and opens the `Smart models are premium` paywall when clicked.
-  Upgrading without having chosen a model (Gemini is the only free option, so
-  using it is not a choice) switches this composer to `Opus 5.5`. A model
+  A paid plan with no saved model choice (Gemini is the only free option, so
+  using it is not a choice) opens this composer on `Opus 5.5`. A model
   chosen while others were available stays selected.
 - `Send` button (disabled when empty). While streaming it becomes `Stop generating`.
 
@@ -1512,11 +1511,11 @@ paid-model preference: the composer should show Gemini and send that model.
 In a live session, confirm the model options contain only Gemini. Backend tests
 also exercise direct ACP model-change requests, downgrade, and resume.
 
-Upgrading from that free plan switches the Macro composer to **Opus 5.5** when
-local storage has no real model choice. Gemini left there because it was the
-only free option does not count. A model picked while other models were
-available, including Gemini, is kept. The legacy new-chat composer follows the
-same rule for its stored model.
+A paid plan with no saved model choice opens the Macro composer on **Opus 5.5**.
+The choice is stored for the user on the server. Gemini left in this browser
+because it was the only free option does not count and is not uploaded. A model
+picked while other models were available, including Gemini, is kept. The legacy
+new-chat composer follows the same rule.
 
 ## Booking links
 

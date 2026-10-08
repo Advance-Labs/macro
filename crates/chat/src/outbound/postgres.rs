@@ -1,7 +1,10 @@
 //! Postgres-backed [`ChatRepo`] implementation.
 
 mod queries;
+mod selected_model;
 mod team_share;
+
+pub use selected_model::PgSelectedModelRepo;
 #[cfg(test)]
 mod test;
 

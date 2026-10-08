@@ -39,8 +39,10 @@ import type {
   PipedreamUpdateRequest,
   ProjectionStateResponse,
   RejectToolCallRequest,
+  RememberSelectedModelRequest,
   RunImportOutcome,
   RunImportRequest,
+  SelectedModelResponse,
   SendChatMessageResponse,
   ServerResponse,
   SetPricingRequest,
@@ -669,6 +671,126 @@ export const getChatHistoryBatchMessagesHandler = async (
     status: res.status,
     headers: res.headers,
   } as getChatHistoryBatchMessagesHandlerResponse;
+};
+
+/**
+ * @summary The model the signed-in user's composer should open on.
+ */
+export type getSelectedModelResponse200 = {
+  data: SelectedModelResponse;
+  status: 200;
+};
+
+export type getSelectedModelResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type getSelectedModelResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type getSelectedModelResponseSuccess = getSelectedModelResponse200 & {
+  headers: Headers;
+};
+export type getSelectedModelResponseError = (
+  | getSelectedModelResponse401
+  | getSelectedModelResponse500
+) & {
+  headers: Headers;
+};
+
+export type getSelectedModelResponse =
+  | getSelectedModelResponseSuccess
+  | getSelectedModelResponseError;
+
+export const getGetSelectedModelUrl = () => {
+  return `/chats/selected-model`;
+};
+
+export const getSelectedModel = async (
+  options?: RequestInit
+): Promise<getSelectedModelResponse> => {
+  const res = await fetch(getGetSelectedModelUrl(), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSelectedModelResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as getSelectedModelResponse;
+};
+
+/**
+ * @summary Record a model the signed-in user picked while other models were available.
+ */
+export type rememberSelectedModelResponse200 = {
+  data: SelectedModelResponse;
+  status: 200;
+};
+
+export type rememberSelectedModelResponse400 = {
+  data: string;
+  status: 400;
+};
+
+export type rememberSelectedModelResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type rememberSelectedModelResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type rememberSelectedModelResponseSuccess =
+  rememberSelectedModelResponse200 & {
+    headers: Headers;
+  };
+export type rememberSelectedModelResponseError = (
+  | rememberSelectedModelResponse400
+  | rememberSelectedModelResponse401
+  | rememberSelectedModelResponse500
+) & {
+  headers: Headers;
+};
+
+export type rememberSelectedModelResponse =
+  | rememberSelectedModelResponseSuccess
+  | rememberSelectedModelResponseError;
+
+export const getRememberSelectedModelUrl = () => {
+  return `/chats/selected-model`;
+};
+
+export const rememberSelectedModel = async (
+  rememberSelectedModelRequest: RememberSelectedModelRequest,
+  options?: RequestInit
+): Promise<rememberSelectedModelResponse> => {
+  const res = await fetch(getRememberSelectedModelUrl(), {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rememberSelectedModelRequest),
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rememberSelectedModelResponse['data'] = body
+    ? JSON.parse(body)
+    : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as rememberSelectedModelResponse;
 };
 
 /**
