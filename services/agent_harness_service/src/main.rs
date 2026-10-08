@@ -10,6 +10,7 @@
 mod agent_runtime_directory;
 mod api;
 mod bots_directory;
+mod code_mode;
 mod coding_agent;
 mod coding_agents;
 mod config;
@@ -517,16 +518,58 @@ async fn run() -> anyhow::Result<()> {
     )
     .await
     .context("failed to build the in-memory agent tool context")?;
-    // Macro's own tools run in-process here rather than through the egress
-    // proxy, so they are held for the owner by the same approvals.
-    let inmem_model_engine: Arc<dyn TurnEngine> = Arc::new(
-        RigTurnEngine::new(pool.clone(), tool_context).with_gate(Arc::new(
-            agent_inmem::outbound::approval_gate::OwnerApprovalGate::new(
-                session_repo.clone(),
-                Arc::clone(&tool_approvals),
-            ),
-        )),
+    let owner_tool_gate: Arc<dyn agent_inmem::domain::tool_gate::NativeToolGate> = Arc::new(
+        agent_inmem::outbound::approval_gate::OwnerApprovalGate::new(
+            session_repo.clone(),
+            Arc::clone(&tool_approvals),
+        ),
     );
+    let code_executor: Option<Arc<dyn code_execution::domain::ProgramExecutor>> =
+        match (&config.code_execution_url, &config.code_execution_token) {
+            (Some(endpoint), Some(token)) => Some(Arc::new(
+                code_execution::outbound::client::RunnerClient::new(
+                    endpoint.clone(),
+                    code_execution::protocol::ServiceToken::new(token.clone()).map_err(
+                        |error| anyhow::anyhow!("invalid code runner credential: {error}"),
+                    )?,
+                    4,
+                    16,
+                )
+                .map_err(|error| anyhow::anyhow!("invalid code runner configuration: {error}"))?,
+            )),
+            (None, None) => None,
+            _ => anyhow::bail!(
+                "CODE_EXECUTION_URL and CODE_EXECUTION_TOKEN must be configured together"
+            ),
+        };
+    let code_mode_enabled = code_executor.is_some();
+    let code_mode: Arc<dyn agent_code_mode::domain::SessionCodeMode> =
+        Arc::new(agent_code_mode::domain::CodeModeService::new(
+            code_executor,
+            Arc::new(code_mode::ApprovedCodeTools::new(
+                Arc::new(agent_code_mode::outbound::tools::ToolsetDispatcher::new(
+                    ai_tools::tools_for(ai_tools::AiHost::AgentSession).toolset,
+                    tool_context.clone(),
+                    |base, identity| {
+                        let mut context = base.clone().with_actor(identity.bot);
+                        context.usage_context = ai_usage::UsageContext::new(
+                            ai_usage::AiFeature::AgentSession,
+                            identity.owner.clone(),
+                        );
+                        context
+                    },
+                )),
+                owner_tool_gate.clone(),
+            )),
+            Arc::new(agent_code_mode::outbound::postgres::PgExecutionStore::new(
+                pool.clone(),
+            )),
+            Arc::new(agent_code_mode::outbound::turns::SessionTurns(
+                session_repo.clone(),
+            )),
+        ));
+    let inmem_model_engine: Arc<dyn TurnEngine> =
+        Arc::new(RigTurnEngine::new(pool.clone(), tool_context).with_gate(owner_tool_gate));
     // A model provider cannot fetch images from a private local-stack hostname.
     // Resolve its static-file links through the existing attachment service,
     // including links replayed from earlier turns, before calling the model.
@@ -646,6 +689,7 @@ async fn run() -> anyhow::Result<()> {
             .host_str()
             .context("egress URL needs a host")?
             .to_owned(),
+        code_mode_enabled.then(|| code_mode.clone()),
     );
     let cursor_manager = CursorContainerManager::new(
         cursor_keys.clone(),
@@ -1280,6 +1324,13 @@ async fn run() -> anyhow::Result<()> {
                 MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
             ),
         );
+    let code_executions = agent_code_mode::inbound::axum_router::code_execution_router(
+        agent_code_mode::inbound::axum_router::CodeExecutionRouterState::new(
+            code_mode,
+            entity_access.clone(),
+            MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
+        ),
+    );
     let sharing = agent_session::inbound::axum_router::sharing::agent_session_sharing_router(
         AgentSessionRouterState::new(
             agent_session::domain::sharing::SessionSharingService::new(session_repo.clone()),
@@ -1309,7 +1360,8 @@ async fn run() -> anyhow::Result<()> {
             .with_coding_agents(coding_agents)
             .with_capabilities(capabilities)
             .with_pull_requests(pull_requests)
-            .with_tool_approvals(tool_approval_answers),
+            .with_tool_approvals(tool_approval_answers)
+            .with_code_executions(code_executions),
             http_runtime_commands_readiness,
             http_port,
             shutdown_signal(),
