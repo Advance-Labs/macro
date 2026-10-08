@@ -4,8 +4,11 @@ This stack starts Grafana alongside Datadog on one private EC2 instance. It
 provisions Grafana, Loki, Tempo, Prometheus and Alloy using Docker Compose on a
 prebuilt NixOS image. Nix declares host packages, Docker, service dependencies,
 health timers and access policy; Pulumi owns AWS resources and nonsecret app
-configuration. The existing container versions/configuration remain in `render.ts`
-and `assets/` so changing the host OS does not also change backend packaging.
+configuration. `nixos/application-config.nix` declares Grafana settings and
+datasources as Nix attribute sets and the Alloy pipeline as a Nix multiline
+string. Nix generates their INI/YAML/Alloy files and bakes them into the image;
+there are no separately maintained copies. Container versions and mounts remain
+in `render.ts`; the remaining backend/proxy templates live in `assets/`.
 Datadog instrumentation, collection and alerts remain unchanged. Nothing sends
 application telemetry here until a subsequent dual-export change is deployed.
 
@@ -102,7 +105,10 @@ beyond trusted internal services.
 Secrets Manager holds Google client credentials, the Grafana encryption key and
 the ingestion token. EC2 retrieves them at startup into `/run` with restricted
 file permissions; secret values never enter Pulumi state, user-data, container
-environment variables or configuration committed here. The secret must use the
+environment variables or configuration committed here. Grafana's nonsecret host
+and approved-user role expression are supplied through environment variables;
+the generated INI refers to them through Grafana's environment provider. Secrets
+remain file references in the Nix store, never secret values. The secret must use the
 AWS-managed Secrets Manager encryption key; a customer-managed key needs an
 explicit scoped KMS policy addition. IMDSv2 is required with hop limit 2 so Loki
 and Tempo can use the instance role from containers. The single host is one trust
@@ -232,7 +238,9 @@ sudo docker compose -f /opt/observability/compose.json logs --tail 100
 Nonsecret application configuration is delivered as versioned, compressed JSON
 in EC2 user-data. NixOS reads it using IMDSv2 and an explicit file allowlist; the
 standard NixOS user-data evaluator is disabled. Host services and helper scripts
-are baked into the AMI. Changes (including
+are baked into the AMI, along with Grafana, datasource and Alloy configuration.
+User-data schema version 2 rejects attempts to supply those baked configuration
+files. Changing them requires a new image and reviewed `amiId`. Changes (including
 allowlists or image versions) replace the instance and cause downtime. The old
 instance is deleted before replacement, its data volume is cleanly detached,
 then the new host waits for that exact volume. Bootstrap formats only a disk with
@@ -288,7 +296,8 @@ bun run check
 Build the NixOS image from this stack directory with `nix build . --cores 2`.
 The systemd test evaluates the actual units from the pinned NixOS configuration.
 
-The opt-in test creates and removes its own Docker project, temporary directories
+The opt-in test requires Nix and builds the same `application-config` output used
+by the AMI. It creates and removes its own Docker project, temporary directories
 and LocalStack S3. It uses fake credentials and loopback-only ephemeral ports. It
 checks real container startup, Google authorization redirect/PKCE, role mapping,
 unauthenticated access denial, token validation, ingestion-only routing,

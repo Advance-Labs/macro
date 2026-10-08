@@ -9,11 +9,10 @@ from unittest.mock import patch
 
 script = Path(__file__).resolve().parents[1] / 'nixos/read-user-data.py'
 files = {name: '' for name in [
-    'compose.json', 'grafana.ini', 'nginx.conf', 'loki.yaml', 'tempo.yaml',
-    'prometheus.yaml', 'datasources.yaml', 'config.alloy',
+    'compose.json', 'nginx.conf', 'loki.yaml', 'tempo.yaml', 'prometheus.yaml',
 ]}
 files['bootstrap.json'] = json.dumps({'region': 'us-east-2'})
-fixture = {'version': 1, 'volumeId': 'vol-0123456789abcdef0', 'files': files}
+fixture = {'version': 2, 'volumeId': 'vol-0123456789abcdef0', 'files': files}
 
 def check(payload, succeeds):
     with tempfile.TemporaryDirectory() as directory:
@@ -41,8 +40,9 @@ def check(payload, succeeds):
                 assert requests[1].args[0].get_header('X-aws-ec2-metadata-token') == 'test-imds-token'
 
 check(fixture, True)
-check({**fixture, 'version': 2}, False)
+check({**fixture, 'version': 1}, False)
 check({**fixture, 'volumeId': '/dev/nvme0n1'}, False)
 check({**fixture, 'files': {**files, '../escape': 'invalid'}}, False)
+check({**fixture, 'files': {**files, 'grafana.ini': 'override baked auth'}}, False)
 check({**fixture, 'files': {**files, 'bootstrap.json': '{"region":"us-east-1"}'}}, False)
 print('PASS: IMDSv2, version, volume identity, file allowlist and region validation')

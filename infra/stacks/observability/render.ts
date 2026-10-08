@@ -24,19 +24,15 @@ export function renderFiles(settings: Settings): Record<string, string> {
     REGION: settings.region,
     GRAFANA_HOST: settings.grafanaHost,
     OTLP_HOST: settings.otlpHost,
-    ROLE_EXPRESSION: roleExpression(settings),
     LOGS_BUCKET: settings.logsBucket,
     TRACES_BUCKET: settings.tracesBucket,
   };
   const files: Record<string, string> = {};
   for (const name of [
-    'grafana.ini',
     'nginx.conf',
     'loki.yaml',
     'tempo.yaml',
     'prometheus.yaml',
-    'datasources.yaml',
-    'config.alloy',
   ]) {
     files[name] = readFileSync(join(__dirname, 'assets', name), 'utf8').replace(
       /@@([A-Z_]+)@@/g,
@@ -65,6 +61,8 @@ export function renderFiles(settings: Settings): Record<string, string> {
     },
   };
   const config = (name: string, target: string) => `./${name}:${target}:ro`;
+  const bakedConfig = (name: string, target: string) =>
+    `/etc/observability/config/${name}:${target}:ro`;
   const data = (name: string, target: string) =>
     `/srv/observability/${name}:${target}`;
   const secret = (name: string) =>
@@ -79,9 +77,14 @@ export function renderFiles(settings: Settings): Record<string, string> {
           user: '472:472',
           group_add: ['10001'],
           mem_limit: '1g',
+          environment: {
+            GRAFANA_HOST: settings.grafanaHost,
+            GRAFANA_ROOT_URL: `https://${settings.grafanaHost}/`,
+            GRAFANA_ROLE_EXPRESSION: roleExpression(settings),
+          },
           volumes: [
-            config('grafana.ini', '/etc/grafana/grafana.ini'),
-            config(
+            bakedConfig('grafana.ini', '/etc/grafana/grafana.ini'),
+            bakedConfig(
               'datasources.yaml',
               '/etc/grafana/provisioning/datasources/main.yaml'
             ),
@@ -144,7 +147,7 @@ export function renderFiles(settings: Settings): Record<string, string> {
             '/etc/alloy/config.alloy',
           ],
           volumes: [
-            config('config.alloy', '/etc/alloy/config.alloy'),
+            bakedConfig('config.alloy', '/etc/alloy/config.alloy'),
             data('alloy', '/var/lib/alloy'),
             secret('otlp_token'),
           ],
@@ -169,7 +172,7 @@ export function renderFiles(settings: Settings): Record<string, string> {
 export function renderUserData(settings: Settings): string {
   const compressed = gzipSync(
     JSON.stringify({
-      version: 1,
+      version: 2,
       volumeId: settings.volumeId,
       files: renderFiles(settings),
     })

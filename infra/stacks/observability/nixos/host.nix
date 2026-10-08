@@ -98,4 +98,5 @@ in
   };
 
   environment.etc."observability/prepare-volume.sh".source = ../assets/prepare-volume.sh;
+  environment.etc."observability/config".source = import ./application-config.nix { inherit pkgs; };
 }

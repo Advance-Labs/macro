@@ -67,7 +67,7 @@ test('EC2 user data fits its limit and contains only versioned configuration', (
   const data = gunzipSync(compressed).toString();
   expect(data).not.toContain('@@');
   const payload = JSON.parse(data);
-  expect(payload.version).toBe(1);
+  expect(payload.version).toBe(2);
   expect(payload.volumeId).toBe(fixture.volumeId);
   expect(payload.files).toEqual(renderFiles(fixture));
   const compose = JSON.parse(renderFiles(fixture)['compose.json']);

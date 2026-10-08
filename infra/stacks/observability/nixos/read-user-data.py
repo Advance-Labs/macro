@@ -22,14 +22,14 @@ with http.open(request, timeout=10) as response:
 if len(raw) > 16384:
     raise SystemExit('User data exceeds EC2 limit')
 payload = json.loads(gzip.decompress(raw))
-if payload.get('version') != 1:
+if payload.get('version') != 2:
     raise SystemExit('Unsupported observability user-data version')
 volume_id = payload.get('volumeId', '')
 if not re.fullmatch(r'vol-[a-f0-9]+', volume_id):
     raise SystemExit('Invalid retained volume ID')
 expected = {
-    'bootstrap.json', 'compose.json', 'grafana.ini', 'nginx.conf', 'loki.yaml',
-    'tempo.yaml', 'prometheus.yaml', 'datasources.yaml', 'config.alloy',
+    'bootstrap.json', 'compose.json', 'nginx.conf', 'loki.yaml',
+    'tempo.yaml', 'prometheus.yaml',
 }
 files = payload.get('files', {})
 if set(files) != expected or not all(isinstance(value, str) for value in files.values()):

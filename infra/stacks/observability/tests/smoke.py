@@ -4,6 +4,7 @@ import json
 import ipaddress
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -12,6 +13,12 @@ import urllib.parse
 import urllib.request
 
 root = Path(sys.argv[1])
+flake = Path(__file__).resolve().parents[1]
+build = subprocess.run(
+    ['nix', 'build', f'path:{flake}#application-config', '--no-link', '--print-out-paths'],
+    check=True, capture_output=True, text=True,
+)
+baked_config = Path(build.stdout.strip())
 region = json.loads((root / 'bootstrap.json').read_text())['region']
 project = root.name.lower()
 compose = json.loads((root / 'compose.json').read_text())
@@ -38,6 +45,10 @@ for name, service in services.items():
             source = str(root / key)
             Path(source).write_text('smoke-test-credential-not-real-00000000')
             os.chmod(source, 0o444)
+        elif source.startswith('/etc/observability/config/'):
+            config_name = Path(source).name
+            source = str(root / config_name)
+            shutil.copyfile(baked_config / config_name, source)
         volumes.append(':'.join([source, target, *mode]))
     service['volumes'] = volumes
     if name in ['loki', 'tempo']:
@@ -104,9 +115,8 @@ try:
     docker('up', '-d', 's3')
     eventually(lambda: 'Buckets' in docker('exec', '-T', 's3', 'awslocal', 's3api', 'list-buckets'))
     # Evaluate the actual configured JMESPath, including non-approved staff.
-    expression = next(line.split(' = ', 1)[1] for line in
-                      (root / 'grafana.ini').read_text().splitlines()
-                      if line.startswith('role_attribute_path = '))
+    expression = services['grafana']['environment']['GRAFANA_ROLE_EXPRESSION']
+    assert '$__env{GRAFANA_ROLE_EXPRESSION}' in (root / 'grafana.ini').read_text()
     role_check = '''import jmespath, sys
 expression = sys.argv[1]
 for email, role in [('admin@macro.com', 'GrafanaAdmin'),
