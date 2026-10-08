@@ -15,47 +15,48 @@ import { Tooltip } from './Tooltip';
 const BUTTON_TOUCH_STYLES =
   "touch:min-h-9 touch:min-w-9 touch:[&>svg:not([class*='size-'])]:size-6";
 
-// Hover/press feedback is painted as a translucent scrim *on top of* each
-// variant's base background-color (via the `overlay-*` background-image utility)
-// rather than replacing/thinning the base color, so buttons keep their full
-// color on hover. The `cta`/`contrast` variants use a surface scrim so their
-// solid backgrounds lighten toward the text color instead of washing out.
+// Variant owns emphasis and surface; size only controls geometry.
 /** Canonical variant classes for buttons and button-like elements. */
 export const buttonVariants = createVariants(
   cn(
     'relative inline-flex shrink-0 items-center justify-center whitespace-nowrap text-sm',
-    'rounded-md border border-transparent font-medium outline-none select-none transition-colors',
-    'data-disabled:cursor-not-allowed data-disabled:opacity-30',
+    'rounded-full border border-transparent font-medium outline-none select-none transition-colors duration-120 motion-reduce:transition-none [&_*]:select-none',
+    'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-edge-focus',
+    'aria-pressed:overlay-active',
+    'data-disabled:cursor-not-allowed data-disabled:opacity-50',
     '[&_svg]:pointer-events-none [&_svg]:shrink-0'
   ),
   {
     variant: {
       danger:
-        'bg-failure-bg text-failure dark:bg-failure-bg not-disabled:hover:bg-failure/25 not-disabled:active:bg-failure/30',
+        'bg-transparent border-edge-button text-failure not-touch:not-disabled:hover:overlay-hover not-touch:not-disabled:active:overlay-active',
       outline:
-        'bg-transparent text-ink-muted border-edge-muted not-disabled:hover:bg-hover not-disabled:hover:text-ink not-disabled:active:bg-active',
-      accent: 'bg-accent-bg not-disabled:hover:overlay-accent-bg text-accent',
+        'bg-control text-ink-muted border-edge-button not-touch:not-disabled:hover:overlay-hover not-touch:not-disabled:hover:text-ink not-touch:not-disabled:active:overlay-active',
+      accent:
+        'bg-accent-bg not-touch:not-disabled:hover:overlay-accent-bg text-accent',
       success:
-        'bg-success-bg not-disabled:hover:overlay-success-bg text-success',
+        'bg-transparent border-edge-button text-success not-touch:not-disabled:hover:overlay-hover not-touch:not-disabled:active:overlay-active',
       ghost:
-        'bg-transparent text-ink-muted not-disabled:hover:overlay-hover not-disabled:hover:text-ink not-disabled:active:overlay-active',
+        'bg-transparent text-ink-muted not-touch:not-disabled:hover:overlay-hover not-touch:not-disabled:hover:text-ink not-touch:not-disabled:active:overlay-active',
       strong:
-        'bg-ink text-surface-4 focus-visible:ring-surface-4/70 not-disabled:hover:overlay-[color-mix(in_oklch,var(--color-surface-4)_12%,transparent)] not-disabled:active:overlay-[color-mix(in_oklch,var(--color-surface-4)_22%,transparent)]',
-      cta: 'bg-accent text-accent-contrast focus-visible:ring-accent-contrast/70 [--color-edge:var(--color-accent-contrast-muted)] [--color-edge-muted:var(--color-accent-contrast-muted)] not-disabled:hover:overlay-[color-mix(in_oklch,var(--color-surface)_12%,transparent)] not-disabled:active:overlay-[color-mix(in_oklch,var(--color-surface)_22%,transparent)]',
+        'bg-control text-ink-muted border-edge-button font-semibold not-touch:not-disabled:hover:overlay-hover not-touch:not-disabled:hover:text-ink not-touch:not-disabled:active:overlay-active',
+      cta: 'bg-accent text-accent-contrast focus-visible:ring-accent-contrast/70 [--color-edge:var(--color-accent-contrast-muted)] [--color-edge-muted:var(--color-accent-contrast-muted)] not-touch:not-disabled:hover:overlay-[color-mix(in_oklch,var(--color-surface)_12%,transparent)] not-touch:not-disabled:active:overlay-[color-mix(in_oklch,var(--color-surface)_22%,transparent)]',
     },
     size: {
-      xs: "h-5 gap-1 px-1 text-xs [&>svg:not([class*='size-'])]:size-3",
-      'icon-xs': "size-5 p-0.5 [&>svg:not([class*='size-'])]:size-4",
+      xs: "h-5 gap-1 px-1.5 text-xs [&>svg:not([class*='size-'])]:size-3",
+      'icon-xs': "size-5 p-0.5 [&>svg:not([class*='size-'])]:size-3",
       sm: CONTROL_SIZE_VARIANTS.sm,
       md: CONTROL_SIZE_VARIANTS.md,
-      lg: `${CONTROL_SIZE_VARIANTS.lg} rounded-lg`,
-      xl: "h-12 gap-2 px-4 text-base rounded-lg [&>svg:not([class*='size-'])]:size-5",
+      lg: CONTROL_SIZE_VARIANTS.lg,
+      xl: "h-12 gap-2 px-4 text-base [&>svg:not([class*='size-'])]:size-5",
       'icon-lg':
-        "size-11 aspect-square p-2 [&>svg:not([class*='size-'])]:size-7",
+        "size-9 aspect-square p-2 [&>svg:not([class*='size-'])]:size-5",
       'icon-md':
-        "size-9 aspect-square p-1.5 [&>svg:not([class*='size-'])]:size-6",
+        "size-8 aspect-square p-1.5 [&>svg:not([class*='size-'])]:size-4",
       'icon-sm':
-        "size-6 aspect-square p-1 [&>svg:not([class*='size-'])]:size-4",
+        "size-6 aspect-square p-1 [&>svg:not([class*='size-'])]:size-3.5",
+      'icon-composer':
+        'size-6 aspect-square p-1 touch:[&_svg]:size-3.5 not-touch:size-[33.75px] not-touch:p-[3.75px] not-touch:[&_svg]:size-[20.625px]',
     },
   },
   {
@@ -74,6 +75,8 @@ export type ButtonClassOptions = {
   size?: ButtonSize;
   fullWidth?: boolean;
   noTouchResize?: boolean;
+  /** Override glass: framed variants default to touch-only; true enables all devices. */
+  glass?: boolean;
   square?: boolean;
   class?: string;
 };
@@ -89,6 +92,8 @@ export type ButtonProps = ButtonRootProps<'button'> &
      */
     fullWidth?: boolean;
     noTouchResize?: boolean;
+    /** Override glass: framed variants default to touch-only; true enables all devices. */
+    glass?: boolean;
     square?: boolean;
     variant?: ButtonVariant;
     children?: JSX.Element;
@@ -120,11 +125,14 @@ export function buttonClasses(options: ButtonClassOptions = {}): string {
     fullWidth = false,
     noTouchResize = false,
     square = false,
+    glass,
     class: className,
   } = options;
 
   return cn(
     buttonVariants({ variant, size }),
+    glass === true && 'glass',
+    glass === undefined && (variant ?? 'ghost') !== 'ghost' && 'touch:glass',
     fullWidth && 'w-full',
     !noTouchResize && BUTTON_TOUCH_STYLES,
     square && 'aspect-square p-0',
@@ -136,6 +144,21 @@ function isIconSize(size: ButtonSize): boolean {
   return size.startsWith('icon-');
 }
 
+/**
+ * The standard way to trigger an action. `variant` carries emphasis and
+ * `size` carries density; both are shared with Badge so button-like elements
+ * line up.
+ *
+ * @do Use ghost for unframed actions, at any size.
+ * @do Use strong for outline actions with bolder type and cta for accent-filled actions.
+ * @do Use glass={true} to opt in on desktop, or glass={false} to opt out on touch.
+ * @do Always set `label` on icon-only buttons; it is the accessible name.
+ * @do Use `danger` only for destructive actions, paired with a confirmation.
+ * @dont Do not restyle a button with utility classes when a variant already
+ *   covers it.
+ * @dont Do not use a Button for navigation that should be a link.
+ * @dont Do not put two `danger` buttons next to each other.
+ */
 export const Button = (props: ButtonProps) => {
   const [local, others] = splitProps(props, [
     'tooltipPlacement',
@@ -150,6 +173,7 @@ export const Button = (props: ButtonProps) => {
     'size',
     'fullWidth',
     'noTouchResize',
+    'glass',
     'square',
     'tooltipDisabled',
     'aria-label',
@@ -161,14 +185,17 @@ export const Button = (props: ButtonProps) => {
   const size = () => local.size ?? group?.size ?? 'md';
 
   const cls = () =>
-    buttonClasses({
-      variant: variant(),
-      size: size(),
-      fullWidth: local.fullWidth,
-      noTouchResize: local.noTouchResize,
-      square: local.square,
-      class: local.class,
-    });
+    cn(
+      buttonClasses({
+        variant: variant(),
+        size: size(),
+        fullWidth: local.fullWidth,
+        noTouchResize: local.noTouchResize,
+        glass: group !== undefined ? false : local.glass,
+        square: local.square,
+      }),
+      local.class
+    );
 
   const placement = () => local.tooltipPlacement ?? 'bottom';
 

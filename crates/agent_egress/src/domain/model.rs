@@ -15,6 +15,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL_NO_PAD;
 use bytes::Bytes;
 use http::header::{self, HeaderMap, HeaderName};
 use http::{HeaderValue, Method};
+use http_body_util::BodyExt;
+use http_body_util::Full;
 use http_body_util::combinators::UnsyncBoxBody;
 use macro_user_id::email::ReadEmailParts;
 use macro_user_id::user_id::MacroUserIdStr;
@@ -26,6 +28,7 @@ use url::Url;
 use crate::domain::error::EgressError;
 
 pub use agent_fold::domain::log::AgentSessionId;
+pub use agent_session::domain::model::TurnPrompter;
 
 #[cfg(test)]
 mod test;
@@ -150,7 +153,10 @@ impl fmt::Debug for BearerToken {
 /// Two shapes because two upstreams disagree: MCP servers take an OAuth
 /// bearer, and GitHub's git endpoints take Basic with the installation token
 /// as the *password* - git's credential helper protocol has no other way to
-/// carry one.
+/// carry one. The third is the absence of either: a custom MCP server the
+/// owner added by URL without connecting an account is dialed bare, exactly
+/// as the in-process client dials it, and the proxy still strips the
+/// sandbox's own token off the way through.
 #[derive(Clone, PartialEq, Eq)]
 pub enum UpstreamCredential {
     /// `Authorization: Bearer <token>`.
@@ -162,22 +168,26 @@ pub enum UpstreamCredential {
         /// The password half - the credential proper.
         secret: String,
     },
+    /// No `Authorization` at all.
+    Anonymous,
 }
 
 impl UpstreamCredential {
     /// This credential as an `Authorization` header value, marked sensitive
-    /// so the http stack keeps it out of its own logging.
+    /// so the http stack keeps it out of its own logging. `None` for
+    /// [`UpstreamCredential::Anonymous`], which stamps nothing.
     ///
     /// The single place a credential becomes a header, so it is also the
     /// single place validation happens: a secret carrying a newline could
     /// otherwise inject a header of its own choosing into the upstream
     /// request, and `HeaderValue` is what refuses it.
-    pub fn header_value(&self) -> Result<HeaderValue, EgressError> {
+    pub fn header_value(&self) -> Result<Option<HeaderValue>, EgressError> {
         let rendered = match self {
             Self::Bearer(token) => format!("Bearer {}", token.as_str()),
             Self::Basic { username, secret } => {
                 format!("Basic {}", BASE64.encode(format!("{username}:{secret}")))
             }
+            Self::Anonymous => return Ok(None),
         };
 
         let mut value = HeaderValue::from_str(&rendered).map_err(|error| {
@@ -186,7 +196,7 @@ impl UpstreamCredential {
             ))
         })?;
         value.set_sensitive(true);
-        Ok(value)
+        Ok(Some(value))
     }
 }
 
@@ -195,6 +205,7 @@ impl fmt::Debug for UpstreamCredential {
         match self {
             Self::Bearer(_) => f.write_str("Bearer([REDACTED])"),
             Self::Basic { username, .. } => write!(f, "Basic({username}, [REDACTED])"),
+            Self::Anonymous => f.write_str("Anonymous"),
         }
     }
 }
@@ -216,15 +227,222 @@ pub fn is_macro_staff(user: &MacroUserIdStr<'_>) -> bool {
 /// What a verified session token entitles its holder to.
 ///
 /// The owner is the whole authorization story: a session spends the
-/// credentials of the person who opened it, and nobody else's.
+/// credentials of the person who opened it, and nobody else's. The listed
+/// servers are not a permission - any slug resolves against the owner's own
+/// connections - only the names the agent's author gave the apps it was
+/// handed, so a refusal can call an app what the person knows it as.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionGrant {
     /// The session the sandbox is running.
     pub session: AgentSessionId,
     /// Whose connected servers it may reach.
     pub owner: MacroUserIdStr<'static>,
-    /// The one repository this session works on. Git egress is pinned to it.
-    pub repo: RepoSlug,
+    /// The repository git egress is pinned to, if this session chose one.
+    pub repo: Option<RepoSlug>,
+    /// The apps the agent listed for this session, for naming only.
+    pub mcp_servers: Vec<McpServerListing>,
+    /// Who prompted the turn the session is running; `None` before its
+    /// first dispatch.
+    pub prompter: Option<TurnPrompter>,
+}
+
+impl SessionGrant {
+    /// The prompter of a turn whose MCP tool calls must wait for the
+    /// owner's approval: anyone but the owner, a bot on nobody's behalf
+    /// included. `None` when the owner prompted it, or nobody has yet.
+    pub fn held_prompter(&self) -> Option<&TurnPrompter> {
+        self.prompter
+            .as_ref()
+            .filter(|prompter| prompter.user.as_ref() != Some(&self.owner))
+    }
+
+    /// What to call `slug` when speaking to the model: the agent's own name
+    /// for it when the agent listed it, otherwise the slug made readable
+    /// (`google_sheets` → `Google Sheets`).
+    pub fn display_name(&self, slug: &McpServerSlug) -> String {
+        self.mcp_servers
+            .iter()
+            .find(|listing| listing.slug == *slug)
+            .map(|listing| listing.name.clone())
+            .unwrap_or_else(|| readable_slug(slug))
+    }
+}
+
+/// `google_sheets` → `Google Sheets`: the fallback name for an app nobody
+/// gave a display name.
+fn readable_slug(slug: &McpServerSlug) -> String {
+    slug.as_str()
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// One app an agent listed for its sessions: the slug the proxy routes on and
+/// the name anything human-facing calls it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct McpServerListing {
+    /// Pipedream's app slug, verbatim.
+    pub slug: McpServerSlug,
+    /// Display name, e.g. `Linear`.
+    pub name: String,
+}
+
+/// One of the owner's custom MCP servers, as the harness advertises it: the
+/// key the proxy routes on and the name the owner gave the server.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomMcpServerListing {
+    /// The key derived from the server's URL; see [`CustomMcpServerKey`].
+    pub key: CustomMcpServerKey,
+    /// The owner's display name for it, e.g. `Internal wiki`.
+    pub name: String,
+}
+
+/// How a destination resolved: to a call the owner's grant backs, to one
+/// that can be addressed for the owner without any grant behind it, or to
+/// one whose grant has died.
+///
+/// The second exists because Pipedream scopes a call by user id and app slug
+/// alone, so an app the owner never connected is still *addressable* - and
+/// listing its tools works, only calling them does not. The third is a custom
+/// server's: the owner connected it once, and the stored grant no longer
+/// yields a token - expired with no refresh token, or refused on refresh. The
+/// service decides what to do with either; the resolver only reports it.
+#[derive(Clone, Debug)]
+pub enum McpResolution {
+    /// The owner holds an enabled connection for this destination.
+    Connected(UpstreamCall),
+    /// The owner holds no enabled connection, but the upstream can be
+    /// addressed for them anyway.
+    Unconnected(UpstreamCall),
+    /// The owner's connection exists but its grant is dead, so nothing can
+    /// be stamped. The call is bare; the name is what the owner calls the
+    /// server, carried here because nothing else on the path knows it.
+    Disconnected {
+        /// The upstream, with no credential.
+        call: UpstreamCall,
+        /// The owner's display name for the server.
+        name: String,
+    },
+}
+
+/// The most a JSON-RPC request body may be for the proxy to read it.
+///
+/// Only read on the unconnected path, where the proxy has to know the method
+/// to answer `tools/call` itself. MCP requests are small
+/// JSON; the streaming rationale on [`ProxyBody`] is about responses and
+/// packfiles, neither of which is a request body on the MCP route.
+pub const MAX_MCP_REQUEST_BYTES: usize = 1 << 20;
+
+/// The MCP method whose result the model reads as a tool's own answer.
+pub const TOOLS_CALL_METHOD: &str = "tools/call";
+
+/// The parts of a JSON-RPC request the proxy cares about.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JsonRpcCall {
+    /// The method name.
+    pub method: String,
+    /// The request id, echoed on the response. Absent on notifications,
+    /// which get no response at all.
+    pub id: serde_json::Value,
+}
+
+/// Reads the method and id off a single JSON-RPC request.
+///
+/// `None` for anything else - a notification (no id), a batch, or a body
+/// that is not JSON - all of which the caller forwards untouched, since
+/// there is nothing here to answer in their place.
+pub fn peek_json_rpc(body: &[u8]) -> Option<JsonRpcCall> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let object = value.as_object()?;
+    let method = object.get("method")?.as_str()?.to_owned();
+    let id = object.get("id")?.clone();
+    if id.is_null() {
+        return None;
+    }
+    Some(JsonRpcCall { method, id })
+}
+
+/// The markup an agent includes in a reply to give the reader a button that
+/// connects the app. Mirrors the frontend's `m-connect-app` Lexical node; the
+/// payload shape is `{"appSlug": ..., "name": ...}`.
+pub const CONNECT_APP_TAG: &str = "m-connect-app";
+
+/// The tool result the proxy answers a `tools/call` with when the session
+/// owner has not connected the app.
+///
+/// A `result` with `isError: true`, not a JSON-RPC `error`: the former is
+/// what MCP clients hand the model as the tool's own answer, the latter is
+/// rendered as a transport failure the model never sees. The wording is our
+/// own fixed text plus the app's slug and display name - the slug already
+/// validated by [`McpServerSlug::parse`], the name from the agent's own
+/// configuration or derived from that slug.
+pub fn not_connected_tool_result(
+    slug: &McpServerSlug,
+    name: &str,
+    id: serde_json::Value,
+) -> ProxyResponse {
+    let payload = serde_json::json!({
+        "appSlug": slug.as_str(),
+        "name": name,
+    });
+    let text = format!(
+        "{name} is not connected for the person running this session, or they have it          turned off, so this tool cannot run yet. Tell them so in your reply, and include          this exact markup so they get a button that connects it:          <{tag}>{payload}</{tag}>          Close your reply by asking them to let you know once they have connected {name} so \
+         you can try again - when they do, call this tool again; nothing else needs to change.",
+        name = name,
+        tag = CONNECT_APP_TAG,
+    );
+    tool_result_response(id, text)
+}
+
+/// The tool result the proxy answers a `tools/call` with when the session
+/// owner's grant for a custom MCP server has died.
+///
+/// No connect-button markup: that chip opens the Pipedream catalog, and a
+/// custom server is reconnected from its own row under Agents → Connections.
+/// Same shape as [`not_connected_tool_result`] otherwise, for the same
+/// reason - a `result` the model reads, not a transport error it never sees.
+/// The name is the owner's own, off their row, never anything the request
+/// carried.
+pub fn disconnected_tool_result(name: &str, id: serde_json::Value) -> ProxyResponse {
+    let text = format!(
+        "{name} is a custom MCP server the person running this session added, but its \
+         connection has expired, so this tool cannot run yet. Tell them so in your reply, \
+         and ask them to open Agents → Connections, find {name} under Custom MCP, and use \
+         Reconnect. Close your reply by asking them to let you know once they have done so \
+         - when they do, call this tool again; nothing else needs to change.",
+    );
+    tool_result_response(id, text)
+}
+
+/// A JSON-RPC response carrying `text` as an `isError` tool result for `id`.
+fn tool_result_response(id: serde_json::Value, text: String) -> ProxyResponse {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "isError": true,
+            "content": [{ "type": "text", "text": text }],
+        },
+    });
+    let bytes = Bytes::from(serde_json::to_vec(&body).expect("a JSON value serializes"));
+    let mut response = http::Response::new(
+        Full::new(bytes)
+            .map_err(|never| match never {})
+            .boxed_unsync(),
+    );
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    response
 }
 
 /// A GitHub repository, as `owner/name`.
@@ -364,6 +582,64 @@ impl fmt::Display for McpServerSlug {
     }
 }
 
+/// How many hex characters of the URL digest a [`CustomMcpServerKey`] keeps.
+///
+/// 128 bits: the namespace is one owner's handful of rows, so this is far
+/// past where two of their URLs could meet, and short enough to read in a
+/// log line.
+const CUSTOM_KEY_HEX_LEN: usize = 32;
+
+/// The identifier a sandbox calls one of its owner's custom MCP servers by.
+///
+/// A custom server is a row keyed by the URL the owner typed in, and a URL is
+/// not a path segment - so the key is the SHA-256 digest of that URL,
+/// lowercase hex, truncated to [`CUSTOM_KEY_HEX_LEN`]. Derived, unlike
+/// [`McpServerSlug`], but derived in exactly one place: the harness
+/// advertises [`CustomMcpServerKey::for_url`] of each row's URL and the
+/// resolver matches the same function against the owner's rows, so there is
+/// no second reading for the two ends to disagree over.
+///
+/// One-way on purpose. The sandbox cannot turn a key back into a URL, and the
+/// resolver never parses one out of it: a key names nothing until it meets
+/// the owner's own rows, which is the property every other destination here
+/// has too.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CustomMcpServerKey(String);
+
+impl CustomMcpServerKey {
+    /// The key for a server stored under `url`, verbatim as the row holds it.
+    pub fn for_url(url: &str) -> Self {
+        let digest: String = Sha256::digest(url.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        Self(digest[..CUSTOM_KEY_HEX_LEN].to_owned())
+    }
+
+    /// Accept a key from a request path.
+    ///
+    /// Exactly the shape [`Self::for_url`] produces and nothing else;
+    /// rejected rather than normalized, like every other path segment here.
+    pub fn parse(segment: &str) -> Option<Self> {
+        let valid = segment.len() == CUSTOM_KEY_HEX_LEN
+            && segment
+                .chars()
+                .all(|character| matches!(character, '0'..='9' | 'a'..='f'));
+        valid.then(|| Self(segment.to_owned()))
+    }
+
+    /// The key as it appears in a path.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for CustomMcpServerKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Which half of git's smart-HTTP protocol a request is doing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitService {
@@ -469,7 +745,9 @@ impl EgressTarget {
     pub fn name(&self) -> String {
         match self {
             Self::McpServer(McpDestination::Macro) => "macro".to_owned(),
+            Self::McpServer(McpDestination::Preview) => "macro-preview".to_owned(),
             Self::McpServer(McpDestination::Connected(slug)) => slug.as_str().to_owned(),
+            Self::McpServer(McpDestination::Custom(key)) => format!("custom {key}"),
             Self::GitHubGit { endpoint } => format!("git {}", endpoint.path_and_query()),
         }
     }
@@ -477,15 +755,51 @@ impl EgressTarget {
 
 /// Which MCP server a request names.
 ///
-/// Macro's own server and the owner's connected apps live on different
-/// routes (`/mcp-macro` vs `/mcp/{slug}`), so they can never collide: there
-/// is no reserved word to shadow, and no connected app a name could hide.
+/// Macro's own server, the owner's connected apps, and the owner's custom
+/// servers live on different routes (`/mcp-macro`, `/mcp/{slug}`,
+/// `/mcp-custom/{key}`), so they can never collide: there is no reserved
+/// word to shadow, and no connected app a name could hide.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum McpDestination {
+    /// Internal, session-scoped live preview tools.
+    Preview,
     /// Macro's own MCP server, available to every session.
     Macro,
     /// One of the owner's Pipedream-connected apps.
     Connected(McpServerSlug),
+    /// One of the owner's custom MCP servers - added by URL, with Macro's
+    /// own OAuth client holding the grant.
+    Custom(CustomMcpServerKey),
+}
+
+/// The route Macro's own MCP server is served on.
+pub const MACRO_MCP_PATH: &str = "/mcp-macro";
+
+/// The route prefix a connected app's slug follows.
+pub const CONNECTED_MCP_PATH_PREFIX: &str = "/mcp/";
+
+/// The route prefix a custom server's key follows.
+pub const CUSTOM_MCP_PATH_PREFIX: &str = "/mcp-custom/";
+
+impl McpDestination {
+    /// Read a destination off a proxy URL's path.
+    ///
+    /// This is how an in-process client names its server: it is handed the
+    /// same egress URLs a sandbox is, so it reads them the same way the
+    /// router does rather than being told the answer a second way.
+    pub fn from_path(path: &str) -> Option<Self> {
+        if path == "/mcp-preview" {
+            return Some(Self::Preview);
+        }
+        if path == MACRO_MCP_PATH {
+            return Some(Self::Macro);
+        }
+        if let Some(key) = path.strip_prefix(CUSTOM_MCP_PATH_PREFIX) {
+            return CustomMcpServerKey::parse(key).map(Self::Custom);
+        }
+        let slug = path.strip_prefix(CONNECTED_MCP_PATH_PREFIX)?;
+        McpServerSlug::parse(slug).map(Self::Connected)
+    }
 }
 
 /// A resolved destination and the credential to reach it with.
@@ -540,6 +854,16 @@ impl UpstreamCall {
                 secret: secret.into(),
             },
         )
+    }
+
+    /// A call with no credential at all.
+    ///
+    /// For a custom MCP server the owner added without connecting an
+    /// account. Still https-only: nothing of the owner's rides on this call,
+    /// but the MCP session id and whatever the server answers do, and the
+    /// URL is typed in by a person.
+    pub fn anonymous(url: Url) -> Result<Self, EgressError> {
+        Self::new(url, UpstreamCredential::Anonymous)
     }
 
     fn new(url: Url, authorization: UpstreamCredential) -> Result<Self, EgressError> {

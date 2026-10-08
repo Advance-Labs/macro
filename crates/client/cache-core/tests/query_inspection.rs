@@ -4,16 +4,15 @@ use cache_core::engine::{BeginOptimisticWrite, Engine};
 use cache_core::link_patch::{
     LinkOperation, LinkPathSegment, ListItemByScalar, OptimisticLinkPatch,
 };
-use cache_core::predicate::ProjectionMutation;
+use cache_core::predicate::{OptimisticUpsertReconciliation, ProjectionMutation};
 use cache_core::query_inspection::{MAX_INSPECTED_VARIANTS, QueryInspection, QueryInspectionError};
 use cache_core::queue::{
-    ClaimedMutation, MutationClaimRequest, MutationClaimToken, MutationId, NewQueuedMutation,
-    QueuedMutation,
+    ClaimedMutation, MutationClaimRequest, MutationClaimToken, MutationId, MutationUpsertResult,
+    NewQueuedMutation, QueuedMutation,
 };
 use cache_core::store::{InMemoryStorage, Storage};
 use cache_core::value::{EntityKey, Record};
 use pollster::block_on;
-use predicate_index::PendingOptimisticProjection;
 use serde_json::{Value as Json, json};
 
 const GROUP_QUERY: &str = r#"
@@ -120,13 +119,14 @@ impl Storage for OwnerOnlyStorage {
         self.0.delete_batch(keys).await
     }
 
-    async fn enqueue_mutation_with_shadow(
+    async fn upsert_mutation_with_shadow(
         &mut self,
         entry: NewQueuedMutation,
-        projections: Vec<PendingOptimisticProjection>,
-    ) -> Result<MutationId, Self::Error> {
+        now_ms: i64,
+        reconciliation: OptimisticUpsertReconciliation,
+    ) -> Result<MutationUpsertResult, Self::Error> {
         self.0
-            .enqueue_mutation_with_shadow(entry, projections)
+            .upsert_mutation_with_shadow(entry, now_ms, reconciliation)
             .await
     }
 
@@ -147,9 +147,10 @@ impl Storage for OwnerOnlyStorage {
         claim: MutationClaimToken,
         next_attempt_at_ms: i64,
         error: String,
+        server_failure: bool,
     ) -> Result<bool, Self::Error> {
         self.0
-            .defer_mutation(id, claim, next_attempt_at_ms, error)
+            .defer_mutation(id, claim, next_attempt_at_ms, error, server_failure)
             .await
     }
 
@@ -456,6 +457,7 @@ fn inspection_reads_the_effective_optimistic_view() {
         write_group(&mut engine, GROUP_QUERY, &variables, &data).await;
 
         let patch = OptimisticLinkPatch {
+            record_root: None,
             query: GROUP_QUERY.to_string(),
             operation_name: Some("GroupViews".to_string()),
             variables_json: serde_json::to_string(&variables).unwrap(),
@@ -497,6 +499,8 @@ mutation SetEntityProperty($input: SetEntityPropertyInput!) {
             .begin_optimistic_write(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
+                    uuid: "00000000-0000-4000-8000-000000000002",
                     query: mutation,
                     operation_name: Some("SetEntityProperty"),
                     variables: &mutation_variables,
@@ -504,6 +508,7 @@ mutation SetEntityProperty($input: SetEntityPropertyInput!) {
                     link_patches: &[patch],
                     revalidations: &[],
                     created_at_ms: 0,
+                    identity_bindings: &[],
                 },
             )
             .await
@@ -655,15 +660,24 @@ query GroupViews($input: GroupedSoupInput!) {
             )
         ));
 
+        // Legacy storage can exceed today's retention budget. Bypass normal
+        // writes to keep exercising the inspection boundary's defensive cap.
+        let mut storage = engine.into_storage();
+        let key = EntityKey("GraphqlUser:user-1".into());
+        let mut record = storage
+            .get_batch(std::slice::from_ref(&key))
+            .await
+            .unwrap()
+            .remove(0)
+            .unwrap();
         for limit in 0..=MAX_INSPECTED_VARIANTS {
-            write_group(
-                &mut engine,
-                GROUP_QUERY,
-                &initial(1_000 + limit),
-                &page("task-1", None),
-            )
-            .await;
+            record.fields.insert(
+                format!("groupSoup({{\"input\":{{\"initial\":{{\"limit\":{limit}}}}}}})"),
+                cache_core::value::CacheValue::Null,
+            );
         }
+        storage.put_batch(vec![(key, record)]).await.unwrap();
+        let mut engine = Engine::new(storage);
         assert!(matches!(
             engine
                 .inspect_query(&inspection(GROUP_QUERY, &["user", "groupSoup"]))

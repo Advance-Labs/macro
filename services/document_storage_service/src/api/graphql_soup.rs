@@ -1,4 +1,5 @@
 use crate::api::context::{ApiContext, AuthorizationService};
+use agent_session::outbound::postgres::PgAgentSessionRepo;
 use async_graphql::{
     Data,
     http::{ALL_WEBSOCKET_PROTOCOLS, GraphiQLSource},
@@ -12,8 +13,11 @@ use axum::{
     routing::get,
 };
 use axum_extra::extract::Cached;
+use bots::outbound::pg_bots_repo::PgBotsRepo;
 use complete_graph::GraphqlRequestParts;
-use graphql_soup::soup_item_loader;
+use entity_registry::OwnerGrantPolicy;
+use entity_registry_db_utils::OwnedEntityRegistrar;
+use graphql_soup::{email_mutation_thread_loader, soup_item_loader_with_team_access};
 use macro_authorization::{
     OptionalMacroAuthorizationExtractor, UserOrInternalService, UserOrInternalServiceAuthorization,
 };
@@ -40,6 +44,7 @@ fn graphiql_source(endpoint: &str) -> String {
         .finish()
 }
 
+#[tracing::instrument(skip_all, name = "graphql.execute")]
 async fn graphql_handler(
     State(state): State<ApiContext>,
     Cached(auth): Cached<
@@ -145,21 +150,61 @@ fn insert_graphql_context_data(
         state.soup_router_state.email_service(),
         state.entity_access_service.clone(),
     );
-    let soup_item_loader = soup_item_loader(
+    // Ordinary queries and subscription hydration use the replica-backed
+    // Soup reader. The mutation-only loader below retains the primary reader.
+    let soup_item_loader = soup_item_loader_with_team_access(
         state.soup_router_state.service(),
         state.soup_router_state.email_service(),
+        state.entity_access_service.as_ref().clone(),
     );
     data.insert(macro_user_id.clone());
     data.insert(entity_mutation::EntityMutationActor {
         user_id: macro_user_id.clone(),
         organization_id,
     });
+    data.insert(favorites::domain::models::FavoritesMutationActor {
+        user_id: macro_user_id.clone(),
+        organization_id,
+    });
     data.insert(state.graphql_entity_mutation_service.clone());
+    data.insert(state.favorites_mutation_service.clone());
+    data.insert(state.favorites_service.clone());
     data.insert(state.channel_service.clone());
+    data.insert(state.graphql_initiative_context.clone());
+    data.insert(state.graphql_scheduled_action_context.clone());
+    data.insert(state.graphql_calendar_context.clone());
+    data.insert(state.graphql_calendar_mutation_context.clone());
+    data.insert(state.graphql_initiative_entity_loader.clone());
+    data.insert(state.graphql_agent_session_entity_loader.clone());
+    data.insert(graphql_initiative::initiative_detail_loader(
+        state.graphql_initiative_context.clone(),
+        macro_user_id.clone(),
+    ));
+    data.insert(graphql_initiative::initiative_summary_loader(
+        state.graphql_initiative_context.clone(),
+        macro_user_id.clone(),
+    ));
     data.insert(state.graphql_notification_reader.clone());
     data.insert(state.soup_router_state.email_service());
     data.insert(state.entity_access_service.clone());
     data.insert(soup_item_loader);
+    data.insert(state.agent_session_log_subscriptions.clone());
+    // Mutation replies must read their committed state from the primary email
+    // service. Ordinary Soup lists and subscriptions retain their own reader.
+    data.insert(email_mutation_thread_loader(
+        state.soup_router_state.email_service(),
+    ));
+    data.insert(complete_graph::agent_session_bot_loader(PgBotsRepo::new(
+        state.readonly_db.0.clone(),
+    )));
+    // Read right after the session is created and after its subscription
+    // starts, so the log must hold every committed row: the primary.
+    data.insert(complete_graph::agent_session_log_loader(
+        PgAgentSessionRepo::new(
+            state.db.clone(),
+            OwnedEntityRegistrar::new(OwnerGrantPolicy::new(PgBotsRepo::new(state.db.clone()))),
+        ),
+    ));
     data.insert(complete_graph::entity_properties_loader(
         macro_user_id.clone(),
         property_reader,
@@ -169,6 +214,10 @@ fn insert_graphql_context_data(
         email_content_reader.clone(),
     ));
     data.insert(complete_graph::email_thread_metadata_loader(
+        macro_user_id.clone(),
+        email_content_reader.clone(),
+    ));
+    data.insert(complete_graph::email_thread_mail_projection_loader(
         macro_user_id.clone(),
         email_content_reader,
     ));

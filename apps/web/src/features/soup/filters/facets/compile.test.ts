@@ -127,7 +127,7 @@ describe('facet compiler', () => {
       '|': [{ l: { dst: ['task'] } }, { l: { id: NIL_UUID } }],
     });
     expect(result.ef).toEqual({
-      '|': [{ l: { ThreadId: NIL_UUID } }, { l: { NotificationSeen: false } }],
+      '|': [{ l: { ThreadId: NIL_UUID } }, { l: { Read: false } }],
     });
   });
 
@@ -148,5 +148,49 @@ describe('facet compiler', () => {
         '&': [{ l: { dst: 'task' } }, { l: { o: 'user-id' } }],
       },
     });
+  });
+});
+
+describe('GitHub repository ID precision', () => {
+  const compileRepository = (value: unknown) =>
+    compileFacets(
+      { repository: ['selected'] },
+      [
+        {
+          id: 'repository',
+          mode: 'or',
+          options: [
+            {
+              id: 'selected',
+              clause: {
+                ghprf: clause.eq('githubPullRequestRepositoryId', value),
+              },
+            },
+          ],
+        },
+      ],
+      undefined
+    );
+
+  it.each(['42', 42, '9007199254740991'])(
+    'preserves a safely representable ID: %s',
+    (id) => {
+      expect(compileRepository(id)).toEqual({
+        ghprf: { l: { repo: Number(id) } },
+      });
+    }
+  );
+
+  it.each([
+    '9007199254740993',
+    '9223372036854775807',
+    9007199254740992,
+    '1.5',
+    '',
+    null,
+  ])('rejects IDs instead of silently rounding or coercing: %s', (id) => {
+    expect(() => compileRepository(id)).toThrow(
+      'GitHub repository ID must be a positive safe integer'
+    );
   });
 });

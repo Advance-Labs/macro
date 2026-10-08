@@ -36,7 +36,8 @@ function encodeFormat(format: number): Record<string, string> {
   );
 }
 
-function el(
+/** One element for the shared XML builder; attributes are optional. */
+export function el(
   tag: string,
   kids: FxpNode[],
   attrs: Record<string, string> = {}
@@ -66,6 +67,7 @@ const KNOWN_TYPES: Record<KnownNode['type'], 1> = {
   heading: 1,
   quote: 1,
   list: 1,
+  'task-list': 1,
   listitem: 1,
   table: 1,
   tablerow: 1,
@@ -88,6 +90,7 @@ const KNOWN_TYPES: Record<KnownNode['type'], 1> = {
   'contact-mention': 1,
   'group-mention': 1,
   'pr-mention': 1,
+  'agent-session-mention': 1,
   'tag-mention': 1,
   'theme-mention': 1,
   'unknown-mention': 1,
@@ -223,7 +226,7 @@ export function serializeNode(node: SerNode): FxpNode {
         ...(n.checked && { checked: 'true' }),
       })
     )
-    .with({ type: 'list' }, (n) =>
+    .with({ type: 'list' }, { type: 'task-list' }, (n) =>
       container(n.listType === 'number' ? 'ol' : 'ul', n, {
         ...(n.listType === 'check' && { listType: 'check' }),
         ...(n.start !== 1 && { start: String(n.start) }),
@@ -328,6 +331,11 @@ export function serializeNode(node: SerNode): FxpNode {
         nodeAttrs(n, {
           ...(n.documentId && { documentId: n.documentId }),
           ...(n.documentName && { name: n.documentName }),
+          ...(n.blockName && { blockName: n.blockName }),
+          ...(n.blockParams &&
+            Object.keys(n.blockParams).length > 0 && {
+              blockParams: JSON.stringify(n.blockParams),
+            }),
         })
       )
     )
@@ -348,6 +356,17 @@ export function serializeNode(node: SerNode): FxpNode {
         'group-mention',
         [],
         nodeAttrs(n, { ...(n.groupAlias && { alias: n.groupAlias }) })
+      )
+    )
+    .with({ type: 'agent-session-mention' }, (n) =>
+      el(
+        'agent-session-mention',
+        [],
+        nodeAttrs(n, {
+          sessionId: n.id,
+          ...(n.label && { label: n.label }),
+          ...(n.expanded && { expanded: 'true' }),
+        })
       )
     )
     .with({ type: 'pr-mention' }, (n) =>

@@ -1,9 +1,13 @@
 import * as aws from '@pulumi/aws';
 import * as pulumi from '@pulumi/pulumi';
+import { createBucket } from '../../packages/resources';
 import {
   config,
+  CODEX_OAUTH_KMS_ALIAS,
   getAiToolsInfra,
   getMacroApiToken,
+  getServiceUrl,
+  ServiceUrl,
   stack,
 } from '../../packages/shared';
 import { get_coparse_api_vpc } from '../../packages/vpc';
@@ -43,12 +47,33 @@ const macroApiTokenPrivateKeyArn = aws.secretsmanager
 
 const MACRO_API_TOKENS = getMacroApiToken();
 
+// ── Session changes bucket ───────────────────────────────────────────────────
+// The patch behind each agent session's Changes pane, one object per capture
+// under `agent-sessions/{session}/changes/`. Only the latest capture is
+// reachable from the database; superseded patches are deleted on capture and
+// a session's last patch is orphaned when the session is deleted, so the
+// lifecycle rule is what reclaims those.
+
+const sessionChangesBucket = createBucket({
+  id: `macro-agent-session-changes-${stack}`,
+  bucketName: `macro-agent-session-changes-${stack}`,
+  transferAcceleration: false,
+  enableVersioning: false,
+  lifecycleRules: [
+    {
+      id: 'expire-orphaned-patches',
+      enabled: true,
+      expiration: { days: 90 },
+    },
+  ],
+  tags,
+});
+
+export const agentSessionChangesBucketArn = sessionChangesBucket.arn;
+
 // ── AI tools infra ───────────────────────────────────────────────────────────
 
-const aiTools =
-  stack === 'dev'
-    ? getAiToolsInfra()
-    : { secretArns: [], queueArns: [], bucketArns: [] };
+const aiTools = getAiToolsInfra();
 
 // ── Stack references ─────────────────────────────────────────────────────────
 
@@ -64,17 +89,20 @@ const cloudStorageClusterName = cloudStorageStack
   .getOutput('cloudStorageClusterName')
   .apply((value) => value as string);
 
-// ── Queues ───────────────────────────────────────────────────────────────────
-// Channel side effects use these in every environment. Dev's AI tool bundle
-// includes both plus the additional tool queues.
+// Pull request patches are shared with cloud-storage-service, which owns the
+// bucket; a session capture reuses the patch a pull request viewer stored.
+const cloudStorageServiceStack = new pulumi.StackReference(
+  'cloud-storage-service-stack',
+  { name: `macro-inc/cloud-storage-service/${stack}` }
+);
 
-const notificationIngressQueueArn = aws.sqs
-  .getQueueOutput({ name: `notification-ingress-queue-${stack}` })
-  .apply((queue) => queue.arn);
+const githubPullRequestPatchBucketArn = cloudStorageServiceStack
+  .getOutput('githubPullRequestPatchBucketArn')
+  .apply((value) => value as string);
 
-const contactsQueueArn = aws.sqs
-  .getQueueOutput({ name: `contacts-queue-${stack}` })
-  .apply((queue) => queue.arn);
+const githubPullRequestPatchBucketName = cloudStorageServiceStack
+  .getOutput('githubPullRequestPatchBucketName')
+  .apply((value) => value as string);
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
@@ -87,7 +115,6 @@ const service = new AgentHarnessService(`agent-harness-service-${stack}`, {
   serviceContainerPort: 8101,
   egressContainerPort: 8102,
   healthCheckPath: '/health',
-  isPrivate: false,
   ecsClusterArn: cloudStorageClusterArn,
   cloudStorageClusterName,
   secretKeyArns: [
@@ -97,15 +124,28 @@ const service = new AgentHarnessService(`agent-harness-service-${stack}`, {
     githubSyncAppPemArn,
     ...aiTools.secretArns,
   ],
-  queueArns:
-    stack === 'dev'
-      ? [...aiTools.queueArns]
-      : [notificationIngressQueueArn, contactsQueueArn],
-  bucketArns: [...aiTools.bucketArns],
+  queueArns: [...aiTools.queueArns],
+  bucketArns: [
+    ...aiTools.bucketArns,
+    sessionChangesBucket.arn,
+    githubPullRequestPatchBucketArn,
+  ],
   containerEnvVars: [
+    {
+      name: 'CODEX_OAUTH_KMS_KEY_ID',
+      value: CODEX_OAUTH_KMS_ALIAS,
+    },
     {
       name: 'ENVIRONMENT',
       value: stack,
+    },
+    {
+      name: 'AGENT_SESSION_CHANGES_BUCKET',
+      value: sessionChangesBucket.bucket,
+    },
+    {
+      name: 'GITHUB_PULL_REQUEST_PATCH_BUCKET',
+      value: githubPullRequestPatchBucketName,
     },
     // Datadog
     {
@@ -119,6 +159,8 @@ const service = new AgentHarnessService(`agent-harness-service-${stack}`, {
   ],
 });
 
-export const agentHarnessServiceUrl = pulumi.interpolate`${service.domain}`;
+export const agentHarnessServiceUrl = getServiceUrl(
+  ServiceUrl.AGENT_HARNESS_SERVICE_URL
+);
 export const agentHarnessEgressUrl = pulumi.interpolate`${service.egressDomain}`;
 export const agentHarnessServiceRoleArn = service.role.arn;

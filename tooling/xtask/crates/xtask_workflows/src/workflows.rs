@@ -33,11 +33,14 @@ mod deploy_on_push;
 mod deploy_preview;
 mod deploy_sync_service;
 mod deploy_web_app;
-mod docs_check;
+mod deploy_website;
 mod ensure_daytona_snapshot;
+mod ios_preview;
 mod path_validation;
+mod publish_sdk;
 mod pulumi_preview_pr;
 mod push_local_stack_binaries;
+mod release_sdk;
 mod reusable_deploy_service;
 mod reusable_preview_service;
 mod runners;
@@ -206,7 +209,10 @@ const WORKFLOWS: &[WorkflowFile] = &[
     WorkflowFile {
         slug: "deploy_on_push",
         file_name: "deploy_on_push.yml",
-        render_yaml: || render_patched(deploy_on_push::deploy_on_push, deploy_on_push::patch),
+        render_yaml: || {
+            let yaml = render_patched(deploy_on_push::deploy_on_push, deploy_on_push::patch)?;
+            Ok(format!("{}{yaml}", deploy_on_push::NOTICE))
+        },
     },
     WorkflowFile {
         slug: "deploy_fusionauth_instance",
@@ -239,14 +245,34 @@ const WORKFLOWS: &[WorkflowFile] = &[
         render_yaml: || render_patched(deploy_web_app::deploy_web_app, deploy_web_app::patch),
     },
     WorkflowFile {
+        slug: "deploy_website",
+        file_name: "deploy_website.yml",
+        render_yaml: || render_patched(deploy_website::deploy_website, deploy_website::patch),
+    },
+    WorkflowFile {
         slug: "ensure_daytona_snapshot",
         file_name: "ensure_daytona_snapshot.yml",
         render_yaml: || render_gh_workflow(ensure_daytona_snapshot::ensure_daytona_snapshot)(),
     },
     WorkflowFile {
+        slug: "ios_preview",
+        file_name: "ios_preview.yml",
+        render_yaml: || render_gh_workflow(ios_preview::ios_preview)(),
+    },
+    WorkflowFile {
         slug: "push_local_stack_binaries",
         file_name: "push_local_stack_binaries.yml",
         render_yaml: || render_gh_workflow(push_local_stack_binaries::push_local_stack_binaries)(),
+    },
+    WorkflowFile {
+        slug: "publish_sdk",
+        file_name: "publish-sdk.yml",
+        render_yaml: || render_gh_workflow(publish_sdk::publish_sdk)(),
+    },
+    WorkflowFile {
+        slug: "release_sdk",
+        file_name: "release-sdk.yml",
+        render_yaml: || render_gh_workflow(release_sdk::release_sdk)(),
     },
     WorkflowFile {
         slug: "pulumi_preview_pr",
@@ -297,11 +323,6 @@ const WORKFLOWS: &[WorkflowFile] = &[
         slug: "sdk_check",
         file_name: "sdk-check.yml",
         render_yaml: || render_gh_workflow(sdk_check::sdk_check)(),
-    },
-    WorkflowFile {
-        slug: "docs_check",
-        file_name: "docs-check.yml",
-        render_yaml: || render_gh_workflow(docs_check::docs_check)(),
     },
 ];
 

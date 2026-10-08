@@ -1,3 +1,4 @@
+import type { Permissions } from '@core/component/SharePermissions';
 import type { HotkeyToken } from '@core/hotkey/tokens';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import type { EntityData } from '@entity';
@@ -5,10 +6,11 @@ import type { ItemType } from '@service-storage/client';
 import { Button, cn } from '@ui';
 import { type Component, For, type JSX, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import { SidePanel } from './side-panel';
 import { HeaderIsland } from './split-layout/components/HeaderIsland';
 import {
+  BlockSplitFileMenu,
   type FileOperation,
-  SplitFileMenu,
 } from './split-layout/components/SplitFileMenu';
 import {
   SplitHeaderLeft,
@@ -101,6 +103,8 @@ interface BlockToolbarProps {
    * id/name/blockName alone (e.g. calls need their channelId).
    */
   entity?: EntityData;
+  /** Feature-owned access when the session loads outside legacy Block state. */
+  permissions?: Permissions;
 }
 
 /**
@@ -140,6 +144,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
         <>
           <SplitHeaderRight>
             <div class="order-[1000] flex items-center gap-1">
+              <SidePanel.HeaderActionsOutlet />
               <For each={headerTools()}>
                 {(tool) => (
                   <Show when={!tool.condition || tool.condition()}>
@@ -154,7 +159,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
             </div>
           </SplitHeaderRight>
           <SplitTitleFileMenu>
-            <SplitFileMenu
+            <BlockSplitFileMenu
               id={props.id}
               itemType={props.itemType}
               name={props.name}
@@ -162,6 +167,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
               ops={props.ops}
               tools={fileMenuTools()}
               entity={props.entity}
+              permissions={props.permissions}
               buttonClass="order-first"
             />
           </SplitTitleFileMenu>
@@ -183,8 +189,13 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
         </>
       }
     >
+      <SplitHeaderRight>
+        <HeaderIsland class="has-[[data-side-panel-header-actions]:empty]:hidden">
+          <SidePanel.HeaderActionsOutlet />
+        </HeaderIsland>
+      </SplitHeaderRight>
       <SplitTitleFileMenu>
-        <SplitFileMenu
+        <BlockSplitFileMenu
           id={props.id}
           itemType={props.itemType}
           name={props.name}
@@ -192,6 +203,7 @@ export function ResponsiveBlockToolbar(props: BlockToolbarProps) {
           ops={props.ops}
           tools={fileMenuTools()}
           entity={props.entity}
+          permissions={props.permissions}
           buttonClass="order-last"
         />
       </SplitTitleFileMenu>

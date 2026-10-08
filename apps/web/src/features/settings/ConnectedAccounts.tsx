@@ -1,25 +1,24 @@
 import { ENABLE_EMAIL } from '@core/constant/featureFlags';
-import { useCursorAgentsAccess } from '@core/cursor/flag';
-import { usePipedreamMcpFlag } from '@core/pipedream/flag';
+import { useSettingsState } from '@core/constant/SettingsState';
+import { useSettingsTabAvailable } from '@core/constant/settingsTabsConfig';
+import { Button } from '@ui';
 import { Show, Suspense } from 'solid-js';
-import { CursorCard } from './Cursor';
 import { EmailCard } from './Email';
 import { GitHubCard } from './GitHub';
-import { IntegrationsSection } from './Integrations';
-import { PipedreamIntegrationsSection } from './PipedreamIntegrations';
-import { SettingsPage, SettingsSection } from './primitives';
+import {
+  SettingsCard,
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+} from './primitives';
 
-/**
- * Consolidated "Connections" page: one card per external account the user can
- * link (Gmail, GitHub), then the agent's MCP integrations, then the coding
- * agents — so everything Macro is connected to lives in one place.
- */
+/** Personal account links. Agent MCP integrations live in Connections. */
 export function ConnectedAccounts() {
-  const pipedreamMcp = usePipedreamMcpFlag();
-  const canUseCursor = useCursorAgentsAccess();
+  const { openSettings } = useSettingsState();
+  const isAvailable = useSettingsTabAvailable();
   return (
     <SettingsPage
-      title="Connections"
+      title="Integrations"
       description="Connect your accounts so Macro can work across the tools you already use."
     >
       <SettingsSection title="Accounts">
@@ -34,21 +33,44 @@ export function ConnectedAccounts() {
           </Suspense>
         </div>
       </SettingsSection>
-      <Suspense>
-        <Show when={pipedreamMcp()} fallback={<IntegrationsSection />}>
-          <PipedreamIntegrationsSection />
-        </Show>
-      </Suspense>
-      <Show when={canUseCursor()}>
-        <SettingsSection
-          title="Coding sessions"
-          description="Connect a coding agent so Macro can run sessions on your own account."
-        >
-          <Suspense>
-            <CursorCard />
-          </Suspense>
-        </SettingsSection>
-      </Show>
+      <SettingsSection
+        title="Related settings"
+        description="Manage the same accounts where you use them."
+      >
+        <SettingsCard>
+          <Show when={ENABLE_EMAIL}>
+            <SettingsRow label="Email accounts and signatures">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openSettings('Email')}
+              >
+                Email settings
+              </Button>
+            </SettingsRow>
+          </Show>
+          <Show when={isAvailable('Calendar')}>
+            <SettingsRow label="Calendar connections and colors">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => openSettings('Calendar')}
+              >
+                Calendar settings
+              </Button>
+            </SettingsRow>
+          </Show>
+          <SettingsRow label="Apps and tools for agents">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openSettings('Connections')}
+            >
+              Agent connections
+            </Button>
+          </SettingsRow>
+        </SettingsCard>
+      </SettingsSection>
     </SettingsPage>
   );
 }

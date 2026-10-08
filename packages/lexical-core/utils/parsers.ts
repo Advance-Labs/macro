@@ -1,4 +1,5 @@
 import { isAgentContextData } from '../nodes/AgentContextNode';
+import { parseDatabaseQueryJson } from '../nodes/DatabaseQueryNode';
 
 export function parseUserMentions(text: string): string {
   return text.replace(/<m-user-mention>(.*?)<\/m-user-mention>/g, (_, json) => {
@@ -59,6 +60,24 @@ export function parseDocumentMentions(text: string): string {
   );
 }
 
+export function parseAgentSessionMentions(text: string): string {
+  return text.replace(
+    /<m-agent-session-mention>(.*?)<\/m-agent-session-mention>/g,
+    (_, json) => {
+      try {
+        const data = JSON.parse(json);
+        return typeof data.label === 'string'
+          ? data.label
+          : typeof data.id === 'string'
+            ? data.id
+            : '';
+      } catch {
+        return '';
+      }
+    }
+  );
+}
+
 export function parsePullRequestMentions(text: string): string {
   return text.replace(/<m-pr-mention>(.*?)<\/m-pr-mention>/g, (_, json) => {
     try {
@@ -68,6 +87,35 @@ export function parsePullRequestMentions(text: string): string {
       return '';
     }
   });
+}
+
+/** `<m-connect-app>` chips read as their call to action. */
+export function parseConnectApps(text: string): string {
+  return text.replace(/<m-connect-app>(.*?)<\/m-connect-app>/g, (_, json) => {
+    try {
+      const data = JSON.parse(json);
+      return typeof data.name === 'string' && data.name
+        ? `Connect ${data.name}`
+        : '';
+    } catch {
+      return '';
+    }
+  });
+}
+
+export function parseDatabaseQueries(text: string): string {
+  return text.replace(/<m-db-query>(.*?)<\/m-db-query>/g, (_, json) => {
+    const data = parseDatabaseQueryJson(json);
+    return data?.title || data?.prompt || 'Live database answer';
+  });
+}
+
+/** A Cursor `<system_notification …>` block reads as its summary line. */
+export function parseCursorSystemNotifications(text: string): string {
+  return text.replace(
+    /<system_notification\b[^>]*>(.*?)<\/system_notification>/gs,
+    (_, body: string) => body.trim()
+  );
 }
 
 export function parseTagMentions(text: string): string {
@@ -113,6 +161,21 @@ export function parseDocumentCards(text: string): string {
       try {
         const data = JSON.parse(json);
         return data.documentName || '';
+      } catch {
+        return '';
+      }
+    }
+  );
+}
+
+/** Replace reply-target nodes with their user-visible preview text. */
+export function parseReplyTargets(text: string): string {
+  return text.replace(
+    /<m-reply-target>(.*?)<\/m-reply-target>/gs,
+    (_, json) => {
+      try {
+        const data = JSON.parse(json);
+        return data.displayText || '';
       } catch {
         return '';
       }
@@ -168,27 +231,30 @@ export function stripAgentContext(text: string): string {
  * - Snapshots: documentName (base64-encoded payload)
  * - Group mentions: @groupAlias (e.g., @here)
  * - Links: text (fallback to url)
+ * - Reply targets: displayText
+ * - Cursor system notifications: the summary between the tags
  */
 export function markdownToPlainText(markdown: string): string {
-  return stripAgentContext(
-    parseLinks(
-      parseDocumentCards(
-        parseSnapshots(
-          parseTagMentions(
-            parsePullRequestMentions(
-              parseDocumentMentions(
-                parseGroupMentions(
-                  parseDateMentions(
-                    parseContactMentions(parseUserMentions(markdown))
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  );
+  const transforms: Array<(text: string) => string> = [
+    parseUserMentions,
+    parseContactMentions,
+    parseDateMentions,
+    parseGroupMentions,
+    parseDocumentMentions,
+    parsePullRequestMentions,
+    parseAgentSessionMentions,
+    parseTagMentions,
+    parseConnectApps,
+    parseCursorSystemNotifications,
+    parseDatabaseQueries,
+    parseSnapshots,
+    parseDocumentCards,
+    parseLinks,
+    parseReplyTargets,
+    stripAgentContext,
+  ];
+
+  return transforms.reduce((text, transform) => transform(text), markdown);
 }
 
 /**
@@ -196,6 +262,8 @@ export function markdownToPlainText(markdown: string): string {
  * format's `<m-*>` JSON tags. Each tag uses a small subset of these.
  */
 type MentionTagPayload = {
+  prompt?: string;
+  title?: string;
   documentId?: string;
   documentName?: string;
   blockName?: string;
@@ -211,6 +279,7 @@ type MentionTagPayload = {
   emailOrDomain?: string;
   displayFormat?: string;
   groupAlias?: string;
+  displayText?: string;
   equation?: string;
 };
 
@@ -324,6 +393,11 @@ export function markdownToEmbeddingText(markdown: string): string {
   text = flattenEmailThreadEmbeds(text);
 
   // Leaf tags.
+  text = replaceJsonTag(text, 'm-agent-session-mention', (data) =>
+    data.id
+      ? `[${data.label || 'Agent session'}](agent_session:${data.id})`
+      : data.label || ''
+  );
   text = replaceJsonTag(text, 'm-document-mention', documentRefToEmbeddingText);
   text = replaceJsonTag(text, 'm-document-card', documentRefToEmbeddingText);
   text = replaceJsonTag(text, 'm-pr-mention', (data) =>
@@ -368,7 +442,20 @@ export function markdownToEmbeddingText(markdown: string): string {
     data.name ? `#${data.name}` : ''
   );
   text = replaceJsonTag(text, 'm-theme-mention', (data) => data.name || '');
+  text = replaceJsonTag(text, 'm-connect-app', (data) =>
+    data.name ? `Connect ${data.name}` : ''
+  );
+  text = replaceJsonTag(
+    text,
+    'm-db-query',
+    (data) => data.title || data.prompt || 'Live database answer'
+  );
   text = replaceJsonTag(text, 'm-await', (data) => data.text || '');
+  text = replaceJsonTag(
+    text,
+    'm-reply-target',
+    (data) => data.displayText || ''
+  );
   text = replaceJsonTag(text, 'm-watermark', () => '');
 
   // Anything still tagged is an unrecognized m-* node: drop it entirely so

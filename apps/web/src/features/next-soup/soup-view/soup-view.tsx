@@ -10,13 +10,11 @@ import type {
   GroupHeaderProps,
   SoupRow,
 } from '@app/features/next-soup/create-soup-state';
-import { buildDocumentTypeQuery } from '@app/features/next-soup/filters/configs/document-type-query';
 import type { Query } from '@app/features/next-soup/filters/filter-store';
 import type { SetPredicatesInput } from '@app/features/next-soup/filters/filter-store/predicates-store';
 import { VIEW_TAB_PRESETS } from '@app/features/next-soup/sidebar/soup-filter-presets';
 import { useSoup } from '@app/features/next-soup/soup-context';
 import { DateGroupHeader } from '@app/features/next-soup/soup-view/date-group-header';
-import { registerDocumentsFilterSplit } from '@app/features/next-soup/soup-view/documents-filter-controllers';
 import {
   EmptyState,
   shouldShowLoadError,
@@ -40,21 +38,16 @@ import {
   SoupViewTabs,
   useApplyPreset,
 } from '@app/features/next-soup/soup-view/soup-view-tabs';
-import { useIsInboxView } from '@app/features/next-soup/soup-view/use-is-inbox-view';
-import { CompanyKanban } from '@app/features/next-soup/soup-view/views/companies/CompanyKanban';
-import { CompanyListEntity } from '@app/features/next-soup/soup-view/views/companies/CompanyListEntity';
-import { ResponsiveCompanyListHeader } from '@app/features/next-soup/soup-view/views/companies/CompanyListHeader';
-import { CrmDefaultViewLoader } from '@app/features/next-soup/soup-view/views/companies/CrmDefaultView';
+import { useIsHomeView } from '@app/features/next-soup/soup-view/use-is-home-view';
 import { InboxListEntity } from '@app/features/next-soup/soup-view/views/inbox/InboxListEntity';
 import { TaskListEntity } from '@app/features/next-soup/soup-view/views/tasks/TaskListEntity';
 import { ResponsiveTaskListHeader } from '@app/features/next-soup/soup-view/views/tasks/TaskListHeader';
 import { TaskGroupHeader } from '@app/features/next-soup/soup-view/views/tasks/task-group-header';
 import {
+  markCalendarNotificationSeenOnOpen,
   markChannelNotificationsSeenOnOpen,
-  markReminderSeenOnOpen,
   openEntityInNewTab,
   openEntityInSplitFromUnifiedList,
-  preventDuplicatePreviewEntityOpen,
   restoreSoupFocus,
 } from '@app/features/next-soup/utils';
 import {
@@ -63,10 +56,6 @@ import {
 } from '@app/features/soup';
 import { DEBUG_SETTING_KEYS, useDebugSetting } from '@app/lib/debugSettings';
 import { usePreference } from '@app/preferences/use-preference';
-import { useDealStages } from '@companies/crm/deal-stages';
-import { CrmStageIcon } from '@companies/crm/StageIcon';
-import type { CrmViewConfig } from '@companies/crm/saved-views';
-import { useCrmUnavailable } from '@companies/crm/team-crm-config';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { PullToRefresh } from '@components/app/mobile/PullToRefresh';
 import { SwipableRowProvider } from '@components/app/mobile/SwipableRow';
@@ -89,6 +78,7 @@ import {
 import { registerHotkey, useHotkeyDOMScope } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
+import type { DateValue } from '@core/util/date';
 import { openExternalUrl } from '@core/util/url';
 import { useIsKeyPressActive } from '@core/util/useIsKeyPressActive';
 import {
@@ -101,15 +91,16 @@ import {
   type SearchLocation,
 } from '@entity';
 import type { SoupRowFamily } from '@entity/composed/list-entity/row-geometry';
-import SearchIcon from '@icon/macro-magnifying-glass.svg';
 import CaretDownIcon from '@phosphor/caret-down.svg';
 import ChevronRightIcon from '@phosphor/caret-right.svg';
 import CheckIcon from '@phosphor/check.svg';
 import InfoIcon from '@phosphor/info.svg';
+import SearchIcon from '@phosphor/magnifying-glass.svg';
 import Spinner from '@phosphor/spinner.svg';
 import { createElementSize } from '@solid-primitives/resize-observer';
 import { debounce } from '@solid-primitives/scheduled';
 import { Button, cn, Layer, Tooltip } from '@ui';
+import { tourTarget } from '@ui/components/Tour';
 import {
   type Accessor,
   batch,
@@ -121,7 +112,6 @@ import {
   Match,
   on,
   onCleanup,
-  onMount,
   Show,
   Suspense,
   Switch,
@@ -129,40 +119,16 @@ import {
 import { Dynamic } from 'solid-js/web';
 import { Virtualizer, type VirtualizerHandle } from 'virtua/solid';
 import type { CacheSnapshot } from 'virtua/unstable_core';
+import { makeMarkNotDoneAction } from '../actions/make-mark-not-done-action';
+import { SOUP_TOUR } from '../tour';
 import { SearchAskAiButton } from './search-ask-ai-button';
 import { SoupEntitySelectionToolbar } from './soup-entity-selection-toolbar';
 import { useSoupNavigationHotkeys } from './use-soup-navigation-hotkeys';
-import { useSoupPreviewAvailability } from './use-soup-preview-availability';
 import { useSoupViewHotkeys } from './use-soup-view-hotkeys';
 
 export const DefaultGroupHeader = (
-  props: GroupHeaderProps & { highlighted?: boolean }
+  props: GroupHeaderProps & { highlighted?: boolean; icon?: JSX.Element }
 ) => {
-  const panel = useSplitPanelOrThrow();
-  const dealStages = useDealStages();
-
-  // The Customers view groups by option ids from the team's deal-stage set
-  // (or other custom select options) that the static PropertyValueIcon
-  // table doesn't know — render those through CrmStageIcon instead.
-  const isCompaniesView = () => {
-    const content = panel.handle.content();
-    return content.type === 'component' && content.id === 'companies';
-  };
-
-  // Index into the active stage set so header dots match kanban columns.
-  const stageIndex = (optionId: string): number | undefined => {
-    const index = dealStages
-      .stages()
-      .findIndex((stage) => stage.id === optionId);
-    return index === -1 ? undefined : index;
-  };
-
-  const stageOptionId = () => {
-    if (!isCompaniesView()) return undefined;
-    const value = props.group.value ?? props.group.key;
-    return typeof value === 'string' && value ? value : undefined;
-  };
-
   return (
     <SoupSectionHeader
       onClick={() => props.group.toggle()}
@@ -178,15 +144,7 @@ export const DefaultGroupHeader = (
         </div>
       </Layer>
 
-      <Show when={stageOptionId()}>
-        {(value) => (
-          <CrmStageIcon
-            optionId={value()}
-            index={stageIndex(value())}
-            class="size-3.5"
-          />
-        )}
-      </Show>
+      {props.icon}
       <span class="truncate">{props.group.label}</span>
       <span
         class={cn(
@@ -213,15 +171,13 @@ const MobileTabLoadingBar = () => (
 );
 
 const SOUP_LIST_STATE_ENTRY_KEY = 'soup.listState';
-const DEFAULT_PREVIEW_VIEWS = new Set(['inbox', 'channels']);
 /** The row components a soup view can render. */
 type SoupRowComponent =
   | typeof ListEntity
   | typeof InboxListEntity
-  | typeof TaskListEntity
-  | typeof CompanyListEntity;
+  | typeof TaskListEntity;
 
-type SoupRowEntry = {
+export type SoupRowEntry = {
   component: SoupRowComponent;
   /**
    * The --soup-row-* geometry the component renders with (ListEntity.css).
@@ -230,19 +186,6 @@ type SoupRowEntry = {
    */
   family: SoupRowFamily;
 };
-
-/**
- * Per-view row config. A view absent from the table gets DEFAULT_SOUP_ROW.
- * Adding a row component means adding it here — the entry can't omit its
- * geometry family, so the two can't drift apart.
- */
-const SOUP_ROW_BY_VIEW: Partial<Record<ListView, SoupRowEntry>> = {
-  inbox: { component: InboxListEntity, family: 'card' },
-  tasks: { component: TaskListEntity, family: 'row' },
-  companies: { component: CompanyListEntity, family: 'row' },
-};
-
-const DEFAULT_SOUP_ROW: SoupRowEntry = { component: ListEntity, family: 'row' };
 
 const CONDENSED_NARROW_LIST_VIEWS: ReadonlySet<ListView> = new Set([
   'channels',
@@ -282,47 +225,20 @@ interface SoupViewProps {
   initialClientSort?: string[];
   /**
    * Client-side entities to merge into the soup results. Useful for entity
-   * types (e.g. automation) that don't come back from the soup API.
+   * types (e.g. routine) that don't come back from the soup API.
    * Visibility is controlled by the active client filter set — use a tab
    * preset whose `clientFilters` include a predicate that matches them.
    */
   additionalEntities?: Accessor<EntityData[]>;
-  /**
-   * Shared CRM view opened via a `?crmView=` link (Customers view only).
-   * When set, its pieces win over persisted/preset state during init.
-   */
-  initialCrmView?: CrmViewConfig;
+  /** The view's tour, e.g. `<ViewTour tour={callsTour} />`. */
+  tour?: JSX.Element;
 }
 
 export const SoupView = (props: SoupViewProps) => {
   const soup = useSoup();
   const panel = useSplitPanelOrThrow();
-  const notificationSource = useGlobalNotificationSource();
   const soupView = useSoupView();
-  const isInboxView = useIsInboxView();
-  const openFocusedEntityInPreview = () => {
-    const focusedRow = soup.focus.row();
-    if (
-      !focusedRow ||
-      focusedRow.getIsGrouped() ||
-      focusedRow.getIsLoadMore()
-    ) {
-      return;
-    }
-    void openEntityInSplitFromUnifiedList(focusedRow.original, {
-      splitHandle: panel.handle,
-      notificationSource,
-    });
-  };
-  const hasPreviewItems = useSoupPreviewAvailability({
-    rows: soupView.rows,
-    isLoading: soupView.source.isLoading,
-    isFetching: soupView.source.isFetching,
-    isPlaceholderData: soupView.source.isPlaceholderData,
-    splitHandle: panel.handle,
-    onPreviewRestored: openFocusedEntityInPreview,
-  });
-
+  const isHomeView = useIsHomeView();
   const entryState = panel.handle.currentEntryState();
   const contentId = panel.handle.content().id;
 
@@ -349,25 +265,6 @@ export const SoupView = (props: SoupViewProps) => {
     `macro:pref:soup:${contentId}:sort`,
     { default: [] }
   );
-  const [previewOpenPreference, setPreviewOpenPreference] =
-    usePreference<boolean>(`macro:pref:soup:${contentId}:preview-open`, {
-      default: true,
-    });
-
-  // Shared CRM view opened via a `?crmView=` link — only honored on the
-  // Customers view; its pieces win over persisted/preset values in init.
-  const initialCrmView =
-    contentId === 'companies' ? props.initialCrmView : undefined;
-
-  // A default saved view only applies to a fresh Customers entry: restored
-  // (back/forward) entries keep what the user was looking at, and share
-  // links carry their own state.
-  const applyDefaultCrmView =
-    contentId === 'companies' &&
-    initialCrmView === undefined &&
-    persistedFilters === undefined &&
-    persistedPredicates === undefined;
-
   // We handle the restore of the persistence here instead of within the context
   // because the context is no longer recreated for each soup view because we
   // moved it within the `SplitPanel`.
@@ -383,35 +280,22 @@ export const SoupView = (props: SoupViewProps) => {
     init = true;
     batch(() => {
       soupView.initialize({
-        initialQuery: initialCrmView
-          ? (initialCrmView.filters as Query | undefined)
-          : (persistedFilters ?? props.initialFilters),
-        initialClientFilters: initialCrmView
-          ? (initialCrmView.clientFilters ?? {})
-          : (persistedPredicates ?? props.initialClientFilters),
-        initialSearchText: initialCrmView
-          ? (initialCrmView.searchText ?? '')
-          : (persistedSearchText ?? props.initialSearchText),
-        preferInitialFilters: initialCrmView !== undefined,
+        initialQuery: persistedFilters ?? props.initialFilters,
+        initialClientFilters: persistedPredicates ?? props.initialClientFilters,
+        initialSearchText: persistedSearchText ?? props.initialSearchText,
         disableLocalSearch: props.disableLocalSearch,
         additionalEntities: props.additionalEntities,
       });
 
-      // `groupBy: null` in a shared view records an explicit "no grouping",
-      // which the grouping store expresses as `undefined`.
-      const initialGroupBy = initialCrmView
-        ? (initialCrmView.groupBy ?? undefined)
-        : (persistedGroupBy ?? props.initialGroupBy);
+      const initialGroupBy = persistedGroupBy ?? props.initialGroupBy;
 
       // The inbox exposes no sort control on either desktop (the toolbar
-      // hides SoupViewContextSort) or mobile, so its order is always
-      // updated_at. Ignore any sort persisted back when the control was
-      // reachable: honoring it would pin the list to an order the user can
-      // no longer change.
-      let initialSortIds =
-        contentId === 'inbox'
-          ? ['updated_at']
-          : (initialCrmView?.sort ?? sortPref());
+      // hides SoupViewContextSort) or mobile, so its order is fixed: update
+      // recency, which the Signal and Noise presets override with the
+      // notified order they serve (see `clientSort`). Ignore any sort
+      // persisted back when the control was reachable: honoring it would pin
+      // the list to an order the user can no longer change.
+      let initialSortIds = contentId === 'home' ? ['updated_at'] : sortPref();
       if (initialSortIds.length === 0) {
         initialSortIds = props.initialClientSort ?? ['updated_at'];
       }
@@ -419,10 +303,7 @@ export const SoupView = (props: SoupViewProps) => {
       const persistedViewActiveTab = isListViewID(contentId)
         ? soupView.getPersistedActiveTab(contentId)
         : undefined;
-      let initialActiveTab =
-        initialCrmView?.activeTab ??
-        persistedActiveTab ??
-        persistedViewActiveTab;
+      let initialActiveTab = persistedActiveTab ?? persistedViewActiveTab;
 
       if (initialActiveTab === undefined && isListViewID(contentId)) {
         initialActiveTab = VIEW_TAB_PRESETS[contentId].default;
@@ -436,85 +317,7 @@ export const SoupView = (props: SoupViewProps) => {
       );
 
       soupView.setActiveTab(initialActiveTab);
-
-      if (initialCrmView) {
-        // Stage/owner sub-filters ride separate signals plus a client
-        // predicate that must be active iff the selection is non-empty
-        // (same rule as handleStageChange/handleOwnerChange in
-        // unified-filter-dropdown).
-        const stages = initialCrmView.stageFilter ?? [];
-        soupView.setStageFilter(stages);
-        if (stages.length > 0 !== soup.predicates.isActive('company-stage')) {
-          soup.predicates.toggle({ and: ['company-stage'] });
-        }
-        const owners = initialCrmView.ownerFilter ?? [];
-        soupView.setOwnerFilter(owners);
-        if (owners.length > 0 !== soup.predicates.isActive('company-owner')) {
-          soup.predicates.toggle({ and: ['company-owner'] });
-        }
-        soupView.setViewMode(initialCrmView.viewMode ?? 'board');
-      }
     });
-  });
-
-  // Preview-default views engage as soon as the layout can form a pair,
-  // without waiting for rows. useSoupPreviewAvailability owns disengagement: a
-  // settled result with no previewable rows only suspends the pair and
-  // re-engages once an entity arrives, so an initially empty view still lands
-  // in preview mode. Resolving here keeps a manual exit from being undone by
-  // later Soup updates.
-  //
-  // The preference alone decides engagement, independent of navigation cause:
-  // navigating the Controller away dissolves its Preview Pair, so an entry
-  // restored via history back/forward has no pair left to revive and must
-  // re-engage here like a fresh arrival. Manual toggles write the preference,
-  // which keeps an explicit exit from being resurrected by history navigation.
-  let initialPreviewResolved = false;
-  createEffect(() => {
-    if (initialPreviewResolved) return;
-    if (!DEFAULT_PREVIEW_VIEWS.has(contentId) || !previewOpenPreference()) {
-      initialPreviewResolved = true;
-      return;
-    }
-    if (panel.handle.isViewerSplit()) {
-      initialPreviewResolved = true;
-      return;
-    }
-
-    // Split redistribution may still be reconciling after a hotkey-driven
-    // replacement. Keep the effect live until engagement actually succeeds.
-    if (!panel.handle.canEngagePreview()) return;
-    soup.focus.clear();
-    panel.handle.engagePreview();
-    if (panel.handle.isControllerSplit()) initialPreviewResolved = true;
-  });
-
-  onMount(() => {
-    if (contentId !== 'documents') return;
-
-    const markdownQuery = buildDocumentTypeQuery(['doc-markdown']);
-    if (!markdownQuery) return;
-
-    const dispose = registerDocumentsFilterSplit(panel.handle.id, {
-      toggleMarkdownFilter: () => {
-        if (soup.predicates.isActive('doc-markdown')) {
-          soupView.queryFilters.remove(markdownQuery);
-          soup.predicates.set(({ andIds, orIds }) => ({
-            and: andIds,
-            or: orIds.filter((id) => id !== 'doc-markdown'),
-          }));
-          return;
-        }
-
-        soupView.queryFilters.add(markdownQuery);
-        soup.predicates.set(({ andIds, orIds }) => ({
-          and: andIds,
-          or: [...new Set([...orIds, 'doc-markdown'])],
-        }));
-      },
-    });
-
-    onCleanup(dispose);
   });
 
   createEffect(() => {
@@ -553,16 +356,6 @@ export const SoupView = (props: SoupViewProps) => {
     return view ? LIST_VIEW_DOCS_URL[view] : undefined;
   });
 
-  const isBoardMode = createMemo(
-    () => activeListView() === 'companies' && soupView.viewMode() === 'board'
-  );
-
-  // When CRM is unavailable (no team / disabled) the board renders the
-  // empty state instead of columns, so board-only chrome tweaks (like
-  // hiding the AI bar) shouldn't apply.
-  const crmUnavailable = useCrmUnavailable();
-  const isBoardRendered = createMemo(() => isBoardMode() && !crmUnavailable());
-
   const [narrowSearchExpanded, setNarrowSearchExpanded] = createSignal(false);
   const [searchIsCollapsed, setSearchIsCollapsed] = createSignal(false);
 
@@ -579,205 +372,217 @@ export const SoupView = (props: SoupViewProps) => {
     },
   });
 
-  return (
+  const content = () => (
     <div
       class="size-full flex flex-col @container"
       data-list-view={activeListView()}
     >
-      <div class="flex flex-col w-full">
-        <SplitHeaderLeft>
-          <div
-            class={cn(
-              'h-full flex gap-3 @max-[380px]/split-header:gap-2 items-center',
-              {
-                'shrink-0': !isTouchDevice() && !narrowSearchExpanded(),
-                'flex-1 min-w-0': !isTouchDevice() && narrowSearchExpanded(),
-                'w-full flex-1 min-w-0': isTouchDevice(),
-              }
-            )}
-          >
-            {/* On mobile/tablet the header strip hosts the filter pills instead of
+      <Show when={true}>
+        <div class="flex flex-col w-full">
+          <SplitHeaderLeft>
+            <div
+              class={cn(
+                'h-full flex gap-3 @max-[380px]/split-header:gap-2 items-center',
+                {
+                  'shrink-0': !isTouchDevice() && !narrowSearchExpanded(),
+                  'flex-1 min-w-0': !isTouchDevice() && narrowSearchExpanded(),
+                  'w-full flex-1 min-w-0': isTouchDevice(),
+                }
+              )}
+            >
+              {/* On mobile/tablet the header strip hosts the filter pills instead of
                 the view title (the bottom accessory region now belongs to the
                 global views row). */}
-            <Show when={isTouchDevice()}>
-              <MobileSoupViewTabs />
-            </Show>
-            <Show when={!isTouchDevice() && !narrowSearchExpanded()}>
-              <div class="flex items-center gap-1">
-                <span class="text-sm font-semibold">{props.viewName}</span>
-                <Show when={docsUrl()}>
-                  {(url) => (
-                    <Button
-                      variant="ghost"
-                      class="p-0.5 rounded-sm text-ink-extra-muted hover:text-ink-muted @max-[380px]/split-header:hidden"
-                      label="View documentation"
-                      onClick={() => openExternalUrl(url())}
-                    >
-                      <InfoIcon class="size-3.5" />
-                    </Button>
-                  )}
-                </Show>
-              </div>
-            </Show>
-            <Show
-              when={!narrowSearchExpanded() && !isComponentListView('search')}
-            >
-              <Show when={!isTouchDevice()}>
-                <CollapsibleHeaderItem
-                  id="tabs"
-                  priority={1}
-                  containerClass="h-full"
-                >
-                  {(isCollapsed) => (
-                    <Show
-                      when={!isCollapsed()}
-                      fallback={props.customTabs ?? <CollapsedSoupViewTabs />}
-                    >
-                      {props.customTabs ?? <SoupViewTabs />}
-                    </Show>
-                  )}
-                </CollapsibleHeaderItem>
+              <Show when={isTouchDevice()}>
+                <MobileSoupViewTabs />
               </Show>
-            </Show>
-            <Show
-              when={
-                !isTouchDevice() &&
-                !narrowSearchExpanded() &&
-                isComponentListView('mail')
-              }
-            >
-              <InboxSelector />
-            </Show>
-          </div>
-        </SplitHeaderLeft>
-        <Show when={!isTouchDevice()}>
-          <SplitHeaderRight>
-            <Show
-              when={
-                !narrowSearchExpanded() &&
-                !isComponentListView('search') &&
-                props.showCreateButton !== false
-              }
-            >
-              <SoupViewCreateButton />
-            </Show>
-            <Show when={narrowSearchExpanded()}>
-              <Layer depth={2}>
-                <div class="flex-1 min-w-0">
-                  <SoupSearchbar
-                    variant="secondary"
-                    autoFocus
-                    initialValue={props.initialSearchText}
-                    onDismiss={() => setNarrowSearchExpanded(false)}
-                  />
+              <Show when={!isTouchDevice() && !narrowSearchExpanded()}>
+                <div class="flex items-center gap-1">
+                  <span class="text-sm font-semibold">{props.viewName}</span>
+                  <Show when={docsUrl()}>
+                    {(url) => (
+                      <Button
+                        size="icon-md"
+                        variant="ghost"
+                        class="p-0.5 text-ink-extra-muted hover:text-ink-muted @max-[380px]/split-header:hidden"
+                        label="View documentation"
+                        onClick={() => openExternalUrl(url())}
+                      >
+                        <InfoIcon class="size-3.5" />
+                      </Button>
+                    )}
+                  </Show>
                 </div>
-              </Layer>
-            </Show>
-            <Show
-              when={!isComponentListView('search')}
-              fallback={
-                <>
-                  <Layer depth={2}>
-                    <div class="grow ml-2 min-w-0 [contain:inline-size]">
-                      <SoupSearchbar
-                        variant="secondary"
-                        placeholder="Search, @mention contacts"
-                        initialValue={props.initialSearchText}
-                      />
-                    </div>
-                  </Layer>
-                  <SearchAskAiButton />
-                </>
-              }
-            >
-              <Show when={!narrowSearchExpanded()}>
-                <CollapsibleHeaderItem
-                  id="search"
-                  priority={0}
-                  onCollapsedChange={(isCollapsed) => {
-                    setSearchIsCollapsed(isCollapsed);
-                    if (!isCollapsed) setNarrowSearchExpanded(false);
-                  }}
-                >
-                  {(isCollapsed) => (
-                    <Show
-                      when={!isCollapsed()}
-                      fallback={
-                        <Tooltip label="Search" hotkey={TOKENS.soup.openSearch}>
-                          <Button
-                            variant="outline"
-                            class="p-1 size-7 rounded-lg ml-2 bg-surface"
-                            onClick={() => setNarrowSearchExpanded(true)}
-                            depth={2}
-                          >
-                            <SearchIcon class="size-4 touch:size-6" />
-                          </Button>
-                        </Tooltip>
-                      }
-                    >
-                      <Layer depth={2}>
-                        <div class="w-60 ml-2">
-                          <SoupSearchbar
-                            variant="secondary"
-                            initialValue={props.initialSearchText}
-                          />
-                        </div>
-                      </Layer>
-                    </Show>
-                  )}
-                </CollapsibleHeaderItem>
               </Show>
-            </Show>
-          </SplitHeaderRight>
-        </Show>
-      </div>
-      <SoupFiltersBar
-        variant={props.filterBarVariant}
-        hasPreviewItems={hasPreviewItems()}
-        onPreviewEngage={openFocusedEntityInPreview}
-        onPreviewOpenChange={(open) => {
-          if (DEFAULT_PREVIEW_VIEWS.has(contentId))
-            setPreviewOpenPreference(open);
-        }}
-      />
-      <Show when={applyDefaultCrmView}>
-        <CrmDefaultViewLoader />
+              <Show
+                when={!narrowSearchExpanded() && !isComponentListView('search')}
+              >
+                <Show when={!isTouchDevice()}>
+                  <CollapsibleHeaderItem
+                    id="tabs"
+                    priority={1}
+                    containerClass="h-full"
+                  >
+                    {(isCollapsed) => (
+                      <Show
+                        when={!isCollapsed()}
+                        fallback={props.customTabs ?? <CollapsedSoupViewTabs />}
+                      >
+                        {props.customTabs ?? <SoupViewTabs />}
+                      </Show>
+                    )}
+                  </CollapsibleHeaderItem>
+                </Show>
+              </Show>
+              <Show
+                when={
+                  !isTouchDevice() &&
+                  !narrowSearchExpanded() &&
+                  isComponentListView('mail')
+                }
+              >
+                <InboxSelector />
+              </Show>
+            </div>
+          </SplitHeaderLeft>
+          <Show when={!isTouchDevice()}>
+            <SplitHeaderRight>
+              <Show
+                when={
+                  !narrowSearchExpanded() &&
+                  !isComponentListView('search') &&
+                  props.showCreateButton !== false
+                }
+              >
+                <SoupViewCreateButton />
+              </Show>
+              <Show when={narrowSearchExpanded()}>
+                <Layer depth={2}>
+                  <div class="flex-1 min-w-0">
+                    <SoupSearchbar
+                      variant="secondary"
+                      autoFocus
+                      initialValue={props.initialSearchText}
+                      onDismiss={() => setNarrowSearchExpanded(false)}
+                    />
+                  </div>
+                </Layer>
+              </Show>
+              <Show
+                when={!isComponentListView('search')}
+                fallback={
+                  <>
+                    <Layer depth={2}>
+                      <div class="grow ml-2 min-w-0 [contain:inline-size]">
+                        <SoupSearchbar
+                          variant="secondary"
+                          placeholder="Search, @mention contacts"
+                          initialValue={props.initialSearchText}
+                        />
+                      </div>
+                    </Layer>
+                    <SearchAskAiButton />
+                  </>
+                }
+              >
+                <Show when={!narrowSearchExpanded()}>
+                  <CollapsibleHeaderItem
+                    id="search"
+                    priority={0}
+                    onCollapsedChange={(isCollapsed) => {
+                      setSearchIsCollapsed(isCollapsed);
+                      if (!isCollapsed) setNarrowSearchExpanded(false);
+                    }}
+                  >
+                    {(isCollapsed) => (
+                      <Show
+                        when={!isCollapsed()}
+                        fallback={
+                          <Tooltip
+                            label="Search"
+                            hotkey={TOKENS.soup.openSearch}
+                          >
+                            <Button
+                              size="icon-md"
+                              variant="outline"
+                              class="p-1 size-7 ml-2"
+                              onClick={() => setNarrowSearchExpanded(true)}
+                              depth={2}
+                            >
+                              <SearchIcon class="size-4 touch:size-6" />
+                            </Button>
+                          </Tooltip>
+                        }
+                      >
+                        <Layer depth={2}>
+                          <div class="w-60 ml-2">
+                            <SoupSearchbar
+                              variant="secondary"
+                              initialValue={props.initialSearchText}
+                            />
+                          </div>
+                        </Layer>
+                      </Show>
+                    )}
+                  </CollapsibleHeaderItem>
+                </Show>
+              </Show>
+            </SplitHeaderRight>
+          </Show>
+        </div>
+        <SoupFiltersBar variant={props.filterBarVariant} />
+      </Show>
+      {props.tour}
+      <Show when={soupView.source.cachedMail?.()}>
+        <p role="status" class="px-4 py-1 text-xs text-ink-muted">
+          Showing cached mail. Only synchronized messages are available.
+        </p>
       </Show>
       <div class="relative grow min-h-1 flex max-sm:flex-col flex-row size-full">
         <Suspense>
-          <Show
-            when={!isBoardMode()}
-            fallback={
-              <MaybeSoupEntityActionDrawerManager>
-                <CompanyKanban />
-              </MaybeSoupEntityActionDrawerManager>
-            }
-          >
-            <SoupViewList />
-          </Show>
+          <SoupViewList />
         </Suspense>
       </div>
       <Suspense>
-        {/* The board and Preview Controller hide the AI bar: it floats over
-            content that is already constrained in both layouts. */}
         <Show
           when={
-            ENABLE_UNIFIED_LIST_AI_INPUT &&
             !isTouchDevice() &&
-            !isInboxView() &&
-            !panel.handle.isControllerSplit() &&
-            !isBoardRendered() &&
+            ENABLE_UNIFIED_LIST_AI_INPUT &&
+            !isHomeView() &&
             !isComponentListView('search')
           }
         >
-          <SoupChatInput />
+          <div class="absolute bottom-0 inset-x-px pb-2.5 px-2 flex justify-center pointer-events-none">
+            <div class="pointer-events-auto w-full min-w-0 max-w-3xl">
+              <SoupChatInput />
+            </div>
+          </div>
         </Show>
       </Suspense>
     </div>
   );
+  return content();
 };
 
 interface SoupViewListProps {
+  rowEntry?: SoupRowEntry;
+  listHeader?: JSX.Element;
+  groupHeader?: import('solid-js').Component<
+    GroupHeaderProps & { highlighted?: boolean }
+  >;
+  emptyState?: () => JSX.Element;
+  emptyContent?: JSX.Element;
+  timestamp?: (entity: EntityData) => DateValue | null | undefined;
+  navigationKey?: string;
+  /** Composed folder browsers keep ordinary folder activation in their pane. */
+  onOpenProject?: (id: string) => void;
+  /** Returns true when a composed view handles ordinary entity activation. */
+  onOpenEntity?: (
+    entity: EntityData,
+    event?: KeyboardEvent | MouseEvent
+  ) => boolean;
+  uploadProjectId?: string;
+  disableTabHotkeys?: boolean;
   customScrollbarHidden?: boolean;
   scopeId?: string;
 }
@@ -789,8 +594,19 @@ interface SoupViewListProps {
 export const SoupViewList = (props: SoupViewListProps) => (
   <SoupRowMetadataProvider>
     <SoupViewListContent
+      rowEntry={props.rowEntry}
+      listHeader={props.listHeader}
+      groupHeader={props.groupHeader}
       customScrollbarHidden={props.customScrollbarHidden}
       scopeId={props.scopeId}
+      onOpenProject={props.onOpenProject}
+      onOpenEntity={props.onOpenEntity}
+      uploadProjectId={props.uploadProjectId}
+      disableTabHotkeys={props.disableTabHotkeys}
+      timestamp={props.timestamp}
+      navigationKey={props.navigationKey}
+      emptyState={props.emptyState}
+      emptyContent={props.emptyContent}
     />
   </SoupRowMetadataProvider>
 );
@@ -806,6 +622,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
     isSearchServiceLoading,
     isLocalSearchSettling,
     activeTab,
+    clientSort,
     fetchNextGroupPage,
     isFetchingGroupPage,
   } = useSoupView();
@@ -867,8 +684,6 @@ const SoupViewListContent = (props: SoupViewListProps) => {
       if (!focusEffectsEnabled() || !moveInitialFocus()) return;
       if (!initialLoad || source.isLoading()) return;
 
-      if (panel.handle.isControllerSplit()) return;
-
       focusFirstEntity();
       initialLoad = false;
     })
@@ -880,8 +695,6 @@ const SoupViewListContent = (props: SoupViewListProps) => {
       () => [soup.predicates.activeIds(), searchText(), featuredIds()] as const,
       () => {
         if (!focusEffectsEnabled()) return;
-
-        if (panel.handle.isControllerSplit()) return;
 
         focusFirstEntity();
       },
@@ -936,6 +749,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
     isFetching: source.isFetching,
     isFetchingNextPage: source.isFetchingNextPage,
     fetchNextPage: source.fetchNextPage,
+    error: source.error,
   });
 
   // Register entity action hotkeys
@@ -952,17 +766,23 @@ const SoupViewListContent = (props: SoupViewListProps) => {
   // Register soup view hotkeys (jump navigation, enter, escape, cmd+k, etc.)
   const { applyTabPreset } = useApplyPreset();
 
-  // The row component and its geometry family both come from one per-view
-  // lookup, so the list container can't disagree with the rows it renders.
+  // Resolve imported components at mount, not during module evaluation: the
+  // legacy block registry can import Soup while the entity barrel is loading.
+  // Keeping component and geometry together prevents mismatched row layouts.
+  const rowsByView: Partial<Record<ListView, SoupRowEntry>> = {
+    home: { component: InboxListEntity, family: 'card' },
+    tasks: { component: TaskListEntity, family: 'row' },
+  };
+  const defaultRow: SoupRowEntry = { component: ListEntity, family: 'row' };
   const rowEntry = (): SoupRowEntry => {
     const view = currentView();
-    return (view && SOUP_ROW_BY_VIEW[view]) ?? DEFAULT_SOUP_ROW;
+    return props.rowEntry ?? (view && rowsByView[view]) ?? defaultRow;
   };
 
   const groupHeaderComponent = () => {
     if (currentView() === 'tasks') return TaskGroupHeader;
     if (soup.grouping.activeGroupId() === 'date') return DateGroupHeader;
-    return DefaultGroupHeader;
+    return props.groupHeader ?? DefaultGroupHeader;
   };
 
   useSoupViewHotkeys({
@@ -974,6 +794,9 @@ const SoupViewListContent = (props: SoupViewListProps) => {
     activeTab,
     applyTabPreset,
     fetchNextGroupPage,
+    onOpenProject: props.onOpenProject,
+    onOpenEntity: props.onOpenEntity,
+    disableTabHotkeys: props.disableTabHotkeys,
   });
 
   // Create markDone action for swipe/click handlers
@@ -982,6 +805,9 @@ const SoupViewListContent = (props: SoupViewListProps) => {
 
   const markDoneAction = makeMarkDoneAction({
     userId,
+    notificationSource: () => notificationSource,
+  });
+  const _markNotDoneAction = makeMarkNotDoneAction({
     notificationSource: () => notificationSource,
   });
 
@@ -1012,7 +838,19 @@ const SoupViewListContent = (props: SoupViewListProps) => {
       type === 'entity' ? args.entity : args.projectEntity
     ) as EntityData;
 
-    markReminderSeenOnOpen(entity, notificationSource);
+    if (
+      entity.type === 'project' &&
+      props.onOpenProject &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      props.onOpenProject(entity.id);
+      return;
+    }
+
+    markCalendarNotificationSeenOnOpen(entity, notificationSource);
 
     // FIXME: this never gets called because we have overrides
     if (event.metaKey || event.ctrlKey) {
@@ -1026,37 +864,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
       return;
     }
 
-    // Plain click while engaged as a Controller previews into the Viewer;
-    // opt+click opens in place of the whole Preview Pair (the Viewer closes and
-    // the content replaces this list); shift+click falls through to open a
-    // fresh split instead. Non-member channels flow through to
-    // openEntityInSplitFromUnifiedList, which shows the Viewer's Join prompt
-    // when previewing and otherwise no-ops.
-    if (
-      panel.handle.isControllerSplit() &&
-      type === 'entity' &&
-      !event.shiftKey
-    ) {
-      if (
-        !event.altKey &&
-        preventDuplicatePreviewEntityOpen(entity, panel.handle)
-      ) {
-        return;
-      }
-
-      // Single click: focus the row AND open it in the Preview Pair's Viewer.
-      // The openWithSplit redirect keeps the Viewer unfocused so keyboard
-      // navigation stays in this list.
-      if (args.rowIndex !== undefined) soup.focus.setIndex(args.rowIndex);
-      else soup.focus.set(entity.id);
-
-      await openEntityInSplitFromUnifiedList(entity, {
-        location,
-        splitHandle: panel.handle,
-        replacePreview: event.altKey,
-        referredFrom: currentView(),
-        notificationSource,
-      });
+    if (type === 'entity' && props.onOpenEntity?.(entity, event)) {
       return;
     }
 
@@ -1263,8 +1071,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
 
     const cached = readListEntryState();
     if (cached) {
-      if (panel.handle.isControllerSplit()) soup.focus.clear();
-      else soup.focus.set(cached.focus);
+      soup.focus.set(cached.focus);
       const handle = virtualizerHandle();
       if (!handle) return;
 
@@ -1277,9 +1084,18 @@ const SoupViewListContent = (props: SoupViewListProps) => {
     if (force) return;
 
     restored = true;
-    // Preview Controllers start without a focused row or Viewer content.
-    registerFocusEffects(!panel.handle.isControllerSplit());
+    registerFocusEffects(true);
   };
+
+  createEffect(
+    on(
+      () => props.navigationKey,
+      () => {
+        virtualizerHandle()?.scrollTo(0);
+      },
+      { defer: true }
+    )
+  );
 
   const registerVirtualizerHandler = (
     handle: VirtualizerHandle | undefined
@@ -1290,6 +1106,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
   };
 
   const featuredCount = createMemo(() => featuredIds().length);
+  const listTarget = tourTarget(SOUP_TOUR.list);
 
   return (
     <MaybeSoupEntityActionDrawerManager>
@@ -1297,6 +1114,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
         class="size-full"
         ref={(el) => {
           setSoupViewRef(el);
+          listTarget(el);
           attachHotkeys(el);
         }}
         tabIndex={-1}
@@ -1307,7 +1125,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
         data-soup-view
         data-soup-view-id={panel.handle.id}
       >
-        <SoupViewFileDropzone>
+        <SoupViewFileDropzone projectId={props.uploadProjectId}>
           <div class="@container/u-list size-full unified-list-root flex flex-col relative no-select-children">
             <Show
               when={
@@ -1329,7 +1147,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
                 <Match when={showLoadError()}>
                   <div
                     ref={setEmptyStateRef}
-                    class="flex-1 min-h-0 flex flex-col touch:pt-(--mobile-content-inset-top) touch:pb-(--mobile-content-inset-bottom)"
+                    class="flex-1 min-h-0 flex flex-col touch:pb-(--mobile-content-inset-bottom)"
                   >
                     <LoadErrorPanel onRetry={retryLoad} />
                   </div>
@@ -1361,15 +1179,23 @@ const SoupViewListContent = (props: SoupViewListProps) => {
                 <Match when={showEmptyState()}>
                   <div
                     ref={setEmptyStateRef}
-                    class="flex-1 min-h-0 flex flex-col touch:pt-(--mobile-content-inset-top) touch:pb-(--mobile-content-inset-bottom)"
+                    class="flex-1 min-h-0 flex flex-col touch:pb-(--mobile-content-inset-bottom)"
                   >
-                    <EmptyState
-                      listView={currentView()}
-                      search={!!searchText()}
-                      hasRefinementsFromBase={hasActiveRefinements()}
-                      hasHiddenItems={hasHiddenItems()}
-                      onClearFilters={resetToTabDefaults}
-                    />
+                    <Show
+                      when={!searchText() && props.emptyState}
+                      fallback={
+                        <EmptyState
+                          content={props.emptyContent}
+                          listView={currentView()}
+                          search={!!searchText()}
+                          hasRefinementsFromBase={hasActiveRefinements()}
+                          hasHiddenItems={hasHiddenItems()}
+                          onClearFilters={resetToTabDefaults}
+                        />
+                      }
+                    >
+                      {(emptyState) => emptyState()()}
+                    </Show>
                   </div>
                 </Match>
                 <Match when={rows().length}>
@@ -1380,11 +1206,7 @@ const SoupViewListContent = (props: SoupViewListProps) => {
                     <Show when={currentView() === 'tasks' && !isTouchDevice()}>
                       <ResponsiveTaskListHeader class="shrink-0" />
                     </Show>
-                    <Show
-                      when={currentView() === 'companies' && !isTouchDevice()}
-                    >
-                      <ResponsiveCompanyListHeader class="shrink-0" />
-                    </Show>
+                    {props.listHeader}
                     <SwipableRowProvider
                       container={localEntityListRef}
                       canSwipeLeft={(entityId) => {
@@ -1420,9 +1242,20 @@ const SoupViewListContent = (props: SoupViewListProps) => {
                       >
                         {(row, i) => {
                           const timestamp = () => {
+                            if (props.timestamp)
+                              return props.timestamp(row.original) ?? undefined;
+                            const sort_ = clientSort();
+                            // The notified order shows when you were told,
+                            // ahead of the row's own recency stamp.
+                            if (
+                              sort_[0]?.id === 'notified_at' &&
+                              row.original.notifiedAt
+                            ) {
+                              return row.original.notifiedAt;
+                            }
+
                             if (row.original.sortTs) return row.original.sortTs;
 
-                            const sort_ = soup.sort.active();
                             if (!sort_.length) return;
 
                             switch (sort_[0].id) {
@@ -1545,13 +1378,14 @@ const SoupViewListContent = (props: SoupViewListProps) => {
                                   >
                                     <Dynamic
                                       component={rowEntry().component}
+                                      deferInteractions={
+                                        source.deferRowInteractions?.() === true
+                                      }
                                       entity={row.original}
                                       timestamp={timestamp()}
                                       highlighted={row.isFocused()}
                                       onMouseMove={() => {
                                         if (isKeypressActive()) return;
-                                        if (panel.handle.isControllerSplit())
-                                          return;
                                         soup.focus.setIndex(row.index);
                                       }}
                                       showUnrollNotifications={

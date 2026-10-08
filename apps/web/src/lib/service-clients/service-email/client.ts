@@ -5,20 +5,29 @@ import {
 } from '@core/util/fetchWithToken';
 import type { ObjectLike, ResultError } from '@core/util/result';
 import type { SafeFetchInit } from '@core/util/safeFetch';
+import type {
+  CalendarEvent,
+  CreateCalendarEventRequest,
+  ListCalendarsResponse,
+  RsvpCalendarEventRequest,
+  UpdateCalendarEventRequest,
+} from '@service-calendar/generated/schemas';
+import type { AvailabilityCalendarBody } from '@service-calendar/generated/schemas/availabilityCalendarBody';
+import type { AvailabilityCalendarsResponse } from '@service-calendar/generated/schemas/availabilityCalendarsResponse';
+import { CalendarMutationErrorCode } from '@service-calendar/generated/schemas/calendarMutationErrorCode';
+import type { TeamCalendarSharingBody } from '@service-calendar/generated/schemas/teamCalendarSharingBody';
 import type { Result } from 'neverthrow';
 import type {
   AddDraftAttachmentRequest,
   AddDraftAttachmentResponse,
   ApiPaginatedThreadCursor,
-  CalendarEvent,
-  CreateCalendarEventRequest,
   CreateDraftRequest,
   CreateDraftResponse,
   GetAttachmentDocumentIDResponse,
   GetAttachmentResponse,
+  GetScheduledResponse,
   GetThreadResponse,
   ListBackfillJobsResponse,
-  ListCalendarsResponse,
   ListContactsResponse,
   ListEmailFiltersResponse,
   ListLabelsResponse,
@@ -26,11 +35,9 @@ import type {
   PatchSettingsRequest,
   PatchSettingsResponse,
   ResyncResponse,
-  RsvpCalendarEventRequest,
   SendMessageRequest,
   SendMessageResponse,
   SharedInboxConflictResponse,
-  UpdateCalendarEventRequest,
   UpdateLabelBatchRequest,
   UpdateLabelBatchResponse,
   UpdateThreadLabelRequest,
@@ -40,10 +47,11 @@ import type {
   UpsertScheduledRequest,
   UpsertScheduledResponse,
 } from './generated/schemas';
-import { CalendarMutationErrorCode } from './generated/schemas/calendarMutationErrorCode';
 import type { EmptyResponse } from './generated/schemas/emptyResponse';
+import type { InvitationResolution } from './generated/schemas/invitationResolution';
 
 const emailHost: string = SERVER_HOSTS['email-service'];
+const calendarHost: string = SERVER_HOSTS['calendar-service'];
 
 /**
  * Header that scopes a mutating email request to a specific inbox. Omitted for
@@ -56,6 +64,9 @@ export type CalendarDeletionScope = 'all' | 'this_event' | 'this_and_following';
 
 /** How much of a recurring series a calendar RSVP answers for. */
 export type CalendarRsvpScope = 'all' | 'this_event';
+
+/** How much of a recurring series a calendar update applies to. */
+export type CalendarUpdateScope = 'all' | 'this_event';
 
 function emailLinkHeaders(linkId?: string): Record<string, string> | undefined {
   return linkId ? { [EMAIL_LINK_ID_HEADER]: linkId } : undefined;
@@ -131,6 +142,11 @@ export const SIGNATURE_IMAGES_UNRESOLVED_CODE =
   'SIGNATURE_IMAGES_UNRESOLVED' as const;
 
 export const emailClient = {
+  async getCalendarInvitations(threadId: string) {
+    return emailFetch<Record<string, InvitationResolution>>(
+      `/email/threads/${threadId}/calendar-invitations`
+    );
+  },
   async init(args?: { linkId?: string; forceShare?: boolean }) {
     const params = new URLSearchParams();
     if (args?.linkId) params.set('link_id', args.linkId);
@@ -322,6 +338,23 @@ export const emailClient = {
         }
       )
     ).map((result) => result);
+  },
+
+  async getScheduledMessages(
+    args: { offset: number; limit: number },
+    linkId?: string
+  ) {
+    const params = new URLSearchParams({
+      offset: String(args.offset),
+      limit: String(args.limit),
+    });
+    return emailFetch<GetScheduledResponse>(
+      `/email/drafts/scheduled?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: emailLinkHeaders(linkId),
+      }
+    );
   },
 
   async getLinks() {
@@ -584,16 +617,44 @@ export const emailClient = {
     });
   },
   async listCalendars() {
-    return fetchWithToken<ListCalendarsResponse>(
-      `${emailHost}/calendar/calendars`,
-      {
-        method: 'GET',
-      }
+    return fetchWithToken<ListCalendarsResponse>(`${calendarHost}/calendars`, {
+      method: 'GET',
+    });
+  },
+
+  async getTeamCalendarSharing(signal?: AbortSignal) {
+    return fetchWithToken<TeamCalendarSharingBody>(
+      `${calendarHost}/team-sharing`,
+      { method: 'GET', signal }
+    );
+  },
+
+  async setTeamCalendarSharing(body: TeamCalendarSharingBody) {
+    return fetchWithToken<TeamCalendarSharingBody>(
+      `${calendarHost}/team-sharing`,
+      { method: 'PUT', body: JSON.stringify(body) }
+    );
+  },
+
+  async getAvailabilityCalendars(signal?: AbortSignal) {
+    return fetchWithToken<AvailabilityCalendarsResponse>(
+      `${calendarHost}/availability-calendars`,
+      { method: 'GET', signal }
+    );
+  },
+
+  async setAvailabilityCalendar(
+    calendarId: string,
+    body: AvailabilityCalendarBody
+  ) {
+    return fetchWithToken<EmptyResponse>(
+      `${calendarHost}/availability-calendars/${encodeURIComponent(calendarId)}`,
+      { method: 'PUT', body: JSON.stringify(body) }
     );
   },
   async createCalendarEvent(args: CreateCalendarEventRequest) {
     return fetchWithToken<CalendarEvent, CalendarMutationErrorCode>(
-      `${emailHost}/calendar/events`,
+      `${calendarHost}/events`,
       {
         method: 'POST',
         body: JSON.stringify(args),
@@ -603,7 +664,7 @@ export const emailClient = {
   },
   async updateCalendarEvent(eventId: string, args: UpdateCalendarEventRequest) {
     return fetchWithToken<CalendarEvent, CalendarMutationErrorCode>(
-      `${emailHost}/calendar/events/${eventId}`,
+      `${calendarHost}/events/${eventId}`,
       {
         method: 'PATCH',
         body: JSON.stringify(args),
@@ -613,7 +674,11 @@ export const emailClient = {
   },
   async deleteCalendarEvent(
     eventId: string,
-    options?: { scope?: CalendarDeletionScope; recurrenceId?: string }
+    options?: {
+      scope?: CalendarDeletionScope;
+      recurrenceId?: string;
+      calendarId?: string;
+    }
   ) {
     const params = new URLSearchParams();
     if (options?.scope && options.scope !== 'all') {
@@ -622,9 +687,12 @@ export const emailClient = {
     if (options?.recurrenceId) {
       params.set('recurrenceId', options.recurrenceId);
     }
+    if (options?.calendarId) {
+      params.set('calendarId', options.calendarId);
+    }
     const query = params.toString();
     return fetchWithToken<EmptyResponse, CalendarMutationErrorCode>(
-      `${emailHost}/calendar/events/${eventId}${query ? `?${query}` : ''}`,
+      `${calendarHost}/events/${eventId}${query ? `?${query}` : ''}`,
       {
         method: 'DELETE',
         errorResponseHandler: calendarMutationErrorHandler,
@@ -633,12 +701,36 @@ export const emailClient = {
   },
   async rsvpCalendarEvent(eventId: string, args: RsvpCalendarEventRequest) {
     return fetchWithToken<CalendarEvent, CalendarMutationErrorCode>(
-      `${emailHost}/calendar/events/${eventId}/rsvp`,
+      `${calendarHost}/events/${eventId}/rsvp`,
       {
         method: 'PUT',
         body: JSON.stringify(args),
         errorResponseHandler: calendarMutationErrorHandler,
       }
     );
+  },
+
+  async importGmailSignature(linkId?: string) {
+    return fetchWithToken<
+      PatchSettingsResponse,
+      'NO_SIGNATURE_FOUND' | typeof SIGNATURE_IMAGES_UNRESOLVED_CODE
+    >(`${emailHost}/email/settings/import-signature`, {
+      method: 'POST',
+      headers: emailLinkHeaders(linkId),
+      errorResponseHandler: async (response) => {
+        if (response.status === 404) {
+          return { code: 'NO_SIGNATURE_FOUND' as const, message: '' };
+        }
+        // Same 422 contract as patchSettings: Gmail images that couldn't be
+        // rehosted, so nothing was saved.
+        if (response.status === 422) {
+          return { code: SIGNATURE_IMAGES_UNRESOLVED_CODE, message: '' };
+        }
+        return {
+          code: 'HTTP_ERROR' as const,
+          message: `HTTP error! status: ${response.status}`,
+        };
+      },
+    });
   },
 };

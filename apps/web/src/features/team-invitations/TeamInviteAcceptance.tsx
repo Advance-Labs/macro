@@ -1,5 +1,4 @@
 import { LoadingBlock } from '@core/component/LoadingBlock';
-import { PcNoiseGrid } from '@core/component/PcNoiseGrid';
 import { getDisplayName, tryMacroId } from '@core/user';
 import LogoIcon from '@icon/macro-logo.svg';
 import EnvelopeIcon from '@phosphor/envelope.svg';
@@ -96,20 +95,6 @@ export function TeamInviteAcceptance() {
           }
         `}
       </style>
-      <div class="inset-0 absolute text-edge bg-surface opacity-10 -z-1">
-        <PcNoiseGrid
-          cellSize={30}
-          warp={0}
-          crunch={0.2}
-          freq={0.001}
-          size={[0, 0.3]}
-          rounding={0}
-          fill={0}
-          stroke={1}
-          speed={[0.017, 0.209]}
-        />
-      </div>
-
       <div class="w-full max-w-105 invite-card">
         <Surface>
           <div class="flex flex-col gap-6 p-6">
@@ -167,7 +152,7 @@ function NoInviteId() {
       <Button
         variant="outline"
         size="md"
-        class="w-full rounded-xs"
+        class="w-full"
         onClick={() => navigate('/')}
       >
         Go to Home
@@ -189,7 +174,7 @@ function UnauthenticatedView(props: { onLogin: () => void }) {
       <Button
         variant="outline"
         size="md"
-        class="w-full rounded-xs"
+        class="w-full"
         onClick={props.onLogin}
       >
         Sign In to Continue
@@ -214,7 +199,7 @@ function AlreadyOnTeam(props: { teamName: string }) {
       <Button
         variant="outline"
         size="md"
-        class="w-full rounded-xs"
+        class="w-full"
         onClick={() => navigate('/')}
       >
         Go to Home
@@ -235,7 +220,7 @@ function InviteNotFound() {
       <Button
         variant="outline"
         size="md"
-        class="w-full rounded-xs"
+        class="w-full"
         onClick={() => navigate('/')}
       >
         Go to Home
@@ -279,7 +264,7 @@ function InviteDetails(props: {
         <Button
           variant="outline"
           size="md"
-          class="w-full rounded-xs"
+          class="w-full"
           onClick={props.onAccept}
           disabled={isDisabled()}
         >
@@ -290,7 +275,7 @@ function InviteDetails(props: {
         <Button
           variant="ghost"
           size="md"
-          class="w-full rounded-xs"
+          class="w-full"
           onClick={props.onDecline}
           disabled={isDisabled()}
         >

@@ -18,6 +18,7 @@ use serde_json::json;
 
 use super::cli::{EnvArgs, InstanceArgs, RunArgs};
 use super::instance::{Instance, Port};
+use super::local_env::Tunnels;
 use super::stage::Stage;
 use super::{Mode, arch, env_layer, frontend, mailpit, proxy, sdk_webhook, snapshot, summary};
 
@@ -25,10 +26,6 @@ use super::{Mode, arch, env_layer, frontend, mailpit, proxy, sdk_webhook, snapsh
 pub struct UpArgs {
     #[command(flatten)]
     pub run: RunArgs,
-    /// Neither restore from nor save an init snapshot — always run the full
-    /// migrate/kickstart/index init.
-    #[arg(long)]
-    pub no_snapshot: bool,
     /// Stop after the infra bring-up + init (and the snapshot save/restore):
     /// no app services, proxy, or frontend. This is the CI bake mode — the
     /// app services need the Doppler-sourced env (AWS endpoints, shared
@@ -107,9 +104,7 @@ fn write_state(instance: &Instance, state: &StackState) -> Result<()> {
         .with_context(|| format!("writing {}", path.display()))
 }
 
-/// Whether the recorded stack serves the frontend as the static bundle on the
-/// proxy (headless `stack up`) rather than the dev server. False when no
-/// stack state exists (interactive `run_local`, which owns the dev server).
+/// Whether the recorded stack serves a headless bundle from the proxy.
 pub(super) fn frontend_is_static(instance: &Instance) -> bool {
     read_state(instance).is_some_and(|state| state.frontend == "static")
 }
@@ -178,8 +173,8 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
         infra_only,
         // Headless stacks serve agents on Cursor Cloud dev boxes, which have
         // no cloudflared and no @cursor sessions to feed; the egress stays
-        // in-network.
-        None,
+        // in-network and previews stay reachable on that box only.
+        Tunnels::default(),
     )?;
 
     // Build + stage the frontend bundle in the background: it's pure host-side
@@ -192,16 +187,15 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
     }
     let fe_build = (static_frontend && !stage.is_dry_run()).then(|| {
         let instance = instance.clone();
-        std::thread::spawn(move || {
-            frontend::build_static(&Stage::from_env().quiet(), &instance, mode)
-        })
+        let stage = stage.background();
+        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode))
     });
 
     // The init snapshot decision: hash the init-defining inputs (possible only
     // after `prepare` wrote the kickstart) and check for a stored snapshot.
     // Restores skip migrate/kickstart/index-init; a cold init saves one for
     // next time — that's how the cache seeds itself.
-    let snapshot_plan = (!args.no_snapshot && !stage.is_dry_run())
+    let snapshot_plan = (!args.run.no_snapshot && !stage.is_dry_run())
         .then(|| snapshot::Plan::compute(&instance))
         .transpose()?;
 
@@ -293,6 +287,7 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
     } else {
         mailpit::direct_ui_url(&instance)
     };
+    stage.print_timings("bring-up");
     summary::print(mode, &instance, &env, &frontend_url, &mailpit_url, None);
     stage.note(&format!(
         "  headless: `just stack status`, `just stack update`, `just stack down`{}",
@@ -328,13 +323,12 @@ fn bootstrap_from_update(args: &UpdateArgs) -> Result<()> {
                 binaries_dir: args.binaries_dir.clone(),
             },
             no_frontend: false,
-            enable_onboarding: false,
             verbose: args.verbose,
+            no_snapshot: false,
             traces: super::cli::TracesBackend::default(),
             with_chrome: false,
             with_cf_tunnel: false,
         },
-        no_snapshot: false,
         infra_only: false,
         json: args.json,
     };
@@ -358,7 +352,7 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
         args.env.no_doppler,
         args.env.env_file.as_deref(),
         state.frontend == "static",
-        None,
+        Tunnels::default(),
         // `update` doesn't know the original `--traces` choice; keep the
         // running stack's wiring keyed on the port probe as before.
         true,
@@ -637,11 +631,11 @@ fn str_field(v: &serde_json::Value, key: &str) -> String {
 
 /// One quick `curl` probe (the tooling already leans on curl for readiness).
 fn probe(url: &str) -> bool {
-    Command::new("curl")
-        .args(["-fsS", "-m", "3", "-o", "/dev/null", url])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let mut cmd = Command::new("curl");
+    cmd.args(["-fsS", "-m", "3", "-o", "/dev/null"]);
+    cmd.args(super::proxy::curl_ca_args(url));
+    cmd.arg(url);
+    cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
 fn mode_from_label(label: &str) -> Result<Mode> {

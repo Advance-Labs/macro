@@ -1,7 +1,8 @@
 /*
  * Reactive urql-backed Soup items. Every loaded page remains subscribed to
- * its normalized GraphQL cache operation so cache writes update the list
- * directly. The public REST/GraphQL facade lives in ../items.ts.
+ * its normalized GraphQL cache operation. Supported flat queries reconcile
+ * server membership with local evidence without replacing the server cursor
+ * chain. The public REST/GraphQL facade lives in ../items.ts.
  */
 
 import {
@@ -10,16 +11,30 @@ import {
   readRecordsByKeys,
   selectRecords,
 } from '@app/lib/graphql-cache';
-import { createUrqlInfiniteQuery } from '@app/lib/urql-solid';
+import {
+  createUrqlInfiniteQuery,
+  type UrqlInfiniteData,
+} from '@app/lib/urql-solid';
+import { createBrowserOfflineSignal } from '@core/util/connectivity';
+import { isResponseFreeNetworkError } from '@core/util/request-error';
 import { Telemetry } from '@macro-inc/observability';
 import { useInstructionsMdIdQuery } from '@queries/storage/instructions-md';
+import type { SoupApiItem } from '@service-storage/generated/schemas';
 import {
+  ChannelListItemFieldsFragmentDoc,
+  ChannelListSoupDocument,
+  type ChannelListSoupQuery,
+  type MailItemFieldsFragment,
+  MailItemFieldsFragmentDoc,
   SoupDocument,
   SoupItemFieldsFragmentDoc,
   type SoupQuery,
   type SoupQueryVariables,
 } from '@service-storage/graphql/generated/graphql';
-import type { GraphqlSoupInput } from '@service-storage/graphql-soup';
+import type {
+  GraphqlSoupInput,
+  GraphqlSoupItem,
+} from '@service-storage/graphql-soup';
 import {
   getGraphqlSoupCacheHost,
   getGraphqlSoupClient,
@@ -37,10 +52,29 @@ import {
   createSignal,
   on,
   onCleanup,
+  untrack,
 } from 'solid-js';
+import { NIL as NIL_UUID } from 'uuid';
+import { registerChannelNotificationRefresh } from '../../channel/register-notification-refresh';
+import { soupQueryExcludesDone } from '../excludes-done';
 import type { SoupAstBody, SoupAstItemsData, SoupAstParams } from '../items';
-import { mapSoupPageToEntityList } from '../transform-utils';
+import { soupPageTimestamp } from '../page-timestamp';
+import {
+  mapApiSoupItemToEntity,
+  mapSoupPageToEntityList,
+} from '../transform-utils';
+import { registerGraphqlSoupRevalidations } from './active-queries';
 import { makeGraphqlSoupInput } from './ast';
+import { createGraphqlSoupDoneProjection } from './done-projection';
+import { isCachedMailView, materializeMailView } from './mail-view';
+import { usePendingGraphqlSoupDeleteIds } from './optimistic-deletions';
+import { usePendingGraphqlSoupDone } from './optimistic-done';
+import {
+  materializeReconciledSoup,
+  soupItemKey,
+  soupReconciliationBaseline,
+  unreconciledServerRecords,
+} from './reconciliation';
 
 export type GraphqlSoupAstItemsQueryArgs = {
   params: SoupAstParams;
@@ -49,10 +83,19 @@ export type GraphqlSoupAstItemsQueryArgs = {
 
 export type GraphqlSoupAstItemsQueryOptions = {
   enabled: boolean;
+  /** Reuse local Mail evaluation beneath a separately subscribed grouped query. */
+  localOnly?: boolean;
+  networkPaused?: boolean;
+  keepPreviousData?: boolean;
+  projection?: 'channel-list';
+  /** Reconcile indexed members while retaining server-only email rows. */
+  localReconciliation?: 'without-email';
   showSupportedForeignEntities?: boolean;
 };
 
 export type GraphqlSoupAstItemsQuery = {
+  localRevision?: Accessor<CacheRevision | undefined>;
+  localOptimistic?: Accessor<boolean>;
   data: Accessor<SoupAstItemsData | undefined>;
   /** Latest GraphQL transport or application error. */
   error: Accessor<CombinedError | undefined>;
@@ -71,12 +114,29 @@ export type GraphqlSoupAstItemsQuery = {
   refresh: () => Promise<void>;
 };
 
+const itemsById = (items: readonly SoupApiItem[]) =>
+  Object.fromEntries(
+    items.map((item) => [mapApiSoupItemToEntity(item).id, item])
+  );
+
+// A page result can carry the viewer without its `soup` field. Selection runs
+// over every loaded page, so such a page reads as unloaded instead of failing
+// the whole list.
+const hasSoupPage = (page: SoupQuery | ChannelListSoupQuery): boolean =>
+  page.user?.soup != null;
+
 /** Creates the live urql query for a flat Soup AST request. */
 export function createGraphqlSoupAstItemsQuery(
   args: Accessor<GraphqlSoupAstItemsQueryArgs>,
   options: Accessor<GraphqlSoupAstItemsQueryOptions>
 ): GraphqlSoupAstItemsQuery {
   const instructionsIdQuery = useInstructionsMdIdQuery();
+  const pendingDeleteIds = usePendingGraphqlSoupDeleteIds();
+  const pendingDone = usePendingGraphqlSoupDone();
+  const projectDone = createGraphqlSoupDoneProjection();
+  const excludesDone = createMemo(() => soupQueryExcludesDone([args().body]));
+  const offline = createBrowserOfflineSignal();
+  const [fetchingMailPage, setFetchingMailPage] = createSignal(false);
 
   const inputForCursor = (
     cursor: string | null
@@ -92,11 +152,36 @@ export function createGraphqlSoupAstItemsQuery(
 
   const firstPageInput = createMemo(() => inputForCursor(null));
   const isSupported = () => firstPageInput() !== undefined;
-  type LocalProjection = {
-    revision: CacheRevision;
+  const inputKey = createMemo(() =>
+    JSON.stringify([options().projection, firstPageInput()])
+  );
+  type ServerProjection = {
+    pageParams: readonly (string | null)[];
     data: SoupAstItemsData;
-    optimistic: boolean;
+    records: Accessor<GraphqlSoupItem[]>;
   };
+  type LocalProjection = {
+    input: GraphqlSoupInput;
+    generation: number;
+    baselineKeys: ReadonlySet<string>;
+    displayedKeys: ReadonlySet<string>;
+    withoutEmail: boolean;
+    data: SoupAstItemsData;
+    mail?: {
+      nextCursor: string | null;
+      revision: CacheRevision;
+      optimistic: boolean;
+      records: GraphqlSoupItem[];
+    };
+  };
+  type UnpersistedPage = {
+    input: GraphqlSoupInput | undefined;
+    generation: number;
+    observation: number;
+  };
+  const [unpersistedPages, setUnpersistedPages] = createSignal<
+    ReadonlyMap<number, UnpersistedPage>
+  >(new Map());
   const [currentCacheRevision, setCurrentCacheRevision] = createSignal<
     CacheRevision | undefined
   >();
@@ -106,11 +191,29 @@ export function createGraphqlSoupAstItemsQuery(
   const [localProjection, setLocalProjection] = createSignal<
     LocalProjection | undefined
   >();
+  const [localEvaluationTrigger, setLocalEvaluationTrigger] = createSignal(0);
+  const queryDocument = () =>
+    options().projection === 'channel-list'
+      ? ChannelListSoupDocument
+      : SoupDocument;
   const soupItemSelection = selectRecords(SoupItemFieldsFragmentDoc);
+  const channelListItemSelection = selectRecords(
+    ChannelListItemFieldsFragmentDoc
+  );
+  const mailItemSelection = selectRecords(MailItemFieldsFragmentDoc);
   let localRequest = 0;
+  let localEvaluationRunning = false;
+  let localEvaluationPending = false;
   let cacheGeneration = 0;
-  let resetContinuationPages: (() => void) | undefined;
+  let cacheObservation = 0;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  const [baselineGeneration, setBaselineGeneration] = createSignal<number>();
+  const [baselineInputKey, setBaselineInputKey] = createSignal<string>();
   let previousInitialInput: GraphqlSoupInput | undefined;
+  let networkAuthorityInput: GraphqlSoupInput | undefined;
   let staleFallbackSpan: ReturnType<typeof Telemetry.span> | undefined;
 
   const recordAuthority = (source: 'network' | 'local' | 'stale-fallback') => {
@@ -124,6 +227,51 @@ export function createGraphqlSoupAstItemsQuery(
     staleFallbackSpan = undefined;
   };
 
+  const hasUnpersistedPages = (input: GraphqlSoupInput | undefined) =>
+    [...unpersistedPages().values()].some(
+      (page) => page.input === input && page.generation === cacheGeneration
+    );
+  const forgetUnpersistedPage = (index: number) => {
+    setUnpersistedPages((pages) => {
+      if (!pages.has(index)) return pages;
+      const next = new Map(pages);
+      next.delete(index);
+      return next;
+    });
+  };
+  const acknowledgeNetworkPage = async (
+    index: number,
+    page: UnpersistedPage,
+    persistence: Promise<CacheRevision | undefined>
+  ): Promise<void> => {
+    let revision: CacheRevision | undefined;
+    try {
+      revision = await persistence;
+    } catch {
+      // A failed cache write cannot revoke the successful network snapshot.
+      return;
+    }
+    if (
+      revision === undefined ||
+      disposed ||
+      page.generation !== cacheGeneration ||
+      page.input !== firstPageInput() ||
+      unpersistedPages().get(index) !== page
+    )
+      return;
+    batch(() => {
+      // Cache pushes (including optimistic writes) can arrive before this ack.
+      // Never rewind their watermark or republish/clear the visible row data.
+      if (cacheObservation === page.observation) {
+        setCurrentCacheRevision(revision);
+        cacheObservation += 1;
+      }
+      networkAuthorityInput = page.input;
+      setNetworkAuthorityRevision(revision);
+      forgetUnpersistedPage(index);
+    });
+  };
+
   createEffect(() => {
     const host = getGraphqlSoupCacheHost();
     if (!host) return;
@@ -133,6 +281,8 @@ export function createGraphqlSoupAstItemsQuery(
       setCurrentCacheRevision(undefined);
       setNetworkAuthorityRevision(undefined);
       setLocalProjection(undefined);
+      setBaselineGeneration(undefined);
+      setUnpersistedPages(new Map());
     };
     const observeCurrentRevision = () => {
       const observedGeneration = cacheGeneration;
@@ -149,6 +299,7 @@ export function createGraphqlSoupAstItemsQuery(
         .catch(() => undefined);
     };
     const unsubscribeChanges = host.onCacheChanged((revision) => {
+      cacheObservation += 1;
       if (
         networkAuthorityRevision() !== undefined &&
         networkAuthorityRevision() !== revision &&
@@ -177,99 +328,232 @@ export function createGraphqlSoupAstItemsQuery(
   });
 
   createEffect(() => {
+    localEvaluationTrigger();
     const revision = currentCacheRevision();
     const input = firstPageInput();
     const queryOptions = options();
     const host = getGraphqlSoupCacheHost();
+    const withoutEmail = queryOptions.localReconciliation === 'without-email';
+    // Email membership remains server-owned. Leaving it out of the overlay's
+    // baseline makes displayData retain those rows, including later pages.
+    const records = withoutEmail
+      ? serverRecords().filter(
+          (record) => record.__typename !== 'GraphqlSoupEmailThread'
+        )
+      : serverRecords();
     const requestId = ++localRequest;
+    const requestGeneration = cacheGeneration;
     if (input !== previousInitialInput) {
       previousInitialInput = input;
       setLocalProjection(undefined);
     }
+    const existing = untrack(localProjection);
+    if (
+      existing?.mail &&
+      existing.input === input &&
+      existing.generation === cacheGeneration &&
+      existing.mail.revision === revision
+    )
+      return;
     if (
       revision === undefined ||
-      networkAuthorityRevision() === revision ||
+      hasUnpersistedPages(input) ||
+      (networkAuthorityInput === input &&
+        networkAuthorityRevision() === revision &&
+        !offline() &&
+        !query.error?.networkError &&
+        !(
+          input &&
+          'initial' in input &&
+          isCachedMailView(input.initial?.emailView)
+        )) ||
       !queryOptions.enabled ||
       !graphqlSoupProjectionSupported() ||
       !input ||
       !host ||
       !('initial' in input)
     ) {
+      localEvaluationPending = false;
       return;
     }
     const initial = input.initial;
-    if (!initial) return;
-    const filters = initial.filters ?? {};
+    if (!initial) {
+      localEvaluationPending = false;
+      return;
+    }
+    const filters = withoutEmail
+      ? {
+          ...initial.filters,
+          emailFilter: { tree: { literal: { threadId: NIL_UUID } } },
+        }
+      : (initial.filters ?? {});
+    const mailView =
+      !withoutEmail && isCachedMailView(initial.emailView)
+        ? initial.emailView
+        : undefined;
     const sortMethod = initial.sortMethod;
-    if (!sortMethod || sortMethod === 'VIEWED_AT') return;
+    if (sortMethod !== 'CREATED_AT' && sortMethod !== 'UPDATED_AT') {
+      localEvaluationPending = false;
+      return;
+    }
+    const baseline = soupReconciliationBaseline(records, sortMethod);
+    if (!baseline && !mailView) {
+      setLocalProjection(undefined);
+      localEvaluationPending = false;
+      return;
+    }
     const sortDirection = initial.sortDirection ?? 'DESC';
     const limit = initial.limit ?? 20;
 
+    if (localEvaluationRunning) {
+      localEvaluationPending = true;
+      return;
+    }
+    localEvaluationRunning = true;
+    localEvaluationPending = false;
+
     void (async () => {
       const span = Telemetry.span('graphql_cache.soup_local_evaluation');
-      let expectedRevision = revision;
       let retryCount = 0;
       let discarded = false;
       let outcome: 'success' | 'incomplete' | 'error' = 'incomplete';
       try {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          const result = await host.entityFilter({
-            filters,
-            sortMethod,
-            sortDirection,
-            limit,
-          });
-          if (result.kind !== 'complete') return;
           if (requestId !== localRequest) {
             discarded = true;
             return;
           }
-          const selected = await readRecordsByKeys(
-            host,
-            soupItemSelection,
-            result.keys
-          );
+          let result = await host.entityFilter({
+            filters,
+            sortMethod,
+            sortDirection,
+            limit,
+            ...(mailView ? { mail: { view: mailView } } : { baseline }),
+          });
+          if (
+            mailView &&
+            (result.kind === 'unsupported' || result.kind === 'incomplete')
+          ) {
+            if (!baseline) return;
+            result = await host.entityFilter({
+              filters,
+              sortMethod,
+              sortDirection,
+              limit,
+              baseline,
+            });
+          }
+          if (result.kind !== 'reconciled' && result.kind !== 'mail-page')
+            return;
+          if (requestId !== localRequest) {
+            discarded = true;
+            return;
+          }
+          // Loaded server pages may exceed the bounded fragment-read API.
+          // Every chunk must still belong to the same reconciliation revision.
+          const chunks = [];
+          for (
+            let offset = 0;
+            offset < Math.max(1, result.keys.length);
+            offset += 500
+          ) {
+            chunks.push(
+              await readRecordsByKeys<GraphqlSoupItem>(
+                host,
+                result.kind === 'mail-page'
+                  ? mailItemSelection
+                  : queryOptions.projection === 'channel-list'
+                    ? channelListItemSelection
+                    : soupItemSelection,
+                result.keys.slice(offset, offset + 500)
+              )
+            );
+          }
           const latestRevision = await host.currentRevision();
           if (requestId !== localRequest) {
             discarded = true;
             return;
           }
           if (
-            result.revision !== selected.revision ||
-            result.revision !== latestRevision ||
-            result.revision !== expectedRevision
+            chunks.some((chunk) => result.revision !== chunk.revision) ||
+            result.revision !== latestRevision
           ) {
             discarded = true;
             retryCount += 1;
-            expectedRevision = latestRevision;
             setCurrentCacheRevision(latestRevision);
             continue;
           }
-          if (selected.records.length !== result.keys.length) return;
-          const items = selected.records.flatMap(({ record }) => {
+          const timestamps =
+            result.kind === 'mail-page'
+              ? new Map(
+                  result.keys.map((key, i) => [key, result.sortTimestamps[i]])
+                )
+              : undefined;
+          const reconciledRecords = materializeReconciledSoup(
+            result.keys,
+            chunks.flatMap((chunk) => chunk.records),
+            result.kind === 'mail-page' ? [] : records
+          ).flatMap((record) => {
+            const ts = timestamps?.get(soupItemKey(record));
+            if (!ts || !mailView || result.kind !== 'mail-page')
+              return [record];
+            const projected = materializeMailView(
+              record as MailItemFieldsFragment,
+              mailView,
+              ts
+            );
+            return projected ? [projected] : [];
+          });
+          const items = reconciledRecords.flatMap((record) => {
             const item = mapGraphqlSoupItem(record);
             return item ? [item] : [];
           });
-          if (items.length !== result.keys.length) return;
-          setLocalProjection({
-            revision: latestRevision,
-            optimistic: result.optimistic,
-            data: {
-              entities: mapSoupPageToEntityList(
-                { items, next_cursor: undefined },
-                {
-                  instructionsIdQuery,
-                  showSupportedForeignEntities:
-                    queryOptions.showSupportedForeignEntities,
-                }
+          batch(() => {
+            setLocalProjection({
+              input,
+              generation: requestGeneration,
+              baselineKeys: new Set(
+                result.kind === 'mail-page' ? [] : records.map(soupItemKey)
               ),
-              groups: undefined,
-            },
+              displayedKeys: new Set(reconciledRecords.map(soupItemKey)),
+              withoutEmail,
+              ...(result.kind === 'mail-page'
+                ? {
+                    mail: {
+                      nextCursor: result.nextCursor,
+                      revision: result.revision,
+                      optimistic: result.optimistic,
+                      records: reconciledRecords,
+                    },
+                  }
+                : {}),
+              data: {
+                cachedMail: result.kind === 'mail-page',
+                itemsById: itemsById(items),
+                entities: mapSoupPageToEntityList(
+                  { items, next_cursor: undefined },
+                  {
+                    instructionsIdQuery,
+                    showSupportedForeignEntities:
+                      queryOptions.showSupportedForeignEntities,
+                  }
+                ),
+                groups: undefined,
+              },
+            });
+            // The filter, fragments, and final revision agree. A newer coherent
+            // page is valid even if hydration advanced past the initial read.
+            // Publish both result kinds' watermarks: the Mail guard avoids a
+            // rescan, and reconnect cannot make an older network snapshot authoritative.
+            setCurrentCacheRevision(result.revision);
           });
           outcome = 'success';
           recordAuthority('local');
           finishStaleFallback('local');
-          resetContinuationPages?.();
+          span.setAttr(
+            'evaluation.retained_count',
+            result.kind === 'reconciled' ? result.retainedKeys.length : 0
+          );
           return;
         }
       } catch {
@@ -281,23 +565,76 @@ export function createGraphqlSoupAstItemsQuery(
         span.setAttr('evaluation.retry_count', retryCount);
         span.setAttr('evaluation.discarded', discarded);
         span.end();
+        localEvaluationRunning = false;
+        if (localEvaluationPending) {
+          localEvaluationPending = false;
+          setLocalEvaluationTrigger((trigger) => trigger + 1);
+        }
       }
     })();
   });
 
+  // Keep the selector stable across activity/filter changes. The observer
+  // caches projections by selector and page identity; rebuilding the closure
+  // would remap and reconcile every notification when merely disabling a view.
+  const projectionSortMethod = createMemo(() => args().params.sort_method);
+  const projectionForeignEntities = createMemo(
+    () => options().showSupportedForeignEntities
+  );
+  const projectionInstructionsId = createMemo(() =>
+    instructionsIdQuery.isSuccess ? instructionsIdQuery.data : undefined
+  );
+  const selectPages = createMemo(() => {
+    // The mapper reads this query inside the untracked observer callback.
+    // Track its resolved id here so cached pages reselect when it changes.
+    projectionInstructionsId();
+    const sortMethod = projectionSortMethod();
+    const showSupportedForeignEntities = projectionForeignEntities();
+    return ({
+      pages,
+      pageParams,
+    }: UrqlInfiniteData<
+      SoupQuery | ChannelListSoupQuery,
+      string | null
+    >): ServerProjection => {
+      const soupPages = pages.filter(hasSoupPage);
+      const mappedPages = soupPages.map(mapGraphqlSoupPage);
+      const oldestFetchedTimestamp = soupPageTimestamp(
+        mappedPages.flatMap((page) => page.items.map(mapApiSoupItemToEntity)),
+        sortMethod
+      );
+      const entities = mappedPages.flatMap((page) =>
+        mapSoupPageToEntityList(page, {
+          instructionsIdQuery,
+          showSupportedForeignEntities,
+        })
+      );
+      const records = soupPages.flatMap<GraphqlSoupItem>(
+        (page) => page.user.soup.items
+      );
+      return {
+        // Raw wire records are reconciliation evidence, not reactive UI state.
+        // Publish them atomically without walking their entire notification
+        // payload again. Mapped entities retain deep reactivity and identity.
+        records: () => records,
+        pageParams,
+        data: { entities, groups: undefined, oldestFetchedTimestamp },
+      };
+    };
+  });
+
   const query = createUrqlInfiniteQuery<
-    SoupQuery,
+    SoupQuery | ChannelListSoupQuery,
     SoupQueryVariables,
     string | null,
-    SoupAstItemsData
+    ServerProjection
   >(() => {
     const firstInput = firstPageInput();
+    const firstInputKey = inputKey();
     const queryOptions = options();
-    const showSupportedForeignEntities =
-      queryOptions.showSupportedForeignEntities;
 
     return {
-      query: SoupDocument,
+      query: queryDocument(),
       client: getGraphqlSoupClient(),
       initialPageParam: null,
       variables: (cursor) => {
@@ -308,46 +645,221 @@ export function createGraphqlSoupAstItemsQuery(
         return { input };
       },
       getNextPageParam: (lastPage) =>
-        lastPage.user.soup.nextCursor ?? undefined,
-      enabled: queryOptions.enabled && firstInput !== undefined,
-      requestPolicy: 'cache-and-network',
-      keepPreviousData: false,
+        hasSoupPage(lastPage)
+          ? (lastPage.user.soup.nextCursor ?? undefined)
+          : undefined,
+      enabled:
+        queryOptions.enabled &&
+        !queryOptions.localOnly &&
+        firstInput !== undefined,
+      requestPolicy: queryOptions.networkPaused
+        ? 'cache-only'
+        : 'cache-and-network',
+      keepPreviousData: queryOptions.keepPreviousData ?? false,
       onResult: (result, page) => {
-        if (page.pageIndex !== 0) return;
+        if (!result.data) return;
+        batch(() => {
+          setBaselineGeneration(cacheGeneration);
+          setBaselineInputKey(firstInputKey);
+        });
         const metadata = normalizedCacheResultMetadata(result);
-        if (metadata?.source !== 'live-network' || !metadata.revision) return;
+        if (metadata?.source !== 'live-network') {
+          // An affected/cache result already reflects local state. Its pending
+          // network acknowledgement may no longer claim authority over it.
+          forgetUnpersistedPage(page.pageIndex);
+          return;
+        }
+        if (metadata.persistence) {
+          const pending: UnpersistedPage = {
+            input: firstInput,
+            generation: cacheGeneration,
+            observation: cacheObservation,
+          };
+          localRequest += 1;
+          batch(() => {
+            setUnpersistedPages((pages) =>
+              new Map(
+                [...pages].filter(
+                  ([, entry]) =>
+                    entry.input === firstInput &&
+                    entry.generation === cacheGeneration
+                )
+              ).set(page.pageIndex, pending)
+            );
+            // Retain pending Mail rows while the new server page is persisted.
+            if (!untrack(localProjection)?.mail) setLocalProjection(undefined);
+          });
+          recordAuthority('network');
+          finishStaleFallback('network');
+          void acknowledgeNetworkPage(
+            page.pageIndex,
+            pending,
+            metadata.persistence
+          );
+          return;
+        }
+        forgetUnpersistedPage(page.pageIndex);
+        if (page.pageIndex !== 0 || !metadata.revision) return;
+        networkAuthorityInput = firstInput;
+        cacheObservation += 1;
         batch(() => {
           setCurrentCacheRevision(metadata.revision);
           setNetworkAuthorityRevision(metadata.revision);
-          setLocalProjection(undefined);
+          // Keep same-view Mail evidence while checking the new revision.
+          // A server page cannot supersede an unsettled offline draft.
+          if (!untrack(localProjection)?.mail) setLocalProjection(undefined);
         });
         recordAuthority('network');
         finishStaleFallback('network');
       },
-      select: ({ pages }) => ({
-        entities: pages.flatMap((page) =>
-          mapSoupPageToEntityList(mapGraphqlSoupPage(page), {
-            instructionsIdQuery,
-            showSupportedForeignEntities,
-          })
-        ),
-        groups: undefined,
-      }),
+      select: selectPages(),
     };
   });
 
-  resetContinuationPages = query.resetToInitialPage;
+  onCleanup(
+    registerGraphqlSoupRevalidations(() => {
+      if (!query.isEnabled) return [];
+      const cursors = new Set([null, ...(query.data?.pageParams ?? [])]);
+      return [...cursors].flatMap((cursor) => {
+        const input = inputForCursor(cursor);
+        return input
+          ? [{ document: queryDocument(), variables: { input } }]
+          : [];
+      });
+    }, getGraphqlSoupClient)
+  );
 
-  const authoritativeLocalProjection = (): LocalProjection | undefined => {
+  registerChannelNotificationRefresh(() => ({
+    client: getGraphqlSoupClient(),
+    // urql retains loaded pages after errors; keep them registered for retry.
+    queries:
+      options().projection === 'channel-list'
+        ? [...new Set([null, ...(query.data?.pageParams ?? [])])].flatMap(
+            (cursor) => {
+              const input = inputForCursor(cursor);
+              return input
+                ? [{ document: queryDocument(), variables: { input } }]
+                : [];
+            }
+          )
+        : [],
+    reader: {
+      enabled: query.isEnabled && !options().networkPaused,
+      fetching: query.isFetching,
+      filtered: true,
+      notificationIds: query.isSuccess
+        ? (query.data?.records() ?? []).flatMap((item) =>
+            item.__typename === 'GraphqlSoupChannel' &&
+            'unreadNotifications' in item
+              ? (item.unreadNotifications?.map((n) => n.id) ?? [])
+              : []
+          )
+        : [],
+    },
+  }));
+
+  // Capture membership/sort evidence for each published projection, so a later
+  // cache revision cannot change the baseline of an in-flight reconciliation.
+  const serverRecords = createMemo(() =>
+    baselineGeneration() === cacheGeneration
+      ? (query.data?.records() ?? []).map((record) => ({ ...record }))
+      : []
+  );
+
+  const serverRecordKeys = createMemo(
+    () => new Set(serverRecords().map(soupItemKey))
+  );
+
+  // Retain same-query rows across revisions and page additions, not across a
+  // query/generation change or removal of the baseline they were built from.
+  // Publishing a replacement still requires all the revision checks above.
+  const displayLocalProjection = (): LocalProjection | undefined => {
     const local = localProjection();
-    const revision = currentCacheRevision();
-    return local?.revision === revision ? local : undefined;
+    if (
+      !local ||
+      local.input !== firstPageInput() ||
+      local.generation !== cacheGeneration ||
+      local.withoutEmail !== (options().localReconciliation === 'without-email')
+    )
+      return undefined;
+    // A partial projection with no visible rows after pending deletes cannot
+    // prove that a folder is empty (it could contain only email). Keep initial
+    // loading/errors until the server establishes membership.
+    if (
+      local.withoutEmail &&
+      !query.data &&
+      local.data.entities.every((entity) => pendingDeleteIds().has(entity.id))
+    )
+      return undefined;
+    const keys = serverRecordKeys();
+    for (const key of local.baselineKeys) {
+      if (!keys.has(key)) return undefined;
+    }
+    return local;
   };
   const networkIsAuthoritative = (): boolean =>
-    networkAuthorityRevision() !== undefined &&
-    networkAuthorityRevision() === currentCacheRevision();
+    !displayLocalProjection()?.mail?.optimistic &&
+    (hasUnpersistedPages(firstPageInput()) ||
+      (!offline() &&
+        !query.error?.networkError &&
+        networkAuthorityInput === firstPageInput() &&
+        networkAuthorityRevision() !== undefined &&
+        networkAuthorityRevision() === currentCacheRevision()));
 
-  const error = (): CombinedError | undefined => query.error ?? undefined;
+  // An overlay covers only the server rows that existed when it was evaluated.
+  // New server pages must render immediately, even if the next evaluation stalls
+  // or fails. Preserve covered decisions and local additions, then append new
+  // rows in server-page order until a successful reconciliation orders the union.
+  const displayData = createMemo((): SoupAstItemsData | undefined => {
+    if (networkIsAuthoritative()) return query.data?.data;
+    const local = displayLocalProjection();
+    if (!local) return query.data?.data;
+    if (local.mail) return local.data;
+    const additions = unreconciledServerRecords(
+      serverRecords(),
+      local.baselineKeys,
+      local.displayedKeys
+    ).flatMap((record) => {
+      const item = mapGraphqlSoupItem(record);
+      return item ? [item] : [];
+    });
+    if (additions.length === 0) return local.data;
+    const entities = mapSoupPageToEntityList(
+      { items: additions, next_cursor: undefined },
+      {
+        instructionsIdQuery,
+        showSupportedForeignEntities: options().showSupportedForeignEntities,
+      }
+    );
+    return entities.length === 0
+      ? local.data
+      : {
+          ...local.data,
+          entities: [...local.data.entities, ...entities],
+        };
+  });
+
+  const error = (): CombinedError | undefined => {
+    const error = query.error;
+    // A background transport failure must not replace usable current-query
+    // cache results (including an empty result) with the full-screen error state.
+    // A normalized page is usable before local reconciliation finishes. Keep
+    // server responses, uncached queries and failed continuation reads visible;
+    // previous-filter or previous-generation pages are not fallback evidence.
+    if (
+      isResponseFreeNetworkError(error) &&
+      options().enabled &&
+      isSupported() &&
+      !query.isFetchNextPageError &&
+      (displayLocalProjection() ||
+        (query.data !== undefined &&
+          baselineGeneration() === cacheGeneration &&
+          baselineInputKey() === inputKey()))
+    ) {
+      return undefined;
+    }
+    return error ?? undefined;
+  };
   createComputed(
     on(error, (queryError) => {
       if (queryError) {
@@ -357,30 +869,138 @@ export function createGraphqlSoupAstItemsQuery(
   );
 
   return {
-    data: () => {
-      if (networkIsAuthoritative()) return query.data;
-      const local = authoritativeLocalProjection();
-      return local?.data ?? query.data ?? localProjection()?.data;
-    },
+    localRevision: () => displayLocalProjection()?.mail?.revision,
+    localOptimistic: () => displayLocalProjection()?.mail?.optimistic ?? false,
+    data: createMemo(() => {
+      const data = displayData();
+      return projectDone(
+        JSON.stringify([firstPageInput(), cacheGeneration]),
+        data && {
+          ...data,
+          oldestFetchedTimestamp: query.data?.data.oldestFetchedTimestamp,
+        },
+        pendingDone(),
+        excludesDone(),
+        pendingDeleteIds()
+      );
+    }),
     error,
     isSupported,
     isEnabled: () => query.isEnabled,
-    isLoading: () =>
-      query.isLoading && authoritativeLocalProjection() === undefined,
+    isLoading: () => query.isLoading && displayLocalProjection() === undefined,
     isFetching: () => query.isFetching,
-    isFetchingNextPage: () => query.isFetchingNextPage,
-    isPlaceholderData: () =>
-      !networkIsAuthoritative() && authoritativeLocalProjection() !== undefined,
-    hasNextPage: () => query.hasNextPage,
+    isFetchingNextPage: () => fetchingMailPage() || query.isFetchingNextPage,
+    // Current-query cache results are usable data, not previous-tab
+    // placeholders. In particular, local recomputation must not animate the
+    // mobile tab-loading bar or make the view report that it has no data.
+    isPlaceholderData: () => false,
+    hasNextPage: () =>
+      !networkIsAuthoritative() && displayLocalProjection()?.mail
+        ? displayLocalProjection()?.mail?.nextCursor != null
+        : query.hasNextPage,
     fetchNextPage: async () => {
-      // Local predicate pagination is not revision-safe yet. Return to the
-      // stale server page chain before requesting its continuation cursor.
-      setLocalProjection(undefined);
-      await query.fetchNextPage();
+      const local = displayLocalProjection();
+      if (!local?.mail || networkIsAuthoritative()) {
+        await query.fetchNextPage();
+        return;
+      }
+      if (!local.mail.nextCursor || fetchingMailPage()) return;
+      const initial =
+        'initial' in local.input ? local.input.initial : undefined;
+      const host = getGraphqlSoupCacheHost();
+      if (!initial || !host || !isCachedMailView(initial.emailView)) return;
+      const mailView = initial.emailView;
+      setFetchingMailPage(true);
+      try {
+        const result = await host.entityFilter({
+          filters: initial.filters ?? {},
+          sortMethod: initial.sortMethod ?? 'UPDATED_AT',
+          sortDirection: initial.sortDirection ?? 'DESC',
+          limit: initial.limit ?? 20,
+          mail: { view: initial.emailView, cursor: local.mail.nextCursor },
+        });
+        if (displayLocalProjection() !== local) return;
+        if (result.kind === 'stale-cursor') {
+          setLocalProjection(undefined);
+          setLocalEvaluationTrigger((value) => value + 1);
+          return;
+        }
+        if (result.kind !== 'mail-page') return;
+        const selected = await readRecordsByKeys(
+          host,
+          mailItemSelection,
+          result.keys
+        );
+        const currentRevision = await host.currentRevision();
+        if (
+          displayLocalProjection() !== local ||
+          result.revision !== local.mail.revision ||
+          selected.revision !== result.revision ||
+          currentRevision !== result.revision
+        ) {
+          setLocalEvaluationTrigger((value) => value + 1);
+          return;
+        }
+        const keys = [...local.displayedKeys, ...result.keys];
+        const timestamps = new Map(
+          result.keys.map((key, i) => [key, result.sortTimestamps[i]])
+        );
+        const records = materializeReconciledSoup(
+          keys,
+          selected.records,
+          local.mail.records
+        ).flatMap((record) => {
+          const ts = timestamps.get(soupItemKey(record));
+          if (!ts) return [record];
+          const projected = materializeMailView(
+            record as MailItemFieldsFragment,
+            mailView,
+            ts
+          );
+          return projected ? [projected] : [];
+        });
+        const items = records.flatMap((record) => {
+          const item = mapGraphqlSoupItem(record);
+          return item ? [item] : [];
+        });
+        setLocalProjection({
+          ...local,
+          displayedKeys: new Set(keys),
+          mail: {
+            nextCursor: result.nextCursor,
+            revision: result.revision,
+            optimistic: result.optimistic,
+            records,
+          },
+          data: {
+            cachedMail: true,
+            itemsById: itemsById(items),
+            entities: mapSoupPageToEntityList(
+              { items, next_cursor: undefined },
+              {
+                instructionsIdQuery,
+                showSupportedForeignEntities:
+                  options().showSupportedForeignEntities,
+              }
+            ),
+            groups: undefined,
+          },
+        });
+      } finally {
+        setFetchingMailPage(false);
+      }
     },
-    resetToInitialPage: query.resetToInitialPage,
+    resetToInitialPage: () => {
+      query.resetToInitialPage();
+      if (displayLocalProjection()?.mail) {
+        setLocalProjection(undefined);
+        setLocalEvaluationTrigger((value) => value + 1);
+      }
+    },
     refresh: async () => {
       if (firstPageInput() === undefined) return;
+      // An explicit list refresh rebuilds the cursor chain in order. The
+      // notification queue observes isFetching and waits for this to finish.
       await query.refetch({
         requestPolicy: 'network-only',
         throwOnError: true,

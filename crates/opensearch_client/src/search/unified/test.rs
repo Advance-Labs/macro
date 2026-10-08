@@ -6,6 +6,81 @@ use models_search_cursor::SearchMethodCursor;
 use opensearch_query_builder::ToOpenSearchJson;
 
 #[test]
+fn author_only_channel_match_without_highlight_keeps_deep_link() {
+    let channel_id = uuid::Uuid::now_v7();
+    let message_id = uuid::Uuid::now_v7();
+    for thread in [None, Some(uuid::Uuid::now_v7())] {
+        let source = UnifiedSearchIndex::from_matched(
+            &["channels".into()],
+            serde_json::json!({
+                "entity_id": channel_id, "message_id": message_id,
+                "thread_id": thread.unwrap_or(message_id), "channel_type": "private",
+                "sender_id": "macro|system@macro.com", "mentions": [],
+                "imported_author": "quartzarchivebot"
+            }),
+        )
+        .unwrap();
+        let hits = expand_hit_into_search_hits(Hit {
+            source,
+            index: "channels_v2".into(),
+            matched_queries: vec!["channels".into()],
+            score: Some(1.0),
+            highlight: None,
+            inner_hits: None,
+        });
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].entity_id, channel_id);
+        let Some(SearchGotoContent::Channels(goto)) = &hits[0].goto else {
+            panic!("channel hit must retain a deep link without highlights");
+        };
+        assert_eq!(goto.channel_message_id, message_id);
+        assert_eq!(goto.thread_id, thread);
+        assert_eq!(goto.sender_id, "macro|system@macro.com");
+    }
+}
+
+#[test]
+fn agent_sessions_expand_and_paginate_as_entities_not_messages() {
+    let session_id = uuid::Uuid::from_u128(1);
+    let next_id = uuid::Uuid::from_u128(2);
+    let session = Hit {
+        index: "agent_sessions".into(),
+        matched_queries: vec!["agent_sessions".into()],
+        score: Some(1.0),
+        source: serde_json::json!({
+            "agent_session_id": session_id,
+            "updated_at_millis": 1783000000000_i64,
+        }),
+        highlight: None,
+        inner_hits: Some(serde_json::json!({
+            "agent_term_0": {"hits": {"hits": [
+                {"_id": "user", "_source": {"message_turn": 0, "author": "user"},
+                 "highlight": {"content": ["<macro_em>match</macro_em>"]}},
+                {"_id": "agent", "_source": {"message_turn": 0, "author": "agent"},
+                 "highlight": {"content": ["<macro_em>match</macro_em>"]}}
+            ]}}
+        })),
+    };
+    let (hits, cursor) = paginate_unified_hits(
+        vec![session, doc_hit_with_chunks(next_id, 1782999999000, 1)],
+        1,
+    );
+    assert_eq!(hits.len(), 2);
+    assert!(hits.iter().all(|hit| hit.entity_id == session_id));
+    let SearchCursorOption::NotDone(Some(SearchMethodCursor::UpdatedAt { entity_id, .. })) = cursor
+    else {
+        panic!("expected a continuation anchored on the session")
+    };
+    assert_eq!(entity_id, session_id);
+    let split = hits.into_iter().split_search_response();
+    assert_eq!(split.agent_session.len(), 2);
+    assert!(
+        split.chat.is_empty(),
+        "agent sessions are not legacy DCS chats"
+    );
+}
+
+#[test]
 fn expand_document_name_highlight_yields_name_hit_without_goto() {
     use std::collections::HashMap;
     use uuid::Uuid;
@@ -495,6 +570,7 @@ fn test_build_unified_search_request_content() -> anyhow::Result<()> {
         call_record_search_args: UnifiedCallRecordSearchArgs::default(),
         project_search_args: UnifiedProjectSearchArgs::default(),
         calendar_event_search_args: UnifiedCalendarEventSearchArgs::default(),
+        agent_session_search_args: Default::default(),
         cursor: SearchCursorOption::NotDone(Some(SearchMethodCursor::UpdatedAt {
             entity_id,
             updated_at: time,
@@ -530,6 +606,7 @@ fn test_build_unified_search_request_content() -> anyhow::Result<()> {
           "content": { "number_of_fragments": 1, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "document_name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
+          "source_names": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "subject": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "sender": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "sender_name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
@@ -802,6 +879,7 @@ fn test_build_unified_search_request_content() -> anyhow::Result<()> {
         call_record_search_args: UnifiedCallRecordSearchArgs::default(),
         project_search_args: UnifiedProjectSearchArgs::default(),
         calendar_event_search_args: UnifiedCalendarEventSearchArgs::default(),
+        agent_session_search_args: Default::default(),
         cursor: SearchCursorOption::NotDone(Some(SearchMethodCursor::UpdatedAt {
             entity_id,
             updated_at: time,
@@ -856,6 +934,7 @@ fn test_build_unified_search_request_single_index() -> anyhow::Result<()> {
           "content": { "number_of_fragments": 1, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "document_name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
+          "source_names": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "subject": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "sender": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
           "sender_name": { "number_of_fragments": 0, "post_tags": ["</macro_em>"], "pre_tags": ["<macro_em>"], "type": "plain" },
@@ -1275,6 +1354,11 @@ fn every_searched_index_contributes_a_named_clause() -> anyhow::Result<()> {
 
     let args = UnifiedSearchArgs {
         search_indices: OpenSearchEntityType::iter().collect(),
+        agent_session_search_args: super::super::agent_sessions::AgentSessionSearchArgs {
+            terms: vec!["test".into()],
+            session_ids: vec![uuid::Uuid::from_u128(1).to_string()],
+            ..Default::default()
+        },
         user_id: "user".to_string(),
         page_size: 10,
         match_type: "exact".to_string(),

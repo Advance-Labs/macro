@@ -34,6 +34,11 @@ fn tool_input_schemas_satisfy_strict_mode() {
             generate_validated_input_schema::<CreateCalendarEvent>().map(|schema| schema.name),
         ),
         (
+            "CreateConfirmedCalendarEvent",
+            generate_validated_input_schema::<CreateConfirmedCalendarEvent>()
+                .map(|schema| schema.name),
+        ),
+        (
             "UpdateCalendarEvent",
             generate_validated_input_schema::<UpdateCalendarEvent>().map(|schema| schema.name),
         ),
@@ -75,6 +80,7 @@ fn sample_event(recurrence_lines: Vec<String>) -> crate::domain::models::Calenda
         owner_id: "macro|owner@example.com".to_string(),
         ical_uid: "uid-1".to_string(),
         calendar_id: Some(Uuid::from_u128(9)),
+        sources: Vec::new(),
         title: "Standup".to_string(),
         description: Some("Daily sync".to_string()),
         location: Some("Room 1".to_string()),
@@ -177,6 +183,7 @@ impl CalendarMutationService for MockMutations {
         &self,
         _requester_id: &str,
         event_id: Uuid,
+        _calendar_id: Option<Uuid>,
         patch: CalendarEventPatch,
         scope: CalendarUpdateScope,
     ) -> Result<crate::domain::models::CalendarEvent, CalendarMutationError> {
@@ -188,6 +195,7 @@ impl CalendarMutationService for MockMutations {
         &self,
         _requester_id: &str,
         event_id: Uuid,
+        _calendar_id: Option<Uuid>,
         scope: CalendarDeletionScope,
     ) -> Result<(), CalendarMutationError> {
         self.deleted.lock().unwrap().push((event_id, scope));
@@ -198,8 +206,10 @@ impl CalendarMutationService for MockMutations {
         &self,
         _requester_id: &str,
         event_id: Uuid,
+        _calendar_id: Option<Uuid>,
         response: AttendeeResponseStatus,
         scope: CalendarRsvpScope,
+        _responding_email: Option<String>,
     ) -> Result<crate::domain::models::CalendarEvent, CalendarMutationError> {
         self.answered
             .lock()
@@ -229,8 +239,7 @@ impl CalendarOccurrenceService for MockOccurrences {
         _range: OccurrenceRange,
         cursor: Option<crate::domain::models::CalendarOccurrenceCursor>,
         limit: u16,
-    ) -> Result<Vec<(crate::domain::models::CalendarEvent, CalendarOccurrence)>, rootcause::Report>
-    {
+    ) -> Result<Vec<crate::domain::models::OccurrenceListing>, rootcause::Report> {
         let rows = self.rows.lock().unwrap().clone();
         let start = cursor
             .map(|cursor| {
@@ -239,7 +248,18 @@ impl CalendarOccurrenceService for MockOccurrences {
                     .map_or(rows.len(), |position| position + 1)
             })
             .unwrap_or(0);
-        let mut page: Vec<_> = rows.into_iter().skip(start).collect();
+        let mut page: Vec<_> = rows
+            .into_iter()
+            .skip(start)
+            .map(
+                |(event, occurrence)| crate::domain::models::OccurrenceListing {
+                    event,
+                    occurrence,
+                    link_id: uuid::Uuid::nil(),
+                    exception: Default::default(),
+                },
+            )
+            .collect();
         page.truncate(usize::from(limit));
         Ok(page)
     }
@@ -251,12 +271,35 @@ impl CalendarOccurrenceService for MockOccurrences {
         Ok(self.status)
     }
 
+    async fn list_visible_calendars(
+        &self,
+        _requester_id: &str,
+    ) -> Result<Vec<crate::domain::models::VisibleCalendar>, rootcause::Report> {
+        unreachable!("calendar tools list calendars through the mutation service")
+    }
+
     async fn mention_previews(
         &self,
         _requester_id: &str,
         _items: Vec<crate::domain::models::CalendarMentionRequestItem>,
     ) -> Result<Vec<crate::domain::models::CalendarMentionPreview>, rootcause::Report> {
         unreachable!("no calendar tool resolves mention previews")
+    }
+
+    async fn list_team_out_of_office(
+        &self,
+        _requester_id: &str,
+        _range: OccurrenceRange,
+        _limit: u16,
+    ) -> Result<Vec<crate::domain::models::TeamOutOfOffice>, rootcause::Report> {
+        unreachable!("no calendar tool lists team out-of-office")
+    }
+
+    async fn primary_time_zone(
+        &self,
+        _requester_id: &str,
+    ) -> Result<Option<String>, rootcause::Report> {
+        unreachable!("no calendar tool resolves the primary time zone")
     }
 }
 
@@ -326,6 +369,116 @@ async fn mcp_toolset_executes_create_directly() {
     assert_eq!(mutations.created.lock().unwrap().len(), 1);
 }
 
+/// The confirmed variant takes exactly `CreateCalendarEvent`'s fields plus
+/// the confirmation, and the confirmation is required: the schema is the gate.
+#[test]
+fn create_confirmed_is_create_plus_a_required_confirmation() {
+    let confirmed = generate_validated_input_schema::<CreateConfirmedCalendarEvent>().unwrap();
+    let plain = generate_validated_input_schema::<CreateCalendarEvent>().unwrap();
+    assert_eq!(confirmed.name, "CreateConfirmedCalendarEvent");
+    assert!(
+        confirmed.description.contains("userConfirmation"),
+        "{}",
+        confirmed.description
+    );
+
+    let confirmed = confirmed.schema.to_value();
+    let plain = plain.schema.to_value();
+    let properties = |schema: &serde_json::Value| {
+        let mut names: Vec<String> = schema["properties"]
+            .as_object()
+            .expect("an object schema")
+            .keys()
+            .cloned()
+            .collect();
+        names.sort();
+        names
+    };
+    let mut expected = properties(&plain);
+    expected.push("userConfirmation".to_owned());
+    expected.sort();
+    assert_eq!(properties(&confirmed), expected);
+    assert!(
+        confirmed["required"]
+            .as_array()
+            .expect("required is an array")
+            .contains(&serde_json::json!("userConfirmation")),
+        "{confirmed:#}"
+    );
+}
+
+/// The confirmed tool is registered beside the deferring one, executes in
+/// the loop rather than deferring, and creates exactly what the plain tool
+/// would have.
+#[tokio::test]
+async fn confirmed_create_executes_directly_in_the_user_tool_toolset() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+    let mut args = create_tool_args();
+    args["userConfirmation"] = serde_json::json!("yes, go ahead and put it on the calendar");
+    let event = calendar_toolset()
+        .try_tool_call(
+            context.0,
+            request_context(),
+            "CreateConfirmedCalendarEvent",
+            &args,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(event["eventId"], Uuid::from_u128(7).to_string());
+    let created = mutations.created.lock().unwrap();
+    let (_, _, draft) = created.first().expect("one create call");
+    assert_eq!(draft.title, "Design review");
+}
+
+/// Composer-less hosts already create directly through the plain tool, so
+/// the confirmed variant would be a second name for the same thing there.
+#[tokio::test]
+async fn mcp_toolset_omits_the_confirmed_create() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+    let mut args = create_tool_args();
+    args["userConfirmation"] = serde_json::json!("yes");
+    let result = mcp_toolset()
+        .try_tool_call(
+            context.0,
+            request_context(),
+            "CreateConfirmedCalendarEvent",
+            &args,
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(ai_toolset::ToolSetError::NotFound(_))),
+        "{result:?}"
+    );
+    assert!(mutations.created.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn confirmed_create_refuses_a_blank_confirmation() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+    let mut args = create_tool_args();
+    args["userConfirmation"] = serde_json::json!("   ");
+    let error = calendar_toolset()
+        .try_tool_call(
+            context.0,
+            request_context(),
+            "CreateConfirmedCalendarEvent",
+            &args,
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+
+    assert!(
+        error.description.contains("userConfirmation"),
+        "{}",
+        error.description
+    );
+    assert!(mutations.created.lock().unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn create_converts_input_into_a_domain_draft() {
     let (mutations, context) = context(MockMutations::default(), empty_occurrences());
@@ -353,6 +506,8 @@ async fn create_converts_input_into_a_domain_draft() {
             }],
         }),
         add_google_meet: true,
+        event_type: CalendarEventTypeInput::Default,
+        out_of_office: None,
     };
     let response = tool.call(context, request_context()).await.unwrap();
     assert_eq!(response.event_id, Uuid::from_u128(7));
@@ -383,6 +538,70 @@ async fn create_converts_input_into_a_domain_draft() {
 }
 
 #[tokio::test]
+async fn create_maps_out_of_office_input_into_the_draft() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+
+    let tool = CreateCalendarEvent {
+        title: "Out".to_string(),
+        time: EventTimeInput::Timed {
+            starts_at: Utc.with_ymd_and_hms(2026, 8, 20, 12, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2026, 8, 20, 18, 0, 0).unwrap(),
+            time_zone: None,
+        },
+        description: None,
+        location: None,
+        attendees: Vec::new(),
+        recurrence_lines: Vec::new(),
+        calendar_id: None,
+        reminders: None,
+        add_google_meet: false,
+        event_type: CalendarEventTypeInput::OutOfOffice,
+        out_of_office: Some(OutOfOfficeInput {
+            auto_decline_mode: Some(AutoDeclineModeInput::DeclineAll),
+            decline_message: Some("Away".to_string()),
+        }),
+    };
+    tool.call(context, request_context()).await.unwrap();
+
+    let created = mutations.created.lock().unwrap();
+    let (_, _, draft) = created.first().expect("one create call");
+    let out_of_office = draft
+        .out_of_office
+        .as_ref()
+        .expect("out-of-office properties carried into the draft");
+    assert_eq!(
+        out_of_office.auto_decline_mode,
+        crate::domain::models::OutOfOfficeAutoDeclineMode::DeclineAllConflictingInvitations
+    );
+    assert_eq!(out_of_office.decline_message.as_deref(), Some("Away"));
+}
+
+#[tokio::test]
+async fn create_rejects_out_of_office_settings_on_a_default_event() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+
+    let tool = CreateCalendarEvent {
+        title: "Regular".to_string(),
+        time: EventTimeInput::Timed {
+            starts_at: Utc.with_ymd_and_hms(2026, 8, 20, 12, 0, 0).unwrap(),
+            ends_at: Utc.with_ymd_and_hms(2026, 8, 20, 13, 0, 0).unwrap(),
+            time_zone: None,
+        },
+        description: None,
+        location: None,
+        attendees: Vec::new(),
+        recurrence_lines: Vec::new(),
+        calendar_id: None,
+        reminders: None,
+        add_google_meet: false,
+        event_type: CalendarEventTypeInput::Default,
+        out_of_office: Some(OutOfOfficeInput::default()),
+    };
+    tool.call(context, request_context()).await.unwrap_err();
+    assert!(mutations.created.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn create_surfaces_missing_calendar_as_an_actionable_error() {
     let mutations = MockMutations {
         create_error: Mutex::new(Some(CalendarMutationError::NoWritableCalendar)),
@@ -404,6 +623,8 @@ async fn create_surfaces_missing_calendar_as_an_actionable_error() {
         calendar_id: None,
         reminders: None,
         add_google_meet: false,
+        event_type: CalendarEventTypeInput::Default,
+        out_of_office: None,
     };
     let error = tool.call(context, request_context()).await.unwrap_err();
     assert!(
@@ -422,6 +643,7 @@ async fn update_converts_input_into_a_domain_patch() {
 
     let tool = UpdateCalendarEvent {
         event_id,
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: None,
         title: Some("Renamed".to_string()),
@@ -436,6 +658,7 @@ async fn update_converts_input_into_a_domain_patch() {
         conference: Some(ConferenceChangeInput::Remove),
         reminders: None,
         rsvp: None,
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -451,6 +674,45 @@ async fn update_converts_input_into_a_domain_patch() {
         Some(1)
     );
     assert_eq!(patch.conference, Some(ConferenceChange::Removed));
+    assert!(patch.out_of_office.is_none());
+}
+
+#[tokio::test]
+async fn update_maps_out_of_office_settings_into_the_patch() {
+    let (mutations, context) = context(MockMutations::default(), empty_occurrences());
+    let event_id = Uuid::from_u128(11);
+
+    let tool = UpdateCalendarEvent {
+        event_id,
+        calendar_id: None,
+        scope: UpdateScopeInput::All,
+        recurrence_id: None,
+        title: None,
+        description: None,
+        location: None,
+        time: None,
+        attendees: None,
+        recurrence_lines: None,
+        conference: None,
+        reminders: None,
+        rsvp: None,
+        out_of_office: Some(OutOfOfficeInput {
+            auto_decline_mode: Some(AutoDeclineModeInput::DeclineNewOnly),
+            decline_message: None,
+        }),
+    };
+    tool.call(context, request_context()).await.unwrap();
+
+    let updated = mutations.updated.lock().unwrap();
+    let (_, patch, _) = updated.first().expect("one update call");
+    let out_of_office = patch
+        .out_of_office
+        .as_ref()
+        .expect("out-of-office settings carried into the patch");
+    assert_eq!(
+        out_of_office.auto_decline_mode,
+        crate::domain::models::OutOfOfficeAutoDeclineMode::DeclineOnlyNewConflictingInvitations
+    );
 }
 
 #[tokio::test]
@@ -460,6 +722,7 @@ async fn update_passes_the_selected_occurrence_scope() {
 
     let tool = UpdateCalendarEvent {
         event_id,
+        calendar_id: None,
         scope: UpdateScopeInput::ThisEvent,
         recurrence_id: Some("2026-08-18T20:00:00+00:00".to_string()),
         title: None,
@@ -475,6 +738,7 @@ async fn update_passes_the_selected_occurrence_scope() {
         conference: None,
         reminders: None,
         rsvp: None,
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -494,6 +758,7 @@ async fn scoped_update_requires_a_recurrence_id() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::ThisEvent,
         recurrence_id: None,
         title: Some("Renamed".to_string()),
@@ -505,6 +770,7 @@ async fn scoped_update_requires_a_recurrence_id() {
         conference: None,
         reminders: None,
         rsvp: None,
+        out_of_office: None,
     };
     let error = tool.call(context, request_context()).await.unwrap_err();
     assert!(error.description.contains("recurrenceId"));
@@ -520,6 +786,7 @@ async fn series_update_rejects_a_stray_recurrence_id() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: Some("2026-08-18T20:00:00+00:00".to_string()),
         title: Some("Renamed".to_string()),
@@ -531,6 +798,7 @@ async fn series_update_rejects_a_stray_recurrence_id() {
         conference: None,
         reminders: None,
         rsvp: None,
+        out_of_office: None,
     };
     let error = tool.call(context, request_context()).await.unwrap_err();
     assert!(error.description.contains("this_event"));
@@ -543,6 +811,7 @@ async fn update_carries_reminders_into_the_patch() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: None,
         title: None,
@@ -560,6 +829,7 @@ async fn update_carries_reminders_into_the_patch() {
             }],
         }),
         rsvp: None,
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -586,6 +856,7 @@ async fn rsvp_alone_answers_without_patching() {
 
     let tool = UpdateCalendarEvent {
         event_id,
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: None,
         title: None,
@@ -597,6 +868,7 @@ async fn rsvp_alone_answers_without_patching() {
         conference: None,
         reminders: None,
         rsvp: Some(RsvpResponseInput::Declined),
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -618,6 +890,7 @@ async fn rsvp_follows_the_occurrence_scope_of_the_call() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::ThisEvent,
         recurrence_id: Some("2026-08-18T20:00:00+00:00".to_string()),
         title: None,
@@ -629,6 +902,7 @@ async fn rsvp_follows_the_occurrence_scope_of_the_call() {
         conference: None,
         reminders: None,
         rsvp: Some(RsvpResponseInput::Tentative),
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -651,6 +925,7 @@ async fn update_answers_after_applying_the_patch() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: None,
         title: None,
@@ -665,6 +940,7 @@ async fn update_answers_after_applying_the_patch() {
         conference: None,
         reminders: None,
         rsvp: Some(RsvpResponseInput::Accepted),
+        out_of_office: None,
     };
     tool.call(context, request_context()).await.unwrap();
 
@@ -678,6 +954,7 @@ async fn update_without_a_change_or_an_rsvp_is_rejected() {
 
     let tool = UpdateCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: UpdateScopeInput::All,
         recurrence_id: None,
         title: None,
@@ -689,6 +966,7 @@ async fn update_without_a_change_or_an_rsvp_is_rejected() {
         conference: None,
         reminders: None,
         rsvp: None,
+        out_of_office: None,
     };
     let error = tool.call(context, request_context()).await.unwrap_err();
     assert!(error.description.contains("changes nothing"));
@@ -702,6 +980,7 @@ async fn scoped_deletion_requires_a_recurrence_id() {
 
     let tool = DeleteCalendarEvent {
         event_id: Uuid::from_u128(11),
+        calendar_id: None,
         scope: DeletionScopeInput::ThisEvent,
         recurrence_id: None,
     };
@@ -717,6 +996,7 @@ async fn deletion_passes_the_selected_scope() {
 
     let tool = DeleteCalendarEvent {
         event_id,
+        calendar_id: None,
         scope: DeletionScopeInput::ThisAndFollowing,
         recurrence_id: Some("2026-08-20T17:00:00+00:00".to_string()),
     };
@@ -839,6 +1119,8 @@ async fn list_calendars_maps_visible_calendars() {
             color: None,
             is_primary: true,
             is_writable: true,
+            is_subscription: false,
+            sync_error: None,
             default_reminders: Vec::new(),
         }]),
         ..Default::default()

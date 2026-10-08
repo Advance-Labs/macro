@@ -8,12 +8,13 @@ import { useUserId } from '@core/context/user';
 import { HotkeyTags } from '@core/hotkey/constants';
 import { createHotkeyGroup, registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
-import { type EntityData, isTaskEntity } from '@entity';
+import { type EntityData, isEmailEntity, isTaskEntity } from '@entity';
 import { SYSTEM_PROPERTY_IDS } from '@property/constants';
 import type { Property, PropertyDefinitionDomain } from '@property/types';
 import { type Accessor, onCleanup } from 'solid-js';
 import type {
   EntityActionListState,
+  EntityActionNavigationHandler,
   EntityActionViewContext,
 } from './entity-action-context';
 import {
@@ -24,17 +25,16 @@ import {
   makeCopyLinkAction,
   makeCreateReminderAction,
   makeDeleteAction,
-  makeEditReminderAction,
   makeFavoriteAction,
   makeMarkDoneAction,
   makeMarkNotDoneAction,
   makeMarkReadAction,
   makeMarkUnreadAction,
   makeMoveToProjectAction,
+  makeMuteAction,
   makeRenameAction,
   makeSetCompanyPropertyAction,
   makeShareAction,
-  markReminderTargetDone,
 } from './index';
 
 type UseEntityActionHotkeysOptions = {
@@ -45,7 +45,12 @@ type UseEntityActionHotkeysOptions = {
   restoreFocus: (entityId?: string) => void | Promise<void>;
   viewContext: Accessor<EntityActionViewContext>;
   splitHandle?: SplitHandle;
+  createActionNavigationHandler?: () =>
+    | EntityActionNavigationHandler
+    | undefined;
   condition?: () => boolean;
+  /** Home previews reserve Delete/Backspace for the open editor. */
+  enableDeleteHotkey?: boolean;
 };
 
 export const useEntityActionHotkeys = (
@@ -96,11 +101,13 @@ export const useEntityActionHotkeys = (
   const copyBranchNameAction = makeCopyBranchNameAction();
 
   const copyEntityIdAction = makeCopyEntityIdAction();
-  const editReminderAction = makeEditReminderAction();
 
   const shareAction = makeShareAction();
 
   const favoriteAction = makeFavoriteAction();
+  const muteAction = makeMuteAction({
+    notificationSource: () => notificationSource,
+  });
 
   const setCompanyPropertyAction = makeSetCompanyPropertyAction();
   const addTagAction = makeAddTagAction();
@@ -115,12 +122,12 @@ export const useEntityActionHotkeys = (
     return [];
   };
 
-  const openNextEntity = (entity: EntityData) => {
+  const openNextEntity: EntityActionNavigationHandler = ({ entity }) => {
     if (!splitHandle) return;
-    // Preview Controllers are synchronized centrally by executeWithSoup so
-    // every mark-done entry point, including menus and swipe, behaves alike.
-    if (splitHandle.isControllerSplit()) return;
-    const handleContent = splitHandle.content().type;
+    if (!entity) return;
+
+    const handleContent = splitHandle.content()?.type;
+    if (!handleContent) return;
     if (handleContent === 'component' || handleContent === 'project') return;
     openEntityInSplitFromUnifiedList(entity, {
       splitHandle,
@@ -139,13 +146,7 @@ export const useEntityActionHotkeys = (
     return options.viewContext().supportsMarkDone;
   };
 
-  // Declared here rather than with the other actions above because its
-  // mark-done follow-up advances the list the same way 'e' does, through
-  // `openNextEntity`. Setting a reminder puts the row down: it marks it done,
-  // so the list drops it and the reminder is what brings it back.
-  const createReminderAction = makeCreateReminderAction({
-    onCreated: markReminderTargetDone(markDone, openNextEntity),
-  });
+  const createReminderAction = makeCreateReminderAction();
 
   // Property editor setup
   const allProperties = useAllProperties();
@@ -177,7 +178,11 @@ export const useEntityActionHotkeys = (
       if (entities.length === 0) return false;
       if (!entities.every(markDone.canExecute)) return false;
 
-      markDone.executeWithSoup(entities, list, openNextEntity);
+      markDone.executeWithSoup(
+        entities,
+        list,
+        options.createActionNavigationHandler?.() ?? openNextEntity
+      );
       return true;
     },
     condition: () => {
@@ -266,65 +271,74 @@ export const useEntityActionHotkeys = (
     tags: [HotkeyTags.SelectionModification],
   }).withGroup(group);
 
-  // Delete - 'delete', 'backspace'
-  registerHotkey({
-    hotkey: ['delete', 'backspace'],
-    hotkeyToken: TOKENS.entity.action.delete,
-    scopeId,
-    description: () => {
+  if (options.enableDeleteHotkey !== false) {
+    const deleteDescription = () => {
       const count = getEntitiesForAction().length;
       return count > 1 ? 'Delete items' : 'Delete item';
-    },
-    keyDownHandler: () => {
+    };
+    const runDelete = () => {
       const entities = getEntitiesForAction();
       if (entities.length === 0) return false;
       if (!entities.every(deleteAction.canExecute)) return false;
 
       deleteAction.executeWithSoup(entities, list);
       return true;
-    },
-    condition: () => {
+    };
+    const canDelete = () => {
       if (condition && !condition()) return false;
       const entities = getEntitiesForAction();
       return entities.length > 0 && entities.every(deleteAction.canExecute);
-    },
-    displayPriority: 10,
-    tags: [HotkeyTags.SelectionModification],
-  }).withGroup(group);
+    };
+    const isEmailSelection = () => {
+      const entities = getEntitiesForAction();
+      return entities.length > 0 && entities.every(isEmailEntity);
+    };
 
-  /**
-   * Whether 'r' should open the reminder editor rather than rename.
-   *
-   * The two are mutually exclusive rather than merely unlikely to overlap:
-   * `renameAction.canExecute` ends at `entity.ownerId === userId()`, and a
-   * reminder row's `ownerId` is always `''` while `userId()` is a macro id or
-   * undefined — so rename never claims a reminder, and sharing the key beats
-   * leaving 'r' dead on one. Its name is its description, which only the
-   * reminders API can change.
-   */
-  const editsReminder = (): boolean => {
-    const entities = getEntitiesForAction();
-    return entities.length === 1 && editReminderAction.canExecute(entities[0]);
-  };
+    // Delete - 'delete', 'backspace'. Registered as 'add' so it coexists on
+    // those keys with the email registration below rather than one eclipsing
+    // the other; their conditions are mutually exclusive, so exactly one of
+    // the two is ever live — and the command menu, which dedupes by
+    // description, shows a single Delete row with the key that applies.
+    registerHotkey({
+      hotkey: ['delete', 'backspace'],
+      hotkeyToken: TOKENS.entity.action.delete,
+      scopeId,
+      description: deleteDescription,
+      keyDownHandler: runDelete,
+      condition: () => canDelete() && !isEmailSelection(),
+      registrationType: 'add',
+      displayPriority: 10,
+      tags: [HotkeyTags.SelectionModification],
+    }).withGroup(group);
 
-  // Rename - 'r'. Edits the reminder instead when the row is one.
+    // Email selections also answer to '#', the key mail clients bind to
+    // Trash, so the same keystroke deletes a thread here and from inside an
+    // open thread. '#' arrives as 'shift+3' and prints back as '#'.
+    registerHotkey({
+      hotkey: ['shift+3', 'delete', 'backspace'],
+      hotkeyToken: TOKENS.email.trash,
+      scopeId,
+      description: deleteDescription,
+      keyDownHandler: runDelete,
+      condition: () => canDelete() && isEmailSelection(),
+      registrationType: 'add',
+      displayPriority: 10,
+      tags: [HotkeyTags.SelectionModification],
+    }).withGroup(group);
+  }
+
+  // Rename - 'r'.
   registerHotkey({
     hotkey: ['r'],
     hotkeyToken: TOKENS.entity.action.rename,
     scopeId,
     description: () => {
-      if (editsReminder()) return 'Edit reminder';
       const count = getEntitiesForAction().length;
       return count > 1 ? 'Rename items' : 'Rename item';
     },
     keyDownHandler: () => {
       const entities = getEntitiesForAction();
       if (entities.length === 0) return false;
-
-      if (editsReminder()) {
-        editReminderAction.executeWithSoup(entities, list);
-        return true;
-      }
 
       if (!entities.every(renameAction.canExecute)) return false;
 
@@ -333,7 +347,6 @@ export const useEntityActionHotkeys = (
     },
     condition: () => {
       if (condition && !condition()) return false;
-      if (editsReminder()) return true;
       const entities = getEntitiesForAction();
       return entities.length > 0 && entities.every(renameAction.canExecute);
     },
@@ -365,6 +378,54 @@ export const useEntityActionHotkeys = (
       if (condition && !condition()) return false;
       const entities = getEntitiesForAction();
       return entities.length > 0 && entities.every(favoriteAction.canExecute);
+    },
+    displayPriority: 10,
+    tags: [HotkeyTags.SelectionModification],
+  }).withGroup(group);
+
+  // Mute notifications (command menu only, no keybinding)
+  registerHotkey({
+    scopeId,
+    description: 'Snooze notifications…',
+    keywords: ['pause', 'morning', 'weekend', 'notifications'],
+    keyDownHandler: () => {
+      const entities = getEntitiesForAction();
+      if (!entities.length || !entities.every(muteAction.canExecute))
+        return false;
+      muteAction.snooze(entities);
+      return true;
+    },
+    condition: () => {
+      if (condition && !condition()) return false;
+      const entities = getEntitiesForAction();
+      return entities.length > 0 && entities.every(muteAction.canExecute);
+    },
+    displayPriority: 10,
+    tags: [HotkeyTags.SelectionModification],
+  }).withGroup(group);
+
+  registerHotkey({
+    hotkeyToken: TOKENS.entity.action.mute,
+    scopeId,
+    description: () => {
+      const entities = getEntitiesForAction();
+      const allMuted =
+        entities.length > 0 &&
+        entities.every((entity) => muteAction.isMuted(entity));
+      return allMuted ? 'Unmute notifications' : 'Mute notifications';
+    },
+    keyDownHandler: () => {
+      const entities = getEntitiesForAction();
+      if (entities.length === 0) return false;
+      if (!entities.every(muteAction.canExecute)) return false;
+
+      void muteAction.executeWithSoup(entities, list);
+      return true;
+    },
+    condition: () => {
+      if (condition && !condition()) return false;
+      const entities = getEntitiesForAction();
+      return entities.length > 0 && entities.every(muteAction.canExecute);
     },
     displayPriority: 10,
     tags: [HotkeyTags.SelectionModification],
@@ -493,10 +554,8 @@ export const useEntityActionHotkeys = (
     tags: [HotkeyTags.SelectionModification],
   }).withGroup(group);
 
-  // Set a reminder - 'h'. This shares the scope with the list's 'h' ("Collapse
-  // item", handlerPriority 4), so 'add' keeps both registered instead of one
-  // evicting the other. Collapse sorts first and returns false when there is
-  // nothing to collapse, which falls through to here.
+  // H reminds on entity rows. The higher-priority collapse handler consumes
+  // H only on group headers; 'add' keeps both actions in the same scope.
   registerHotkey({
     hotkey: ['h'],
     hotkeyToken: TOKENS.entity.action.createReminder,
@@ -508,6 +567,7 @@ export const useEntityActionHotkeys = (
       if (!createReminderAction.canExecute(entities[0])) return false;
       createReminderAction.executeWithSoup(entities, list, {
         advances: marksDoneOnThisView(),
+        onNavigate: options.createActionNavigationHandler?.() ?? openNextEntity,
       });
       return true;
     },
@@ -676,7 +736,12 @@ export const useEntityActionHotkeys = (
       keyDownHandler: () => {
         const entities = getEntitiesForAction();
         if (entities.length === 0) return false;
-        if (!entities.every(setCompanyPropertyAction.canExecute)) return false;
+        if (
+          !entities.every((entity) =>
+            setCompanyPropertyAction.canExecute(entity, field)
+          )
+        )
+          return false;
         setCompanyPropertyAction.execute(entities, field);
         return true;
       },
@@ -685,7 +750,9 @@ export const useEntityActionHotkeys = (
         const entities = getEntitiesForAction();
         return (
           entities.length > 0 &&
-          entities.every(setCompanyPropertyAction.canExecute)
+          entities.every((entity) =>
+            setCompanyPropertyAction.canExecute(entity, field)
+          )
         );
       },
       scopeId,

@@ -194,7 +194,8 @@ fn a_basic_credential_renders_as_github_expects() {
         secret: "ghs-installation-token".to_owned(),
     }
     .header_value()
-    .expect("header value");
+    .expect("header value")
+    .expect("a credential to stamp");
 
     assert!(value.is_sensitive());
     assert_eq!(
@@ -228,6 +229,33 @@ fn a_repo_slug_rejects_rather_than_repairs() {
             None,
             "accepted {owner}/{name}"
         );
+    }
+}
+
+/// A configured URL is read into a slug only when it names a repository and
+/// nothing else: this is the one reading of `repo_url`, and the harness mints
+/// a session's token against whatever it says.
+#[test]
+fn reads_the_repository_out_of_a_configured_url() {
+    for url in [
+        "https://github.com/macro-inc/macro",
+        "https://github.com/macro-inc/macro/",
+        "https://github.com/macro-inc/macro.git",
+    ] {
+        let repo = RepoSlug::parse_github_url(url).expect(url);
+        assert_eq!(repo.to_string(), "macro-inc/macro", "for {url}");
+    }
+
+    for url in [
+        "",
+        "not a url",
+        "https://github.com",
+        "https://github.com/macro-inc",
+        "https://gitlab.com/macro-inc/macro",
+        "https://github.com.evil.example/macro-inc/macro",
+        "https://github.com/macro-inc/macro/tree/main",
+    ] {
+        assert_eq!(RepoSlug::parse_github_url(url), None, "accepted {url}");
     }
 }
 
@@ -292,11 +320,24 @@ fn a_git_endpoint_round_trips_to_its_path() {
 fn the_stamped_credential_is_marked_sensitive() {
     let value = UpstreamCredential::Bearer(BearerToken::new("dd-oauth-token"))
         .header_value()
-        .expect("header value");
+        .expect("header value")
+        .expect("a credential to stamp");
 
     assert!(value.is_sensitive());
     assert_eq!(value.to_str().expect("ascii"), "Bearer dd-oauth-token");
     assert_eq!(format!("{value:?}"), "Sensitive");
+}
+
+/// A server the owner added without connecting an account is dialed bare:
+/// there is no header to render, and nothing to redact.
+#[test]
+fn an_anonymous_credential_stamps_nothing() {
+    let value = UpstreamCredential::Anonymous
+        .header_value()
+        .expect("header value");
+
+    assert!(value.is_none());
+    assert_eq!(format!("{:?}", UpstreamCredential::Anonymous), "Anonymous");
 }
 
 /// A credential that could carry a newline could inject a header of its own
@@ -375,4 +416,69 @@ fn a_repeated_git_service_parameter_does_not_escalate() {
             service: GitService::UploadPack
         })
     );
+}
+
+#[test]
+fn an_mcp_destination_is_read_off_the_proxy_path() {
+    assert_eq!(
+        McpDestination::from_path("/mcp-macro"),
+        Some(McpDestination::Macro)
+    );
+    assert_eq!(
+        McpDestination::from_path("/mcp/google_sheets"),
+        Some(McpDestination::Connected(
+            McpServerSlug::parse("google_sheets").expect("slug")
+        ))
+    );
+    // A slug outside the charset, a nested path and a stray route all name
+    // nothing, the same as they do at the router.
+    assert_eq!(McpDestination::from_path("/mcp/Not-A-Slug"), None);
+    assert_eq!(McpDestination::from_path("/mcp/a/b"), None);
+    assert_eq!(McpDestination::from_path("/mcp/"), None);
+    assert_eq!(McpDestination::from_path("/git/info/refs"), None);
+
+    let key = CustomMcpServerKey::for_url("https://wiki.example.com/mcp");
+    assert_eq!(
+        McpDestination::from_path(&format!("/mcp-custom/{key}")),
+        Some(McpDestination::Custom(key))
+    );
+    assert_eq!(McpDestination::from_path("/mcp-custom/"), None);
+    assert_eq!(McpDestination::from_path("/mcp-custom/not-a-key"), None);
+}
+
+/// The key is the one derivation in this crate, so it has to be the same at
+/// both ends: deterministic, exactly as long as it says, and read back only
+/// in the shape it is written.
+#[test]
+fn a_custom_server_key_is_a_fixed_width_digest_of_the_url() {
+    let key = CustomMcpServerKey::for_url("https://wiki.example.com/mcp");
+
+    assert_eq!(
+        key,
+        CustomMcpServerKey::for_url("https://wiki.example.com/mcp")
+    );
+    assert_ne!(
+        key,
+        CustomMcpServerKey::for_url("https://wiki.example.com/mcp/")
+    );
+    assert_eq!(key.as_str().len(), 32);
+    assert!(
+        key.as_str()
+            .chars()
+            .all(|character| matches!(character, '0'..='9' | 'a'..='f'))
+    );
+    assert_eq!(CustomMcpServerKey::parse(key.as_str()), Some(key.clone()));
+
+    // Rejected rather than repaired: wrong length, wrong case, wrong charset.
+    assert_eq!(CustomMcpServerKey::parse(&key.as_str()[..31]), None);
+    assert_eq!(CustomMcpServerKey::parse(&format!("{key}0")), None);
+    assert_eq!(
+        CustomMcpServerKey::parse(&key.as_str().to_uppercase()),
+        None
+    );
+    assert_eq!(
+        CustomMcpServerKey::parse("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
+        None
+    );
+    assert_eq!(CustomMcpServerKey::parse(""), None);
 }

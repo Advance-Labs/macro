@@ -3,11 +3,27 @@ import type {
   AgentContextDecoratorProps,
   AgentContextNode,
 } from './nodes/AgentContextNode';
+import type {
+  AgentSessionMentionDecoratorProps,
+  AgentSessionMentionNode,
+} from './nodes/AgentSessionMentionNode';
 import type { AwaitDecoratorProps, AwaitNode } from './nodes/AwaitNode';
+import type {
+  ConnectAppDecoratorProps,
+  ConnectAppNode,
+} from './nodes/ConnectAppNode';
 import type {
   ContactMentionDecoratorProps,
   ContactMentionNode,
 } from './nodes/ContactMentionNode';
+import type {
+  CursorSystemNotificationDecoratorProps,
+  CursorSystemNotificationNode,
+} from './nodes/CursorSystemNotificationNode';
+import type {
+  DatabaseQueryDecoratorProps,
+  DatabaseQueryNode,
+} from './nodes/DatabaseQueryNode';
 import type {
   DateMentionDecoratorProps,
   DateMentionNode,
@@ -51,6 +67,10 @@ import type {
   PullRequestMentionNode,
 } from './nodes/PullRequestMentionNode';
 import type {
+  ReplyTargetDecoratorProps,
+  ReplyTargetNode,
+} from './nodes/ReplyTargetNode';
+import type {
   SnapshotDecoratorProps,
   SnapshotNode,
 } from './nodes/SnapshotNode';
@@ -83,6 +103,10 @@ export type DecoratorComponent<P extends {}> = (props: P) => any;
 // Maps node type names to their class and props types
 // This provides compile-time type safety for decorator registration
 export interface NodeDecoratorMap {
+  DatabaseQueryNode: {
+    klass: typeof DatabaseQueryNode;
+    props: DatabaseQueryDecoratorProps;
+  };
   AgentContextNode: {
     klass: typeof AgentContextNode;
     props: AgentContextDecoratorProps;
@@ -123,9 +147,17 @@ export interface NodeDecoratorMap {
     klass: typeof DateMentionNode;
     props: DateMentionDecoratorProps;
   };
+  AgentSessionMentionNode: {
+    klass: typeof AgentSessionMentionNode;
+    props: AgentSessionMentionDecoratorProps;
+  };
   PullRequestMentionNode: {
     klass: typeof PullRequestMentionNode;
     props: PullRequestMentionDecoratorProps;
+  };
+  ReplyTargetNode: {
+    klass: typeof ReplyTargetNode;
+    props: ReplyTargetDecoratorProps;
   };
   EquationNode: {
     klass: typeof EquationNode;
@@ -155,6 +187,10 @@ export interface NodeDecoratorMap {
     klass: typeof TagMentionNode;
     props: TagMentionDecoratorProps;
   };
+  ConnectAppNode: {
+    klass: typeof ConnectAppNode;
+    props: ConnectAppDecoratorProps;
+  };
   WatermarkNode: {
     klass: typeof WatermarkNode;
     props: WatermarkDecoratorProps;
@@ -170,6 +206,10 @@ export interface NodeDecoratorMap {
   MagicChipNode: {
     klass: typeof MagicChipNode;
     props: MagicChipDecoratorProps;
+  };
+  CursorSystemNotificationNode: {
+    klass: typeof CursorSystemNotificationNode;
+    props: CursorSystemNotificationDecoratorProps;
   };
 }
 

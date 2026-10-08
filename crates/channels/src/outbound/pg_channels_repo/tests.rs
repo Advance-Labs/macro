@@ -1,11 +1,11 @@
 use crate::domain::models::{
-    AttachmentEntityReference, BotId, BotSenderProfile, ChannelMessageFilters, ChannelType,
-    ChannelWithParticipants, CreateChannelRequest, CreateEntityMentionOptions, GetChannelsParams,
-    GetChannelsRequest, GetThreadReplyRowsRequest, MessagePageDirection, NewChannelAttachment,
-    NotificationFilters, ParticipantRole, PatchChannelRequest,
+    AttachmentEntityReference, BotId, BotSenderProfile, ChannelType, ChannelWithParticipants,
+    CreateChannelRequest, CreateEntityMentionOptions, GetChannelsParams, GetChannelsRequest,
+    GetThreadReplyRowsRequest, ParticipantRole, PatchChannelRequest,
 };
 use crate::domain::ports::{ChannelListRepo, ChannelRepo};
 use crate::outbound::pg_channels_repo::PgChannelsRepo;
+use chrono::{DateTime, Utc};
 use filter_ast::Expr;
 use item_filters::ast::{
     LiteralTree,
@@ -21,21 +21,10 @@ use std::{
 };
 use uuid::Uuid;
 
-const NO_FILTERS: ChannelMessageFilters = ChannelMessageFilters {
-    message_ids: Vec::new(),
-    created_after: None,
-    created_before: None,
-    activity_after: None,
-    activity_before: None,
-    notification_filters: NotificationFilters {
-        done: None,
-        seen: None,
-    },
-};
-
 const CH1: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c01);
 const CH2: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c02);
 const CH3: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c03);
+const CH5_NO_ACTIVITY: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c05);
 const TEAM_A: Uuid = Uuid::from_u128(0x11111111_1111_1111_1111_111111111111);
 const TEAM_A_AUTO_ACTIVE: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c11);
 const TEAM_A_AUTO_LEFT: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000c12);
@@ -49,7 +38,6 @@ const MSG31: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_000000000031);
 const REPLY1: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_00000000b001);
 const REPLY2: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_00000000b002);
 const REPLY3: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_00000000b003);
-const REPLY4: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_00000000b005);
 const DELETED_MSG_ATTACHMENT: Uuid = Uuid::from_u128(0x00000000_0000_0000_0000_00000000a004);
 const USER_A: &str = "macro|user-a@test.com";
 const USER_B: &str = "macro|user-b@test.com";
@@ -104,6 +92,31 @@ fn channels_params(user_id: &str, filter: LiteralTree<ChannelLiteral>) -> GetCha
 
 fn channel_filter(literal: ChannelLiteral) -> LiteralTree<ChannelLiteral> {
     Some(Arc::new(Expr::val(literal)))
+}
+
+fn channel_list_fixture_viewed_at(channel_id: Uuid) -> Option<DateTime<Utc>> {
+    match channel_id {
+        CH1 => Some("2024-01-01T00:00:00Z".parse().unwrap()),
+        CH3 => Some("2024-01-04T00:00:00Z".parse().unwrap()),
+        CH5_NO_ACTIVITY => None,
+        id => panic!("unexpected channel {id}"),
+    }
+}
+
+fn channel_list_sort_timestamp(
+    channel: &ChannelWithParticipants,
+    sort: SimpleSortMethod,
+) -> DateTime<Utc> {
+    match sort {
+        SimpleSortMethod::CreatedAt => channel.channel.created_at,
+        SimpleSortMethod::UpdatedAt => channel.channel.updated_at,
+        SimpleSortMethod::ViewedAt => {
+            channel_list_fixture_viewed_at(channel.channel.id).unwrap_or_default()
+        }
+        SimpleSortMethod::ViewedUpdated => {
+            channel_list_fixture_viewed_at(channel.channel.id).unwrap_or(channel.channel.updated_at)
+        }
+    }
 }
 
 fn participant_roles(channel: &ChannelWithParticipants) -> Vec<(String, ParticipantRole)> {
@@ -266,8 +279,13 @@ async fn channel_list_cursor_pagination_matches_unpaginated_results(pool: Pool<P
     let repo = repo(pool);
 
     for (sort, expected_ids) in [
-        (SimpleSortMethod::CreatedAt, vec![CH3, CH1]),
-        (SimpleSortMethod::UpdatedAt, vec![CH1, CH3]),
+        (SimpleSortMethod::CreatedAt, vec![CH3, CH5_NO_ACTIVITY, CH1]),
+        (SimpleSortMethod::UpdatedAt, vec![CH1, CH5_NO_ACTIVITY, CH3]),
+        (SimpleSortMethod::ViewedAt, vec![CH3, CH1, CH5_NO_ACTIVITY]),
+        (
+            SimpleSortMethod::ViewedUpdated,
+            vec![CH3, CH5_NO_ACTIVITY, CH1],
+        ),
     ] {
         let unpaginated = repo
             .get_user_channels_with_participants(
@@ -306,17 +324,18 @@ async fn channel_list_cursor_pagination_matches_unpaginated_results(pool: Pool<P
                 break;
             };
             assert_eq!(page.len(), 1);
+            assert_eq!(
+                Some(last.channel.id),
+                expected_ids.get(paginated.len()).copied(),
+                "one-row {sort:?} page was out of order"
+            );
 
             query = Query::Cursor(Cursor {
                 id: last.channel.id,
                 limit: 1,
                 val: CursorVal {
                     sort_type: sort,
-                    last_val: match sort {
-                        SimpleSortMethod::CreatedAt => last.channel.created_at,
-                        SimpleSortMethod::UpdatedAt => last.channel.updated_at,
-                        _ => unreachable!("channel list test only uses supported sort methods"),
-                    },
+                    last_val: channel_list_sort_timestamp(last, sort),
                 },
                 filter: None,
             });
@@ -346,7 +365,9 @@ async fn channel_list_cursor_pagination_matches_unpaginated_results(pool: Pool<P
                     (USER_B.to_string(), ParticipantRole::Admin),
                     (USER_C.to_string(), ParticipantRole::Member),
                 ],
-                CH3 => vec![(USER_A.to_string(), ParticipantRole::Owner)],
+                CH3 | CH5_NO_ACTIVITY => {
+                    vec![(USER_A.to_string(), ParticipantRole::Owner)]
+                }
                 id => panic!("unexpected channel {id}"),
             };
             assert_eq!(participant_roles(actual), expected_participants);
@@ -519,6 +540,60 @@ async fn patch_channel_rename_advances_updated_at(pool: Pool<Postgres>) {
 
     assert_eq!(after.name.as_deref(), Some("renamed-channel"));
     assert!(after.updated_at > before.updated_at);
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn patch_channel_rename_allows_a_member(pool: Pool<Postgres>) {
+    let repo = repo(pool.clone());
+
+    repo.patch_channel(
+        CH1,
+        USER_C.to_string(),
+        None,
+        PatchChannelRequest {
+            channel_name: Some("member-renamed".to_string()),
+            convert_to_team_channel: None,
+            auto_join_team: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let after = sqlx::query!("SELECT name FROM comms_channels WHERE id = $1", CH1)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after.name.as_deref(), Some("member-renamed"));
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn patch_channel_settings_reject_a_member(pool: Pool<Postgres>) {
+    let repo = repo(pool);
+
+    let err = repo
+        .patch_channel(
+            CH1,
+            USER_C.to_string(),
+            None,
+            PatchChannelRequest {
+                channel_name: None,
+                convert_to_team_channel: None,
+                auto_join_team: Some(false),
+            },
+        )
+        .await
+        .expect_err("member cannot change auto-join");
+
+    assert!(
+        err.to_string()
+            .contains("to patch channel settings you must be an admin or owner")
+    );
 }
 
 #[sqlx::test(
@@ -1004,170 +1079,6 @@ async fn unknown_channel_join_code_resolves_to_none(pool: Pool<Postgres>) {
     assert!(channel.is_none());
 }
 
-async fn insert_channel_message_notification(
-    pool: &Pool<Postgres>,
-    user_id: &str,
-    channel_id: Uuid,
-    message_id: Uuid,
-    done: bool,
-    seen: bool,
-) -> anyhow::Result<()> {
-    let notification_id = Uuid::new_v4();
-    sqlx::query!(
-        r#"
-        INSERT INTO notification (
-            id,
-            notification_event_type,
-            event_item_id,
-            event_item_type,
-            service_sender,
-            metadata
-        )
-        VALUES (
-            $1,
-            'channel_message_send',
-            $2,
-            'channel',
-            'channels-test',
-            jsonb_build_object('messageId', $3::text)
-        )
-        "#,
-        notification_id,
-        channel_id.to_string(),
-        message_id.to_string(),
-    )
-    .execute(pool)
-    .await?;
-
-    insert_user_notification(pool, user_id, notification_id, done, seen).await
-}
-
-async fn insert_channel_thread_notification(
-    pool: &Pool<Postgres>,
-    user_id: &str,
-    channel_id: Uuid,
-    thread_id: Uuid,
-    done: bool,
-    seen: bool,
-) -> anyhow::Result<()> {
-    let notification_id = Uuid::new_v4();
-    sqlx::query!(
-        r#"
-        INSERT INTO notification (
-            id,
-            notification_event_type,
-            event_item_id,
-            event_item_type,
-            service_sender,
-            metadata,
-            secondary_event_item_id,
-            secondary_event_item_type
-        )
-        VALUES (
-            $1,
-            'channel_reply',
-            $2,
-            'channel',
-            'channels-test',
-            '{}'::jsonb,
-            $3,
-            'channel_message'
-        )
-        "#,
-        notification_id,
-        channel_id.to_string(),
-        thread_id.to_string(),
-    )
-    .execute(pool)
-    .await?;
-
-    insert_user_notification(pool, user_id, notification_id, done, seen).await
-}
-
-async fn insert_user_notification(
-    pool: &Pool<Postgres>,
-    user_id: &str,
-    notification_id: Uuid,
-    done: bool,
-    seen: bool,
-) -> anyhow::Result<()> {
-    sqlx::query!(
-        r#"
-        INSERT INTO user_notification (user_id, notification_id, created_at, seen_at, done)
-        VALUES (
-            $1,
-            $2,
-            '2024-01-02 00:00:00'::timestamp,
-            CASE WHEN $3::bool THEN '2024-01-02 00:00:00'::timestamp ELSE NULL END,
-            $4
-        )
-        "#,
-        user_id,
-        notification_id,
-        seen,
-        done,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_excludes_thread_replies_and_fully_deleted(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-    let rows = result.rows;
-
-    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
-    // msg1, msg2 (deleted but has active reply), msg3 — but NOT msg4 (fully deleted)
-    assert_eq!(ids.len(), 3);
-    assert!(ids.contains(&MSG1));
-    assert!(ids.contains(&MSG2));
-    assert!(ids.contains(&MSG3));
-    // msg4 (fully deleted, no active replies) must not appear
-    let msg4 = Uuid::from_u128(0x00000000_0000_0000_0000_000000000004);
-    assert!(!ids.contains(&msg4));
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_ordered_newest_first(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-    let rows = result.rows;
-
-    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG2, MSG1]);
-    Ok(())
-}
-
 #[sqlx::test(
     fixtures(path = "../../../fixtures", scripts("channels_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
@@ -1299,6 +1210,90 @@ async fn channel_thread_rows_filter_by_root_sender(pool: Pool<Postgres>) -> anyh
     Ok(())
 }
 
+async fn thread_ids_matching(
+    pool: Pool<Postgres>,
+    querying_user: &str,
+    filter: Expr<ChannelThreadLiteral>,
+) -> anyhow::Result<Vec<Uuid>> {
+    let rows = repo(pool)
+        .get_thread_messages(
+            thread_rows_request(
+                querying_user,
+                Some(Arc::new(filter)),
+                SimpleSortMethod::UpdatedAt,
+                50,
+            )
+            .into_params(),
+        )
+        .await
+        .map_err(report_err)?;
+    Ok(rows.iter().map(|row| row.id).collect())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn channel_thread_rows_filter_by_has_replies(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    // user-a rooted msg1 (four replies), msg31 (one reply) and msg3 (none).
+    let root_sender = || Expr::val(ChannelThreadLiteral::RootSender(macro_user_id(USER_A)));
+    let with_replies = thread_ids_matching(
+        pool.clone(),
+        USER_A,
+        Expr::and(
+            root_sender(),
+            Expr::val(ChannelThreadLiteral::HasReplies(true)),
+        ),
+    )
+    .await?;
+    assert_eq!(with_replies, vec![MSG1, MSG31]);
+
+    let without_replies = thread_ids_matching(
+        pool,
+        USER_A,
+        Expr::and(
+            root_sender(),
+            Expr::val(ChannelThreadLiteral::HasReplies(false)),
+        ),
+    )
+    .await?;
+    assert_eq!(without_replies, vec![MSG3]);
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn channel_thread_rows_filter_hides_unanswered_own_roots(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    // The web Threads tab: threads user-a takes part in, minus roots they sent
+    // that nobody answered. msg3 is user-a's unanswered root.
+    let participant = Expr::val(ChannelThreadLiteral::Participant(macro_user_id(USER_A)));
+    let unanswered_own_root = Expr::and(
+        Expr::val(ChannelThreadLiteral::RootSender(macro_user_id(USER_A))),
+        Expr::val(ChannelThreadLiteral::HasReplies(false)),
+    );
+    let parent_ids = thread_ids_matching(
+        pool.clone(),
+        USER_A,
+        Expr::and(participant.clone(), Expr::is_not(unanswered_own_root)),
+    )
+    .await?;
+    let all_participating = thread_ids_matching(pool, USER_A, participant).await?;
+
+    assert!(all_participating.contains(&MSG3));
+    assert_eq!(
+        parent_ids,
+        all_participating
+            .into_iter()
+            .filter(|id| *id != MSG3)
+            .collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
 async fn threads_matching_participant(
     pool: Pool<Postgres>,
     querying_user: &str,
@@ -1377,6 +1372,116 @@ async fn channel_thread_rows_filter_by_participant_excludes_departed_users(
     Ok(())
 }
 
+async fn insert_user_notification(
+    pool: &Pool<Postgres>,
+    user_id: &str,
+    notification_id: Uuid,
+    done: bool,
+    seen: bool,
+) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"
+        INSERT INTO user_notification (user_id, notification_id, created_at, seen_at, state)
+        VALUES (
+            $1,
+            $2,
+            '2024-01-02 00:00:00'::timestamp,
+            CASE WHEN $3::bool THEN '2024-01-02 00:00:00'::timestamp ELSE NULL END,
+            CASE WHEN $4::bool THEN 'done'::notification_state
+                 WHEN $3 THEN 'seen'::notification_state ELSE 'unseen'::notification_state END
+        )
+        "#,
+        user_id,
+        notification_id,
+        seen,
+        done,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+async fn insert_channel_message_notification(
+    pool: &Pool<Postgres>,
+    user_id: &str,
+    channel_id: Uuid,
+    message_id: Uuid,
+    done: bool,
+    seen: bool,
+) -> anyhow::Result<()> {
+    let notification_id = Uuid::new_v4();
+    sqlx::query!(
+        r#"
+        INSERT INTO notification (
+            id,
+            notification_event_type,
+            event_item_id,
+            event_item_type,
+            service_sender,
+            metadata
+        )
+        VALUES (
+            $1,
+            'channel_message_send',
+            $2,
+            'channel',
+            'channels-test',
+            jsonb_build_object('messageId', $3::text)
+        )
+        "#,
+        notification_id,
+        channel_id.to_string(),
+        message_id.to_string(),
+    )
+    .execute(pool)
+    .await?;
+
+    insert_user_notification(pool, user_id, notification_id, done, seen).await
+}
+
+async fn insert_channel_thread_notification(
+    pool: &Pool<Postgres>,
+    user_id: &str,
+    channel_id: Uuid,
+    thread_id: Uuid,
+    done: bool,
+    seen: bool,
+) -> anyhow::Result<()> {
+    let notification_id = Uuid::new_v4();
+    sqlx::query!(
+        r#"
+        INSERT INTO notification (
+            id,
+            notification_event_type,
+            event_item_id,
+            event_item_type,
+            service_sender,
+            metadata,
+            secondary_event_item_id,
+            secondary_event_item_type
+        )
+        VALUES (
+            $1,
+            'channel_reply',
+            $2,
+            'channel',
+            'channels-test',
+            '{}'::jsonb,
+            $3,
+            'channel_message'
+        )
+        "#,
+        notification_id,
+        channel_id.to_string(),
+        thread_id.to_string(),
+    )
+    .execute(pool)
+    .await?;
+
+    insert_user_notification(pool, user_id, notification_id, done, seen).await
+}
+
 #[sqlx::test(
     fixtures(path = "../../../fixtures", scripts("channels_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
@@ -1393,7 +1498,9 @@ async fn channel_thread_rows_filter_by_notification_done_secondary_entity(
         .get_thread_messages(
             thread_rows_request(
                 USER_A,
-                thread_filter(ChannelThreadLiteral::NotificationDone(true)),
+                thread_filter(ChannelThreadLiteral::NotificationState(
+                    item_filters::NotificationState::Done,
+                )),
                 SimpleSortMethod::UpdatedAt,
                 50,
             )
@@ -1422,7 +1529,9 @@ async fn channel_thread_rows_filter_by_notification_seen_secondary_entity(
         .get_thread_messages(
             thread_rows_request(
                 USER_A,
-                thread_filter(ChannelThreadLiteral::NotificationSeen(true)),
+                thread_filter(ChannelThreadLiteral::NotificationState(
+                    item_filters::NotificationState::Seen,
+                )),
                 SimpleSortMethod::UpdatedAt,
                 50,
             )
@@ -1480,249 +1589,6 @@ async fn channel_thread_rows_apply_cursor(pool: Pool<Postgres>) -> anyhow::Resul
     fixtures(path = "../../../fixtures", scripts("channels_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
 )]
-async fn message_context_returns_chronological_window(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let messages = repo.get_messages_with_context(CH1, REPLY2, 2, 1).await?;
-
-    let ids = messages
-        .iter()
-        .map(|message| message.id)
-        .collect::<Vec<_>>();
-    assert_eq!(ids, vec![MSG1, REPLY1, REPLY2, REPLY3]);
-    assert_eq!(messages[2].thread_id, Some(MSG1));
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn message_context_is_bound_to_channel(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let messages = repo.get_messages_with_context(CH2, MSG1, 1, 1).await?;
-
-    assert!(messages.is_empty());
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_cursor_skips_earlier_messages(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // First fetch all to get cursor values
-    let all = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?
-        .rows;
-    assert_eq!(all.len(), 3);
-
-    // Use msg3 (newest) as cursor → should skip msg3, return msg2 + msg1
-    let cursor = Query::Cursor(Cursor {
-        id: MSG3,
-        limit: 50,
-        val: CursorVal {
-            sort_type: CreatedAt,
-            last_val: all[0].created_at,
-        },
-        filter: (),
-    });
-    let page2 = repo
-        .get_top_level_messages(
-            CH1,
-            &cursor,
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?
-        .rows;
-    let ids: Vec<Uuid> = page2.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG2, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_newer_direction_returns_nearest_newer_page(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let all = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?
-        .rows;
-
-    let oldest = all.last().expect("at least one message");
-    let cursor = Query::Cursor(Cursor {
-        id: oldest.id,
-        limit: 2,
-        val: CursorVal {
-            sort_type: CreatedAt,
-            last_val: oldest.created_at,
-        },
-        filter: (),
-    });
-    let page = repo
-        .get_top_level_messages(
-            CH1,
-            &cursor,
-            MessagePageDirection::Newer,
-            2,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = page.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG2]);
-    assert!(!page.has_more_newer);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_newer_direction_sets_has_more_newer_with_overfetch(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let all = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?
-        .rows;
-
-    let oldest = all.last().expect("at least one message");
-    let cursor = Query::Cursor(Cursor {
-        id: oldest.id,
-        limit: 1,
-        val: CursorVal {
-            sort_type: CreatedAt,
-            last_val: oldest.created_at,
-        },
-        filter: (),
-    });
-    let page = repo
-        .get_top_level_messages(
-            CH1,
-            &cursor,
-            MessagePageDirection::Newer,
-            1,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = page.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG2], "nearest newer message is returned");
-    assert!(page.has_more_newer, "there is still a newer page (MSG3)");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_limit_is_respected(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            2,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-    let rows = result.rows;
-
-    assert_eq!(rows.len(), 2);
-    // Should be the 2 newest
-    assert_eq!(rows[0].id, MSG3);
-    assert_eq!(rows[1].id, MSG2);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_scoped_to_channel(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let result = repo
-        .get_top_level_messages(
-            CH2,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &NO_FILTERS,
-            None,
-        )
-        .await?;
-    let rows = result.rows;
-
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].content, "other channel msg");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn top_level_message_ids_filter_limits_to_subset(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let filters = ChannelMessageFilters {
-        message_ids: vec![MSG1, MSG3],
-        ..Default::default()
-    };
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
 async fn thread_data_preview_count_limits_replies(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = repo(pool);
     // msg1 has 4 replies; ask for preview of 2
@@ -1772,74 +1638,6 @@ async fn thread_data_multiple_parents(pool: Pool<Postgres>) -> anyhow::Result<()
     assert_eq!(map[&MSG1].reply_count, 4);
     assert_eq!(map[&MSG2].reply_count, 1);
     assert_eq!(map[&MSG2].preview_replies[0].content, "reply to deleted");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn thread_replies_returns_all_active_replies_oldest_first(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let replies = repo.get_thread_replies(MSG1).await?;
-
-    let ids: Vec<Uuid> = replies.iter().map(|r| r.id).collect();
-    assert_eq!(ids.len(), 4);
-    assert_eq!(ids[0], REPLY1);
-    assert_eq!(
-        ids[3],
-        Uuid::from_u128(0x00000000_0000_0000_0000_00000000b004)
-    );
-    let content: Vec<&str> = replies.iter().map(|r| r.content.as_str()).collect();
-    assert_eq!(content, vec!["reply 1", "reply 2", "reply 3", "reply 4"]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn thread_replies_returns_non_null_edited_at(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    sqlx::query(
-        r#"
-        UPDATE comms_messages
-        SET edited_at = '2024-01-01 10:05:00'
-        WHERE id = '00000000-0000-0000-0000-00000000b003'
-        "#,
-    )
-    .execute(&pool)
-    .await?;
-
-    let repo = repo(pool);
-    let replies = repo.get_thread_replies(MSG1).await?;
-    let edited_reply = replies
-        .into_iter()
-        .find(|r| r.id == Uuid::from_u128(0x00000000_0000_0000_0000_00000000b003))
-        .expect("expected fixture reply");
-
-    assert!(edited_reply.edited_at.is_some());
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn thread_replies_excludes_deleted_rows(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let fully_deleted_parent = Uuid::from_u128(0x00000000_0000_0000_0000_000000000004);
-    let deleted_parent_replies = repo.get_thread_replies(fully_deleted_parent).await?;
-    assert!(
-        deleted_parent_replies.is_empty(),
-        "deleted replies should not be returned"
-    );
-
-    let active_replies = repo.get_thread_replies(MSG2).await?;
-    assert_eq!(active_replies.len(), 1);
-    assert_eq!(active_replies[0].id, REPLY4);
-    assert_eq!(active_replies[0].content, "reply to deleted");
     Ok(())
 }
 
@@ -2113,489 +1911,38 @@ async fn thread_participants_exclude_departed_senders(pool: Pool<Postgres>) -> a
     Ok(())
 }
 
-// -- resolve_top_level_parent -------------------------------------------------
-
 #[sqlx::test(
     fixtures(path = "../../../fixtures", scripts("channels_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
 )]
-async fn resolve_top_level_parent_returns_self_for_top_level(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
+async fn thread_participants_exclude_deleted_messages(pool: Pool<Postgres>) -> anyhow::Result<()> {
     let repo = repo(pool);
-    let row = repo.resolve_top_level_parent(CH1, MSG1).await?;
+    // t41: user-b rooted the thread and user-c replied. user-e only appears in
+    // soft-deleted replies: one they authored, and one from user-b that
+    // @-mentioned them (whose mention row still exists).
+    let participants = repo.get_thread_participants(T41).await?;
 
-    let row = row.expect("top-level message should resolve to itself");
-    assert_eq!(row.id, MSG1);
-    assert_eq!(row.content, "first message");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn resolve_top_level_parent_follows_thread_id(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // REPLY1 (b001) is a reply to MSG1
-    let row = repo.resolve_top_level_parent(CH1, REPLY1).await?;
-
-    let row = row.expect("thread reply should resolve to parent");
-    assert_eq!(row.id, MSG1);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn resolve_top_level_parent_follows_reply_to_deleted_parent(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // REPLY5 (b005) is a reply to MSG2 (which is soft-deleted but has active reply)
-    let row = repo.resolve_top_level_parent(CH1, REPLY4).await?;
-
-    let row = row.expect("reply to deleted parent should still resolve");
-    assert_eq!(row.id, MSG2);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn resolve_top_level_parent_returns_none_for_nonexistent(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let missing = Uuid::from_u128(0xdeadbeef);
-    let row = repo.resolve_top_level_parent(CH1, missing).await?;
-
-    assert!(row.is_none(), "nonexistent message should return None");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn resolve_top_level_parent_returns_none_for_wrong_channel(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // MSG1 is in CH1, query it against CH2
-    let row = repo.resolve_top_level_parent(CH2, MSG1).await?;
-
+    let ids: Vec<&str> = participants.iter().map(|p| p.as_ref()).collect();
     assert!(
-        row.is_none(),
-        "message in different channel should return None"
+        ids.contains(&USER_B),
+        "thread root sender should be included"
+    );
+    assert!(
+        ids.contains(&USER_C),
+        "active reply sender should be included"
+    );
+    assert!(
+        !ids.contains(&USER_E),
+        "a user who only sent, or was only mentioned in, deleted replies must not be a thread participant"
+    );
+    assert!(
+        !ids.contains(&LEFT_USER),
+        "departed sender must not be treated as a thread participant"
     );
     Ok(())
 }
 
-// -- get_top_level_messages_around --------------------------------------------
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn around_middle_message_returns_both_sides(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // Anchor on MSG2 (11:00). Before should have MSG1, after should have MSG3.
-    let anchor = repo
-        .resolve_top_level_parent(CH1, MSG2)
-        .await?
-        .expect("msg2 exists");
-
-    let (before, after) = repo
-        .get_top_level_messages_around(CH1, anchor.created_at, anchor.id, 50)
-        .await?;
-
-    let before_ids: Vec<Uuid> = before.iter().map(|r| r.id).collect();
-    let after_ids: Vec<Uuid> = after.iter().map(|r| r.id).collect();
-
-    assert_eq!(before_ids, vec![MSG1], "MSG1 is older than anchor");
-    assert_eq!(after_ids, vec![MSG3], "MSG3 is newer than anchor");
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn around_oldest_message_has_no_before(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let anchor = repo
-        .resolve_top_level_parent(CH1, MSG1)
-        .await?
-        .expect("msg1 exists");
-
-    let (before, after) = repo
-        .get_top_level_messages_around(CH1, anchor.created_at, anchor.id, 50)
-        .await?;
-
-    assert!(before.is_empty(), "nothing older than MSG1");
-    let after_ids: Vec<Uuid> = after.iter().map(|r| r.id).collect();
-    assert_eq!(after_ids, vec![MSG2, MSG3]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn around_newest_message_has_no_after(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    let anchor = repo
-        .resolve_top_level_parent(CH1, MSG3)
-        .await?
-        .expect("msg3 exists");
-
-    let (before, after) = repo
-        .get_top_level_messages_around(CH1, anchor.created_at, anchor.id, 50)
-        .await?;
-
-    let before_ids: Vec<Uuid> = before.iter().map(|r| r.id).collect();
-    assert_eq!(before_ids, vec![MSG2, MSG1]);
-    assert!(after.is_empty(), "nothing newer than MSG3");
-    Ok(())
-}
-
-// -- last_activity filter -----------------------------------------------------
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn last_activity_filters_by_message_created_at(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // msg3 created at 12:00 — only it was created after 11:30
-    let filters = ChannelMessageFilters {
-        activity_after: Some(
-            chrono::DateTime::parse_from_rfc3339("2024-01-01T11:30:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-        ),
-        ..Default::default()
-    };
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn last_activity_includes_messages_with_recent_thread_replies(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // msg1 created at 10:00 but has replies up to 10:04.
-    // msg2 (deleted) has reply at 11:01.
-    // msg3 created at 12:00.
-    // last_activity = 10:05 excludes msg1 (created 10:00, last reply 10:04),
-    // but includes msg2 (reply at 11:01) and msg3 (created 12:00).
-    let filters = ChannelMessageFilters {
-        activity_after: Some(
-            chrono::DateTime::parse_from_rfc3339("2024-01-01T10:05:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-        ),
-        ..Default::default()
-    };
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG2]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn last_activity_combined_with_message_ids(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let repo = repo(pool);
-    // Ask for msg1 and msg3, but with last_activity that excludes msg1
-    let filters = ChannelMessageFilters {
-        message_ids: vec![MSG1, MSG3],
-        activity_after: Some(
-            chrono::DateTime::parse_from_rfc3339("2024-01-01T11:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
-        ),
-        ..Default::default()
-    };
-    let result = repo
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            None,
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3]);
-    Ok(())
-}
-
-// -- notification filters -----------------------------------------------------
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_done_filter_matches_top_level_messages_and_thread_replies(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, true, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, REPLY1, true, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG2, false, false).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: Some(true),
-            seen: None,
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_not_done_filter_matches_top_level_messages_and_thread_replies(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, false, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, REPLY1, false, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG2, true, false).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: Some(false),
-            seen: None,
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_seen_filter_matches_top_level_messages_and_thread_replies(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, false, true).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, REPLY1, false, true).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, REPLY4, false, true).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: None,
-            seen: Some(true),
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG2, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_not_seen_filter_matches_top_level_messages_and_thread_replies(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, false, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, REPLY1, false, false).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG2, false, true).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: None,
-            seen: Some(false),
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3, MSG1]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_done_and_seen_filters_match_soup_independent_exists_semantics(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, false, true).await?;
-    insert_channel_message_notification(&pool, USER_A, CH1, MSG3, true, false).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: Some(false),
-            seen: Some(false),
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    let ids: Vec<Uuid> = result.rows.iter().map(|r| r.id).collect();
-    assert_eq!(ids, vec![MSG3]);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn notification_filter_is_scoped_to_requesting_user(
-    pool: Pool<Postgres>,
-) -> anyhow::Result<()> {
-    insert_channel_message_notification(&pool, USER_B, CH1, MSG3, false, false).await?;
-
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: Some(false),
-            seen: None,
-        },
-        ..Default::default()
-    };
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            Some(macro_user_id(USER_A)),
-        )
-        .await?;
-
-    assert!(result.rows.is_empty());
-    Ok(())
-}
-
-#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
-async fn notification_filter_requires_requesting_user(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let filters = ChannelMessageFilters {
-        notification_filters: NotificationFilters {
-            done: Some(false),
-            seen: None,
-        },
-        ..Default::default()
-    };
-
-    let result = repo(pool)
-        .get_top_level_messages(
-            CH1,
-            &Query::Sort(CreatedAt, ()),
-            MessagePageDirection::Older,
-            50,
-            &filters,
-            None,
-        )
-        .await;
-
-    let Err(err) = result else {
-        anyhow::bail!("notification filters require a user id");
-    };
-    assert_eq!(
-        err.to_string(),
-        "notification_user_id is required when notification_filters are set"
-    );
-    Ok(())
-}
+// -- resolve_top_level_parent -------------------------------------------------
 
 #[sqlx::test(
     migrator = "MACRO_DB_MIGRATIONS",
@@ -2857,6 +2204,76 @@ async fn attachment_references_returns_generic_reference(
     fixtures(path = "../../../fixtures", scripts("channels_repo")),
     migrator = "MACRO_DB_MIGRATIONS"
 )]
+async fn attachment_references_collapse_repeat_mentions_from_one_source(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    // src-doc already mentions doc-generic at 2024-01-03; a second mention of the
+    // same pair must not surface as a second reference.
+    sqlx::query!(
+        r#"
+        INSERT INTO comms_entity_mentions
+            (id, source_entity_type, source_entity_id, entity_type, entity_id, user_id, created_at)
+        VALUES
+            ('00000000-0000-0000-0000-00000000e0a1'::uuid, 'doc', 'src-doc',
+             'document', 'doc-generic', 'macro|user-a@test.com', '2024-01-05 00:00:00+00')
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    let refs = repo(pool)
+        .get_attachment_references("document", "doc-generic", NON_MEMBER)
+        .await?;
+
+    assert_eq!(refs.len(), 1);
+    let AttachmentEntityReference::Generic(generic) = &refs[0] else {
+        anyhow::bail!("expected a generic reference");
+    };
+    assert_eq!(generic.source_entity_id, "src-doc");
+    assert_eq!(generic.created_at.to_rfc3339(), "2024-01-05T00:00:00+00:00");
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn attachment_references_collapse_alias_typed_mentions_from_one_source(
+    pool: Pool<Postgres>,
+) -> anyhow::Result<()> {
+    // The same email thread recorded once as `thread` and once as `email` — both
+    // match the thread lookup aliases, and both come from one source.
+    sqlx::query!(
+        r#"
+        INSERT INTO comms_entity_mentions
+            (id, source_entity_type, source_entity_id, entity_type, entity_id, user_id, created_at)
+        VALUES
+            ('00000000-0000-0000-0000-00000000e0b1'::uuid, 'document', 'task-1',
+             'thread', 'thread-9', 'macro|user-a@test.com', '2024-01-05 00:00:00+00'),
+            ('00000000-0000-0000-0000-00000000e0b2'::uuid, 'document', 'task-1',
+             'email', 'thread-9', 'macro|user-a@test.com', '2024-01-06 00:00:00+00')
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    let refs = repo(pool)
+        .get_attachment_references("email", "thread-9", NON_MEMBER)
+        .await?;
+
+    assert_eq!(refs.len(), 1);
+    let AttachmentEntityReference::Generic(generic) = &refs[0] else {
+        anyhow::bail!("expected a generic reference");
+    };
+    assert_eq!(generic.source_entity_id, "task-1");
+    assert_eq!(generic.created_at.to_rfc3339(), "2024-01-06T00:00:00+00:00");
+    Ok(())
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
 async fn attachment_references_merges_channel_and_generic_newest_first(
     pool: Pool<Postgres>,
 ) -> anyhow::Result<()> {
@@ -2889,11 +2306,10 @@ async fn attachment_references_treats_email_alias_as_thread(
     // Referencium queries 'thread', so the lookup must accept both.
     sqlx::query(
         r#"
-        INSERT INTO comms_attachments (id, message_id, channel_id, entity_type, entity_id, width, height, created_at)
+        INSERT INTO comms_attachments (id, message_id, entity_type, entity_id, width, height, created_at)
         VALUES (
             '00000000-0000-0000-0000-00000000a0e1',
             '00000000-0000-0000-0000-000000000001',
-            '00000000-0000-0000-0000-000000000c01',
             'email',
             'email-share-1',
             NULL,
@@ -2916,30 +2332,6 @@ async fn attachment_references_treats_email_alias_as_thread(
     assert_eq!(channel_refs(&by_thread).len(), 1);
     assert_eq!(channel_refs(&by_email).len(), 1);
     assert_eq!(channel_refs(&by_thread)[0].message_id, MSG1);
-    Ok(())
-}
-
-#[sqlx::test(
-    fixtures(path = "../../../fixtures", scripts("channels_repo")),
-    migrator = "MACRO_DB_MIGRATIONS"
-)]
-async fn add_attachments_normalizes_email_to_thread(pool: Pool<Postgres>) -> anyhow::Result<()> {
-    let inserted = repo(pool)
-        .add_attachments(
-            MSG1,
-            CH1,
-            vec![NewChannelAttachment {
-                entity_type: "email".to_string(),
-                entity_id: "email-norm-1".to_string(),
-                width: None,
-                height: None,
-            }],
-        )
-        .await?;
-
-    assert_eq!(inserted.len(), 1);
-    assert_eq!(inserted[0].entity_type, "thread");
-    assert_eq!(inserted[0].entity_id, "email-norm-1");
     Ok(())
 }
 
@@ -2987,4 +2379,80 @@ async fn bot_profiles_includes_soft_deleted_bots(pool: Pool<Postgres>) -> anyhow
     );
     assert!(!profiles.contains_key(&missing));
     Ok(())
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn delete_channel_cascades_contacts_backfill_outbox_rows(pool: Pool<Postgres>) {
+    let repo = repo(pool.clone());
+    let created = repo
+        .create_channel(
+            macro_user_id(USER_A),
+            None,
+            CreateChannelRequest {
+                name: Some("delete-with-outbox".to_string()),
+                channel_type: ChannelType::Private,
+                team_id: None,
+                auto_join_team: false,
+                participants: HashSet::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    sqlx::query!(
+        "INSERT INTO contacts_backfill_outbox (comms_channel_id, user_ids) \
+         VALUES ($1, '[\"macro|user-a@test.com\"]'::jsonb)",
+        created.id,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    repo.delete_channel(created.id, USER_A.to_string())
+        .await
+        .expect("channel delete must succeed when contacts_backfill_outbox references the channel");
+
+    let channel_count = sqlx::query_scalar!(
+        "SELECT count(*) FROM comms_channels WHERE id = $1",
+        created.id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(channel_count, 0);
+
+    let outbox_count = sqlx::query_scalar!(
+        "SELECT count(*) FROM contacts_backfill_outbox WHERE comms_channel_id = $1",
+        created.id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(outbox_count, 0);
+}
+
+#[sqlx::test(
+    fixtures(path = "../../../fixtures", scripts("channels_repo")),
+    migrator = "MACRO_DB_MIGRATIONS"
+)]
+async fn channel_picture_round_trips_through_batched_previews(pool: Pool<Postgres>) {
+    let repo = repo(pool);
+    assert!(!repo.set_channel_picture(CH1, None).await.unwrap());
+    for picture in [Some(Uuid::new_v4()), Some(Uuid::new_v4()), None] {
+        let (first, concurrent) = tokio::join!(
+            repo.set_channel_picture(CH1, picture),
+            repo.set_channel_picture(CH1, picture),
+        );
+        assert_ne!(first.unwrap(), concurrent.unwrap());
+        assert!(!repo.set_channel_picture(CH1, picture).await.unwrap());
+        let previews = repo
+            .batch_get_channel_previews(&[CH1.to_string()], USER_A, None)
+            .await
+            .unwrap();
+        assert_eq!(previews.len(), 1);
+        assert_eq!(previews[0].profile_picture_id, picture);
+        assert!(previews[0].has_access);
+    }
 }

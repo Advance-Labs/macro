@@ -1,14 +1,16 @@
 import { queryClient } from '@queries/client';
 import { emailKeys } from '@queries/email/keys';
 import { invalidateEmailLinks } from '@queries/email/link';
+import { messageKeys } from '@queries/messages/keys';
 import { invalidateEntityNotifications } from '@queries/notification/user-notifications';
+import { refreshEmailFollowup } from '@queries/reminders/email-refresh';
 import {
   invalidateSoupEntity,
   refetchSoupEntity,
 } from '@queries/soup/normalized-cache';
 import { teamKeys } from '@queries/team/keys';
 import { onCleanup } from 'solid-js';
-import { match } from 'ts-pattern';
+import { match, P } from 'ts-pattern';
 import type { NotificationSource } from './notification-source';
 import type { UnifiedNotification } from './types';
 
@@ -50,12 +52,16 @@ function refreshEmailThread(notification: UnifiedNotification) {
  */
 export function handleNotificationUpdate(notification: UnifiedNotification) {
   match(notification.notification_metadata)
-    .with({ tag: 'channel_mention' }, ({ content }) => {
-      refreshChannel(
-        notification,
-        (content.threadId ?? content.messageId)?.toString()
-      );
-    })
+    .with(
+      { tag: 'channel_mention' },
+      { tag: 'channel_message_reaction' },
+      ({ content }) => {
+        refreshChannel(
+          notification,
+          (content.threadId ?? content.messageId)?.toString()
+        );
+      }
+    )
     .with({ tag: 'document_mention' }, ({ content }) => {
       refreshChannel(notification, content.threadId?.toString());
     })
@@ -65,8 +71,33 @@ export function handleNotificationUpdate(notification: UnifiedNotification) {
     .with({ tag: 'replied_to_document_comment_thread' }, () => {
       refreshSoupEntity(notification, 'document');
     })
+    .with({ tag: 'initiative_discussion' }, () => {
+      const parent = { type: 'initiative', id: notification.entity_id };
+      for (const key of [
+        messageKeys.messages,
+        messageKeys.messagesByIds,
+        messageKeys.threadReplies,
+      ]) {
+        void queryClient.invalidateQueries({ queryKey: [...key._def, parent] });
+      }
+      void invalidateEntityNotifications(notification.entity_id);
+    })
     .with({ tag: 'commented_on_document' }, () => {
       refreshSoupEntity(notification, 'document');
+    })
+    .with({ tag: 'crm_discussion' }, () => {
+      const parent = {
+        type: notification.entity_type,
+        id: notification.entity_id,
+      };
+      for (const key of [
+        messageKeys.messages,
+        messageKeys.messagesByIds,
+        messageKeys.threadReplies,
+      ]) {
+        void queryClient.invalidateQueries({ queryKey: [...key._def, parent] });
+      }
+      void invalidateEntityNotifications(notification.entity_id);
     })
     .with({ tag: 'channel_invite' }, () => {
       refreshChannel(notification);
@@ -82,6 +113,14 @@ export function handleNotificationUpdate(notification: UnifiedNotification) {
     })
     .with({ tag: 'new_email' }, () => {
       refreshEmailThread(notification);
+    })
+    .with({ tag: 'reminder' }, async () => {
+      if (notification.entity_type !== 'email_thread') return;
+      try {
+        await refreshEmailFollowup(notification.entity_id);
+      } catch (error) {
+        console.warn('Failed to refresh delivered email reminder', error);
+      }
     })
     .with({ tag: 'inbox_reauth_required' }, () => {
       invalidateEmailLinks();
@@ -115,6 +154,18 @@ export function handleNotificationUpdate(notification: UnifiedNotification) {
     .with({ tag: 'github_pr_review' }, () => {
       refreshSoupEntity(notification, 'foreignEntity');
     })
+    .with(
+      {
+        tag: P.union(
+          'agent_session_settled',
+          'agent_session_waiting_for_input',
+          'agent_session_mentioned'
+        ),
+      },
+      () => {
+        refreshSoupEntity(notification, 'agentSession');
+      }
+    )
     .otherwise(() => {
       // Ignore notification types introduced by a newer backend.
     });

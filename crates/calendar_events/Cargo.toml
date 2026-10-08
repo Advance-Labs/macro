@@ -14,7 +14,7 @@ dispatch = ["dep:tokio", "dep:tokio-util"]
 # The worker plus the SQS adapter that backs it.
 dispatch-sqs = ["dep:aws-sdk-sqs", "dispatch"]
 google = ["dep:reqwest", "dep:urlencoding"]
-# The email-service HTTP adapter implementing the mutation port, for hosts
+# The calendar-service HTTP adapter implementing the mutation port, for hosts
 # that are not the calendar write authority.
 mutation-client = ["dep:reqwest"]
 inbound = [
@@ -35,6 +35,7 @@ async-trait = { workspace = true, optional = true }
 aws-sdk-sqs = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 futures = { workspace = true }
 macro_authorization = { path = "../macro_authorization", default-features = false, features = [
   "axum",

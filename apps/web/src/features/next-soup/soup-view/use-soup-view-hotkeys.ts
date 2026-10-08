@@ -3,8 +3,8 @@ import { isListViewID, type ListView } from '@app/constants/list-views';
 import { CommandState } from '@app/features/command/state';
 import { VIEW_TAB_PRESETS } from '@app/features/next-soup/sidebar/soup-filter-presets';
 import {
+  markCalendarNotificationSeenOnOpen,
   markChannelNotificationsSeenOnOpen,
-  markReminderSeenOnOpen,
   openEntityInSplitFromUnifiedList,
 } from '@app/features/next-soup/utils';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
@@ -15,6 +15,7 @@ import { createHotkeyGroup, registerHotkey } from '@core/hotkey/hotkeys';
 import { TOKENS } from '@core/hotkey/tokens';
 import { isScopeInActiveBranch } from '@core/hotkey/utils';
 import {
+  type EntityData,
   filterNotDoneNotifications,
   filterValidNotifications,
   isSearchEntity,
@@ -31,6 +32,9 @@ import {
 } from './soup-view-tabs';
 
 type UseSoupViewHotkeysOptions = {
+  onOpenProject?: (id: string) => void;
+  onOpenEntity?: (entity: EntityData, event?: KeyboardEvent) => boolean;
+  disableTabHotkeys?: boolean;
   scopeId: string;
   soup: SoupState;
   splitHandle: SplitHandle;
@@ -153,7 +157,14 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
     scopeId,
     description: 'Open',
     hide: true,
-    keyDownHandler: () => {
+    keyDownHandler: (event) => {
+      // Native row controls own Enter. The document hotkey runs during capture,
+      // before the reminder button's propagation guards can handle the event.
+      if (
+        event?.target instanceof Element &&
+        event.target.closest('button[data-reminder-action]')
+      )
+        return false;
       const focusedRow = soup.focus.row();
       if (!focusedRow) return false;
 
@@ -180,6 +191,12 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
       const entity = soup.focus.item();
       if (!entity) return false;
 
+      if (entity.type === 'project' && options.onOpenProject) {
+        options.onOpenProject(entity.id);
+        return true;
+      }
+      if (options.onOpenEntity?.(entity, event)) return true;
+
       const contentHitData = isSearchEntity(entity)
         ? entity.search.contentHitData
         : undefined;
@@ -187,7 +204,7 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
       const location =
         contentHitData?.length === 1 ? contentHitData[0]?.location : undefined;
 
-      markReminderSeenOnOpen(entity, notificationSource);
+      markCalendarNotificationSeenOnOpen(entity, notificationSource);
       openEntityInSplitFromUnifiedList(entity, {
         splitHandle,
         location,
@@ -197,47 +214,6 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
       return true;
     },
     displayPriority: 4,
-  }).withGroup(group);
-
-  // cmd+enter - Focus preview block
-  registerHotkey({
-    hotkey: ['cmd+enter'],
-    scopeId,
-    description: 'Focus Preview',
-    condition: () => splitHandle.isControllerSplit(),
-    keyDownHandler: () => {
-      const manager = globalSplitManager();
-      const viewerId = splitHandle.viewerId();
-      if (splitHandle.isControllerSplit() && viewerId && manager) {
-        manager.activateSplit(viewerId);
-        manager.returnFocus();
-        return true;
-      }
-      return false;
-    },
-    displayPriority: 4,
-  }).withGroup(group);
-
-  // opt+enter - Open in place of the whole Preview Pair
-  registerHotkey({
-    hotkey: ['opt+enter'],
-    scopeId,
-    description: 'Open to replace preview',
-    condition: () =>
-      splitHandle.isControllerSplit() && soup.focus.id() !== undefined,
-    keyDownHandler: () => {
-      const entity = soup.focus.item();
-      if (!entity) return false;
-      markReminderSeenOnOpen(entity, notificationSource);
-      openEntityInSplitFromUnifiedList(entity, {
-        splitHandle,
-        replacePreview: true,
-        referredFrom: currentView(),
-        notificationSource,
-      });
-      return true;
-    },
-    hide: true,
   }).withGroup(group);
 
   // x - Toggle select item
@@ -347,7 +323,7 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
 
       const entity = soup.focus.item();
       if (!entity) return false;
-      markReminderSeenOnOpen(entity, notificationSource);
+      markCalendarNotificationSeenOnOpen(entity, notificationSource);
       openEntityInSplitFromUnifiedList(entity, {
         splitHandle,
         openInNewSplit: true,
@@ -363,6 +339,7 @@ export const useSoupViewHotkeys = (options: UseSoupViewHotkeysOptions) => {
 
   const visibleViewTabs = useVisibleViewTabs();
   const getTabKeys = () => {
+    if (options.disableTabHotkeys) return [];
     const view = currentView();
     if (!view || !isTabbedView(view)) return [];
     return visibleViewTabs(view).map((t) => t.value);

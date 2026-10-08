@@ -7,6 +7,7 @@ fn empty_service() -> AuthenticatedToolService<()> {
         Arc::new(AsyncToolCollection::new()),
         (),
         "https://macro.com".to_owned(),
+        url::Url::parse("https://static-file-service.macro.com").unwrap(),
     )
 }
 
@@ -58,8 +59,14 @@ async fn server_instructions_describe_available_workflows() {
         "ReadContent",
         "ReadMetadata",
         "ReadThread",
+        "ReadChannelMessages",
+        "ReadChannelThread",
+        "ReadChannelMessageContext",
+        "downloadable URLs",
         "CreateDocument",
         "ListEntities",
+        "ListSkills",
+        "ReadSkill",
     ] {
         assert!(
             instructions.contains(expected_text),
@@ -109,7 +116,7 @@ async fn empty_toolset_lists_no_tools() {
 /// newly added tool can't quietly regress the submission.
 #[test]
 fn every_exposed_tool_meets_directory_requirements() {
-    let tools = ai_tools::mcp_tools();
+    let tools = ai_tools::tools_for(ai_tools::AiHost::Mcp);
     assert!(
         !tools.toolset.tools.is_empty(),
         "the MCP toolset should not be empty"

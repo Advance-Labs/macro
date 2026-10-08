@@ -249,6 +249,57 @@ async fn returns_highest_link_or_explicit_access_level(pool: PgPool) -> anyhow::
     Ok(())
 }
 
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn direct_owner_grant_returns_owner(pool: PgPool) -> anyhow::Result<()> {
+    insert_user(&pool, OWNER_WITHOUT_TEAM).await?;
+    let document_id =
+        insert_link_shared_document(&pool, OWNER_WITHOUT_TEAM, Some("PUBLIC"), Some("edit"))
+            .await?;
+    insert_document_entity_access(&pool, document_id, OWNER_WITHOUT_TEAM, AccessLevel::Owner)
+        .await?;
+    let source_ids = SourceIds(vec![OWNER_WITHOUT_TEAM.to_string()]);
+
+    let access = get_document_access(&pool, &document_id, &source_ids, None).await?;
+
+    assert_eq!(access, Some(AccessLevel::Owner));
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn link_share_above_direct_grant_wins(pool: PgPool) -> anyhow::Result<()> {
+    const REQUESTER: &str = "macro|requester@team.test";
+
+    insert_user(&pool, OWNER_WITHOUT_TEAM).await?;
+    let document_id =
+        insert_link_shared_document(&pool, OWNER_WITHOUT_TEAM, Some("PUBLIC"), Some("edit"))
+            .await?;
+    insert_document_entity_access(&pool, document_id, REQUESTER, AccessLevel::View).await?;
+    let source_ids = SourceIds(vec![REQUESTER.to_string()]);
+
+    let access = get_document_access(&pool, &document_id, &source_ids, None).await?;
+
+    assert_eq!(access, Some(AccessLevel::Edit));
+    Ok(())
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn another_sources_owner_grant_is_ignored(pool: PgPool) -> anyhow::Result<()> {
+    const REQUESTER: &str = "macro|requester@team.test";
+
+    insert_user(&pool, OWNER_WITHOUT_TEAM).await?;
+    let document_id =
+        insert_link_shared_document(&pool, OWNER_WITHOUT_TEAM, Some("PUBLIC"), Some("view"))
+            .await?;
+    insert_document_entity_access(&pool, document_id, OWNER_WITHOUT_TEAM, AccessLevel::Owner)
+        .await?;
+    let source_ids = SourceIds(vec![REQUESTER.to_string()]);
+
+    let access = get_document_access(&pool, &document_id, &source_ids, None).await?;
+
+    assert_eq!(access, Some(AccessLevel::View));
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Email-attachment documents: access inherited from the linked thread
 // (inbox owner, macro_user_links delegation, or a thread-level grant)
@@ -520,5 +571,144 @@ async fn email_direct_document_grant_wins_over_inherited_view(pool: PgPool) -> a
         access_as(&pool, &document_id, OTHER_USER).await,
         Some(AccessLevel::Edit)
     );
+    Ok(())
+}
+
+#[cfg(feature = "explain_binary")]
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn explain_lists_public_and_entity_access_and_matches_effective(
+    pool: PgPool,
+) -> anyhow::Result<()> {
+    const REQUESTER: &str = "macro|requester@team.test";
+
+    insert_user(&pool, OWNER_WITHOUT_TEAM).await?;
+    let document_id =
+        insert_link_shared_document(&pool, OWNER_WITHOUT_TEAM, Some("PUBLIC"), Some("comment"))
+            .await?;
+    insert_document_entity_access(&pool, document_id, REQUESTER, AccessLevel::Edit).await?;
+    let source_ids = SourceIds(vec![REQUESTER.to_string()]);
+    let requester = user(REQUESTER);
+
+    let access = get_document_access(&pool, &document_id, &source_ids, Some(&*requester)).await?;
+    let grants =
+        explain_document_access(&pool, &document_id, &source_ids, Some(&*requester)).await?;
+    let explanation = crate::domain::models::AccessExplanation::from_grants(
+        requester,
+        crate::domain::models::Entity {
+            entity_id: document_id.to_string(),
+            entity_type: crate::domain::models::EntityType::Document,
+        },
+        grants.clone(),
+    );
+
+    assert_eq!(explanation.effective_access_level(), access);
+    assert!(grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::PublicLink {
+            access_level: AccessLevel::Comment
+        }
+    )));
+    assert!(grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::EntityAccess {
+            access_level: AccessLevel::Edit,
+            ..
+        }
+    )));
+    Ok(())
+}
+
+#[cfg(feature = "explain_binary")]
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn explain_email_attachment_reasons(pool: PgPool) -> anyhow::Result<()> {
+    insert_user(&pool, INBOX_OWNER).await?;
+    insert_user(&pool, DELEGATE).await?;
+    insert_user(&pool, OTHER_USER).await?;
+    let (link_id, thread_id, document_id) = insert_attachment_document(&pool, INBOX_OWNER).await;
+    insert_delegation(&pool, DELEGATE, INBOX_OWNER, link_id).await;
+    insert_thread_entity_access(&pool, thread_id, OTHER_USER, AccessLevel::Edit).await;
+
+    let owner = user(INBOX_OWNER);
+    let owner_grants = explain_document_access(
+        &pool,
+        &document_id,
+        &SourceIds(vec![INBOX_OWNER.to_string()]),
+        Some(&*owner),
+    )
+    .await?;
+    assert!(owner_grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::EmailAttachmentThread {
+            reason: crate::domain::models::EmailAttachmentReason::InboxOwner,
+            ..
+        }
+    )));
+
+    let delegate = user(DELEGATE);
+    let delegate_grants = explain_document_access(
+        &pool,
+        &document_id,
+        &SourceIds(vec![DELEGATE.to_string()]),
+        Some(&*delegate),
+    )
+    .await?;
+    assert!(delegate_grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::EmailAttachmentThread {
+            reason: crate::domain::models::EmailAttachmentReason::InboxDelegate,
+            ..
+        }
+    )));
+
+    let other = user(OTHER_USER);
+    let other_grants = explain_document_access(
+        &pool,
+        &document_id,
+        &SourceIds(vec![OTHER_USER.to_string()]),
+        Some(&*other),
+    )
+    .await?;
+    assert!(other_grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::EmailAttachmentThread {
+            reason: crate::domain::models::EmailAttachmentReason::ThreadGrant,
+            ..
+        }
+    )));
+    Ok(())
+}
+
+#[cfg(feature = "explain_binary")]
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn explain_team_link_matches_access_level(pool: PgPool) -> anyhow::Result<()> {
+    let owner_team_id = Uuid::new_v4();
+    insert_user(&pool, OWNER_WITH_TEAM).await?;
+    add_owner_to_team(&pool, OWNER_WITH_TEAM, owner_team_id).await?;
+    let document_id =
+        insert_link_shared_document(&pool, OWNER_WITH_TEAM, Some("TEAM"), Some("comment")).await?;
+    let requester = user("macro|teammate@team.test");
+    let source_ids = SourceIds(vec![owner_team_id.to_string()]);
+
+    let access = get_document_access(&pool, &document_id, &source_ids, Some(&*requester)).await?;
+    let grants =
+        explain_document_access(&pool, &document_id, &source_ids, Some(&*requester)).await?;
+    let explanation = crate::domain::models::AccessExplanation::from_grants(
+        requester,
+        crate::domain::models::Entity {
+            entity_id: document_id.to_string(),
+            entity_type: crate::domain::models::EntityType::Document,
+        },
+        grants.clone(),
+    );
+
+    assert_eq!(access, Some(AccessLevel::Comment));
+    assert_eq!(explanation.effective_access_level(), access);
+    assert!(grants.iter().any(|grant| matches!(
+        grant,
+        crate::domain::models::AccessGrant::TeamLink {
+            access_level: AccessLevel::Comment,
+            owner_team_id: id
+        } if *id == owner_team_id
+    )));
     Ok(())
 }

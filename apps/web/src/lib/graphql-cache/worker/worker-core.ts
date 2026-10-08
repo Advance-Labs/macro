@@ -10,6 +10,8 @@ import type {
   CacheRequest,
   CacheResponse,
   CacheRevisionResult,
+  CalendarCommitCacheResult,
+  CalendarRangeCacheResult,
   EnqueueOptimisticMutationResult,
   EntityFilterCacheResult,
   HydrationResult,
@@ -18,7 +20,7 @@ import type {
   SearchCachePage,
   WriteResult,
 } from '../protocol';
-import { parseCacheRevision } from '../protocol';
+import { parseCacheRevision, parseStorageGeneration } from '../protocol';
 import {
   type CacheTelemetryRecorderLike,
   classifyCacheError,
@@ -26,11 +28,26 @@ import {
   isStorageTransactionRequest,
   operationCategoryForRequest,
 } from '../telemetry';
+import { cacheDatabaseIdentity } from './coordinator-protocol';
 import {
   type CacheEngine,
   type CacheOpenOutcome,
+  type CacheOpenResult,
   loadCacheWasm,
 } from './wasm-module';
+
+const isOwnerLockUnavailable = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'cacheOwnerLockUnavailable' in error &&
+  error.cacheOwnerLockUnavailable === true;
+
+/** WASM gave up on database files another context kept open. */
+const isStorageBusy = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'cacheStorageBusy' in error &&
+  error.cacheStorageBusy === true;
 
 type PortLike = {
   postMessage(msg: unknown): void;
@@ -53,8 +70,22 @@ export interface CacheWorkerCoreOptions {
   recoveryOpen?: boolean;
   /** Called once when WASM latches a reset-required storage failure. */
   onStorageResetRequired?: (error: Error) => void;
+  /** Called when opening gave up on database files another context kept
+   * open. The failed request's response carries only the message. */
+  onStorageBusy?: () => void;
   /** Reports the bounded open outcome to the coordinator transport. */
   onInitializationOutcome?: (outcome: CacheOpenOutcome) => void;
+  /**
+   * Runs once WASM holds the database owner lock and before it touches OPFS;
+   * opening proceeds when the returned promise resolves.
+   */
+  onOwnerLockAcquired?: () => Promise<void>;
+  /**
+   * With `onOwnerLockAcquired`, opening never queues for the owner lock. This
+   * runs with the 1-based attempt that found it held elsewhere: resolve to
+   * try again, or reject to give up without touching storage.
+   */
+  onOwnerLockBusy?: (attempt: number) => Promise<void>;
   telemetry?: CacheTelemetryRecorderLike;
   /** Injectable clocks and cadence for payload-free diagnostics tests. */
   monotonicNow?: () => number;
@@ -75,13 +106,20 @@ const CACHE_WRITE_PRIORITY = 2;
 function isOrderingBarrier(request: CacheRequest): boolean {
   return (
     request.kind === 'init' ||
+    request.kind === 'current-storage-generation' ||
     request.kind === 'teardown' ||
     request.kind === 'clear'
   );
 }
 
 function isQueryDataWrite(request: CacheRequest): boolean {
-  return request.kind === 'write' || request.kind === 'hydrate';
+  // A calendar commit records coverage for data written just before it, so it
+  // must never overtake that write or hydration.
+  return (
+    request.kind === 'write' ||
+    request.kind === 'hydrate' ||
+    request.kind === 'calendar-commit'
+  );
 }
 
 function revisionAdvancementCategory(
@@ -96,7 +134,12 @@ function revisionAdvancementCategory(
   | 'clear'
   | undefined {
   return match(request.kind)
-    .with('write', 'hydrate', () => 'authoritative-write' as const)
+    .with(
+      'write',
+      'hydrate',
+      'calendar-commit',
+      () => 'authoritative-write' as const
+    )
     .with('enqueue-optimistic-mutation', () => 'optimistic-enqueue' as const)
     .with('commit-optimistic-write', () => 'optimistic-commit' as const)
     .with('rollback-optimistic-write', () => 'optimistic-rollback' as const)
@@ -115,6 +158,7 @@ function requestPriority(request: CacheRequest): number {
   }
   if (
     request.kind === 'write' ||
+    request.kind === 'calendar-commit' ||
     request.kind === 'enqueue-optimistic-mutation' ||
     request.kind === 'claim-next-mutation' ||
     request.kind === 'commit-optimistic-write' ||
@@ -207,7 +251,12 @@ export class CacheWorkerCore {
       const result = await this.enqueue(request);
       const durationMs = this.now() - startedAt;
       const revisionCategory = revisionAdvancementCategory(request);
-      if (revisionCategory !== undefined) {
+      const revisionAdvanced =
+        typeof result !== 'object' ||
+        result === null ||
+        !('revisionAdvanced' in result) ||
+        result.revisionAdvanced !== false;
+      if (revisionCategory !== undefined && revisionAdvanced) {
         this.telemetry.record({
           name: 'graphql_cache.revision_advance',
           operationCategory: category,
@@ -282,6 +331,7 @@ export class CacheWorkerCore {
         });
       }
       this.reportResetRequired(error);
+      if (isStorageBusy(error)) this.options.onStorageBusy?.();
       respond({
         id: request.id,
         ok: false,
@@ -423,6 +473,11 @@ export class CacheWorkerCore {
       .with({ kind: 'current-revision' }, async () => {
         return parseCacheRevision(await this.requireEngine().currentRevision());
       })
+      .with({ kind: 'current-storage-generation' }, async () => {
+        return parseStorageGeneration(
+          await this.requireEngine().currentStorageGeneration()
+        );
+      })
       .with({ kind: 'read' }, async (request) => {
         const engine = this.requireEngine();
         const result: ReadResult = await engine.readQuery(
@@ -459,6 +514,26 @@ export class CacheWorkerCore {
           ? result
           : { ...result, revision: parseCacheRevision(result.revision) };
       })
+      .with({ kind: 'calendar-range' }, async (request) => {
+        const result: CalendarRangeCacheResult =
+          await this.requireEngine().calendarRange(request.request);
+        return result.kind === 'unsupported'
+          ? result
+          : { ...result, revision: parseCacheRevision(result.revision) };
+      })
+      .with({ kind: 'calendar-commit' }, async (request) => {
+        const result = await this.requireEngine().calendarCommit(
+          request.commit
+        );
+        result.revision = parseCacheRevision(result.revision);
+        this.fanOut(result, true);
+        const committed: CalendarCommitCacheResult = {
+          kind: 'committed',
+          revision: result.revision,
+          changed: result.changed,
+        };
+        return committed;
+      })
       .with({ kind: 'write' }, async (request) => {
         const engine = this.requireEngine();
         const result = await engine.writeQuery(
@@ -485,7 +560,19 @@ export class CacheWorkerCore {
           request.identity
         );
         result.revision = parseCacheRevision(result.revision);
-        this.fanOut(result, true);
+        // Only cache-only consumers opt into hydration. Do not invalidate
+        // foreground Soup queries or switch their authority mid-backfill.
+        // Identity changes remain ordinary cache resets for every subscriber.
+        if (result.reset) this.fanOut(result, true);
+        else if (result.revisionAdvanced) {
+          this.push({
+            kind: 'cache-hydrated',
+            revision: result.revision,
+            ...(result.searchChangedBuckets !== undefined
+              ? { searchChangedBuckets: result.searchChangedBuckets }
+              : {}),
+          });
+        }
         const hydration: HydrationResult & Pick<WriteResult, 'reset'> =
           result.data === null
             ? { kind: 'void', revision: result.revision, reset: result.reset }
@@ -502,19 +589,34 @@ export class CacheWorkerCore {
         const result: EnqueueOptimisticMutationResult =
           await engine.enqueueOptimisticMutation(
             request.originOpId,
+            request.uuid,
             request.query,
             request.operationName,
             request.variables,
             request.data,
             request.linkPatches,
             request.revalidations,
+            request.identityBindings,
             request.createdAtMs,
             request.owner,
             request.nowMs,
-            request.leaseExpiresAtMs
+            request.leaseExpiresAtMs,
+            request.clientMetadata,
+            request.uncertainCalendarEventKeys
           );
         result.revision = parseCacheRevision(result.revision);
         this.fanOut(result, true);
+        if (result.upsertKind.kind === 'replaced-pending') {
+          this.push({
+            kind: 'mutation-settled',
+            settlement: {
+              transactionId: result.upsertKind.removedTransactionId,
+              mutationUuid: request.uuid,
+              status: 'superseded',
+              replacementTransactionId: result.transactionId,
+            },
+          });
+        }
         return result;
       })
       .with({ kind: 'inspect-query-variants' }, async (request) => {
@@ -532,6 +634,10 @@ export class CacheWorkerCore {
           request.variableFilters ?? []
         );
       })
+      .with(
+        { kind: 'inspect-mutations' },
+        async () => await this.requireEngine().inspectMutations()
+      )
       .with({ kind: 'claim-next-mutation' }, async (request) => {
         const engine = this.requireEngine();
         return await engine.claimNextMutation(
@@ -542,14 +648,28 @@ export class CacheWorkerCore {
       })
       .with({ kind: 'defer-optimistic-write' }, async (request) => {
         const engine = this.requireEngine();
-        await engine.deferOptimisticWrite(
+        const result = await engine.deferOptimisticWrite(
           request.transactionId,
           request.leaseOwner,
           request.leaseGeneration,
           request.nextAttemptAtMs,
-          request.error
+          request.error,
+          request.serverFailure ?? false
         );
-        return null;
+        if (result.kind === 'discarded-superseded') {
+          result.revision = parseCacheRevision(result.revision);
+          this.fanOut(result, true);
+          this.push({
+            kind: 'mutation-settled',
+            settlement: {
+              transactionId: request.transactionId,
+              mutationUuid: result.mutationUuid,
+              status: 'superseded',
+              replacementTransactionId: result.replacementTransactionId,
+            },
+          });
+        }
+        return result;
       })
       .with({ kind: 'commit-optimistic-write' }, async (request) => {
         const engine = this.requireEngine();
@@ -565,12 +685,32 @@ export class CacheWorkerCore {
         );
         result.revision = parseCacheRevision(result.revision);
         this.fanOut(result, true);
+        const replacementTransactionId =
+          result.kind === 'committed'
+            ? undefined
+            : result.replacementTransactionId;
         this.push({
           kind: 'mutation-settled',
-          settlement: {
-            transactionId: request.transactionId,
-            status: 'committed',
-          },
+          settlement:
+            replacementTransactionId !== undefined
+              ? {
+                  transactionId: request.transactionId,
+                  mutationUuid: result.mutationUuid,
+                  status: 'superseded',
+                  replacementTransactionId,
+                }
+              : result.kind === 'failed'
+                ? {
+                    transactionId: request.transactionId,
+                    mutationUuid: result.mutationUuid,
+                    status: 'permanently-failed',
+                    error: result.error,
+                  }
+                : {
+                    transactionId: request.transactionId,
+                    mutationUuid: result.mutationUuid,
+                    status: 'committed',
+                  },
         });
         return result;
       })
@@ -585,11 +725,23 @@ export class CacheWorkerCore {
         this.fanOut(result, true);
         this.push({
           kind: 'mutation-settled',
-          settlement: {
-            transactionId: request.transactionId,
-            status: 'permanently-failed',
-            error: request.error,
-          },
+          settlement:
+            result.kind === 'discarded-superseded'
+              ? {
+                  transactionId: request.transactionId,
+                  mutationUuid: result.mutationUuid,
+                  status: 'superseded',
+                  replacementTransactionId: result.replacementTransactionId,
+                }
+              : {
+                  transactionId: request.transactionId,
+                  mutationUuid: result.mutationUuid,
+                  status: 'permanently-failed',
+                  error: request.error,
+                  ...(request.errorCode === undefined
+                    ? {}
+                    : { errorCode: request.errorCode }),
+                },
         });
         return result;
       })
@@ -602,6 +754,7 @@ export class CacheWorkerCore {
         this.fanOut(
           {
             revision: result.revision,
+            revisionAdvanced: true,
             changed: request.keys,
             affectedOps: result.affectedOps,
             reset: false,
@@ -620,6 +773,7 @@ export class CacheWorkerCore {
         this.fanOut(
           {
             revision: result.revision,
+            revisionAdvanced: true,
             changed: request.keys,
             affectedOps: result.affectedOps,
             reset: false,
@@ -636,7 +790,7 @@ export class CacheWorkerCore {
       .with({ kind: 'clear' }, async () => {
         const result: CacheRevisionResult = await this.requireEngine().clear();
         const revision = parseCacheRevision(result.revision);
-        this.push({ kind: 'cache-changed', revision });
+        this.push({ kind: 'cache-changed', revision, reset: true });
         return revision;
       })
       .exhaustive();
@@ -777,6 +931,11 @@ export class CacheWorkerCore {
     }
   }
 
+  /** Download/compile/instantiate without acquiring the database lock or opening OPFS. */
+  async prepare(): Promise<void> {
+    await loadCacheWasm();
+  }
+
   private async init(scope: string, hotCapacity?: number): Promise<void> {
     if (this.initPromise) {
       // Subsequent page clients routed to this elected engine re-init idempotently.
@@ -797,14 +956,50 @@ export class CacheWorkerCore {
     this.hotCapacity = hotCapacity;
     this.initPromise = (async () => {
       const wasm = await loadCacheWasm();
-      const schemaStartedAt = this.now();
+      let schemaStartedAt = this.now();
+      const onOwnerLockAcquired = this.options.onOwnerLockAcquired;
+      const onOwnerLockBusy = this.options.onOwnerLockBusy;
+      let storageGrantRequested = false;
+      const awaitStorageGrant = onOwnerLockAcquired
+        ? async () => {
+            storageGrantRequested = true;
+            // Time the open itself, not the wait for another owner.
+            schemaStartedAt = this.now();
+            await onOwnerLockAcquired();
+          }
+        : undefined;
       try {
         let openOutcome: CacheOpenOutcome;
-        if (this.options.recoveryOpen) {
+        if (awaitStorageGrant && onOwnerLockBusy) {
+          const open = this.options.recoveryOpen
+            ? wasm.openCacheForRecoveryWithOutcome
+            : wasm.openCacheWithOutcome;
+          // Checked before any open: an older artifact would queue for the
+          // lock and touch storage without the coordinator's grant.
+          if (!open || !wasm.cacheDatabaseIdentity) {
+            throw new Error(
+              'cache WASM predates storage-versioned databases; rebuild it'
+            );
+          }
+          if (
+            wasm.cacheDatabaseIdentity(scope) !== cacheDatabaseIdentity(scope)
+          ) {
+            throw new Error(
+              'cache WASM storage version does not match this build'
+            );
+          }
+          const opened = await this.openWhenOwnerLockIsFree(
+            () => open(scope, hotCapacity, awaitStorageGrant, true),
+            onOwnerLockBusy
+          );
+          this.engine = opened.engine;
+          openOutcome = opened.outcome;
+        } else if (this.options.recoveryOpen) {
           if (wasm.openCacheForRecoveryWithOutcome) {
             const opened = await wasm.openCacheForRecoveryWithOutcome(
               scope,
-              hotCapacity
+              hotCapacity,
+              awaitStorageGrant
             );
             this.engine = opened.engine;
             openOutcome = opened.outcome;
@@ -813,12 +1008,20 @@ export class CacheWorkerCore {
             openOutcome = 'reset-storage-uncertain';
           }
         } else if (wasm.openCacheWithOutcome) {
-          const opened = await wasm.openCacheWithOutcome(scope, hotCapacity);
+          const opened = await wasm.openCacheWithOutcome(
+            scope,
+            hotCapacity,
+            awaitStorageGrant
+          );
           this.engine = opened.engine;
           openOutcome = opened.outcome;
         } else {
           this.engine = await wasm.openCache(scope, hotCapacity);
           openOutcome = 'opened-existing';
+        }
+        if (awaitStorageGrant && !storageGrantRequested) {
+          // A stale artifact opened storage without asking the coordinator.
+          throw new Error('cache WASM does not support the owner-lock grant');
         }
         this.options.onInitializationOutcome?.(openOutcome);
         this.telemetry.record({
@@ -842,6 +1045,20 @@ export class CacheWorkerCore {
       }
     })();
     await this.initPromise;
+  }
+
+  private async openWhenOwnerLockIsFree(
+    open: () => Promise<CacheOpenResult>,
+    onOwnerLockBusy: (attempt: number) => Promise<void>
+  ): Promise<CacheOpenResult> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await open();
+      } catch (error) {
+        if (!isOwnerLockUnavailable(error)) throw error;
+        await onOwnerLockBusy(attempt);
+      }
+    }
   }
 
   private reportResetRequired(error: unknown): void {
@@ -881,8 +1098,15 @@ export class CacheWorkerCore {
         keys: result.changed,
       });
     }
-    if (cacheChanged) {
-      this.push({ kind: 'cache-changed', revision: result.revision });
+    if (cacheChanged && result.revisionAdvanced) {
+      this.push({
+        kind: 'cache-changed',
+        revision: result.revision,
+        ...(!result.reset && result.searchChangedBuckets !== undefined
+          ? { searchChangedBuckets: result.searchChangedBuckets }
+          : {}),
+        ...(result.reset ? { reset: true } : {}),
+      });
     }
   }
 

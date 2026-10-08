@@ -9,16 +9,27 @@ pub mod dm;
 pub mod entity_mutation;
 /// Domain events emitted by channel workflows.
 pub mod events;
+/// Channel audience policy for authored group mentions.
+#[cfg(feature = "ports")]
+pub mod group_mentions;
+/// Silent historical creation commands and shared atomic DM creation policy.
+pub mod historical;
 /// Legacy channel list service implementation.
 #[cfg(feature = "list")]
 pub mod list_service;
 /// Kafka event models for the `macro.mentions` topic.
 pub mod mention_events;
+/// Channel side effects for messages committed by the shared message service.
+#[cfg(feature = "ports")]
+pub mod message_delivery;
 /// Domain models for channel messages.
 pub mod models;
 #[cfg(feature = "ports")]
 /// Port traits for channel messages.
 pub mod ports;
+#[cfg(feature = "ports")]
+/// Authorization and grants for entities referenced by channel messages.
+pub mod reference_sharing;
 #[cfg(feature = "ports")]
 /// Service orchestration for channel messages.
 pub mod service;

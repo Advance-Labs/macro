@@ -1,16 +1,29 @@
-import CaretRightIcon from '@phosphor/caret-right.svg';
+import {
+  FilterSubmenu,
+  SearchableFilterSubmenu,
+} from '@app/features/next-soup/soup-view/filters-bar/filter-menu';
 import CheckIcon from '@phosphor/check.svg';
 import FilterIcon from '@phosphor/funnel-simple.svg';
+import BoardIcon from '@phosphor/kanban.svg';
+import ListIcon from '@phosphor/list-bullets.svg';
 import SortIcon from '@phosphor/sort-ascending.svg';
 import GroupIcon from '@phosphor/stack.svg';
-import { buttonClasses, cn, Dropdown } from '@ui';
-import { For, type JSX, Show } from 'solid-js';
+import { cn, Dropdown } from '@ui';
+import { batch, createSignal, For, type JSX, Show } from 'solid-js';
+import { AiFilterInput, type AiFilterInputProps } from './AiFilterInput';
 
 export type ListControlOption<TId extends string> = {
   id: TId;
   label: string;
   icon?: () => JSX.Element;
+  /** Drawn in place of `label`, which still drives search. */
+  content?: () => JSX.Element;
   disabled?: boolean;
+};
+
+type ListDropdownOpenProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 type SingleSelectDropdownProps<TId extends string> = {
@@ -19,21 +32,26 @@ type SingleSelectDropdownProps<TId extends string> = {
   value: TId;
   options: ListControlOption<TId>[];
   onChange: (value: TId) => void;
+  triggerRef?: (element: HTMLButtonElement) => void;
   class?: string;
   contentClass?: string;
-};
+} & ListDropdownOpenProps;
 
 function SingleSelectDropdown<TId extends string>(
   props: SingleSelectDropdownProps<TId>
 ) {
   return (
-    <Dropdown placement="bottom-end">
+    <Dropdown
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      placement="bottom-end"
+    >
       <Dropdown.Trigger
-        variant="outline"
+        ref={props.triggerRef}
+        variant="ghost"
         size="md"
         square
-        depth={2}
-        class={cn('rounded-lg bg-surface', props.class)}
+        class={props.class}
         label={props.label}
       >
         {props.icon}
@@ -59,7 +77,9 @@ function SingleSelectDropdown<TId extends string>(
                       {option.icon?.()}
                     </span>
                   </Show>
-                  <span class="flex-1">{option.label}</span>
+                  <span class="flex-1">
+                    {option.content?.() ?? option.label}
+                  </span>
                   <Dropdown.ItemIndicator>
                     <CheckIcon class="size-3.5 text-accent" />
                   </Dropdown.ItemIndicator>
@@ -70,6 +90,35 @@ function SingleSelectDropdown<TId extends string>(
         </Dropdown.Group>
       </Dropdown.Content>
     </Dropdown>
+  );
+}
+
+export type ViewLayout = 'list' | 'board';
+
+export type ViewLayoutDropdownProps = Omit<
+  SingleSelectDropdownProps<ViewLayout>,
+  'icon' | 'label' | 'options'
+> & {
+  label?: string;
+};
+
+const VIEW_LAYOUT_OPTIONS: ListControlOption<ViewLayout>[] = [
+  { id: 'list', label: 'List', icon: () => <ListIcon /> },
+  { id: 'board', label: 'Board', icon: () => <BoardIcon /> },
+];
+
+export function ViewLayoutDropdown(props: ViewLayoutDropdownProps) {
+  return (
+    <SingleSelectDropdown
+      {...props}
+      label={props.label ?? 'Layout'}
+      options={VIEW_LAYOUT_OPTIONS}
+      icon={
+        <Show when={props.value === 'board'} fallback={<ListIcon />}>
+          <BoardIcon />
+        </Show>
+      }
+    />
   );
 }
 
@@ -118,6 +167,9 @@ export type ListFilterGroup<
   id: TGroupId;
   label: string;
   options: ListControlOption<TOptionId>[];
+  selectionMode?: 'single' | 'multiple';
+  defaultOptionId?: TOptionId;
+  searchPlaceholder?: string;
   contentClass?: string;
 };
 
@@ -127,112 +179,155 @@ export type ListFilterDropdownProps<
 > = {
   groups: ListFilterGroup<TGroupId, TOptionId>[];
   isSelected: (groupId: TGroupId, optionId: TOptionId) => boolean;
+  isGroupActive?: (groupId: TGroupId) => boolean;
   onSelectionChange: (
     groupId: TGroupId,
     optionId: TOptionId,
     selected: boolean
   ) => void;
   onClear?: () => void;
+  /**
+   * Adds a plain-English box above the groups that resolves a description
+   * into a selection. The menu closes once a fully mapped request applies.
+   */
+  aiFilter?: Pick<AiFilterInputProps, 'placeholder' | 'onSubmit'>;
+  customTrigger?: JSX.Element;
+  triggerRef?: (element: HTMLButtonElement) => void;
   label?: string;
   clearLabel?: string;
   class?: string;
   contentClass?: string;
-};
+} & ListDropdownOpenProps;
 
 export function ListFilterDropdown<
   TGroupId extends string,
   TOptionId extends string,
 >(props: ListFilterDropdownProps<TGroupId, TOptionId>) {
+  let aiFilterInput: HTMLInputElement | undefined;
+  // Uncontrolled menus track their own state so the AI box can close them.
+  const [internalOpen, setInternalOpen] = createSignal(false);
+  const isOpen = () => props.open ?? internalOpen();
+  const setOpen = (open: boolean) => {
+    props.onOpenChange?.(open);
+    if (props.open === undefined) setInternalOpen(open);
+  };
+
+  const isGroupActive = (group: ListFilterGroup<TGroupId, TOptionId>) =>
+    props.isGroupActive?.(group.id) ??
+    group.options.some(
+      (option) =>
+        option.id !== group.defaultOptionId &&
+        props.isSelected(group.id, option.id)
+    );
+
   return (
-    <Dropdown placement="bottom-end">
-      <Dropdown.Trigger
-        variant="outline"
-        size="md"
-        square
-        depth={2}
-        class={cn('rounded-lg bg-surface', props.class)}
-        label={props.label ?? 'Filter list'}
+    <Dropdown open={isOpen()} onOpenChange={setOpen} placement="bottom-end">
+      <Show
+        when={props.customTrigger}
+        fallback={
+          <Dropdown.Trigger
+            ref={props.triggerRef}
+            variant="ghost"
+            size="md"
+            square
+            class={props.class}
+            label={props.label ?? 'Filter list'}
+          >
+            <FilterIcon />
+          </Dropdown.Trigger>
+        }
       >
-        <FilterIcon />
-      </Dropdown.Trigger>
-      <Dropdown.Content class={cn('min-w-40', props.contentClass)}>
+        {(trigger) => trigger()}
+      </Show>
+      <Dropdown.Content
+        class={cn('min-w-32', props.contentClass)}
+        onOpenAutoFocus={(event) => {
+          if (!props.aiFilter) return;
+          event.preventDefault();
+          // Kobalte focuses the menu itself on a deferred tick; land after it.
+          setTimeout(() => {
+            requestAnimationFrame(() => {
+              if (aiFilterInput?.isConnected) {
+                aiFilterInput.focus({ preventScroll: true });
+              }
+            });
+          }, 0);
+        }}
+      >
+        <Show when={props.aiFilter}>
+          {(aiFilter) => (
+            <Dropdown.Group>
+              <AiFilterInput
+                placeholder={aiFilter().placeholder}
+                onSubmit={aiFilter().onSubmit}
+                onApplied={() => setOpen(false)}
+                inputRef={(element) => {
+                  aiFilterInput = element;
+                }}
+              />
+            </Dropdown.Group>
+          )}
+        </Show>
         <Dropdown.Group>
           <For each={props.groups}>
-            {(group) => {
-              const hasSelection = () =>
-                group.options.some((option) =>
-                  props.isSelected(group.id, option.id)
-                );
-
-              return (
-                <Dropdown.Sub>
-                  <Dropdown.SubTrigger>
-                    <span class="flex-1 text-ink">{group.label}</span>
-                    <Show when={hasSelection()}>
-                      <span
-                        aria-hidden="true"
-                        class="size-1.5 shrink-0 rounded-full bg-accent"
-                      />
-                    </Show>
-                    <CaretRightIcon class="size-3 shrink-0 text-ink-muted" />
-                  </Dropdown.SubTrigger>
-                  <Dropdown.SubContent
-                    class={cn(
-                      'max-h-72 w-65 max-w-[90vw] overflow-y-auto',
-                      group.contentClass
-                    )}
-                  >
-                    <Dropdown.Group>
-                      <For each={group.options}>
-                        {(option) => (
-                          <Dropdown.CheckboxItem
-                            checked={props.isSelected(group.id, option.id)}
-                            closeOnSelect={false}
-                            disabled={option.disabled}
-                            onChange={(selected) =>
-                              props.onSelectionChange(
-                                group.id,
-                                option.id,
-                                selected
-                              )
-                            }
-                          >
-                            <span class="ml-1 flex min-w-0 flex-1 items-center gap-1.5">
-                              <Show when={option.icon}>
-                                <span
-                                  aria-hidden="true"
-                                  class="flex size-3.5 shrink-0 items-center justify-center [&_svg]:size-3.5"
-                                >
-                                  {option.icon?.()}
-                                </span>
-                              </Show>
-                              <span class="flex-1 truncate">
-                                {option.label}
-                              </span>
-                            </span>
-                          </Dropdown.CheckboxItem>
-                        )}
-                      </For>
-                    </Dropdown.Group>
-                  </Dropdown.SubContent>
-                </Dropdown.Sub>
-              );
-            }}
+            {(group) => (
+              <Show
+                when={group.searchPlaceholder}
+                fallback={
+                  <FilterSubmenu
+                    label={group.label}
+                    selectionMode={group.selectionMode}
+                    active={isGroupActive(group)}
+                    options={group.options}
+                    isSelected={(id) => props.isSelected(group.id, id)}
+                    onSelect={(id) =>
+                      props.onSelectionChange(
+                        group.id,
+                        id,
+                        group.selectionMode === 'single' ||
+                          !props.isSelected(group.id, id)
+                      )
+                    }
+                    closeOnSelect={group.selectionMode === 'single'}
+                    contentClass={group.contentClass}
+                  />
+                }
+              >
+                <SearchableFilterSubmenu
+                  label={group.label}
+                  active={isGroupActive(group)}
+                  options={() => group.options}
+                  activeIds={() =>
+                    group.options
+                      .filter((option) => props.isSelected(group.id, option.id))
+                      .map((option) => option.id)
+                  }
+                  onChange={(ids) =>
+                    batch(() => {
+                      for (const option of group.options) {
+                        const selected = ids.includes(option.id);
+                        if (
+                          selected !== props.isSelected(group.id, option.id)
+                        ) {
+                          props.onSelectionChange(
+                            group.id,
+                            option.id,
+                            selected
+                          );
+                        }
+                      }
+                    })
+                  }
+                  placeholder={group.searchPlaceholder}
+                />
+              </Show>
+            )}
           </For>
         </Dropdown.Group>
         <Show when={props.onClear}>
           {(onClear) => (
             <Dropdown.Group>
-              <Dropdown.Item
-                class={buttonClasses({
-                  variant: 'strong',
-                  size: 'sm',
-                  fullWidth: true,
-                  class:
-                    'rounded-lg text-xs data-highlighted:bg-ink data-highlighted:text-surface-4 data-highlighted:overlay-[color-mix(in_oklch,var(--color-surface-4)_12%,transparent)]',
-                })}
-                onSelect={onClear()}
-              >
+              <Dropdown.Item class="text-failure-ink" onSelect={onClear()}>
                 {props.clearLabel ?? 'Clear filters'}
               </Dropdown.Item>
             </Dropdown.Group>

@@ -28,11 +28,21 @@ type ListInteractionConditions = Partial<
 >;
 
 export type ListInteractionNavigation<TItem> = {
+  /**
+   * Return false to consume a move without changing focus.
+   * Useful when a list must load more rows before crossing a boundary.
+   */
+  onBeforeMove?: (event: ListInteractionBeforeMoveEvent<TItem>) => boolean;
   move?: ListNavigationOptions<TItem>;
   first?: ListNavigationOptions<TItem>;
   last?: ListNavigationOptions<TItem>;
   extendSelection?: ListNavigationOptions<TItem>;
   onNavigate?: (event: ListInteractionNavigationEvent<TItem>) => void;
+};
+
+export type ListInteractionBeforeMoveEvent<TItem> = {
+  direction: 1 | -1;
+  current: ListItemResult<TItem> | undefined;
 };
 
 export type ListInteractionNavigationEvent<TItem> =
@@ -49,11 +59,15 @@ export type ListInteractionNavigationEvent<TItem> =
 export type ListInteractionActivationIntent = 'primary' | 'alternate';
 
 export type ListInteractionActivation<TMetadata> = {
+  /** Let a native control own its key event before document capture consumes it. */
+  shouldHandleKeyEvent?: (event: KeyboardEvent | undefined) => boolean;
   createMetadata?: (intent: ListInteractionActivationIntent) => TMetadata;
   alternateDescription?: string;
 };
 
 export type ListInteractionDisclosure<TItem> = {
+  /** H collapses only structural headers; entity rows keep their own actions. */
+  isHeader: (item: TItem) => boolean;
   getKey: (item: TItem) => string | undefined;
   isExpanded: (key: string) => boolean;
   setExpanded: (key: string, expanded: boolean) => void;
@@ -98,6 +112,15 @@ export function useListInteractions<TItem, TMetadata = unknown>(
   };
 
   const move = (offset: 1 | -1) => {
+    if (
+      options.navigation?.onBeforeMove?.({
+        direction: offset,
+        current: list.focus.result(),
+      }) === false
+    ) {
+      return true;
+    }
+
     const result = list.navigate.by(offset, options.navigation?.move);
     options.navigation?.onNavigate?.({
       kind: 'move',
@@ -199,7 +222,24 @@ export function useListInteractions<TItem, TMetadata = unknown>(
     };
 
     registerHotkey({
-      hotkey: ['h', 'arrowleft'],
+      hotkey: ['h'],
+      hotkeyToken: TOKENS.unifiedList.navigation.collapseGroup,
+      scopeId: options.scopeId,
+      description: 'Collapse group',
+      condition: () => canHandle(options.conditions?.disclosure),
+      keyDownHandler: () => {
+        const item = list.focus.item();
+        if (item === undefined || !disclosure.isHeader(item)) return false;
+        setExpanded(false);
+        return true;
+      },
+      registrationType: 'add',
+      handlerPriority: 4,
+      hide: true,
+    }).withGroup(group);
+
+    registerHotkey({
+      hotkey: ['arrowleft'],
       hotkeyToken: TOKENS.unifiedList.navigation.parent,
       scopeId: options.scopeId,
       description: 'Collapse item',
@@ -321,7 +361,10 @@ export function useListInteractions<TItem, TMetadata = unknown>(
     scopeId: options.scopeId,
     description: 'Open item',
     condition: canOpen,
-    keyDownHandler: () => open('primary'),
+    keyDownHandler: (event) =>
+      options.activation?.shouldHandleKeyEvent?.(event) === false
+        ? false
+        : open('primary'),
   }).withGroup(group);
 
   registerHotkey({
@@ -331,7 +374,10 @@ export function useListInteractions<TItem, TMetadata = unknown>(
       options.activation?.alternateDescription ?? 'Open item alternatively',
     condition: canOpen,
     hide: true,
-    keyDownHandler: () => open('alternate'),
+    keyDownHandler: (event) =>
+      options.activation?.shouldHandleKeyEvent?.(event) === false
+        ? false
+        : open('alternate'),
   }).withGroup(group);
 
   const canToggleSelection = () => {

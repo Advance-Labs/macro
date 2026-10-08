@@ -17,10 +17,16 @@ use agent_session::domain::service::{AgentSessionService, AgentSessionServiceImp
 use agent_session::testing::InMemoryAgentSessionRepo;
 use bot_id::BotId;
 use macro_user_id::user_id::MacroUserIdStr;
+use model_owner::Owner;
 
 use super::*;
+use crate::domain::engine::AgentIdentity;
 use crate::outbound::log_frames::LogFrameSource;
-use crate::testing::ScriptedEngine;
+use crate::testing::{ScriptedEngine, TestAdmission, disabled_admission};
+use agent_session::domain::model::ReplicaId;
+use agent_session::domain::ports::{
+    NoOpAgentSessionNameGenerator, NoOpTurnObserver, NoopLifecyclePublisher,
+};
 
 /// Instructions long enough to be unmistakable in an assertion, and shaped
 /// like something a real session would carry.
@@ -40,7 +46,7 @@ async fn attach_retrying(
 ) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        let transport = manager.attach(facts.clone()).await;
+        let transport = manager.attach(facts.clone(), None).await;
         match sessions
             .attach_session(id, RuntimeAttachment::solo(transport))
             .await
@@ -86,14 +92,20 @@ fn owner() -> MacroUserIdStr<'static> {
 }
 
 fn manager(repo: &InMemoryAgentSessionRepo, engine: Arc<ScriptedEngine>) -> InMemAgentManager {
-    InMemAgentManager::new(engine, Arc::new(LogFrameSource::new(repo.clone())))
+    InMemAgentManager::new(
+        engine,
+        Arc::new(LogFrameSource::new(repo.clone())),
+        Arc::new(crate::domain::mcp::NoMcpServers),
+        Arc::new(crate::testing::TestModelAccess::paid()),
+    )
 }
 
 fn facts(id: AgentSessionId) -> SessionFacts {
     SessionFacts {
         id,
-        owner: owner(),
-        model: "test-model".to_owned(),
+        owner: Owner::User(owner()),
+        model: "anthropic/claude-sonnet-5-5".to_owned(),
+        identity: None,
         instructions: None,
         acp_session_id: None,
     }
@@ -103,6 +115,17 @@ fn facts(id: AgentSessionId) -> SessionFacts {
 fn facts_with_instructions(id: AgentSessionId, instructions: &str) -> SessionFacts {
     SessionFacts {
         instructions: Some(instructions.to_owned()),
+        ..facts(id)
+    }
+}
+
+fn facts_with_identity(id: AgentSessionId, name: &str, handle: &str) -> SessionFacts {
+    SessionFacts {
+        identity: Some(AgentIdentity {
+            bot: BotId::TEST_A,
+            name: name.to_owned(),
+            handle: handle.to_owned(),
+        }),
         ..facts(id)
     }
 }
@@ -138,22 +161,29 @@ async fn a_prompt_runs_end_to_end_through_the_real_session_machine() {
         repo.clone(),
         FoldedMessageService::new(repo.clone()),
         NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
     );
 
     let id = AgentSessionId::new();
     sessions
         .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
             id,
-            owner_id: owner(),
+            owner_id: Owner::User(owner()),
             bot_id: BotId::TEST_A,
             thread_id: None,
             originating_message_id: None,
-            model: "test-model".to_owned(),
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
             harness: "macro-inmem".to_owned(),
             repo_url: None,
             workspace: "/workspace".to_owned(),
             sandbox_size: agent_session::domain::model::SandboxSize::Default,
             instructions: None,
+            mcp_servers: Default::default(),
             egress_token_hash: None,
         })
         .await
@@ -165,7 +195,8 @@ async fn a_prompt_runs_end_to_end_through_the_real_session_machine() {
             "streamed reply".to_owned(),
         )])),
     );
-    let transport = manager.attach(facts(id)).await;
+    let manager = manager.with_admission(disabled_admission());
+    let transport = manager.attach(facts(id), None).await;
     sessions
         .attach_session(id, RuntimeAttachment::solo(transport))
         .await
@@ -222,7 +253,7 @@ async fn a_prompt_runs_end_to_end_through_the_real_session_machine() {
     // disconnect-then-resume order the harness's deliver path drives.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
-        let transport = manager.attach(facts(id)).await;
+        let transport = manager.attach(facts(id), None).await;
         match sessions
             .attach_session(id, RuntimeAttachment::solo(transport))
             .await
@@ -262,6 +293,97 @@ async fn a_prompt_runs_end_to_end_through_the_real_session_machine() {
     }
 }
 
+#[tokio::test]
+async fn manager_admission_rejects_turns_without_wedging_the_session() {
+    use ai_billing::domain::{AiAdmissionError, DenyReason};
+
+    let repo = InMemoryAgentSessionRepo::new();
+    let sessions = AgentSessionServiceImpl::new(
+        repo.clone(),
+        FoldedMessageService::new(repo.clone()),
+        NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
+    );
+    let id = AgentSessionId::new();
+    sessions
+        .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
+            id,
+            owner_id: Owner::User(owner()),
+            bot_id: BotId::TEST_A,
+            thread_id: None,
+            originating_message_id: None,
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
+            harness: "macro-inmem".to_owned(),
+            repo_url: None,
+            workspace: "/workspace".to_owned(),
+            sandbox_size: agent_session::domain::model::SandboxSize::Default,
+            instructions: None,
+            mcp_servers: Default::default(),
+            egress_token_hash: None,
+        })
+        .await
+        .unwrap();
+    let engine = Arc::new(ScriptedEngine::new(vec![]));
+    let denial = AiAdmissionError::Denied(DenyReason::AllowanceExhausted);
+    let admission = Arc::new(TestAdmission::new(Err(denial)));
+    let manager = manager(&repo, engine.clone()).with_admission(admission.clone());
+    let transport = manager.attach(facts(id), None).await;
+    sessions
+        .attach_session(id, RuntimeAttachment::solo(transport))
+        .await
+        .unwrap();
+    sessions
+        .send_action(
+            id,
+            Some(owner()),
+            // Development commands are disabled, so this is provider-backed text.
+            AgentAction::prompt("/ask unavailable"),
+            AgentActionId::mint(),
+        )
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if logged_frames(&repo, id)
+                .await
+                .iter()
+                .any(|frame| frame.contains(denial.code()))
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the runtime must return its sanitized denial");
+    assert!(engine.requests().is_empty());
+    assert!(manager.store.get(&id).unwrap().history.is_empty());
+    assert_eq!(
+        *admission.calls.lock().unwrap(),
+        vec![(owner().to_string(), ai_usage::AiFeature::AgentSession)]
+    );
+
+    // A second prompt must run on the same connection: a rejection is not a
+    // disconnect and must release the session machine's pending turn.
+    *admission.result.lock().unwrap() = Ok(());
+    sessions
+        .send_action(
+            id,
+            Some(owner()),
+            AgentAction::prompt("retry"),
+            AgentActionId::mint(),
+        )
+        .await
+        .unwrap();
+    await_turns(&engine, "retry").await;
+    assert_eq!(engine.requests()[0].messages, ["retry"]);
+}
+
 /// A "restart": the second manager shares nothing with the first but the
 /// durable repo, the way a new process would. The resumed turn must carry
 /// the first turn's conversation, rebuilt from the frame log.
@@ -272,22 +394,29 @@ async fn a_restarted_manager_rebuilds_the_conversation_from_the_log() {
         repo.clone(),
         FoldedMessageService::new(repo.clone()),
         NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
     );
 
     let id = AgentSessionId::new();
     sessions
         .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
             id,
-            owner_id: owner(),
+            owner_id: Owner::User(owner()),
             bot_id: BotId::TEST_A,
             thread_id: None,
             originating_message_id: None,
-            model: "test-model".to_owned(),
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
             harness: "macro-inmem".to_owned(),
             repo_url: None,
             workspace: "/workspace".to_owned(),
             sandbox_size: agent_session::domain::model::SandboxSize::Default,
             instructions: None,
+            mcp_servers: Default::default(),
             egress_token_hash: None,
         })
         .await
@@ -299,7 +428,7 @@ async fn a_restarted_manager_rebuilds_the_conversation_from_the_log() {
             "streamed reply".to_owned(),
         )])),
     );
-    let transport = before.attach(facts(id)).await;
+    let transport = before.attach(facts(id), None).await;
     sessions
         .attach_session(id, RuntimeAttachment::solo(transport))
         .await
@@ -341,10 +470,13 @@ async fn a_restarted_manager_rebuilds_the_conversation_from_the_log() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
         let transport = after
-            .attach(SessionFacts {
-                acp_session_id: row.acp_session_id.clone(),
-                ..facts(id)
-            })
+            .attach(
+                SessionFacts {
+                    acp_session_id: row.acp_session_id.clone(),
+                    ..facts(id)
+                },
+                None,
+            )
             .await;
         match sessions
             .attach_session(id, RuntimeAttachment::solo(transport))
@@ -410,22 +542,29 @@ async fn instructions_reach_every_turn_including_after_a_reattach() {
         repo.clone(),
         FoldedMessageService::new(repo.clone()),
         NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
     );
 
     let id = AgentSessionId::new();
     sessions
         .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
             id,
-            owner_id: owner(),
+            owner_id: Owner::User(owner()),
             bot_id: BotId::TEST_A,
             thread_id: None,
             originating_message_id: None,
-            model: "test-model".to_owned(),
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
             harness: "macro-inmem".to_owned(),
             repo_url: None,
             workspace: "/workspace".to_owned(),
             sandbox_size: agent_session::domain::model::SandboxSize::Default,
             instructions: Some(INSTRUCTIONS.to_owned()),
+            mcp_servers: Default::default(),
             egress_token_hash: None,
         })
         .await
@@ -479,22 +618,29 @@ async fn a_session_without_instructions_hands_the_engine_none() {
         repo.clone(),
         FoldedMessageService::new(repo.clone()),
         NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
     );
 
     let id = AgentSessionId::new();
     sessions
         .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
             id,
-            owner_id: owner(),
+            owner_id: Owner::User(owner()),
             bot_id: BotId::TEST_A,
             thread_id: None,
             originating_message_id: None,
-            model: "test-model".to_owned(),
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
             harness: "macro-inmem".to_owned(),
             repo_url: None,
             workspace: "/workspace".to_owned(),
             sandbox_size: agent_session::domain::model::SandboxSize::Default,
             instructions: None,
+            mcp_servers: Default::default(),
             egress_token_hash: None,
         })
         .await
@@ -504,7 +650,7 @@ async fn a_session_without_instructions_hands_the_engine_none() {
         "acknowledged".to_owned(),
     )]));
     let manager = manager(&repo, Arc::clone(&engine));
-    let transport = manager.attach(facts(id)).await;
+    let transport = manager.attach(facts(id), None).await;
     sessions
         .attach_session(id, RuntimeAttachment::solo(transport))
         .await
@@ -521,4 +667,152 @@ async fn a_session_without_instructions_hands_the_engine_none() {
     await_turns(&engine, "hello").await;
 
     assert_eq!(engine.requests()[0].instructions, None);
+}
+
+/// The session's bot identity reaches every turn, including after a reattach
+/// that replaces the agent task. A named agent with no instructions still
+/// knows who it is.
+#[tokio::test]
+async fn identity_reaches_every_turn_including_after_a_reattach() {
+    let repo = InMemoryAgentSessionRepo::new();
+    let sessions = AgentSessionServiceImpl::new(
+        repo.clone(),
+        FoldedMessageService::new(repo.clone()),
+        NoOpRealtime,
+        NoOpAgentSessionNameGenerator,
+        Arc::new(NoOpTurnObserver),
+        Arc::new(NoopLifecyclePublisher),
+        ReplicaId::mint(),
+    );
+
+    let id = AgentSessionId::new();
+    sessions
+        .create_session(CreateAgentSessionParams {
+            warm: false,
+            repo_branch: None,
+            id,
+            owner_id: Owner::User(owner()),
+            bot_id: BotId::TEST_A,
+            thread_id: None,
+            originating_message_id: None,
+            model: "anthropic/claude-sonnet-5-5".to_owned(),
+            harness: "macro-inmem".to_owned(),
+            repo_url: None,
+            workspace: "/workspace".to_owned(),
+            sandbox_size: agent_session::domain::model::SandboxSize::Default,
+            instructions: None,
+            mcp_servers: Default::default(),
+            egress_token_hash: None,
+        })
+        .await
+        .expect("the session row should create");
+
+    let engine = Arc::new(ScriptedEngine::new(vec![StreamPart::Content(
+        "i am grunk".to_owned(),
+    )]));
+    let manager = manager(&repo, Arc::clone(&engine));
+
+    for prompt in ["who are you", "say your handle"] {
+        attach_retrying(
+            &sessions,
+            id,
+            &manager,
+            facts_with_identity(id, "Grunk", "grunk"),
+        )
+        .await;
+        sessions
+            .send_action(
+                id,
+                Some(owner()),
+                AgentAction::prompt(prompt),
+                AgentActionId::mint(),
+            )
+            .await
+            .expect("the prompt should send");
+        await_turns(&engine, prompt).await;
+    }
+
+    let identities: Vec<Option<(String, String)>> = engine
+        .requests()
+        .into_iter()
+        .map(|turn| {
+            turn.identity
+                .map(|identity| (identity.name, identity.handle))
+        })
+        .collect();
+    assert_eq!(
+        identities,
+        vec![
+            Some(("Grunk".to_owned(), "grunk".to_owned())),
+            Some(("Grunk".to_owned(), "grunk".to_owned())),
+        ],
+        "both turns run as the named agent"
+    );
+}
+
+/// The egress token has no container environment to live in here, so the
+/// manager keeps what spawn handed it: a resume finds it, teardown forgets it.
+#[tokio::test]
+async fn the_manager_remembers_the_egress_token_from_spawn_until_teardown() {
+    let repo = InMemoryAgentSessionRepo::new();
+    let manager = manager(&repo, Arc::new(ScriptedEngine::new(Vec::new())));
+    let id = AgentSessionId::new();
+    assert_eq!(manager.session_token(id), None);
+
+    let _spawned = manager
+        .attach(facts(id), Some("session-token".to_owned()))
+        .await;
+    assert_eq!(manager.session_token(id).as_deref(), Some("session-token"));
+
+    // A resume passes nothing and keeps what spawn stored.
+    let _resumed = manager.attach(facts(id), None).await;
+    assert_eq!(manager.session_token(id).as_deref(), Some("session-token"));
+
+    manager.teardown(id);
+    assert_eq!(manager.session_token(id), None);
+}
+
+/// Teardown is what ends the session, so it also drops the MCP sessions the
+/// egress token was holding. A connector that pools them learns the token.
+#[tokio::test]
+async fn teardown_releases_pooled_mcp_sessions_for_the_egress_token() {
+    let repo = InMemoryAgentSessionRepo::new();
+    let mcp = Arc::new(RecordingRelease {
+        released: std::sync::Mutex::new(Vec::new()),
+    });
+    let manager = InMemAgentManager::new(
+        Arc::new(ScriptedEngine::new(Vec::new())),
+        Arc::new(LogFrameSource::new(repo.clone())),
+        mcp.clone(),
+        Arc::new(crate::testing::TestModelAccess::paid()),
+    );
+    let id = AgentSessionId::new();
+    let _spawned = manager
+        .attach(facts(id), Some("session-token".to_owned()))
+        .await;
+
+    manager.teardown(id);
+
+    assert_eq!(
+        mcp.released.lock().expect("lock").as_slice(),
+        ["session-token"]
+    );
+}
+
+/// Records [`McpToolConnector::release`] so teardown can be seen doing it.
+struct RecordingRelease {
+    released: std::sync::Mutex<Vec<String>>,
+}
+
+impl crate::domain::mcp::McpToolConnector for RecordingRelease {
+    async fn connect(
+        &self,
+        _servers: Vec<agent_client_protocol::schema::v1::McpServerHttp>,
+    ) -> Option<mcp_toolset::RemoteMcpToolSet> {
+        None
+    }
+
+    fn release(&self, token: &str) {
+        self.released.lock().expect("lock").push(token.to_owned());
+    }
 }

@@ -12,9 +12,13 @@ import type { TableCellNode, TableNode, TableRowNode } from '@lexical/table';
 import {
   $isClassedBlockNode,
   type AgentContextNode,
+  type AgentSessionMentionNode,
   type AwaitNode,
   type ClassedBlockNode,
+  type ConnectAppNode,
   type ContactMentionNode,
+  type CursorSystemNotificationNode,
+  type DatabaseQueryNode,
   type DateMentionNode,
   DEFAULT_LANGUAGE,
   type DocumentCardNode,
@@ -27,6 +31,7 @@ import {
   type MagicChipNode,
   normalizedLanguage,
   type PasteNode,
+  type ReplyTargetNode,
   type SnapshotNode,
   SupportedNodeTypes,
   type TagMentionNode,
@@ -64,23 +69,31 @@ import {
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { replaceCitations } from '../../citationsUtils';
+import { MarkdownHostContext } from '../../context/MarkdownHostContext';
 import '../../styles.css';
+import type { BlockName } from '@core/block';
 import {
   ENABLE_STATIC_DOCUMENT_CARDS,
   ENABLE_SVG_PREVIEW,
 } from '@core/constant/featureFlags';
 import type { MarkNode } from '@lexical/mark';
 import type { SearchMatchNode } from '@macro-inc/lexical-core/nodes/SearchMatchNode';
-import { getCachedItemPreview } from '@queries/preview';
 import { theme as baseTheme, createTheme } from '../../theme';
 import { forceSingleLine, setEditorStateFromMarkdown } from '../../utils';
 import { StaticCodeBoxAccessory } from '../accessory/CodeBoxAccessory';
 import { AgentContext as AgentContextDecorator } from '../decorator/AgentContext';
+import { AgentSessionMention as AgentSessionMentionDecorator } from '../decorator/AgentSessionMention';
 import { Await as AwaitDecorator } from '../decorator/Await';
+import { ConnectApp as ConnectAppDecorator } from '../decorator/ConnectApp';
 import { ContactMention as ContactMentionDecorator } from '../decorator/ContactMention';
+import { CursorSystemNotification as CursorSystemNotificationDecorator } from '../decorator/CursorSystemNotification';
+import { DatabaseQuery as DatabaseQueryDecorator } from '../decorator/DatabaseQuery';
 import { DateMention as DateMentionDecorator } from '../decorator/DateMention';
 import { DocumentCard as DocumentCardDecorator } from '../decorator/DocumentCard';
-import { DocumentMention as DocumentMentionDecorator } from '../decorator/DocumentMention';
+import {
+  DocumentMention as DocumentMentionDecorator,
+  DocumentMentionStatic,
+} from '../decorator/DocumentMention';
 import { Equation as EquationDecorator } from '../decorator/Equation';
 import { GroupMention as GroupMentionDecorator } from '../decorator/GroupMention';
 import { LazyDecorator } from '../decorator/LazyDecorator';
@@ -88,6 +101,7 @@ import { MagicChip as MagicChipDecorator } from '../decorator/MagicChip';
 import { MarkdownImage as ImageDecorator } from '../decorator/MarkdownImage';
 import { MarkdownVideo as VideoDecorator } from '../decorator/MarkdownVideo';
 import { PasteNode as PasteNodeDecorator } from '../decorator/PasteNode';
+import { ReplyTarget as ReplyTargetDecorator } from '../decorator/ReplyTarget';
 import { Snapshot as SnapshotDecorator } from '../decorator/Snapshot';
 import { TagMention as TagMentionDecorator } from '../decorator/TagMention';
 import { ThemeMention as ThemeMentionDecorator } from '../decorator/ThemeMention';
@@ -231,6 +245,7 @@ function getTextClassName(
     | TextNode
     | UserMentionNode
     | DocumentMentionNode
+    | AgentSessionMentionNode
     | ContactMentionNode
     | DateMentionNode
     | WatermarkNode,
@@ -356,13 +371,6 @@ const UserMention: TypedRenderableEntity<UserMentionNode> = {
   ),
 };
 
-const MentionPlaceholder = () => (
-  <span class="pointer-events-none inline-block align-baseline opacity-60">
-    <span class="relative top-[0.125em] size-[1em] inline-block mx-1 bg-current/15 rounded-xs" />
-    <span class="inline-block w-12 h-[0.9em] align-baseline bg-current/10 rounded-sm" />
-  </span>
-);
-
 const DocumentMention: TypedRenderableEntity<DocumentMentionNode> = {
   guard: (node: LexicalNode): node is DocumentMentionNode =>
     node.__type === 'document-mention',
@@ -375,15 +383,19 @@ const DocumentMention: TypedRenderableEntity<DocumentMentionNode> = {
         key,
         theme: props.theme,
       });
-    const shouldRenderLazy =
-      options.lazy &&
-      getCachedItemPreview(componentProps.documentId) === undefined;
+    const shouldRenderLazy = options.lazy;
 
     return (
       <span class={getTextClassName(props.node, props.theme)}>
         {shouldRenderLazy ? (
           <LazyDecorator
-            placeholder={<MentionPlaceholder />}
+            placeholder={
+              <DocumentMentionStatic
+                {...componentProps}
+                key={key}
+                theme={props.theme}
+              />
+            }
             render={mention}
           />
         ) : (
@@ -392,6 +404,20 @@ const DocumentMention: TypedRenderableEntity<DocumentMentionNode> = {
       </span>
     );
   },
+};
+
+const AgentSessionMention: TypedRenderableEntity<AgentSessionMentionNode> = {
+  guard: (node: LexicalNode): node is AgentSessionMentionNode =>
+    node.__type === 'agent-session-mention',
+  render: (props) => (
+    <span class={getTextClassName(props.node, props.theme)}>
+      {AgentSessionMentionDecorator({
+        ...props.node.exportComponentProps(),
+        key: props.node.getKey(),
+        theme: props.theme,
+      })}
+    </span>
+  ),
 };
 
 const ThemeMention: TypedRenderableEntity<ThemeMentionNode> = {
@@ -405,6 +431,32 @@ const ThemeMention: TypedRenderableEntity<ThemeMentionNode> = {
         theme: props.theme,
       })}
     </span>
+  ),
+};
+
+const ConnectApp: TypedRenderableEntity<ConnectAppNode> = {
+  guard: (node: LexicalNode): node is ConnectAppNode =>
+    node.__type === 'connect-app',
+  render: (props) => (
+    <span>
+      {ConnectAppDecorator({
+        ...props.node.exportComponentProps(),
+        key: props.node.getKey(),
+        theme: props.theme,
+      })}
+    </span>
+  ),
+};
+
+const DatabaseQuery: TypedRenderableEntity<DatabaseQueryNode> = {
+  guard: (node: LexicalNode): node is DatabaseQueryNode =>
+    node.__type === 'database-query',
+  render: (props) => (
+    <DatabaseQueryDecorator
+      {...props.node.exportComponentProps()}
+      key={props.node.getKey()}
+      theme={props.theme}
+    />
   ),
 };
 
@@ -508,16 +560,44 @@ const AgentContext: TypedRenderableEntity<AgentContextNode> = {
   ),
 };
 
-const MagicChip: TypedRenderableEntity<MagicChipNode> = {
-  guard: (node: LexicalNode): node is MagicChipNode =>
-    node.__type === 'magic-chip',
+const ReplyTarget: TypedRenderableEntity<ReplyTargetNode> = {
+  guard: (node: LexicalNode): node is ReplyTargetNode =>
+    node.__type === 'reply-target',
   render: (props) => (
-    <div class="max-w-full">
-      <MagicChipDecorator
+    // `data-reply-target-node` mirrors the editor block wrapper so the shared
+    // spacing rule applies in static markdown too.
+    <div
+      class="max-w-full"
+      data-reply-target-node={props.node.__targetMessageId}
+    >
+      <ReplyTargetDecorator
         {...props.node.exportComponentProps()}
         key={props.node.getKey()}
         theme={props.theme}
       />
+    </div>
+  ),
+};
+
+const CursorSystemNotification: TypedRenderableEntity<CursorSystemNotificationNode> =
+  {
+    guard: (node: LexicalNode): node is CursorSystemNotificationNode =>
+      node.__type === 'system-notification',
+    render: (props) => (
+      <CursorSystemNotificationDecorator
+        {...props.node.exportComponentProps()}
+        key={props.node.getKey()}
+        theme={props.theme}
+      />
+    ),
+  };
+
+const MagicChip: TypedRenderableEntity<MagicChipNode> = {
+  guard: (node: LexicalNode): node is MagicChipNode =>
+    node.__type === 'magic-chip',
+  render: (props) => (
+    <div class="min-w-0 max-w-full overflow-x-hidden">
+      <MagicChipDecorator {...props.node.exportComponentProps()} />
     </div>
   ),
 };
@@ -563,7 +643,14 @@ const Video: TypedRenderableEntity<VideoNode> = {
 const Paragraph: TypedRenderableElement<ParagraphNode> = {
   guard: (node: LexicalNode): node is ParagraphNode =>
     node.__type === 'paragraph',
-  render: (props) => <p class={props.theme.paragraph}>{props.children}</p>,
+  render: (props) => (
+    <p
+      class={props.theme.paragraph}
+      style={{ 'text-align': props.node.getFormatType() || undefined }}
+    >
+      {props.children}
+    </p>
+  ),
 };
 
 const Heading: TypedRenderableElement<HeadingNode> = {
@@ -574,6 +661,7 @@ const Heading: TypedRenderableElement<HeadingNode> = {
       <Dynamic
         component={tag}
         class={props.theme.heading?.[tag]}
+        style={{ 'text-align': props.node.getFormatType() || undefined }}
         children={props.children}
       />
     );
@@ -632,14 +720,26 @@ const ListItem: TypedRenderableElement<ListItemNode> = {
       .filter(Boolean)
       .join(' ');
 
-    return <li class={classes}>{props.children}</li>;
+    return (
+      <li
+        class={classes}
+        style={{ 'text-align': props.node.getFormatType() || undefined }}
+      >
+        {props.children}
+      </li>
+    );
   },
 };
 
 const Quote: TypedRenderableElement<QuoteNode> = {
   guard: (node: LexicalNode): node is QuoteNode => node.__type === 'quote',
   render: (props) => (
-    <blockquote class={props.theme.quote}>{props.children}</blockquote>
+    <blockquote
+      class={props.theme.quote}
+      style={{ 'text-align': props.node.getFormatType() || undefined }}
+    >
+      {props.children}
+    </blockquote>
   ),
 };
 
@@ -755,7 +855,10 @@ const Equation: TypedRenderableEntity<EquationNode> = {
   guard: (node: LexicalNode): node is EquationNode =>
     node.__type === 'equation',
   render: (props) => (
-    <EquationDecorator equation={props.node.__equation} inline={true} />
+    <EquationDecorator
+      equation={props.node.__equation}
+      inline={props.node.__inline}
+    />
   ),
 };
 
@@ -763,7 +866,10 @@ const DocumentCard: TypedRenderableEntity<DocumentCardNode> = {
   guard: (node: LexicalNode): node is DocumentCardNode =>
     node.__type === 'document-card',
   render: (props) => {
-    if (ENABLE_STATIC_DOCUMENT_CARDS) {
+    // A form's card is its body (RFC 03), for every recipient: the forms
+    // flag gates authoring only, and the service decides who may respond.
+    const isForm = props.node.getBlockName() === 'form';
+    if (ENABLE_STATIC_DOCUMENT_CARDS || isForm) {
       return DocumentCardDecorator({
         ...props.node.exportComponentProps(),
         key: props.node.getKey(),
@@ -867,12 +973,15 @@ const InlineEntities: RenderableEntity[] = [
   eraseRenderableEntity(LineBreak),
   eraseRenderableEntity(UserMention),
   eraseRenderableEntity(DocumentMention),
+  eraseRenderableEntity(AgentSessionMention),
   eraseRenderableEntity(DocumentCard),
   eraseRenderableEntity(ContactMention),
   eraseRenderableEntity(DateMention),
   eraseRenderableEntity(GroupMention),
   eraseRenderableEntity(Await),
   eraseRenderableEntity(AgentContext),
+  eraseRenderableEntity(ReplyTarget),
+  eraseRenderableEntity(CursorSystemNotification),
   eraseRenderableEntity(MagicChip),
   eraseRenderableEntity(Snapshot),
   eraseRenderableEntity(Image),
@@ -881,6 +990,8 @@ const InlineEntities: RenderableEntity[] = [
   eraseRenderableEntity(Equation),
   eraseRenderableEntity(ThemeMention),
   eraseRenderableEntity(TagMention),
+  eraseRenderableEntity(ConnectApp),
+  eraseRenderableEntity(DatabaseQuery),
   eraseRenderableEntity(UnknownMention),
   eraseRenderableEntity(Watermark),
   eraseRenderableEntity(Paste),
@@ -980,6 +1091,24 @@ const context = createContext<{
   theme: Accessor<EditorThemeClasses>;
   lazy: Accessor<boolean>;
 }>({ editor: null, theme: () => baseTheme, lazy: () => true });
+
+/** Render a saved Lexical tree directly, preserving formats absent from Markdown. */
+export function StaticLexical(props: { serializedState: string }) {
+  const inherited = useContext(context);
+  const editor =
+    inherited.editor ?? newStaticRenderingEditor({ theme: inherited.theme() });
+  const tree = createMemo(() => {
+    const state = editor.parseEditorState(props.serializedState);
+    return state.read(() =>
+      Document({
+        rootNode: $getRoot(),
+        theme: inherited.theme(),
+        lazy: false,
+      })
+    );
+  });
+  return <>{tree()}</>;
+}
 
 export function StaticMarkdown(props: {
   markdown: string;
@@ -1083,6 +1212,8 @@ export function StaticMarkdownContext(props: {
   children: JSX.Element;
   theme?: EditorThemeClasses;
   lazy?: boolean;
+  /** The surface outside any block, e.g. a channel in the channels shell. */
+  host?: BlockName;
 }) {
   const mergedTheme = () => {
     if (!props.theme) return baseTheme;
@@ -1101,7 +1232,9 @@ export function StaticMarkdownContext(props: {
         lazy: () => props.lazy ?? true,
       }}
     >
-      {props.children}
+      <MarkdownHostContext.Provider value={props.host}>
+        {props.children}
+      </MarkdownHostContext.Provider>
     </context.Provider>
   );
 }

@@ -1,6 +1,7 @@
 import { LoadingSpinner } from '@core/component/LoadingSpinner';
 import { toast } from '@core/component/Toast/Toast';
 import { useChannelsContext } from '@core/context/channels';
+import { useUserId } from '@core/context/user';
 import CaretLeftIcon from '@phosphor/caret-left.svg';
 import {
   useBotChannelsQuery,
@@ -9,6 +10,7 @@ import {
   useUpdateBotMutation,
 } from '@queries/bots/bots';
 import { useSyncBotChannelsMutation } from '@queries/channel/channel-bots';
+import { useCurrentTeamQuery, useIsTeamOwner } from '@queries/team/teams';
 import { Button } from '@ui';
 import { createEffect, createMemo, createSignal, on, Show } from 'solid-js';
 import { createStore } from 'solid-js/store';
@@ -27,12 +29,16 @@ import {
   slugBotHandle,
   validateBotForm,
 } from './botForm';
+import { canDeleteBot } from './botPermissions';
 import { ChannelMultiSelect } from './ChannelMultiSelect';
 import { CreateBotTokenDialog } from './CreateBotTokenDialog';
 import { createBotAvatarUpload } from './createBotAvatarUpload';
 
 export function BotDetail(props: { botId: string; onBack: () => void }) {
   const channelsContext = useChannelsContext();
+  const currentUserId = useUserId();
+  const currentTeamQuery = useCurrentTeamQuery();
+  const isTeamOwner = useIsTeamOwner();
   const botQuery = useBotQuery(() => props.botId);
   const botChannelsQuery = useBotChannelsQuery(() => props.botId);
   const updateBotMutation = useUpdateBotMutation();
@@ -100,6 +106,18 @@ export function BotDetail(props: { botId: string; onBack: () => void }) {
   });
   const pending = () =>
     saving() || avatarUpload.uploading() || deleteBotMutation.isPending;
+  const canDelete = () => {
+    const bot = botQuery.data;
+    return (
+      bot !== undefined &&
+      canDeleteBot(
+        bot,
+        currentUserId(),
+        currentTeamQuery.data?.team.id,
+        isTeamOwner()
+      )
+    );
+  };
 
   const leave = () => {
     if (pending()) return;
@@ -171,11 +189,11 @@ export function BotDetail(props: { botId: string; onBack: () => void }) {
 
   return (
     <>
-      <div class="size-full overflow-y-auto bg-surface text-ink">
+      <div class="size-full overflow-y-auto bg-panel text-ink">
         {/* Mobile chrome insets live inside the scroll content so the page is
             full-frame, matching SettingsPage (this detail view only renders
             inside the settings panel). */}
-        <main class="mx-auto w-full max-w-[560px] px-8 pt-14 pb-24 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]">
+        <main class="mx-auto w-full max-w-[560px] px-8 pt-4 pb-24 touch:px-5 touch:pt-[calc(var(--mobile-content-inset-top,0px)+2rem)] touch:pb-[calc(var(--mobile-content-inset-bottom,0px)+3rem)]">
           <Button
             type="button"
             variant="ghost"
@@ -278,6 +296,7 @@ export function BotDetail(props: { botId: string; onBack: () => void }) {
                 />
 
                 <BotDetailActions
+                  canDelete={canDelete()}
                   dirty={isDirty()}
                   pending={pending()}
                   saving={saving()}

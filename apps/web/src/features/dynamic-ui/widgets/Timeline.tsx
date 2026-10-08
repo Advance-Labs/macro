@@ -21,6 +21,13 @@ function toItemType(type: EntityRef['type']): ItemType | undefined {
       'reminder',
       'skill',
       'agent_session',
+      'scheduled_action',
+      'initiative',
+      'crm_pipeline',
+      // A database and its rows are their own entity kinds, not cloud-storage
+      // items.
+      'database',
+      'database_row',
       () => undefined
     )
     .otherwise((itemType) => itemType);
@@ -115,7 +122,13 @@ function TimeLineItem(props: {
             (icon + resolved title + hover card). The rich `card` widget is too
             large for an inline timeline mention, so we render ItemPreview
             directly instead. */}
-        <Show when={props.event.entity}>
+        <Show
+          when={
+            props.event.entity?.type === 'database'
+              ? undefined
+              : props.event.entity
+          }
+        >
           {(entity) => (
             <div class="mt-0.5 w-fit max-w-full">
               <ItemPreview

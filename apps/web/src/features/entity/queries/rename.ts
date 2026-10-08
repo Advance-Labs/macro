@@ -1,6 +1,10 @@
 import { renameItem } from '@core/component/FileList/itemOperations';
 import { toast } from '@core/component/Toast/Toast';
-import { ENABLE_GRAPHQL_SOUP } from '@core/constant/featureFlags';
+import {
+  enableGraphqlSoup,
+  isFeatureEnabled,
+} from '@core/constant/featureFlags';
+import { renameAgentSession } from '@queries/agent-session/entity-mutations';
 import { callKeys } from '@queries/call/keys';
 import { channelKeys } from '@queries/channel/keys';
 import { queryClient } from '@queries/client';
@@ -96,11 +100,15 @@ const getEntityRenameData = (
   // Reminders aren't either — the entity-mutation router rejects them, and a
   // reminder's name is its description, edited through the reminders API.
   // Calendar event titles are edited through the calendar mutation API.
+  // Databases are renamed by the database block's `renameDatabase`, which owns
+  // the schema cache it updates; forms by the form block's `renameForm`.
   if (
     entity.type === 'crm_company' ||
     entity.type === 'crm_contact' ||
-    entity.type === 'reminder' ||
-    entity.type === 'calendar_event'
+    entity.type === 'calendar_event' ||
+    entity.type === 'initiative' ||
+    entity.type === 'database' ||
+    entity.type === 'form'
   ) {
     return null;
   }
@@ -115,6 +123,10 @@ const getEntityRenameData = (
 const performEntityRename = async (operation: EntityRenameOperation) => {
   const data = getEntityRenameData(operation);
   if (!data) return { success: false };
+  if (data.itemType === 'agent_session') {
+    await renameAgentSession(data.id, data.newName);
+    return { success: true };
+  }
   const success = await renameItem(data);
   return { success };
 };
@@ -170,6 +182,7 @@ const validateEntityRename = (entity: RenamableEntity): void => {
         throw new Error('Direct messages do not support renaming');
       }
       break;
+    case 'agent_session':
     case 'document':
     case 'chat':
     case 'project':
@@ -213,9 +226,11 @@ const renameDssSetData = (
       itemType !== 'email' &&
       itemType !== 'channel_message' &&
       itemType !== 'channel_thread' &&
-      itemType !== 'automation' &&
+      itemType !== 'routine' &&
       itemType !== 'calendar_event' &&
       itemType !== 'foreign' &&
+      itemType !== 'database' &&
+      itemType !== 'form' &&
       // CRM companies/contacts aren't renamed via the FileList path (their
       // names derive from the directory/email, and their soup tags are
       // camelCase 'crmCompany'/'crmContact', not these snake-case itemTypes).
@@ -225,7 +240,7 @@ const renameDssSetData = (
       txns.set(
         soupTransactionKey(itemType, id),
         optimisticUpdateSoupEntity({
-          tag: itemType,
+          tag: itemType === 'agent_session' ? 'agentSession' : itemType,
           data: { id, name: newName },
           frecency_score: score,
           touched_at: ownTouchStamp(id),
@@ -326,7 +341,7 @@ const bulkRenameMutationFn = async (
 ): Promise<BulkRenameDssEntityMutationData> => {
   validateBulkRename(params);
 
-  if (!ENABLE_GRAPHQL_SOUP()) {
+  if (!isFeatureEnabled(enableGraphqlSoup)) {
     return await Promise.all(params.map(performEntityRename));
   }
 
@@ -439,7 +454,7 @@ const bulkRenameOnSettled = (
   }
 };
 
-/** supports channel/document/chat/project/call rename */
+/** Supports channel/document/chat/project/call/agent-session rename. */
 export function createRenameDssEntityMutation(
   callbacks?: MutationCallbacks<
     RenameDssEntityMutationData,
@@ -477,7 +492,7 @@ export function createRenameDssEntityMutation(
   }));
 }
 
-/** supports channel/document/chat/project/call bulk rename */
+/** Supports channel/document/chat/project/call/agent-session bulk rename. */
 export function createBulkRenameDssEntityMutation() {
   return useMutation<
     BulkRenameDssEntityMutationData,

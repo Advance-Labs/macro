@@ -337,7 +337,7 @@ impl McpToolSet {
 }
 
 impl<Context: Send + Sync + 'static> ToolSet<Context> for McpToolSet {
-    fn try_tool_call<'a>(
+    fn dispatch_tool_call<'a>(
         &'a self,
         _context: Context,
         _request_context: RequestContext,
@@ -384,6 +384,12 @@ impl<Context: Send + Sync + 'static> ToolSet<Context> for McpToolSet {
             .iter()
             .map(|(mangled, entry)| RequestSchema {
                 name: mangled.as_str().to_string(),
+                description: entry
+                    .tool
+                    .description
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_string(),
                 schema: Schema::from((*entry.tool.input_schema).clone()),
             })
             .collect();
@@ -440,7 +446,7 @@ impl<T> CombinedToolSet<T> {
 }
 
 impl<T: Send + Sync + 'static> ToolSet<T> for CombinedToolSet<T> {
-    fn try_tool_call<'a>(
+    fn dispatch_tool_call<'a>(
         &'a self,
         context: T,
         request_context: RequestContext,
@@ -451,10 +457,10 @@ impl<T: Send + Sync + 'static> ToolSet<T> for CombinedToolSet<T> {
     > {
         if tool_name.starts_with(MANGLED_PREFIX) {
             self.mcp_tools
-                .try_tool_call(context, request_context, tool_name, json)
+                .dispatch_tool_call(context, request_context, tool_name, json)
         } else {
             self.static_tools
-                .try_tool_call(context, request_context, tool_name, json)
+                .dispatch_tool_call(context, request_context, tool_name, json)
         }
     }
 

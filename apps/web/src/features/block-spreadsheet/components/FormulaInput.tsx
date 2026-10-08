@@ -1,0 +1,487 @@
+import {
+  autoUpdate,
+  computePosition,
+  flip,
+  offset,
+  shift,
+  size,
+} from '@floating-ui/dom';
+import {
+  createEffect,
+  createSignal,
+  createUniqueId,
+  For,
+  mergeProps,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from 'solid-js';
+import { Portal } from 'solid-js/web';
+import type { SpreadsheetMentions } from '../context/spreadsheet-mentions';
+import {
+  argumentLabel,
+  formulaFunctions,
+  functionSummary,
+} from '../core/formula-completion';
+import type {
+  FormulaReferenceSpan,
+  FormulaTextSelection,
+} from '../core/formula-reference';
+import {
+  type CompleteFormula,
+  createFormulaAssistance,
+} from '../primitives/create-formula-assistance';
+import { createTouchPress } from '../primitives/create-touch-press';
+
+/** Shared cell/formula-bar input. The popup keeps focus and editing in the textarea. */
+export type FormulaInputProps = {
+  mentions?: SpreadsheetMentions;
+  label: string;
+  value: string;
+  class: string;
+  readonly?: boolean;
+  autoFocus?: boolean;
+  placeholder?: string;
+  complete?: CompleteFormula;
+  selectionRequest?: FormulaTextSelection;
+  /** Spans of `value` to draw in their reference's color. */
+  references?: FormulaReferenceSpan[];
+  pickingReference?: boolean;
+  onSelectionChange?: (start: number, end: number) => void;
+  onFocus?: () => void;
+  onInput: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent) => void;
+  onBlur: () => void;
+};
+export function FormulaInput(props: FormulaInputProps) {
+  let transferFocus = false;
+  const inputProps = mergeProps(props, {
+    get autoFocus() {
+      return props.autoFocus || transferFocus;
+    },
+    get typed() {
+      return transferFocus;
+    },
+    onFocus: () => {
+      transferFocus = false;
+      props.onFocus?.();
+    },
+    onBlur: () => {
+      if (!transferFocus) props.onBlur();
+    },
+    onInput: (value: string) => {
+      transferFocus =
+        !!props.mentions &&
+        value.startsWith('=') !== props.value.startsWith('=');
+      props.onInput(value);
+    },
+  });
+  return (
+    <Show
+      when={props.mentions && !props.value.startsWith('=')}
+      fallback={<FormulaTextarea {...inputProps} />}
+    >
+      {(_enabled) => props.mentions!.renderEditor(inputProps)}
+    </Show>
+  );
+}
+
+function FormulaTextarea(props: FormulaInputProps & { typed?: boolean }) {
+  let input!: HTMLTextAreaElement;
+  let popup: HTMLDivElement | undefined;
+  const id = createUniqueId();
+  const [focused, setFocused] = createSignal(false);
+  // Help opens only after the user types, so focusing, clicking, or switching
+  // sheets with a formula draft never covers the grid.
+  let typing = !!props.typed;
+  const assistance = createFormulaAssistance(
+    (text, cursor) =>
+      props.complete?.(text, cursor) ?? Promise.resolve(undefined),
+    (text, cursor) => {
+      if (props.readonly) return;
+      props.onInput(text);
+      input.value = text;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(cursor, cursor);
+      update();
+    }
+  );
+  const result = assistance.completion;
+  const choices = () => {
+    const value = result();
+    return value?.kind === 'list' ? value.names : [];
+  };
+  const name = () => {
+    const value = result();
+    return value?.kind === 'detail'
+      ? value.name
+      : choices()[assistance.selected()];
+  };
+  const info = () => formulaFunctions[name()];
+  const popupVisible = () =>
+    focused() && !props.readonly && !props.pickingReference && !!info();
+  const argument = () => {
+    const value = result();
+    return value?.kind === 'detail' ? value.argument : -1;
+  };
+  const activeArgument = () => {
+    const args = info()?.args ?? [];
+    if (argument() < 0 || !args.length) return -1;
+    return Math.min(argument(), args.length - 1);
+  };
+  const dismiss = () => {
+    typing = false;
+    assistance.dismiss();
+  };
+  const update = () => {
+    if (!focused() || props.readonly) return;
+    props.onSelectionChange?.(input.selectionStart, input.selectionEnd);
+    if (props.pickingReference || !typing) dismiss();
+    else
+      assistance.update(input.value, input.selectionStart, input.selectionEnd);
+  };
+  let appliedSelection: FormulaTextSelection | undefined;
+  // Pointer selection changes the draft without moving focus out of this editor.
+  createEffect(
+    on(
+      () => [props.selectionRequest, props.pickingReference] as const,
+      ([selection]) => {
+        if (document.activeElement !== input) return;
+        if (selection && selection !== appliedSelection) {
+          appliedSelection = selection;
+          input.value = props.value;
+          input.setSelectionRange(selection.start, selection.end);
+        }
+        update();
+      }
+    )
+  );
+  onMount(() => {
+    if (props.autoFocus) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      update();
+    }
+  });
+
+  return (
+    <>
+      <textarea
+        ref={input}
+        aria-label={props.label}
+        aria-autocomplete="list"
+        aria-controls={
+          popupVisible() && choices().length ? `${id}-list` : undefined
+        }
+        aria-activedescendant={
+          popupVisible() && choices().length
+            ? `${id}-${assistance.selected()}`
+            : undefined
+        }
+        aria-describedby={popupVisible() ? `${id}-help` : undefined}
+        rows={1}
+        wrap="off"
+        spellcheck={false}
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        enterkeyhint="done"
+        readOnly={props.readonly}
+        maxLength={10_000}
+        placeholder={props.placeholder}
+        class={`${props.class} touch:text-[max(16px,1rem)]`}
+        style={
+          props.references?.length
+            ? { color: 'transparent', 'caret-color': 'var(--color-ink)' }
+            : undefined
+        }
+        value={props.value}
+        onFocus={() => {
+          props.onFocus?.();
+          setFocused(true);
+          update();
+        }}
+        onInput={() => {
+          typing = true;
+          props.onInput(input.value);
+          update();
+        }}
+        onSelect={update}
+        onClick={update}
+        onKeyUp={(event) => {
+          if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
+            update();
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (!props.readonly && assistance.keyDown(event)) {
+            if (event.key === 'Escape') typing = false;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+              popup
+                ?.querySelector('[aria-selected="true"]')
+                ?.scrollIntoView({ block: 'nearest' });
+            return;
+          }
+          props.onKeyDown(event);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          dismiss();
+          props.onBlur();
+        }}
+      />
+      <Show when={props.references?.length ? props.references : undefined}>
+        {(references) => (
+          <ReferenceMirror
+            input={input}
+            value={props.value}
+            references={references()}
+          />
+        )}
+      </Show>
+      <Show when={popupVisible()}>
+        <Portal>
+          <FormulaPopup
+            anchor={input}
+            interactive={choices().length > 0}
+            onReady={(element) => {
+              popup = element;
+            }}
+            onOutsidePress={dismiss}
+          >
+            <Show when={choices().length}>
+              <div
+                id={`${id}-list`}
+                role="listbox"
+                aria-label="Formula suggestions"
+                class="min-h-0 max-h-40 shrink overflow-y-auto overscroll-contain p-1"
+              >
+                <For each={choices()}>
+                  {(choice, index) => {
+                    const press = createTouchPress(
+                      () => assistance.accept(index()),
+                      () => props.readonly ?? false
+                    );
+                    return (
+                      <div
+                        {...press}
+                        id={`${id}-${index()}`}
+                        role="option"
+                        aria-selected={assistance.selected() === index()}
+                        class="flex items-center gap-2 rounded px-2 py-1 text-xs touch:min-h-[44px] touch:text-sm"
+                        classList={{
+                          'bg-accent-bg text-accent':
+                            assistance.selected() === index(),
+                          'text-ink hover:bg-hover':
+                            assistance.selected() !== index(),
+                        }}
+                        onPointerMove={(event) => {
+                          press.onPointerMove(event);
+                          assistance.setSelected(index());
+                        }}
+                      >
+                        <span class="font-mono font-semibold">{choice}</span>
+                        <span class="truncate text-[11px] text-ink-muted">
+                          {functionSummary(formulaFunctions[choice])}
+                        </span>
+                      </div>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+            <div
+              id={`${id}-help`}
+              class="min-h-0 overflow-y-auto px-2.5 py-1.5 text-xs touch:text-sm"
+              classList={{
+                'border-t border-edge-muted touch:hidden': choices().length > 0,
+              }}
+            >
+              <div class="break-words font-mono leading-5 text-ink">
+                <span class="font-semibold text-accent">{name()}</span>(
+                <For each={info().args}>
+                  {(arg, index) => (
+                    <>
+                      {index() > 0 ? ', ' : ''}
+                      <span
+                        classList={{
+                          'rounded bg-accent-bg px-0.5 text-accent font-semibold':
+                            index() === activeArgument(),
+                        }}
+                      >
+                        {argumentLabel(arg[0])}
+                      </span>
+                    </>
+                  )}
+                </For>
+                )
+              </div>
+              <Show when={!choices().length}>
+                <p class="text-[11px] leading-4 text-ink-muted">
+                  {activeArgument() >= 0
+                    ? info().args[activeArgument()][2]
+                    : functionSummary(info())}
+                </p>
+              </Show>
+            </div>
+          </FormulaPopup>
+        </Portal>
+      </Show>
+    </>
+  );
+}
+
+/**
+ * Draws the textarea's text over it, with references in their colors. A
+ * textarea cannot style part of its text, so it keeps the caret and selection
+ * while its own text is transparent.
+ */
+function ReferenceMirror(props: {
+  input: HTMLTextAreaElement;
+  value: string;
+  references: FormulaReferenceSpan[];
+}) {
+  let mirror!: HTMLDivElement;
+  let text!: HTMLSpanElement;
+  const segments = () => {
+    const parts: { text: string; color?: string }[] = [];
+    let at = 0;
+    for (const reference of props.references) {
+      if (reference.start < at || reference.end > props.value.length) continue;
+      parts.push({ text: props.value.slice(at, reference.start) });
+      parts.push({
+        text: props.value.slice(reference.start, reference.end),
+        color: reference.color,
+      });
+      at = reference.end;
+    }
+    parts.push({ text: props.value.slice(at) });
+    return parts;
+  };
+  const sync = () => {
+    const { input } = props;
+    const style = getComputedStyle(input);
+    Object.assign(mirror.style, {
+      left: `${input.offsetLeft}px`,
+      top: `${input.offsetTop}px`,
+      width: `${input.offsetWidth}px`,
+      height: `${input.offsetHeight}px`,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      letterSpacing: style.letterSpacing,
+      lineHeight: style.lineHeight,
+      textAlign: style.textAlign,
+      paddingTop: style.paddingTop,
+      paddingRight: style.paddingRight,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+      borderTopWidth: style.borderTopWidth,
+      borderRightWidth: style.borderRightWidth,
+      borderBottomWidth: style.borderBottomWidth,
+      borderLeftWidth: style.borderLeftWidth,
+    });
+    text.style.transform = `translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;
+  };
+  onMount(() => {
+    sync();
+    props.input.addEventListener('scroll', sync);
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(sync);
+    observer?.observe(props.input);
+    onCleanup(() => {
+      props.input.removeEventListener('scroll', sync);
+      observer?.disconnect();
+    });
+  });
+  createEffect(on(() => props.value, sync, { defer: true }));
+  return (
+    <div
+      ref={mirror}
+      aria-hidden="true"
+      data-formula-mirror
+      class="pointer-events-none absolute box-border overflow-hidden whitespace-pre border-solid border-transparent text-ink"
+    >
+      <span ref={text} class="block">
+        <For each={segments()}>
+          {(segment) => (
+            <span style={segment.color ? { color: segment.color } : undefined}>
+              {segment.text}
+            </span>
+          )}
+        </For>
+      </span>
+    </div>
+  );
+}
+
+function FormulaPopup(props: {
+  anchor: HTMLElement;
+  interactive: boolean;
+  children: import('solid-js').JSX.Element;
+  onReady: (element: HTMLDivElement) => void;
+  onOutsidePress: () => void;
+}) {
+  let element!: HTMLDivElement;
+  onMount(() => {
+    props.onReady(element);
+    // Pressing a cell, sheet tab, or toolbar keeps the draft but closes help.
+    const press = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!element.contains(target) && !props.anchor.contains(target))
+        props.onOutsidePress();
+    };
+    document.addEventListener('pointerdown', press, true);
+    onCleanup(() => document.removeEventListener('pointerdown', press, true));
+    let alive = true;
+    const update = async () => {
+      const position = await computePosition(props.anchor, element, {
+        strategy: 'fixed',
+        placement: 'bottom-start',
+        middleware: [
+          offset(5),
+          flip(),
+          shift({ padding: 12 }),
+          size({
+            padding: 12,
+            apply({ availableHeight, elements }) {
+              elements.floating.style.maxHeight = `${Math.max(0, availableHeight)}px`;
+            },
+          }),
+        ],
+      });
+      if (alive)
+        Object.assign(element.style, {
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          visibility: 'visible',
+        });
+    };
+    const cleanup = autoUpdate(props.anchor, element, () => {
+      void update();
+    });
+    onCleanup(() => {
+      alive = false;
+      cleanup();
+    });
+  });
+  return (
+    <div
+      ref={element}
+      style={{ visibility: 'hidden' }}
+      class="fixed z-[100] flex w-72 max-w-[calc(100vw-24px)] flex-col overflow-hidden rounded-lg border border-edge bg-panel text-ink shadow-xl"
+      classList={{ 'pointer-events-none': !props.interactive }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      {props.children}
+    </div>
+  );
+}

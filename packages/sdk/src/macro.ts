@@ -1,14 +1,17 @@
 import type { MacroOpts } from './config';
 import { AgentSessionNamespace } from './entities/agent-sessions/namespace';
 import { BotsNamespace } from './entities/bots/namespace';
+import { CalendarNamespace } from './entities/calendar/namespace';
 import { CallRecordNamespace } from './entities/calls/namespace';
 import { ChannelNamespace } from './entities/channels/namespace';
 import { ChatNamespace } from './entities/chats/namespace';
 import { CrmNamespace } from './entities/crm/namespace';
+import { DatabaseNamespace } from './entities/databases/namespace';
 import { DocumentNamespace } from './entities/documents/namespace';
 import { EmailNamespace } from './entities/email/namespace';
 import { FavoritesNamespace } from './entities/favorites/namespace';
 import { ForeignEntityNamespace } from './entities/foreign/namespace';
+import { FormNamespace } from './entities/forms/namespace';
 import { NotificationNamespace } from './entities/notifications/namespace';
 import { PinsNamespace } from './entities/pins/namespace';
 import { ProjectNamespace } from './entities/projects/namespace';
@@ -22,6 +25,38 @@ import type { MacroEvents } from './events/receiver';
 import { MacroClient } from './utils/client';
 
 export type { MacroOpts } from './config';
+export type { CallMessage } from './entities/calls/message';
+export {
+  type AddColumnOptions,
+  type ApplyOpsOptions,
+  type ChangeColumnTypeOptions,
+  type ColumnType,
+  type ConvertIntoNewColumnOptions,
+  MacroOpRefusedError,
+  type OpResultOf,
+} from './entities/databases/database';
+export {
+  Form,
+  type FormAnswer,
+  type FormAnswerValue,
+  type FormBookingStep,
+  type FormBookingTarget,
+  type FormEntityHandle,
+  type FormLayoutResult,
+  type FormQuestionPlacement,
+  type FormQuestionTally,
+  FormReference,
+  type FormResponseSummary,
+  type FormRules,
+  type FormRuleTest,
+  type FormSectionPlacement,
+  type FormSubmissionOutcome,
+  type MyFormResponse,
+} from './entities/forms/form';
+export { FormOption, FormQuestion } from './entities/forms/question';
+export { FormResponse } from './entities/forms/response';
+export { FormSection } from './entities/forms/section';
+export type { ListenOptions, MacroEvents } from './events/receiver';
 export {
   here,
   type Interpolation,
@@ -37,14 +72,18 @@ export {
 export class Macro<T extends MacroOpts = MacroOpts> {
   readonly agentSessions: AgentSessionNamespace;
   readonly bots: BotsNamespace;
+  readonly calendar: CalendarNamespace;
   readonly calls: CallRecordNamespace;
   readonly channels: ChannelNamespace;
   readonly chats: ChatNamespace;
   readonly crm: CrmNamespace;
+  readonly databases: DatabaseNamespace;
   readonly documents: DocumentNamespace;
   readonly email: EmailNamespace;
   readonly favorites: FavoritesNamespace;
   readonly foreignEntities: ForeignEntityNamespace;
+  /** Build forms and submit answers without granting respondents database access. */
+  readonly forms: FormNamespace;
   readonly notifications: NotificationNamespace;
   readonly pins: PinsNamespace;
   readonly projects: ProjectNamespace;
@@ -53,9 +92,7 @@ export class Macro<T extends MacroOpts = MacroOpts> {
   readonly teams: TeamNamespace;
   readonly users: UserNamespace;
   readonly webhooks: WebhooksNamespace;
-  declare readonly events: T extends { webhookSecret: string }
-    ? MacroEvents
-    : undefined;
+  readonly events: MacroEvents;
   /** Base URL of the Macro web app, used to build entity URLs. */
   readonly webAppUrl: string;
   /** Direct access to the underlying hey-api service clients. */
@@ -68,14 +105,17 @@ export class Macro<T extends MacroOpts = MacroOpts> {
     this._client = client;
     this.agentSessions = new AgentSessionNamespace(client);
     this.bots = new BotsNamespace(client);
+    this.calendar = new CalendarNamespace(client);
     this.calls = new CallRecordNamespace(client);
     this.channels = new ChannelNamespace(client);
     this.chats = new ChatNamespace(client);
     this.crm = new CrmNamespace(client);
+    this.databases = new DatabaseNamespace(client);
     this.documents = new DocumentNamespace(client);
     this.email = new EmailNamespace(client);
     this.favorites = new FavoritesNamespace(client);
     this.foreignEntities = new ForeignEntityNamespace(client);
+    this.forms = new FormNamespace(client);
     this.notifications = new NotificationNamespace(client);
     this.pins = new PinsNamespace(client);
     this.projects = new ProjectNamespace(client);
@@ -84,7 +124,7 @@ export class Macro<T extends MacroOpts = MacroOpts> {
     this.teams = new TeamNamespace(client);
     this.users = new UserNamespace(client);
     this.webhooks = new WebhooksNamespace(client);
-    (this as { events?: MacroEvents }).events = client.events;
+    this.events = client.events;
     this.webAppUrl = client.webAppUrl;
   }
 

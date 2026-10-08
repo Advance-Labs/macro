@@ -1,5 +1,8 @@
 #![cfg(not(target_arch = "wasm32"))]
 
+#[path = "predicate/reconciliation.rs"]
+mod reconciliation;
+
 use cache_core::{
     engine::{BeginOptimisticWrite, Engine},
     predicate::{
@@ -109,6 +112,8 @@ async fn begin_optimistic_projection(
         .begin_optimistic_write_with_projections(
             None,
             BeginOptimisticWrite {
+                client_metadata: None,
+                uuid: "00000000-0000-4000-8000-000000001000",
                 query: r#"
                     mutation SetEntityProperty($input: SetEntityPropertyInput!) {
                       setEntityProperty(input: $input) {
@@ -127,6 +132,7 @@ async fn begin_optimistic_projection(
                 link_patches: &[],
                 revalidations: &[],
                 created_at_ms: 1,
+                identity_bindings: &[],
             },
             projection_mutations,
         )
@@ -465,6 +471,8 @@ fn turso_rehydrates_and_queries_durable_optimistic_projection_layers() {
             .begin_optimistic_write_with_projections(
                 None,
                 BeginOptimisticWrite {
+                    client_metadata: None,
+                    uuid: "00000000-0000-4000-8000-000000001001",
                     query: r#"
                         mutation SetEntityProperty($input: SetEntityPropertyInput!) {
                           setEntityProperty(input: $input) {
@@ -483,6 +491,7 @@ fn turso_rehydrates_and_queries_durable_optimistic_projection_layers() {
                     link_patches: &[],
                     revalidations: &[],
                     created_at_ms: 1,
+                    identity_bindings: &[],
                 },
                 vec![OptimisticProjectionMutation::Replace(document(
                     "GraphqlSoupDocument:1",

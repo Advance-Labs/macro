@@ -1,6 +1,7 @@
 import { openPipedreamConnectUI } from '@core/pipedream/connect-ui';
 import { ThrownResultError, throwOnErr } from '@core/util/result';
 import { queryClient } from '@queries/client';
+import { queryReadyGate } from '@queries/gate';
 import {
   cognitionApiServiceClient,
   PIPEDREAM_DISABLED,
@@ -10,10 +11,12 @@ import {
 } from '@service-cognition/client';
 import {
   type InfiniteData,
+  infiniteQueryOptions,
   useInfiniteQuery,
   useMutation,
   useQuery,
 } from '@tanstack/solid-query';
+import { type Accessor, createMemo } from 'solid-js';
 
 const KEYS = {
   all: ['pipedreamConnectors'] as const,
@@ -24,6 +27,12 @@ const KEYS = {
 
 /** Stable placeholder for `neverSuspend` consumers (see below). */
 const NO_CONNECTIONS: PipedreamConnectionResponse[] = [];
+
+function fetchPipedreamConnections() {
+  return throwOnErr(
+    async () => await cognitionApiServiceClient.listPipedreamConnections()
+  );
+}
 
 export function usePipedreamConnectionsQuery(options?: {
   /**
@@ -37,10 +46,7 @@ export function usePipedreamConnectionsQuery(options?: {
 }) {
   return useQuery(() => ({
     queryKey: KEYS.list,
-    queryFn: async () =>
-      throwOnErr(
-        async () => await cognitionApiServiceClient.listPipedreamConnections()
-      ),
+    queryFn: fetchPipedreamConnections,
     refetchOnMount: 'always' as const,
     refetchOnWindowFocus: 'always' as const,
     refetchInterval: options?.refetchInterval,
@@ -49,17 +55,54 @@ export function usePipedreamConnectionsQuery(options?: {
 }
 
 /**
- * Browse or search the Pipedream app catalog, paged by cursor. Entries come
- * from Pipedream's app directory, ranked most-popular-first.
+ * The app slugs the current user has connected, as a set, plus whether the
+ * answer is known yet. `ready` is false while the query is still serving the
+ * `neverSuspend` placeholder, which callers must not read as "connected to
+ * nothing". Shared by every surface that shows a connected/not-connected
+ * indicator so they cannot disagree.
  */
-export function usePipedreamCatalogQuery(search: () => string) {
-  return useInfiniteQuery(() => ({
-    queryKey: KEYS.catalog(search().trim()),
+export function usePipedreamConnectedSlugs(options?: {
+  refetchInterval?: number;
+}): {
+  slugs: Accessor<ReadonlySet<string>>;
+  ready: Accessor<boolean>;
+} {
+  const query = usePipedreamConnectionsQuery({
+    neverSuspend: true,
+    refetchInterval: options?.refetchInterval,
+  });
+  const slugs = createMemo<ReadonlySet<string>>(
+    () =>
+      new Set(
+        (queryReadyGate(query) ? query.data : NO_CONNECTIONS).map(
+          (connection) => connection.app_slug
+        )
+      )
+  );
+  const ready = () => !query.isPlaceholderData && queryReadyGate(query);
+  return { slugs, ready };
+}
+
+// Serve the previous search's results (or nothing) instead of suspending:
+// first load must not block the settings page on the directory, and
+// keystrokes must not blank the list while refetching.
+function catalogPlaceholder(
+  previous:
+    | InfiniteData<PipedreamCatalogResponse, string | undefined>
+    | undefined
+) {
+  return previous ?? { pages: [], pageParams: [] };
+}
+
+// Cached callbacks only close over the trimmed search string.
+function pipedreamCatalogQueryOptions(search: string) {
+  return infiniteQueryOptions({
+    queryKey: KEYS.catalog(search),
     queryFn: async ({ pageParam }: { pageParam: string | undefined }) =>
       throwOnErr(
         async () =>
           await cognitionApiServiceClient.browsePipedreamCatalog({
-            search: search().trim() || undefined,
+            search: search || undefined,
             cursor: pageParam,
           })
       ),
@@ -67,15 +110,16 @@ export function usePipedreamCatalogQuery(search: () => string) {
     getNextPageParam: (lastPage: PipedreamCatalogResponse) =>
       lastPage.next_cursor ?? undefined,
     staleTime: 5 * 60 * 1000,
-    // Serve the previous search's results (or nothing) instead of
-    // suspending: first load must not block the settings page on the
-    // directory, and keystrokes must not blank the list while refetching.
-    placeholderData: (
-      previous:
-        | InfiniteData<PipedreamCatalogResponse, string | undefined>
-        | undefined
-    ) => previous ?? { pages: [], pageParams: [] },
-  }));
+    placeholderData: catalogPlaceholder,
+  });
+}
+
+/**
+ * Browse or search the Pipedream app catalog, paged by cursor. Entries come
+ * from Pipedream's app directory, ranked most-popular-first.
+ */
+export function usePipedreamCatalogQuery(search: () => string) {
+  return useInfiniteQuery(() => pipedreamCatalogQueryOptions(search().trim()));
 }
 
 function invalidateConnections() {
@@ -160,6 +204,8 @@ export async function connectPipedreamApp(args: {
   appSlug: string;
   /** Display name stored on the connection row. */
   serverName?: string;
+  /** Where the Connect iframe mounts; see `openPipedreamConnectUI`. */
+  container?: HTMLElement;
 }): Promise<PipedreamConnectOutcome> {
   if (pipedreamUnsupported) return 'unsupported';
 
@@ -177,6 +223,7 @@ export async function connectPipedreamApp(args: {
     const ui = openPipedreamConnectUI({
       token: token.value.token,
       app: args.appSlug,
+      container: args.container,
       onEvent: (event) => {
         if (event.type === 'success' && !settled) {
           settled = true;

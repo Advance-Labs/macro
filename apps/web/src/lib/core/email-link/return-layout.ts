@@ -4,16 +4,10 @@ const RETURN_LAYOUT_KEY = 'macro:inbox-link:return-layout';
 export type InboxLinkReturn = {
   /**
    * The base-relative layout URL the flow started from — path plus query and
-   * hash, so the `preview` param encoding Controller/Viewer Preview Pairs
+   * hash, so content location state
    * survives with it.
    */
   url: string;
-  /**
-   * `settingsReturnTo` as it stood at capture time, present when the flow
-   * started from solo settings. Restoring it keeps "Back to app" pointing at
-   * the layout behind settings instead of the default route.
-   */
-  settingsReturnTo?: string;
 };
 
 type StoredInboxLinkReturn = InboxLinkReturn & { linkId: string };
@@ -78,11 +72,5 @@ export function consumeInboxLinkReturn(
   if (!stored || stored.linkId !== linkId || typeof stored.url !== 'string') {
     return undefined;
   }
-  return {
-    url: stored.url,
-    settingsReturnTo:
-      typeof stored.settingsReturnTo === 'string'
-        ? stored.settingsReturnTo
-        : undefined,
-  };
+  return { url: stored.url };
 }

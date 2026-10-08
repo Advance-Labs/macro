@@ -47,15 +47,6 @@ fn stack_update_accepts_binaries_dir_with_build_aux_services() {
 }
 
 #[test]
-fn run_local_defaults_onboarding_off() {
-    let cli = Cli::try_parse_from(["cargo-x", "run-local"]).unwrap();
-    let Cmd::RunLocal(args) = cli.command else {
-        panic!("expected run-local command");
-    };
-    assert!(!args.enable_onboarding);
-}
-
-#[test]
 fn run_local_defaults_cf_tunnels_off() {
     let cli = Cli::try_parse_from(["cargo-x", "run-local"]).unwrap();
     let Cmd::RunLocal(args) = cli.command else {
@@ -74,20 +65,26 @@ fn run_local_accepts_with_cf_tunnel() {
 }
 
 #[test]
-fn run_local_accepts_enable_onboarding() {
-    let cli = Cli::try_parse_from(["cargo-x", "run-local", "--enable-onboarding"]).unwrap();
-    let Cmd::RunLocal(args) = cli.command else {
-        panic!("expected run-local command");
-    };
-    assert!(args.enable_onboarding);
-}
-
-#[test]
 fn stack_has_no_snapshot_verb() {
     match Cli::try_parse_from(["cargo-x", "stack", "snapshot"]) {
         Err(err) => assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand),
         Ok(_) => panic!("stack snapshot must not parse"),
     }
+}
+
+#[test]
+fn run_local_and_stack_up_accept_no_snapshot() {
+    let cli = Cli::try_parse_from(["cargo-x", "run-local", "--no-snapshot"]).unwrap();
+    let Cmd::RunLocal(args) = cli.command else {
+        panic!("expected run-local command");
+    };
+    assert!(args.no_snapshot);
+
+    let cli = Cli::try_parse_from(["cargo-x", "stack", "up", "--no-snapshot"]).unwrap();
+    let Cmd::Stack(StackCmd::Up(args)) = cli.command else {
+        panic!("expected stack up");
+    };
+    assert!(args.run.no_snapshot);
 }
 
 #[test]

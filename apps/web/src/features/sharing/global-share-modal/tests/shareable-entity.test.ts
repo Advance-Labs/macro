@@ -7,11 +7,12 @@ describe('isShareableEntityType', () => {
     expect(isShareableEntityType('chat')).toBe(true);
     expect(isShareableEntityType('project')).toBe(true);
     expect(isShareableEntityType('email')).toBe(true);
+    expect(isShareableEntityType('agent_session')).toBe(true);
+    expect(isShareableEntityType('form')).toBe(true);
   });
 
   it('rejects entity types with no share flow', () => {
     expect(isShareableEntityType('channel')).toBe(false);
     expect(isShareableEntityType('call')).toBe(false);
-    expect(isShareableEntityType('reminder')).toBe(false);
   });
 });

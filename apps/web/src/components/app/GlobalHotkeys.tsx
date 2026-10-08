@@ -5,9 +5,9 @@ import {
 } from '@app/constants/hotkeys';
 import { type CategoryFilter, CommandState } from '@app/features/command';
 import {
-  CREATABLE_BLOCKS,
   createMenuOpen,
   setCreateMenuOpen,
+  useCreateCommands,
 } from '@app/features/command/Launcher';
 import { openMacroMcpSetupModal } from '@app/features/integrations/mcp-setup/MacroMcpSetupModal';
 import { useAnalytics } from '@app/lib/analytics/analytics-context';
@@ -15,18 +15,10 @@ import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useSubscribeToKeypress } from '@app/signal/hotkeyRoot';
 import { globalSplitManager } from '@app/signal/splitLayout';
 import { useHandleFileUpload } from '@app/util/handleFileUpload';
-import {
-  automationComposerOpen,
-  setAutomationComposerOpen,
-} from '@block-automation/component';
 import { useLogout } from '@core/auth/logout';
 import { useOpenInstructionsMd } from '@core/component/AI/util/instructions';
 import { toast } from '@core/component/Toast/Toast';
-import {
-  ENABLE_SNIPPETS_FLAG,
-  ENABLE_SNIPPETS_OVERRIDE,
-  LOCAL_ONLY,
-} from '@core/constant/featureFlags';
+import { enableSnippets, LOCAL_ONLY } from '@core/constant/featureFlags';
 import {
   type SettingsTab,
   useSettingsState,
@@ -40,7 +32,7 @@ import {
   openFilePicker,
   openFolderPicker,
 } from '@core/util/upload';
-import IconGear from '@icon/macro-gear.svg';
+import IconGear from '@phosphor/gear.svg';
 import Plus from '@phosphor/plus.svg';
 import LogoutIcon from '@phosphor/sign-out.svg';
 import Upload from '@phosphor/upload.svg';
@@ -63,9 +55,9 @@ import type { ThemeV3 } from '@theme/types/themeTypes';
 import {
   applySystemTheme,
   applyTheme,
-  clearThemePreview,
   previewTheme,
   resolveActiveThemeId,
+  scheduleThemePreviewEnd,
 } from '@theme/utils/themeUtils';
 import { type Component, onCleanup, Show } from 'solid-js';
 import { useSplitLayout } from './split-layout/layout';
@@ -146,18 +138,12 @@ export default function GlobalShortcuts() {
   const logout = useLogout();
 
   const handleFileUpload = useHandleFileUpload();
-  const snippetsFlag = useFeatureFlag(ENABLE_SNIPPETS_FLAG, {
-    enabledOverride: ENABLE_SNIPPETS_OVERRIDE,
-  });
+  const snippetsFlag = useFeatureFlag(enableSnippets);
 
   const handleCommandMenu = () => {
     const willOpen = !CommandState.isOpen();
 
     if (willOpen) {
-      if (automationComposerOpen()) {
-        setAutomationComposerOpen(false, false);
-      }
-
       analytics.track('command_menu_open', { from: 'global_hotkey' });
     }
 
@@ -170,10 +156,6 @@ export default function GlobalShortcuts() {
     scopeId: 'global',
     description: 'Create',
     keyDownHandler: () => {
-      if (automationComposerOpen()) {
-        return true;
-      }
-
       const willOpen = !createMenuOpen();
 
       if (willOpen) {
@@ -190,7 +172,8 @@ export default function GlobalShortcuts() {
     icon: Plus,
   });
 
-  CREATABLE_BLOCKS.forEach((item) => {
+  const createCommands = useCreateCommands();
+  createCommands.forEach((item) => {
     registerHotkey({
       hotkeyToken: item.hotkeyToken,
       hotkey: item.hotkey,
@@ -211,15 +194,32 @@ export default function GlobalShortcuts() {
       hide: () =>
         !(item.enabled?.() ?? true) ||
         (item.blockName === 'snippet' && !snippetsFlag().enabled),
-      runWithInputFocused: true,
+      runWithInputFocused: item.runWithInputFocused ?? true,
     });
   });
 
   registerHotkey({
-    hotkey: ['c', 'escape'],
+    hotkey: 'escape',
     scopeId: CREATE_MENU_COMMAND_SCOPE,
     description: 'Close Create',
     condition: createMenuOpen,
+    keyDownHandler: () => {
+      setCreateMenuOpen(false);
+      return true;
+    },
+    runWithInputFocused: true,
+  });
+
+  registerHotkey({
+    hotkey: 'c',
+    scopeId: CREATE_MENU_COMMAND_SCOPE,
+    description: 'Close Create',
+    condition: () =>
+      createMenuOpen() &&
+      !createCommands.some(
+        (item) => item.hotkey === 'c' && (item.enabled?.() ?? true)
+      ),
+    registrationType: 'add',
     keyDownHandler: () => {
       setCreateMenuOpen(false);
       return true;
@@ -277,7 +277,7 @@ export default function GlobalShortcuts() {
   const createNewSplit = () => {
     analytics.track('split_created', { from: 'global_hotkey' });
     openWithSplit(
-      { type: 'component', id: 'inbox' },
+      { type: 'component', id: 'home' },
       {
         referredFrom: 'hotkey',
         allowDuplicate: true,
@@ -434,7 +434,7 @@ export default function GlobalShortcuts() {
       const theme = systemResolvedTheme();
       if (theme) previewTheme(theme.id);
     },
-    onHighlightEnd: clearThemePreview,
+    onHighlightEnd: scheduleThemePreviewEnd,
   });
 
   themes().forEach((theme) => {
@@ -452,7 +452,7 @@ export default function GlobalShortcuts() {
       runWithInputFocused: true,
       displayComponent: () => <ThemeDisplay theme={theme} />,
       onHighlight: () => previewTheme(theme.id),
-      onHighlightEnd: clearThemePreview,
+      onHighlightEnd: scheduleThemePreviewEnd,
     });
   });
 
@@ -478,7 +478,7 @@ export default function GlobalShortcuts() {
       runWithInputFocused: true,
       displayComponent: () => <ThemeDisplay theme={theme} />,
       onHighlight: () => previewTheme(theme.id),
-      onHighlightEnd: clearThemePreview,
+      onHighlightEnd: scheduleThemePreviewEnd,
     });
   });
 
@@ -504,7 +504,7 @@ export default function GlobalShortcuts() {
       runWithInputFocused: true,
       displayComponent: () => <ThemeDisplay theme={theme} />,
       onHighlight: () => previewTheme(theme.id),
-      onHighlightEnd: clearThemePreview,
+      onHighlightEnd: scheduleThemePreviewEnd,
     });
   });
 

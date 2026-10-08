@@ -19,6 +19,7 @@ import type {
 } from '../plugins';
 import type { Action } from '../plugins/actions/types';
 import type { TagMentionLifecycle } from '../plugins/tags';
+import type { MentionLinkResolver } from '../plugins/text-paste/textPastePlugin';
 import type { createMenuOperations } from '../shared/inlineMenu';
 import type { UserMentionRecord } from '../utils/mentionsUtils';
 
@@ -164,6 +165,7 @@ export interface EditorConfig {
   agentCommands?: AgentCommandsOptions;
   emojis?: EmojisOptions;
   links?: LinksOptions;
+  resolveAppLink?: MentionLinkResolver;
   history?: HistoryOptions;
   singleLine: boolean;
   handlers: EditorCallbacks;
@@ -175,8 +177,12 @@ export interface EditorConfig {
   focusLeave?: FocusLeaveCallbacks;
   withIds: boolean;
   selectionData: boolean;
-  /** Show a floating format toolbar over the current text selection. */
-  floatingFormatMenu: boolean;
+  /**
+   * Show a floating format toolbar over the current text selection. Pass
+   * `{ extendedInlineFormats: true }` to also offer underline/super/subscript
+   * (only for non-Markdown-backed editors).
+   */
+  floatingFormatMenu: boolean | { extendedInlineFormats?: boolean };
   actions: ActionsOptions | false;
   /** When true, decorator components skip backend fetches (e.g. preview API). */
   skipPreviewFetch: boolean;

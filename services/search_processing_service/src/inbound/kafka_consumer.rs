@@ -16,6 +16,7 @@
 
 #![allow(clippy::enum_variant_names)]
 
+mod agent_session;
 mod calendar_event;
 mod call;
 mod channel;
@@ -23,6 +24,7 @@ mod chat;
 mod context;
 mod document;
 mod email;
+mod message;
 mod project;
 mod property;
 #[cfg(test)]
@@ -36,16 +38,18 @@ use std::{
     time::Duration,
 };
 
+use ::agent_session::domain::events::AgentSessionLifecycleMacroEvent;
 use ::call::domain::events::CallMacroEvent;
 use ::chat::domain::events::ChatMacroEvent;
 use ::email::domain::events::EmailMacroEvent;
 use calendar_events::domain::events::CalendarMacroEvent;
 use channels::domain::broker_events::ChannelMacroEvent;
 use documents::domain::events::DocumentMacroEvent;
-use kafka_util::{GroupName, KafkaEventConsumer};
+use kafka_util::{GroupName, InitialOffset, KafkaEventConsumer};
 use macro_event_broker::{
     KafkaConsumerAdapter, MacroEvent as _, MacroEventCollection, MacroEventConsumerService,
 };
+use messages::outbound::broker::MessageMacroEvent;
 use projects::domain::events::ProjectMacroEvent;
 use properties::domain::events::PropertyMacroEvent;
 use rdkafka::{
@@ -63,6 +67,7 @@ use self::{
     chat::process_chat_event,
     document::process_document_event,
     email::{email_ordering_key, process_email_event},
+    message::process_message_event,
     project::process_project_event,
     property::process_property_event,
 };
@@ -74,6 +79,9 @@ pub(crate) struct SearchProcessingConsumerGroup;
 
 impl GroupName for SearchProcessingConsumerGroup {
     const GROUP_NAME: &'static str = "search-processing-service";
+    // `macro.messages` joined this group's subscription with no committed
+    // offset; starting at its head avoids replaying the topic's retention.
+    const INITIAL_OFFSET: InitialOffset = InitialOffset::Latest;
 }
 
 type SearchProcessingKafkaAdapter =
@@ -83,12 +91,14 @@ type SearchProcessingKafkaConsumer =
 
 macro_event_broker::declare_topics!(
     DeclaredMacroEvent:
+        AgentSessionLifecycleMacroEvent,
         CalendarMacroEvent,
         CallMacroEvent,
         ChannelMacroEvent,
         ChatMacroEvent,
         DocumentMacroEvent,
         EmailMacroEvent,
+        MessageMacroEvent,
         ProjectMacroEvent,
         PropertyMacroEvent,
 );
@@ -180,12 +190,14 @@ where
 /// pool.
 fn ordering_key(event: &DeclaredMacroEvent) -> Cow<'_, str> {
     match event {
+        DeclaredMacroEvent::AgentSessionLifecycleMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::CalendarMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::CallMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::ChannelMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::ChatMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::DocumentMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::EmailMacroEvent(event) => email_ordering_key(event),
+        DeclaredMacroEvent::MessageMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::ProjectMacroEvent(event) => Cow::Borrowed(event.key()),
         DeclaredMacroEvent::PropertyMacroEvent(event) => Cow::Borrowed(event.key()),
     }
@@ -268,6 +280,9 @@ async fn process_event(
     let opensearch_client = context.opensearch_client.as_ref();
 
     match event {
+        DeclaredMacroEvent::AgentSessionLifecycleMacroEvent(event) => {
+            agent_session::process_agent_session_event(context, event).await
+        }
         DeclaredMacroEvent::CallMacroEvent(event) => {
             process_call_event(db, opensearch_client, event, partition, offset).await
         }
@@ -293,6 +308,9 @@ async fn process_event(
         }
         DeclaredMacroEvent::DocumentMacroEvent(event) => {
             process_document_event(context, event, partition, offset).await
+        }
+        DeclaredMacroEvent::MessageMacroEvent(event) => {
+            process_message_event(db, opensearch_client, event, partition, offset).await
         }
         DeclaredMacroEvent::EmailMacroEvent(event) => {
             process_email_event(db, opensearch_client, event, partition, offset).await

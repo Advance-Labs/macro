@@ -38,10 +38,13 @@ export default defineConfig(({ command }) => ({
     rollupOptions: {
       input: Object.fromEntries(
         [
+          'calendar-points.html',
           'index.html',
           'host.html',
           'cutover.html',
           'production.html',
+          'production-busy.html',
+          'production-takeover.html',
           'production-tab.html',
           'tab.html',
           'performance.html',
@@ -49,6 +52,10 @@ export default defineConfig(({ command }) => ({
           'cache-lifecycle.html',
           'graphql-soup-rollout.html',
           'cache-recovery.html',
+          'notification-projection.html',
+          'mail-projection.html',
+          'query-write-scope.html',
+          'search-buckets.html',
         ].map((name) => [name.replace('.html', ''), resolve(directory, name)])
       ),
     },

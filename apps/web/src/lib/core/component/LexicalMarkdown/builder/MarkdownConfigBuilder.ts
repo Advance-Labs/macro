@@ -3,6 +3,7 @@ import type { LexicalEditor } from 'lexical';
 import type { Store } from 'solid-js/store';
 import type { PluginManager, SelectionData } from '../plugins';
 import type { Action } from '../plugins/actions/types';
+import type { MentionLinkResolver } from '../plugins/text-paste/textPastePlugin';
 import { buildHandleFromConfig } from './buildHandleFromConfig';
 import type {
   ActionsOptions,
@@ -57,6 +58,10 @@ export class EditorConfigBuilder implements EditorBuilder {
     return this;
   }
 
+  withAppLinkResolver(resolveAppLink: MentionLinkResolver | undefined): this {
+    this.state.resolveAppLink = resolveAppLink;
+    return this;
+  }
   withTags(config: TagsOptions = {}): this {
     this.state.tags = {
       ...config,
@@ -126,8 +131,8 @@ export class EditorConfigBuilder implements EditorBuilder {
    * Implies `.withSelectionData()`. The link button is only shown when
    * `.withLinks({ floatingMenu: true })` is also enabled.
    */
-  withFloatingFormatMenu(): this {
-    this.state.floatingFormatMenu = true;
+  withFloatingFormatMenu(options?: { extendedInlineFormats?: boolean }): this {
+    this.state.floatingFormatMenu = options ?? true;
     this.state.selectionData = true;
     return this;
   }
@@ -183,7 +188,7 @@ export class EditorConfigBuilder implements EditorBuilder {
 
   /**
    * Enable the agent commands (`/`) typeahead menu — for agent composers.
-   * Lists the slash commands a connected coding agent advertises over ACP;
+   * Lists skills, pull requests, and commands advertised over ACP;
    * selecting one inserts `/name` as plain text, which is sent to the agent
    * as ordinary prompt text. Shares the `/` trigger with the actions and
    * skills menus, so it only takes effect when both are disabled.

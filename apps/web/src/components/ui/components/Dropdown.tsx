@@ -1,7 +1,15 @@
+import { isModality } from '@core/mobile/inputModality';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
 import { DropdownMenu as KobalteDropdownMenu } from '@kobalte/core/dropdown-menu';
 import CheckIcon from '@phosphor/check.svg';
-import { type ComponentProps, onCleanup, splitProps } from 'solid-js';
+import {
+  type ComponentProps,
+  createSignal,
+  type JSX,
+  onCleanup,
+  Show,
+  splitProps,
+} from 'solid-js';
 import { cn } from '../utils/classname';
 import {
   addCtrlJKMenuNavigation,
@@ -49,6 +57,8 @@ export type DropdownContentProps = ComponentProps<
   depth?: SurfaceProps['depth'];
   mount?: PortalMount;
   portalScope?: DropdownPortalScope;
+  /** Block pointer interaction behind the menu with a transparent backdrop. */
+  blockingBackdrop?: boolean;
 };
 export type DropdownTriggerProps = ComponentProps<
   typeof KobalteDropdownMenu.Trigger
@@ -59,7 +69,9 @@ export type DropdownItemIndicatorProps = ComponentProps<
 >;
 export type DropdownCheckboxItemProps = ComponentProps<
   typeof KobalteDropdownMenu.CheckboxItem
->;
+> & {
+  indicator?: JSX.Element;
+};
 export type DropdownSubTriggerProps = ComponentProps<
   typeof KobalteDropdownMenu.SubTrigger
 >;
@@ -75,8 +87,10 @@ export type DropdownGroupProps = ComponentProps<
 export type DropdownItemProps = ComponentProps<typeof KobalteDropdownMenu.Item>;
 export type DropdownSubProps = ComponentProps<typeof KobalteDropdownMenu.Sub>;
 
+// Text size is inherited from `Dropdown.Content` (defaults to `text-sm`) so a
+// menu can be resized by passing a `text-*` class to the content.
 const ROW_CLASS =
-  'group rounded-lg w-full flex items-center gap-1.5 p-1.5 px-2 text-left font-normal text-sm cursor-default outline-none data-highlighted:bg-ink/5 data-disabled:opacity-50 data-disabled:cursor-not-allowed';
+  'group rounded-lg w-full flex items-center gap-1.5 p-1.5 px-2 text-left font-normal cursor-default outline-none data-highlighted:bg-ink/5 data-disabled:opacity-50 data-disabled:cursor-not-allowed';
 
 function resolvePortalMount(
   searchRef: HTMLElement | undefined,
@@ -170,6 +184,7 @@ function callRef<T>(ref: ((el: T) => void) | undefined, el: T) {
 function DropdownContent(props: DropdownContentProps) {
   let searchRef: HTMLDivElement | undefined;
   let contentRef: HTMLElement | undefined;
+  const [backdropZIndex, setBackdropZIndex] = createSignal<string>();
   const [local, rest] = splitProps(props, [
     'depth',
     'class',
@@ -178,10 +193,16 @@ function DropdownContent(props: DropdownContentProps) {
     'children',
     'ref',
     'onOpenAutoFocus',
+    'blockingBackdrop',
   ]);
   const handleOpenAutoFocus = (event: Event) => {
+    if (local.blockingBackdrop && contentRef) {
+      // Match custom menu layers; the following menu paints above the backdrop.
+      setBackdropZIndex(getComputedStyle(contentRef).zIndex);
+    }
     local.onOpenAutoFocus?.(event);
-    if (!event.defaultPrevented && contentRef) {
+    // A tap-opened menu shouldn't start with a hover-like highlight
+    if (!event.defaultPrevented && contentRef && !isModality('touch')) {
       highlightFirstMenuItemOnOpen(contentRef);
     }
   };
@@ -198,18 +219,28 @@ function DropdownContent(props: DropdownContentProps) {
       <KobalteDropdownMenu.Portal
         mount={resolvePortalMount(searchRef, local.mount, local.portalScope)}
       >
+        <Show when={local.blockingBackdrop}>
+          <div
+            class="fixed inset-0 z-action-menu pointer-events-auto"
+            style={{ 'z-index': backdropZIndex() }}
+            aria-hidden="true"
+          />
+        </Show>
         <KobalteDropdownMenu.Content
           class={cn(
-            'rounded-xl size-auto z-action-menu menu-open-animation shadow-menu bg-menu',
+            // Paint the same surface as context menus, including custom
+            // contents (calendar month lists) without a Dropdown.Group.
+            'menu-surface rounded-xl size-auto z-action-menu menu-open-animation text-sm',
             local.class
           )}
           depth={local.depth ?? 2}
           as={Surface}
+          hideBorder
           {...rest}
           onOpenAutoFocus={handleOpenAutoFocus}
           ref={setContentRef}
         >
-          <div class="flex flex-col gap-(--app-border-width) bg-edge-muted size-full">
+          <div class="flex flex-col divide-y divide-edge-divider size-full">
             {local.children}
           </div>
         </KobalteDropdownMenu.Content>
@@ -242,15 +273,16 @@ function DropdownSubContent(props: DropdownSubContentProps) {
       >
         <KobalteDropdownMenu.SubContent
           class={cn(
-            'rounded-xl size-auto z-action-menu menu-open-animation bg-menu [--color-surface:var(--color-menu)]',
+            'menu-surface rounded-xl size-auto z-action-menu menu-open-animation text-sm',
             local.class
           )}
           depth={local.depth ?? 2}
           as={Surface}
+          hideBorder
           {...rest}
           ref={setContentRef}
         >
-          <div class="flex flex-col gap-(--app-border-width) bg-edge-muted size-full">
+          <div class="flex flex-col divide-y divide-edge-divider size-full">
             {local.children}
           </div>
         </KobalteDropdownMenu.SubContent>
@@ -290,17 +322,19 @@ const CHECKBOX_ITEM_BOX_CLASS = cn(
 );
 
 function DropdownCheckboxItem(props: DropdownCheckboxItemProps) {
-  const [local, rest] = splitProps(props, ['class', 'children']);
+  const [local, rest] = splitProps(props, ['class', 'children', 'indicator']);
   return (
     <KobalteDropdownMenu.CheckboxItem
       class={cn(ROW_CLASS, local.class)}
       {...rest}
     >
-      <div class={CHECKBOX_ITEM_BOX_CLASS}>
-        <KobalteDropdownMenu.ItemIndicator>
-          <CheckIcon class="size-2.5" />
-        </KobalteDropdownMenu.ItemIndicator>
-      </div>
+      {local.indicator ?? (
+        <div class={CHECKBOX_ITEM_BOX_CLASS}>
+          <KobalteDropdownMenu.ItemIndicator>
+            <CheckIcon class="size-2.5" />
+          </KobalteDropdownMenu.ItemIndicator>
+        </div>
+      )}
       {local.children}
     </KobalteDropdownMenu.CheckboxItem>
   );
@@ -366,6 +400,10 @@ export const Dropdown = Object.assign(
     Separator:
       KobalteDropdownMenu.Separator /* passthrough — styled via class at use sites */,
     ItemIndicator: DropdownItemIndicator,
+    ItemLabel:
+      KobalteDropdownMenu.ItemLabel /* passthrough — names the item for assistive tech */,
+    ItemDescription:
+      KobalteDropdownMenu.ItemDescription /* passthrough — describes the item for assistive tech */,
     CheckboxItem: DropdownCheckboxItem,
     SubContent: DropdownSubContent,
     SubTrigger: DropdownSubTrigger,

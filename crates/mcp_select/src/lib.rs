@@ -23,18 +23,28 @@ use pipedream_mcp::domain::service::PipedreamToolSet;
 use std::pin::Pin;
 use std::sync::Arc;
 
-/// Mangled MCP tool names start with this prefix on both stacks.
-const MANGLED_PREFIX: &str = "mcp__";
+#[cfg(test)]
+mod test;
 
-/// A connector identified in both stacks: the Pipedream app slug and the
+/// Mangled MCP tool names start with this prefix on both stacks.
+pub const MANGLED_PREFIX: &str = "mcp__";
+
+/// A connector identified in both stacks: the Pipedream app slugs and the
 /// native server URL that back the same product (e.g. `linear` /
 /// `https://mcp.linear.app/mcp`).
 #[derive(Clone, Copy, Debug)]
 pub struct ConnectorRef<'a> {
-    /// Pipedream app name slug, e.g. `linear`.
-    pub pipedream_app_slug: &'a str,
+    /// Pipedream app name slugs in preference order, e.g. `slack`, `slack_v2`.
+    pub pipedream_app_slugs: &'a [&'a str],
     /// The native stack's MCP server URL for the same product.
     pub native_server_url: &'a str,
+}
+
+impl ConnectorRef<'_> {
+    /// Whether this connector recognizes the Pipedream app slug.
+    pub fn matches_pipedream_slug(&self, slug: &str) -> bool {
+        self.pipedream_app_slugs.contains(&slug)
+    }
 }
 
 /// The MCP tools loaded for a user — from exactly one stack, per the
@@ -65,7 +75,7 @@ impl UserMcpTools {
 }
 
 impl<Context: Send + Sync + 'static> ToolSet<Context> for UserMcpTools {
-    fn try_tool_call<'a>(
+    fn dispatch_tool_call<'a>(
         &'a self,
         context: Context,
         request_context: RequestContext,
@@ -76,10 +86,10 @@ impl<Context: Send + Sync + 'static> ToolSet<Context> for UserMcpTools {
     > {
         match self {
             UserMcpTools::Pipedream(tools) => {
-                tools.try_tool_call(context, request_context, tool_name, json)
+                tools.dispatch_tool_call(context, request_context, tool_name, json)
             }
             UserMcpTools::Native(tools) => {
-                tools.try_tool_call(context, request_context, tool_name, json)
+                tools.dispatch_tool_call(context, request_context, tool_name, json)
             }
         }
     }
@@ -89,6 +99,10 @@ impl<Context: Send + Sync + 'static> ToolSet<Context> for UserMcpTools {
             UserMcpTools::Pipedream(tools) => ToolSet::<Context>::request_schemas(tools),
             UserMcpTools::Native(tools) => ToolSet::<Context>::request_schemas(tools),
         }
+    }
+
+    fn searchable_catalog(&self) -> Vec<SearchableTool> {
+        self.catalog()
     }
 
     fn searchable_toolset_names(&self) -> Vec<String> {
@@ -221,15 +235,26 @@ where
         if !pipedream.is_empty() {
             // The user is on the Pipedream stack: native connectors are
             // ignored even if this particular app isn't connected there.
-            let matching: Vec<_> = pipedream
-                .into_iter()
-                .filter(|c| c.app_slug == connector.pipedream_app_slug)
-                .collect();
-            if matching.is_empty() {
+            // Prefer one alias by slug order: two Slack sessions would
+            // duplicate tool names when both `slack` and `slack_v2` are connected.
+            let matching = pipedream
+                .iter()
+                .filter(|c| connector.matches_pipedream_slug(&c.app_slug))
+                .min_by_key(|c| {
+                    connector
+                        .pipedream_app_slugs
+                        .iter()
+                        .position(|slug| *slug == c.app_slug)
+                });
+            let Some(matching) = matching else {
                 return Ok(None);
-            }
+            };
             return Ok(Some(UserMcpTools::Pipedream(
-                PipedreamToolSet::new(&matching, self.pipedream_connection.clone()).await,
+                PipedreamToolSet::new(
+                    std::slice::from_ref(matching),
+                    self.pipedream_connection.clone(),
+                )
+                .await,
             )));
         }
 
@@ -259,7 +284,7 @@ where
         if !pipedream.is_empty() {
             return Ok(pipedream
                 .iter()
-                .any(|c| c.app_slug == connector.pipedream_app_slug));
+                .any(|c| connector.matches_pipedream_slug(&c.app_slug)));
         }
 
         let native = self
@@ -273,16 +298,19 @@ where
     }
 }
 
-/// Wraps a static [`AsyncToolCollection`] and the user's selected MCP tools,
-/// presenting them as a single toolset to the AI loop.
-pub struct CombinedToolSet<T> {
+/// Wraps a static [`AsyncToolCollection`] and a set of MCP tools, presenting
+/// them as a single toolset to the AI loop.
+///
+/// `Mcp` defaults to the per-user selection, [`UserMcpTools`]; the in-process
+/// agent runtime composes the same way over the servers it was handed.
+pub struct CombinedToolSet<T, Mcp = UserMcpTools> {
     static_tools: Arc<AsyncToolCollection<T>>,
-    mcp_tools: UserMcpTools,
+    mcp_tools: Mcp,
 }
 
-impl<T> CombinedToolSet<T> {
-    /// Combine the static tools with an already-selected MCP toolset.
-    pub fn new(static_tools: Arc<AsyncToolCollection<T>>, mcp_tools: UserMcpTools) -> Self {
+impl<T, Mcp> CombinedToolSet<T, Mcp> {
+    /// Combine the static tools with an already-built MCP toolset.
+    pub fn new(static_tools: Arc<AsyncToolCollection<T>>, mcp_tools: Mcp) -> Self {
         Self {
             static_tools,
             mcp_tools,
@@ -290,8 +318,8 @@ impl<T> CombinedToolSet<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> ToolSet<T> for CombinedToolSet<T> {
-    fn try_tool_call<'a>(
+impl<T: Send + Sync + 'static, Mcp: ToolSet<T>> ToolSet<T> for CombinedToolSet<T, Mcp> {
+    fn dispatch_tool_call<'a>(
         &'a self,
         context: T,
         request_context: RequestContext,
@@ -302,10 +330,10 @@ impl<T: Send + Sync + 'static> ToolSet<T> for CombinedToolSet<T> {
     > {
         if tool_name.starts_with(MANGLED_PREFIX) {
             self.mcp_tools
-                .try_tool_call(context, request_context, tool_name, json)
+                .dispatch_tool_call(context, request_context, tool_name, json)
         } else {
             self.static_tools
-                .try_tool_call(context, request_context, tool_name, json)
+                .dispatch_tool_call(context, request_context, tool_name, json)
         }
     }
 
@@ -318,7 +346,7 @@ impl<T: Send + Sync + 'static> ToolSet<T> for CombinedToolSet<T> {
     }
 
     fn searchable_catalog(&self) -> Vec<SearchableTool> {
-        self.mcp_tools.catalog()
+        ToolSet::<T>::searchable_catalog(&self.mcp_tools)
     }
 
     fn searchable_toolset_names(&self) -> Vec<String> {

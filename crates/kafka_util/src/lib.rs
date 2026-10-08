@@ -158,6 +158,15 @@ struct ProducerTransport(Either<FutureProducer, FutureProducer<MskIamClientConte
 pub trait GroupName {
     /// Stable Kafka consumer group ID used for partition balancing and offsets.
     const GROUP_NAME: &'static str;
+
+    /// Where the group starts on a partition it has no committed offset for.
+    ///
+    /// Partitions the group already committed on resume from that offset either
+    /// way; this only decides the first read of a partition the group has never
+    /// consumed, such as one of a topic newly added to its subscription.
+    /// `Earliest` replays everything the topic still retains there; `Latest`
+    /// starts at the next record published.
+    const INITIAL_OFFSET: InitialOffset = InitialOffset::Earliest;
 }
 
 /// Marker type for a consumer that does not subscribe or persist offsets.
@@ -167,22 +176,14 @@ pub trait GroupName {
 /// or commit operations and therefore does not create durable group state.
 pub struct Ungrouped;
 
-/// Starting position for manually assigned ungrouped topic partitions.
+/// Starting position for a partition a consumer has no committed offset for:
+/// every partition of an ungrouped consumer, and new partitions of a group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InitialOffset {
     /// Consume all currently retained records before continuing with new ones.
     Earliest,
     /// Consume only records published after the partition assignment begins.
     Latest,
-}
-
-impl InitialOffset {
-    fn as_kafka_offset(self) -> Offset {
-        match self {
-            Self::Earliest => Offset::Beginning,
-            Self::Latest => Offset::End,
-        }
-    }
 }
 
 /// Shared Kafka consumer with environment-aware transport and type-safe group behavior.
@@ -221,9 +222,13 @@ fn producer_config(brokers: &str) -> ClientConfig {
 
 fn grouped_config<T: GroupName>(brokers: &str) -> ClientConfig {
     let mut config = consumer_config(brokers);
-    config
-        .set("group.id", T::GROUP_NAME)
-        .set("auto.offset.reset", "earliest");
+    config.set("group.id", T::GROUP_NAME).set(
+        "auto.offset.reset",
+        match T::INITIAL_OFFSET {
+            InitialOffset::Earliest => "earliest",
+            InitialOffset::Latest => "latest",
+        },
+    );
     config
 }
 
@@ -277,10 +282,20 @@ fn create_producer_from_env(
     })
 }
 
+/// Polls the consumer once with a no-op waker so OAUTHBEARER installs its
+/// initial token before a synchronous broker request (metadata, list offsets)
+/// needs a connection.
+fn prime_oauth_token<C: ConsumerContext + 'static>(consumer: &StreamConsumer<C>) {
+    let mut recv = std::pin::pin!(consumer.recv());
+    let waker = std::task::Waker::noop();
+    let mut context = std::task::Context::from_waker(waker);
+    let _ = std::future::Future::poll(recv.as_mut(), &mut context);
+}
+
 fn build_assignment<C, T>(
     consumer: &T,
     topics: &[&str],
-    initial_offset: InitialOffset,
+    offset: Offset,
     metadata_timeout: Duration,
 ) -> KafkaResult<TopicPartitionList>
 where
@@ -319,11 +334,7 @@ where
             if let Some(error) = partition.error() {
                 return Err(KafkaError::MetadataFetch(error.into()));
             }
-            assignment.add_partition_offset(
-                topic,
-                partition.id(),
-                initial_offset.as_kafka_offset(),
-            )?;
+            assignment.add_partition_offset(topic, partition.id(), offset)?;
         }
     }
 
@@ -417,8 +428,8 @@ impl KafkaEventConsumer<Ungrouped> {
     /// Manually assigns every current partition of `topics` at `initial_offset`.
     ///
     /// Manual assignment does not join a consumer group, persist offsets, or
-    /// automatically discover partitions added after this call. Callers that
-    /// support partition-count changes must refresh the assignment themselves.
+    /// automatically discover partitions added after this call. Reconnect to
+    /// discover partition-count changes.
     pub fn assign_topics(
         &self,
         topics: &[&str],
@@ -426,19 +437,12 @@ impl KafkaEventConsumer<Ungrouped> {
         metadata_timeout: Duration,
     ) -> KafkaResult<()> {
         either::for_both!(&self.consumer.0, consumer => {
-            // OAUTHBEARER requires polling once to install the initial token
-            // before a synchronous metadata request can connect to a broker.
-            let mut recv = std::pin::pin!(consumer.recv());
-            let waker = std::task::Waker::noop();
-            let mut context = std::task::Context::from_waker(waker);
-            let _ = std::future::Future::poll(recv.as_mut(), &mut context);
-
-            let assignment = build_assignment(
-                consumer,
-                topics,
-                initial_offset,
-                metadata_timeout,
-            )?;
+            prime_oauth_token(consumer);
+            let offset = match initial_offset {
+                InitialOffset::Earliest => Offset::Beginning,
+                InitialOffset::Latest => Offset::End,
+            };
+            let assignment = build_assignment(consumer, topics, offset, metadata_timeout)?;
             consumer.assign(&assignment)
         })
     }

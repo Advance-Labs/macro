@@ -53,12 +53,19 @@
       sqlxFilter = path: _type: builtins.match ".*\\.sqlx/.*\\.json$" path != null;
       pdfiumFilter = path: _type: builtins.match ".*pdfium-lib/.*\\.(so|dylib)$" path != null;
       # `.sh` is required so `include_str!` of
-      # `crates/agent_harness/container/ensure_ready.sh` survives the prune.
-      assetFilter = path: _type: builtins.match ".*\\.(md|html|txt|json|canvas|sql|sh)$" path != null;
+      # `crates/agent_harness/container/ensure_ready.sh` survives the prune;
+      # `.ttf` and `.xml` for the fonts and preset shape definitions that
+      # `crates/pptx_engine` embeds with `include_bytes!`; `.graphql` for the
+      # `static_assets/schema.graphql` that `cache-core`'s build script reads;
+      # `.jsonl` for the recorded sessions `agent_fold` tests embed.
+      assetFilter = path: _type: builtins.match ".*\\.(md|html|txt|json|jsonl|canvas|sql|sh|ttf|xml|graphql)$" path != null;
+      # Rust local HTTP clients embed only the public proxy CA, never its keys.
+      localCaFilter = path: _type: pkgs.lib.hasSuffix "/infra/local/certs/ca.pem" (toString path);
       binFilter = path: _type: builtins.match ".*\\.bin$" path != null;
       srcFilter =
         path: type:
         (sqlxFilter path type)
+        || (localCaFilter path type)
         || (pdfiumFilter path type)
         || (assetFilter path type)
         || (binFilter path type)
@@ -117,7 +124,11 @@
           let
             rel = pkgs.lib.removePrefix ((toString ../.) + "/") (toString path);
           in
-          (rel == ".sqlx")
+          (rel == "infra")
+          || (rel == "infra/local")
+          || (rel == "infra/local/certs")
+          || (localCaFilter path type)
+          || (rel == ".sqlx")
           || (pkgs.lib.hasPrefix ".sqlx/" rel)
           || (rel == "static_assets")
           || (pkgs.lib.hasPrefix "static_assets/" rel)
@@ -217,7 +228,9 @@
           doCheck = false;
           doInstallCargoArtifacts = true;
           cargoExtraArgs = "--locked --all-features --workspace --lib --exclude sync_service";
-          RUSTFLAGS = "-Dwarnings" + pkgs.lib.optionalString isLinux " -C link-arg=-fuse-ld=mold";
+          # Keep RUSTFLAGS identical to cargoArtifacts: any difference changes
+          # cargo's fingerprint and recompiles every dependency in this layer.
+          # The clippy checks enforce `-D warnings`.
           RUSTDOCFLAGS = "-Dwarnings";
         }
       );
@@ -303,6 +316,7 @@
             "--bin connection_gateway_openapi"
             "--bin contacts_service_openapi"
             "--bin unfurl_service_openapi"
+            "--bin calendar_service_openapi"
             "--bin email_service_openapi"
             "--bin search_service_openapi"
             "--bin scheduled_action_openapi"
@@ -340,6 +354,11 @@
 
       deployServiceBinaryDefinitions = [
         {
+          serviceName = "preview-gateway";
+          packageName = "preview_gateway";
+          binaries = [ "preview_gateway" ];
+        }
+        {
           serviceName = "agent-harness-service";
           packageName = "agent_harness_service";
           binaries = [ "agent_harness_service" ];
@@ -353,6 +372,11 @@
           serviceName = "authentication-service";
           packageName = "authentication_service";
           binaries = [ "authentication_service" ];
+        }
+        {
+          serviceName = "calendar-service";
+          packageName = "calendar_service";
+          binaries = [ "calendar_service" ];
         }
         {
           serviceName = "connection-gateway";
@@ -378,6 +402,11 @@
           serviceName = "document-storage-service";
           packageName = "document_storage_service";
           binaries = [ "document_storage_service" ];
+        }
+        {
+          serviceName = "slack-import-worker";
+          packageName = "slack_import_worker";
+          binaries = [ "slack_import_worker" ];
         }
         {
           serviceName = "email-service";
@@ -508,6 +537,27 @@
         }) deployServiceBinaryDefinitions
       );
 
+      # DSS and its worker are separate Cargo packages with separate pruned
+      # source closures, but CI hands both binaries to the same Pulumi stack.
+      # Bundle only the deploy output; local-stack-binaries keeps the worker
+      # opt-in by continuing to use the unbundled deployServiceBinaryPackages.
+      documentStorageDeployBinaries =
+        let
+          cfg = builtins.fromJSON (builtins.readFile ../.github/services-config.json);
+          checkBinaries = pkgs.lib.concatMapStringsSep "\n" (binary: ''
+            test -x "$out/bin/${binary}" || {
+              echo "Missing deploy binary: ${binary}" >&2
+              exit 1
+            }
+          '') cfg.services.document-storage-service.deploy_binaries;
+        in
+        pkgs.runCommand "cloud-storage-document-storage-service-deploy-binaries" { } ''
+          mkdir -p $out/bin
+          cp ${deployServiceBinaryPackages.deploy-service-binaries-document-storage-service}/bin/* $out/bin/
+          cp ${deployServiceBinaryPackages.deploy-service-binaries-slack-import-worker}/bin/* $out/bin/
+          ${checkBinaries}
+        '';
+
       localStackBinaryPackages = pkgs.lib.listToAttrs (
         map (def: {
           name = "local-stack-binaries-${def.serviceName}";
@@ -516,13 +566,17 @@
       );
 
       localStackDeployServiceNames = [
+        "preview-gateway"
         "agent-harness-service"
+        "agent-schedule-service"
+        "calendar-service"
         "connection-gateway"
         "contacts-service"
         "document-cognition-service"
         "document-storage-service"
         "email-service"
         "image-proxy-service"
+        "mcp-server"
         "notification-service"
         "static-file-service"
         "unfurl-service"
@@ -944,6 +998,7 @@
               connection_gateway = "service-connection";
               contacts_service = "service-contacts";
               unfurl_service = "service-unfurl";
+              calendar_service = "service-calendar";
               email_service = "service-email";
               search_service = "service-search";
               scheduled_action = "service-scheduled-action";
@@ -982,6 +1037,9 @@
       }
       // dopplerConfigBinPackages
       // deployServiceBinaryPackages
+      // {
+        deploy-service-binaries-document-storage-service = documentStorageDeployBinaries;
+      }
       // deployLambdaPackages
       // pkgs.lib.optionalAttrs isLinux {
         local-stack-binaries = localStackBinaries;

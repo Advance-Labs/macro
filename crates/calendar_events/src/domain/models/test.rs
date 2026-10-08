@@ -1,6 +1,38 @@
 use super::*;
 use chrono::TimeZone;
 
+#[test]
+fn timed_points_are_valid_and_use_start_inclusive_end_exclusive_membership() {
+    let start = Utc.with_ymd_and_hms(2026, 10, 8, 9, 0, 0).unwrap();
+    let window = range(start, start + chrono::Duration::hours(1));
+    for (offset, included) in [(-1, false), (0, true), (30, true), (60, false)] {
+        let point = start + chrono::Duration::minutes(offset);
+        let time = EventTime::Timed {
+            starts_at: point,
+            ends_at: point,
+            time_zone: None,
+        };
+        assert!(time.is_valid());
+        assert!(!time.has_positive_duration());
+        assert_eq!(time.overlaps(&window), included);
+    }
+    assert!(
+        !EventTime::Timed {
+            starts_at: start,
+            ends_at: start - chrono::Duration::seconds(1),
+            time_zone: None
+        }
+        .is_valid()
+    );
+    assert!(
+        !EventTime::AllDay {
+            start_date: start.date_naive(),
+            end_date: start.date_naive()
+        }
+        .is_valid()
+    );
+}
+
 fn range(starts_at: DateTime<Utc>, ends_at: DateTime<Utc>) -> OccurrenceRange {
     OccurrenceRange {
         starts_at,
@@ -47,6 +79,7 @@ fn sync_plan_extends_only_the_uncovered_tail() {
         materialized_range: Some(materialized.clone()),
         synced_at: None,
         watch_expires_at: None,
+        watch_unsupported_at: None,
     };
 
     assert_eq!(
@@ -78,6 +111,7 @@ fn sync_plan_extends_only_the_uncovered_tail() {
         materialized_range: Some(materialized.clone()),
         synced_at: None,
         watch_expires_at: None,
+        watch_unsupported_at: None,
     };
     assert_eq!(
         uninitialized.sync_plan(&OccurrenceRange::historical_sync(now)),
@@ -90,11 +124,50 @@ fn sync_plan_extends_only_the_uncovered_tail() {
         materialized_range: None,
         synced_at: None,
         watch_expires_at: None,
+        watch_unsupported_at: None,
     };
     assert_eq!(
         unmaterialized.sync_plan(&OccurrenceRange::historical_sync(now)),
         GoogleSyncPlan::FullSnapshot
     );
+}
+
+#[test]
+fn watch_renewal_skips_calendars_that_recently_refused_push() {
+    let now = Utc.with_ymd_and_hms(2026, 9, 23, 12, 0, 0).unwrap();
+    let calendar = StoredGoogleCalendar {
+        id: Uuid::now_v7(),
+        sync_token: None,
+        materialized_range: None,
+        synced_at: None,
+        watch_expires_at: None,
+        watch_unsupported_at: None,
+    };
+    assert!(calendar.needs_watch_renewal(now));
+
+    let healthy = StoredGoogleCalendar {
+        watch_expires_at: Some(now + chrono::Duration::days(3)),
+        ..calendar.clone()
+    };
+    assert!(!healthy.needs_watch_renewal(now));
+
+    let expiring = StoredGoogleCalendar {
+        watch_expires_at: Some(now + chrono::Duration::hours(1)),
+        ..calendar.clone()
+    };
+    assert!(expiring.needs_watch_renewal(now));
+
+    let refused = StoredGoogleCalendar {
+        watch_unsupported_at: Some(now - chrono::Duration::days(1)),
+        ..calendar.clone()
+    };
+    assert!(!refused.needs_watch_renewal(now));
+
+    let refusal_aged_out = StoredGoogleCalendar {
+        watch_unsupported_at: Some(now - chrono::Duration::days(8)),
+        ..calendar
+    };
+    assert!(refusal_aged_out.needs_watch_renewal(now));
 }
 
 #[test]
@@ -148,6 +221,7 @@ fn default_reminders_stay_out_of_serialized_projections() {
         owner_id: "macro|projection@example.com".to_string(),
         ical_uid: "projection@example.com".to_string(),
         calendar_id: None,
+        sources: Vec::new(),
         title: "Projection".to_string(),
         description: None,
         location: None,
@@ -184,6 +258,7 @@ fn default_reminders_stay_out_of_serialized_projections() {
     assert!(serialized.get("creatorEmail").is_none());
     assert!(serialized.get("creatorName").is_none());
     assert!(serialized.get("eventType").is_none());
+    assert!(serialized.get("sources").is_none());
     let legacy: CalendarEvent = serde_json::from_value(serialized).unwrap();
     assert_eq!(legacy.reminders, EventReminders::default());
     assert_eq!(legacy.event_type, EventType::Default);

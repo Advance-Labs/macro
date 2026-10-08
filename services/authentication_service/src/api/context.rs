@@ -24,6 +24,13 @@ use github::domain::service::GithubLinkServiceImpl;
 use github::outbound::github_auth_client::GithubAuthImpl;
 use github::outbound::github_oauth_client::GithubOauthImpl;
 use github::outbound::pg_github_repo::PgGithubRepo;
+use github_pull_requests::{
+    domain::service::GithubPullRequestServiceImpl,
+    outbound::pg_github_pull_request_repo::PgGithubPullRequestRepo,
+};
+use gtm_invite::{
+    domain::service::GtmInviteServiceImpl, outbound::pg_gtm_invite_repo::PgGtmInviteRepo,
+};
 use loops_client::LoopsClient;
 use macro_auth::{InternalApiKey, middleware::decode_jwt::JwtValidationArgs};
 use macro_authorization::{
@@ -50,7 +57,9 @@ use roles_and_permissions::{
 use sqlx::PgPool;
 use tokio_util::task::TaskTracker;
 
+use crate::account_link_state::AccountLinkStateKey;
 use crate::microsoft_token_cipher::MicrosoftTokenCipher;
+use crate::service::signup_policy::SignupPolicy;
 use cursor_api_key::cipher::CursorApiKeyCipher;
 
 pub(crate) type NotificationIngressType = SqsNotificationIngress<SqsQueue>;
@@ -71,6 +80,18 @@ pub(crate) type ChannelServiceType = ChannelServiceImpl<
     PgChannelReferenceSharePermissions<EntityAccessServiceType>,
 >;
 
+/// The AI billing service: plan allowances, prepaid credits, and overage,
+/// resolved through roles + teams and collected through Stripe.
+pub(crate) type AiBillingServiceType = ai_billing::domain::BillingServiceImpl<
+    ai_billing::outbound::RolesTeamsEntitlementSource<
+        UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>,
+        teams::outbound::team_repo::TeamRepositoryImpl,
+    >,
+    ai_billing::outbound::PgUsageReader,
+    ai_billing::outbound::PgBillingRepo,
+    ai_billing::outbound::StripePaymentGateway,
+>;
+
 pub(crate) type TeamsServiceType = teams::domain::team_service::TeamServiceImpl<
     teams::outbound::team_repo::TeamRepositoryImpl,
     teams::outbound::customer_repo::CustomerRepositoryImpl,
@@ -84,6 +105,11 @@ pub(crate) type TeamsServiceType = teams::domain::team_service::TeamServiceImpl<
         SqsContactsIngress<SqsContactsQueue>,
     >,
     AuthenticationEventBroker,
+    AiBillingServiceType,
+    crate::outbound::team_owned_entity_cleanup::TeamOwnedEntityCleanupAdapter<
+        bots::outbound::pg_bots_repo::PgBotsRepo,
+        entity_registry::EntityRegistryServiceImpl<entity_registry::PgEntityRegistryRepository>,
+    >,
 >;
 
 pub(crate) type RateLimiter = RateLimitServiceImpl<RedisRateLimitAdapter<redis::Client>>;
@@ -94,11 +120,16 @@ pub(crate) type ReferralServiceType = ReferralServiceImpl<
     Arc<SqsNotificationIngress<SqsQueue>>,
 >;
 
+pub(crate) type GtmInviteServiceType = GtmInviteServiceImpl<PgGtmInviteRepo>;
+
 pub(crate) type GithubLinkServiceType = GithubLinkServiceImpl<
     PgGithubRepo,
     GithubOauthImpl,
     GithubAuthImpl,
-    ForeignEntityServiceImpl<PgForeignEntityRepo>,
+    GithubPullRequestServiceImpl<
+        ForeignEntityServiceImpl<PgForeignEntityRepo>,
+        PgGithubPullRequestRepo,
+    >,
 >;
 
 pub(crate) type EntityAccessServiceType = EntityAccessServiceImpl<PgAccessRepository>;
@@ -117,15 +148,29 @@ pub(crate) struct ApiContext {
     pub microsoft_token_cipher: Option<Arc<dyn MicrosoftTokenCipher>>,
     /// Encrypts users' Cursor API keys.
     pub cursor_api_key_cipher: Arc<dyn CursorApiKeyCipher>,
+    /// Owner-bound Codex OAuth lifecycle and cloud target settings.
+    pub codex_connection: Option<Arc<dyn codex_connection::domain::ConnectionService>>,
     pub macro_cache_client: Arc<MacroCache>,
     pub stripe_client: Arc<stripe::Client>,
+    pub subscription_checkout: Arc<
+        crate::service::subscription_checkout::CheckoutService<
+            crate::outbound::subscription_checkout::StripeCheckoutGateway<GtmInviteServiceType>,
+        >,
+    >,
     pub document_storage_service_client:
         Arc<document_storage_service_client::DocumentStorageServiceClient>,
+    pub user_deletion: Arc<
+        crate::outbound::user_deletion::UserDeletionAdapter<
+            TeamsServiceType,
+            onboarding::outbound::pg_onboarding_repo::PgOnboardingRepo,
+        >,
+    >,
     pub email_service_client: Arc<email::outbound::EmailServiceHttpClient>,
     pub ses_client: Arc<ses_client::Ses>,
     pub notification_ingress_service: Arc<NotificationIngressType>,
     pub sqs_client: Arc<sqs_client::SQS>,
     pub environment: Environment,
+    pub signup_policy: Arc<SignupPolicy>,
     pub jwt_args: JwtValidationArgs,
     pub authorization_state: MacroAuthorizationState<AuthorizationService>,
     pub token_context: MacroApiTokenContext,
@@ -135,17 +180,24 @@ pub(crate) struct ApiContext {
         Arc<UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>>, // Note: since FromRef doesn't support generics we have to specify the concrete types here
     pub teams_service: Arc<TeamsServiceType>,
     pub channel_service: Arc<ChannelServiceType>,
+    pub channel_messages: Arc<dyn messages::domain::api::MessageCommands>,
     pub favorites_service: Arc<FavoritesServiceType>,
     pub entity_access_service: Arc<EntityAccessServiceType>,
     pub native_app_service: Arc<NativeAppServiceImpl<DefaultBundleFetcher>>,
     pub analytics_client: Arc<AnalyticsClient>,
     pub loops_client: Arc<LoopsClient>,
     pub referral_service: Arc<ReferralServiceType>,
+    pub gtm_invite_service: Arc<GtmInviteServiceType>,
     pub rate_limit_service: RateLimiter,
-    /// The stripe price id
-    pub stripe_price_id: String,
+    /// The stripe price ids for each paid plan's seat
+    pub stripe_prices: crate::api::user::stripe::StripePrices,
+    /// AI allowances, credits, and overage
+    pub ai_billing_service: Arc<AiBillingServiceType>,
+    pub ai_payment_gateway: Arc<ai_billing::outbound::StripePaymentGateway>,
     /// Whether Gmail link consent requests the Google Calendar scope.
     pub calendar_scope_enabled: bool,
+    /// Signs and verifies the `state` on account-link OAuth round trips.
+    pub account_link_state_key: AccountLinkStateKey,
 }
 
 env_var! {

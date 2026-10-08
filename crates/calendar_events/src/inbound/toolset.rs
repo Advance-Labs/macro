@@ -6,6 +6,7 @@
 //! policy live behind those ports, exactly as for the HTTP routers.
 
 mod create_calendar_event;
+mod create_confirmed_calendar_event;
 mod delete_calendar_event;
 mod list_calendar_events;
 mod list_calendars;
@@ -25,11 +26,13 @@ use serde::{Deserialize, Serialize};
 use crate::domain::{
     models::{
         CalendarAttendeeInput, CalendarEvent, EventReminderOverride, EventReminders, EventTime,
+        OutOfOfficeAutoDeclineMode, OutOfOfficeProperties,
     },
     ports::{CalendarMutationError, CalendarMutationService, CalendarOccurrenceService},
 };
 
 pub use create_calendar_event::CreateCalendarEvent;
+pub use create_confirmed_calendar_event::CreateConfirmedCalendarEvent;
 pub use delete_calendar_event::{
     DeleteCalendarEvent, DeleteCalendarEventResponse, DeletionScopeInput,
 };
@@ -92,22 +95,30 @@ where
         .add_tool::<DeleteCalendarEvent, CalendarToolContext<M, O>>()
 }
 
-/// Create the AI chat calendar toolset.
-///
-/// Event creation is deferred until the user reviews and executes the pending
-/// call. Reads, updates, and deletions continue to execute in the agent loop.
+/// The full calendar toolset, for hosts that finish user tools: the deferring
+/// `CreateCalendarEvent`, which a composer or review card confirms, beside
+/// `CreateConfirmedCalendarEvent`, which creates on a confirmation the user
+/// already gave in conversation. Both are always registered; the prompt
+/// decides which fits the surface the prompt came from. Reads, updates, and
+/// deletions execute in the agent loop.
 pub fn calendar_toolset<M, O>() -> AsyncToolCollection<CalendarToolContext<M, O>>
 where
     M: CalendarMutationService,
     O: CalendarOccurrenceService,
 {
-    shared_calendar_toolset().add_user_tool::<CreateCalendarEvent, CalendarToolContext<M, O>>()
+    shared_calendar_toolset()
+        .add_user_tool::<CreateCalendarEvent, CalendarToolContext<M, O>>()
+        .add_tool::<CreateConfirmedCalendarEvent, CalendarToolContext<M, O>>()
 }
 
-/// Create the MCP calendar toolset.
+/// Create the calendar toolset for hosts without a composer — the MCP server
+/// and the channel-mention bot.
 ///
-/// MCP clients receive the real create tool and apply their own confirmation
-/// policy from its annotations rather than the chat-specific deferred flow.
+/// These hosts receive the real create tool and apply their own confirmation
+/// policy from its annotations rather than the chat-specific deferred flow,
+/// which only the chat frontend can finish. `CreateConfirmedCalendarEvent`
+/// is left out: it is for the in-process agent's conversation turns, and
+/// here the plain tool already creates directly.
 pub fn mcp_toolset<M, O>() -> AsyncToolCollection<CalendarToolContext<M, O>>
 where
     M: CalendarMutationService,
@@ -225,6 +236,63 @@ impl From<EventRemindersInput> for EventReminders {
         Self {
             use_default: input.use_default,
             overrides: input.overrides.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// The kind of event a create tool call makes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarEventTypeInput {
+    /// A regular calendar event.
+    #[default]
+    Default,
+    /// A Google out-of-office status event: primary calendar only, timed, no
+    /// attendees, and Google shows the user as away and can auto-decline
+    /// conflicting invitations.
+    OutOfOffice,
+}
+
+/// How an out-of-office event handles conflicting invitations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoDeclineModeInput {
+    /// Leave conflicting invitations alone.
+    DeclineNone,
+    /// Decline every conflicting invitation, existing and new.
+    DeclineAll,
+    /// Decline only invitations that arrive after the event is created.
+    DeclineNewOnly,
+}
+
+impl From<AutoDeclineModeInput> for OutOfOfficeAutoDeclineMode {
+    fn from(input: AutoDeclineModeInput) -> Self {
+        match input {
+            AutoDeclineModeInput::DeclineNone => Self::DeclineNone,
+            AutoDeclineModeInput::DeclineAll => Self::DeclineAllConflictingInvitations,
+            AutoDeclineModeInput::DeclineNewOnly => Self::DeclineOnlyNewConflictingInvitations,
+        }
+    }
+}
+
+/// Out-of-office decline behavior supplied to the calendar tools.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OutOfOfficeInput {
+    /// How conflicting invitations are handled. Defaults to declining nothing,
+    /// so the event only blocks time and shows the away status.
+    #[serde(default)]
+    pub auto_decline_mode: Option<AutoDeclineModeInput>,
+    /// Message returned to organizers whose invitations are auto-declined.
+    #[serde(default)]
+    pub decline_message: Option<String>,
+}
+
+impl From<OutOfOfficeInput> for OutOfOfficeProperties {
+    fn from(input: OutOfOfficeInput) -> Self {
+        Self {
+            auto_decline_mode: input.auto_decline_mode.map(Into::into).unwrap_or_default(),
+            decline_message: input.decline_message,
         }
     }
 }

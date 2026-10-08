@@ -3,10 +3,19 @@ import { calendarKeys } from '../keys';
 import { handleRefreshCalendar } from '../sync';
 
 const invalidateQueriesMock = vi.hoisted(() => vi.fn());
+const isMutatingMock = vi.hoisted(() => vi.fn());
 const invalidateCalendarOccurrencesMock = vi.hoisted(() => vi.fn());
+const resetTeamCalendarQueriesMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../team-cache', () => ({
+  resetTeamCalendarQueries: resetTeamCalendarQueriesMock,
+}));
 
 vi.mock('../../client', () => ({
-  queryClient: { invalidateQueries: invalidateQueriesMock },
+  queryClient: {
+    invalidateQueries: invalidateQueriesMock,
+    isMutating: isMutatingMock,
+  },
 }));
 
 vi.mock('../occurrences', () => ({
@@ -16,6 +25,7 @@ vi.mock('../occurrences', () => ({
 describe('handleRefreshCalendar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isMutatingMock.mockReturnValue(0);
   });
 
   it('refetches occurrence viewports and the calendar list on synced', () => {
@@ -25,6 +35,30 @@ describe('handleRefreshCalendar', () => {
     });
 
     expect(invalidateCalendarOccurrencesMock).toHaveBeenCalledTimes(1);
+    expect(resetTeamCalendarQueriesMock).toHaveBeenCalledTimes(1);
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: calendarKeys.invitations._def,
+    });
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: calendarKeys.visibleCalendars.queryKey,
+    });
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: calendarKeys.teamOutOfOffice._def,
+    });
+  });
+
+  it('defers the occurrence refetch while an RSVP is in flight', () => {
+    isMutatingMock.mockReturnValue(1);
+
+    handleRefreshCalendar({
+      event: 'synced',
+      link_id: '019fdd65-dcc1-74fb-a9c6-8162c11c5854',
+    });
+
+    expect(invalidateCalendarOccurrencesMock).not.toHaveBeenCalled();
+    expect(invalidateQueriesMock).not.toHaveBeenCalledWith({
+      queryKey: calendarKeys.invitations._def,
+    });
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: calendarKeys.visibleCalendars.queryKey,
     });
@@ -43,5 +77,11 @@ describe('handleRefreshCalendar', () => {
 
     expect(invalidateCalendarOccurrencesMock).not.toHaveBeenCalled();
     expect(invalidateQueriesMock).not.toHaveBeenCalled();
+  });
+
+  it('clears team projections on sharing changes without touching own optimistic events', () => {
+    handleRefreshCalendar({ event: 'team_sharing_changed' });
+    expect(resetTeamCalendarQueriesMock).toHaveBeenCalledTimes(1);
+    expect(invalidateCalendarOccurrencesMock).not.toHaveBeenCalled();
   });
 });

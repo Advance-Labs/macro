@@ -11,7 +11,7 @@ import type { CollabSurfaceParent } from './createCollabSurface';
  * friends, incl. task/snippet/skill aliases) are `Document` rows; the rest map
  * to their own entity type.
  *
- * Absent entries (contact, company, automation, pr, unknown) have no
+ * Absent entries (contact, company, routine, pr, unknown) have no
  * backend-supported parent type — a collab surface cannot be hosted in them.
  */
 const BLOCK_PARENT_TYPE: Partial<
@@ -23,6 +23,7 @@ const BLOCK_PARENT_TYPE: Partial<
   code: 'document',
   image: 'document',
   canvas: 'document',
+  spreadsheet: 'document',
   video: 'document',
   channel: 'channel',
   project: 'project',

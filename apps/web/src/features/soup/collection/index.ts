@@ -1,4 +1,5 @@
 export { type DateBucket, dateBucket } from './date-buckets';
+export { createSoupRowStore } from './row-store';
 export {
   assertUniqueSoupRowIds,
   type BuildFlatSoupRowsOptions,
@@ -34,3 +35,8 @@ export type {
   SoupRow,
   SoupSectionHeaderRow,
 } from './types';
+export {
+  type SoupListNavigationOpenOptions,
+  type UseSoupListNavigationHotkeysOptions,
+  useSoupListNavigationHotkeys,
+} from './useSoupListNavigationHotkeys';
