@@ -8,7 +8,7 @@ import {
 } from '@app/components/view-shell';
 import { useSplitPanelOrThrow } from '@components/app/split-layout/layoutUtils';
 import { isTouchDevice } from '@core/mobile/isTouchDevice';
-import { createSignal } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import { TASK_GROUP_OPTIONS, TASK_SORT_OPTIONS } from '../constants';
 import { TASK_BOARD_GROUP_OPTIONS } from '../core/task-board';
 import { useTaskFilters } from '../filters/use-task-filters';
