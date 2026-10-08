@@ -388,10 +388,9 @@ where
         if resolved
             && terminal
             && let Some(store) = dm_store
+            && let Err(error) = store.finalize_reply(turn.action_id, &outcome).await
         {
-            if let Err(error) = store.finalize_reply(turn.action_id, &outcome).await {
-                tracing::error!(?error, %session_id, "failed to mark the DM reply finalized");
-            }
+            tracing::error!(?error, %session_id, "failed to mark the DM reply finalized");
         }
     }
 

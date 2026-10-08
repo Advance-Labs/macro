@@ -139,7 +139,6 @@ impl InMemAgentManager {
     ///
     /// `session_token` is the egress token minted at spawn; a resume passes
     /// `None` and keeps whatever spawn stored.
-    #[must_use]
     pub async fn attach(
         &self,
         facts: SessionFacts,

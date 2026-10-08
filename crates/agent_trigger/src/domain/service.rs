@@ -375,7 +375,7 @@ where
             match router.evaluate(posted).await? {
                 DirectMessageDecision::NotDirectMessage => {}
                 DirectMessageDecision::Unavailable => return Ok(Vec::new()),
-                DirectMessageDecision::Deliver(decision) => return Ok(vec![decision]),
+                DirectMessageDecision::Deliver(decision) => return Ok(vec![*decision]),
             }
         }
         let mut mentioned = bot_mention_ids(&posted.mentions);

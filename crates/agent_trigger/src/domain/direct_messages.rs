@@ -21,7 +21,7 @@ pub enum DirectMessageDecision {
     /// Never fall back to mentioning a different agent in the same private DM.
     Unavailable,
     /// Deliver to the DM's stable current conversation segment.
-    Deliver(TriggerDecision),
+    Deliver(Box<TriggerDecision>),
 }
 
 /// Agent-DM routing exposed to the common committed-message consumer.
@@ -80,12 +80,12 @@ impl<C: AgentDmRepo, P: AgentDmEligibility, S: AgentDmConversationRepo> DirectMe
             Err(error) => return Err(AgentSessionError::Unknown(anyhow::Error::new(error))),
         }
         let session_id = self.sessions.current_or_create(channel_id).await?;
-        Ok(DirectMessageDecision::Deliver(
+        Ok(DirectMessageDecision::Deliver(Box::new(
             TriggerDecision::DirectMessage {
                 bot_id: dm.bot_id,
                 session_id,
                 message: posted.clone(),
             },
-        ))
+        )))
     }
 }

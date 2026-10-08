@@ -214,11 +214,10 @@ pub fn phase(parts: &[MessagePart], closed: bool) -> Option<TurnPhase> {
     }
     let phase = match parts.iter().rev().find(|part| !is_blank_text(part)) {
         Some(MessagePart::Text { .. }) => TurnPhase::Writing,
-        Some(MessagePart::ToolUse { status, .. })
-            if matches!(status, ToolStatus::Pending | ToolStatus::Running) =>
-        {
-            TurnPhase::Working
-        }
+        Some(MessagePart::ToolUse {
+            status: ToolStatus::Pending | ToolStatus::Running,
+            ..
+        }) => TurnPhase::Working,
         _ => TurnPhase::Thinking,
     };
     Some(phase)

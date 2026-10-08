@@ -1468,17 +1468,15 @@ pub(super) async fn run_session_worker<
         };
         if result.is_err()
             && let (Some(action), Some(store)) = (dm_action, &inner.dm_turns)
-        {
-            if let Err(error) = store
+            && let Err(error) = store
                 .finish(
                     action,
                     crate::domain::dm_turns::DmTurnState::Failed,
                     ReplyOutcome::Failed,
                 )
                 .await
-            {
-                tracing::error!(?error, %session_id, "failed to persist DM command failure");
-            }
+        {
+            tracing::error!(?error, %session_id, "failed to persist DM command failure");
         }
         let _ = completed.send(result);
     }

@@ -107,11 +107,14 @@ async fn unmentioned_messages_always_address_the_bound_persona_and_session() {
     next.message_id = Uuid::from_u128(3);
     next.root_id = next.message_id;
     for post in [first, next] {
-        let DirectMessageDecision::Deliver(TriggerDecision::DirectMessage {
+        let DirectMessageDecision::Deliver(decision) = router.evaluate(&post).await.unwrap() else {
+            panic!("expected direct delivery")
+        };
+        let TriggerDecision::DirectMessage {
             bot_id,
             session_id,
             message,
-        }) = router.evaluate(&post).await.unwrap()
+        } = *decision
         else {
             panic!("expected direct delivery")
         };
