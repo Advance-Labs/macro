@@ -44,6 +44,8 @@ pub enum MobileWorkspaceError {
     InvalidInvite,
     #[error("Too many teammates")]
     TooManyInvites,
+    #[error("Use a Google Workspace work email")]
+    NotWorkspaceEmail,
     #[error("Email is blocked")]
     EmailBlocked,
     #[error("signup is not allowed")]
@@ -59,7 +61,8 @@ impl IntoResponse for MobileWorkspaceError {
             | MobileWorkspaceError::InvalidTeamName
             | MobileWorkspaceError::InvalidAccent
             | MobileWorkspaceError::InvalidInvite
-            | MobileWorkspaceError::TooManyInvites => StatusCode::BAD_REQUEST,
+            | MobileWorkspaceError::TooManyInvites
+            | MobileWorkspaceError::NotWorkspaceEmail => StatusCode::BAD_REQUEST,
             MobileWorkspaceError::EmailBlocked | MobileWorkspaceError::SignupDenied => {
                 StatusCode::FORBIDDEN
             }
@@ -115,9 +118,9 @@ pub fn router(state: ApiContext) -> Router<ApiContext> {
 
 /// Creates a team for a Meta in-app visitor and emails a desktop login link.
 ///
-/// The browser that calls this is not signed in. Google-required domains get
-/// `202` until that person has an account, then a desktop link instead of a
-/// passwordless code.
+/// The browser that calls this is not signed in. A Google-required domain
+/// with no account gets `202` and an email that opens Gmail connect on a
+/// computer. This browser never starts Google.
 #[utoipa::path(
     post,
     path = "/mobile-workspace",
@@ -140,6 +143,17 @@ pub async fn handler(
 ) -> Result<Response, MobileWorkspaceError> {
     let normalized = normalize_mobile_workspace(&req)?;
     ensure_email_allowed(&ctx, &normalized.email).await?;
+    crate::api::google_workspace_email::ensure_google_workspace_email(&normalized.email)
+        .await
+        .map_err(|error| match error {
+            crate::api::google_workspace_email::WorkspaceEmailError::NotWorkspace => {
+                MobileWorkspaceError::NotWorkspaceEmail
+            }
+            crate::api::google_workspace_email::WorkspaceEmailError::Lookup(error) => {
+                tracing::warn!(?error, "unable to verify workspace email");
+                MobileWorkspaceError::Internal(error)
+            }
+        })?;
 
     let idp_id = match ctx
         .auth_client
@@ -164,6 +178,14 @@ pub async fn handler(
 
     if !user_exists {
         if let Some(idp_id) = idp_id.clone() {
+            send_desktop_link(
+                &ctx,
+                &normalized.email,
+                &normalized.team_name,
+                normalized.accent.as_deref(),
+                false,
+            )
+            .await?;
             return Ok((
                 StatusCode::ACCEPTED,
                 Json(SsoRequiredResponse { idp_id }),
@@ -204,7 +226,7 @@ pub async fn handler(
         &normalized.email,
         &normalized.team_name,
         normalized.accent.as_deref(),
-        idp_id.is_some(),
+        true,
     )
     .await?;
 
@@ -320,68 +342,103 @@ async fn send_desktop_link(
     email: &str,
     team_name: &str,
     accent: Option<&str>,
-    sso: bool,
+    team_created: bool,
 ) -> Result<(), MobileWorkspaceError> {
-    let url = desktop_url(accent);
-    if sso {
-        let safe_name = escape_html(team_name);
-        let safe_url = escape_html(&url);
-        let content = format!(
-            "<p>Your team {safe_name} has been created.</p>\
-             <p><a href=\"{safe_url}\">Finish onboarding on your computer</a></p>"
-        );
-        ctx.ses_client
-            .send_email(
-                "auth@macro.com",
-                email,
-                "Your Macro team is ready",
-                &content,
-            )
-            .await
-            .map_err(|error| {
-                tracing::error!(?error, "unable to send desktop workspace email");
-                MobileWorkspaceError::Internal(error.into())
-            })?;
-        return Ok(());
-    }
-
-    let plain = default_redirect_url().to_string();
-    let code = match ctx
-        .auth_client
-        .start_passwordless_login(email, &url)
-        .await
-    {
-        Ok(code) => code,
-        Err(error) if url != plain => {
-            tracing::warn!(?error, "passwordless redirect with accent was rejected");
-            ctx.auth_client
-                .start_passwordless_login(email, &plain)
-                .await
-                .map_err(|retry| {
-                    tracing::error!(?retry, "unable to start passwordless login");
-                    MobileWorkspaceError::Internal(retry.into())
-                })?
-        }
-        Err(error) => {
-            tracing::error!(?error, "unable to start passwordless login");
-            return Err(MobileWorkspaceError::Internal(error.into()));
-        }
-    };
-    ctx.macro_cache_client
-        .set_passwordless_login_code(email, &code)
+    let url = desktop_signup_url(&default_redirect_url(), accent);
+    let (subject, content) = desktop_signup_message(team_name, &url, team_created);
+    ctx.ses_client
+        .send_email("auth@macro.com", email, subject, &content)
         .await
         .map_err(|error| {
-            tracing::error!(?error, "unable to store passwordless login code");
-            MobileWorkspaceError::Internal(error.into())
-        })?;
-    ctx.auth_client
-        .send_passwordless_login(&code)
-        .await
-        .map_err(|error| {
-            tracing::error!(?error, "unable to send passwordless login");
+            tracing::error!(?error, "unable to send desktop workspace email");
             MobileWorkspaceError::Internal(error.into())
         })?;
     Ok(())
+}
+
+/// Signup page on the computer, carrying the workspace color when one was chosen.
+fn desktop_signup_url(base: &url::Url, accent: Option<&str>) -> String {
+    let mut url = base.clone();
+    let path = url.path().trim_end_matches('/').to_string();
+    let signup_path = if path.is_empty() || path == "/" {
+        "/app/signup".to_string()
+    } else if path.ends_with("/signup") {
+        path
+    } else {
+        format!("{path}/signup")
+    };
+    url.set_path(&signup_path);
+    url.set_query(None);
+    if let Some(accent) = accent {
+        url.query_pairs_mut().append_pair("accent", accent);
+    }
+    url.to_string()
+}
+
+fn desktop_signup_message(team_name: &str, url: &str, team_created: bool) -> (&'static str, String) {
+    let subject = if team_created {
+        "Your Macro team is ready"
+    } else {
+        "Finish signing up for Macro"
+    };
+    let safe_name = escape_html(team_name);
+    let safe_url = escape_html(url);
+    let intro = if team_created {
+        format!(
+            "{safe_name} is ready. Open Macro on your computer to finish signing up and connect Gmail."
+        )
+    } else {
+        "Open Macro on your computer to finish signing up and connect Gmail.".to_string()
+    };
+    let html = format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>{subject}</title>
+  </head>
+  <body style="margin:0;padding:0;width:100%;background-color:#f5f5f4;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
+      {intro}
+    </div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f5f5f4" style="font-family:Arial,Helvetica,sans-serif;color:#222222;">
+      <tr>
+        <td align="center" style="padding:48px 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+            <tr>
+              <td bgcolor="#ffffff" style="padding:36px 40px 40px;border:1px solid #e7e7e5;border-radius:12px;">
+                <a href="https://macro.com" style="text-decoration:none;">
+                  <img src="https://macro.com/app/macro-email-logo.png" width="36" height="36" alt="Macro" style="display:block;border:0;background-color:#ffffff;" />
+                </a>
+                <h1 style="margin:36px 0 16px;font-size:28px;line-height:36px;font-weight:600;letter-spacing:-0.5px;color:#222222;">Sign up on your computer</h1>
+                <p style="margin:0 0 20px;font-size:16px;line-height:26px;color:#525252;">{intro}</p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 8px;">
+                  <tr>
+                    <td bgcolor="#222222" style="border-radius:6px;text-align:center;">
+                      <a href="{safe_url}" style="display:inline-block;padding:14px 24px;border:1px solid #222222;border-radius:6px;color:#ffffff;background-color:#222222;font-size:15px;line-height:20px;font-weight:600;text-decoration:none;">Sign up on your computer</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:28px 0 0;font-size:14px;line-height:22px;color:#737373;">If you didn't request this, you can safely ignore this email.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 16px 0;text-align:center;font-size:12px;line-height:20px;color:#737373;">
+                Need a hand? <a href="mailto:support@macro.com" style="color:#525252;text-decoration:underline;">Contact support</a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"#
+    );
+    (subject, html)
 }
 
 async fn ensure_email_allowed(ctx: &ApiContext, email: &str) -> Result<(), MobileWorkspaceError> {
@@ -397,14 +454,6 @@ async fn ensure_email_allowed(ctx: &ApiContext, email: &str) -> Result<(), Mobil
     } else {
         Err(MobileWorkspaceError::EmailBlocked)
     }
-}
-
-fn desktop_url(accent: Option<&str>) -> String {
-    let mut url = default_redirect_url();
-    if let Some(accent) = accent {
-        url.query_pairs_mut().append_pair("accent", accent);
-    }
-    url.to_string()
 }
 
 fn escape_html(value: &str) -> String {
@@ -481,6 +530,38 @@ mod tests {
         assert_eq!(normalized.team_name, "Acme");
         assert_eq!(normalized.accent.as_deref(), Some("#65d8ac"));
         assert_eq!(normalized.invites, vec!["teammate@acme.com".to_string()]);
+    }
+
+    #[test]
+    fn signup_link_opens_desktop_signup_with_the_accent() {
+        let base = url::Url::parse("https://macro.com/app").unwrap();
+        assert_eq!(
+            desktop_signup_url(&base, Some("#65d8ac")),
+            "https://macro.com/app/signup?accent=%2365d8ac"
+        );
+        let local = url::Url::parse("http://localhost:3000/").unwrap();
+        assert_eq!(
+            desktop_signup_url(&local, None),
+            "http://localhost:3000/app/signup"
+        );
+    }
+
+    #[test]
+    fn desktop_email_asks_them_to_sign_up_on_the_computer() {
+        let (subject, html) = desktop_signup_message(
+            "Acme & Co",
+            "https://macro.com/app/signup?accent=%2365d8ac",
+            true,
+        );
+        assert_eq!(subject, "Your Macro team is ready");
+        assert!(html.contains("Sign up on your computer"));
+        assert!(html.contains("Acme &amp; Co is ready."));
+        assert!(html.contains("https://macro.com/app/signup?accent=%2365d8ac"));
+        assert!(!html.to_lowercase().contains("code"));
+        let (subject, html) = desktop_signup_message("Acme", "https://macro.com/app/signup", false);
+        assert_eq!(subject, "Finish signing up for Macro");
+        assert!(html.contains("Sign up on your computer"));
+        assert!(!html.contains("Acme is ready"));
     }
 
     #[test]

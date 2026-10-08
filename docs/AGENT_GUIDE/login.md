@@ -106,12 +106,14 @@ Meta and Instagram in-app browsers, and phones that arrive with a Meta click id
 (`fbclid`, `igshid`, or a Meta `utm_source`), do not enter that desktop flow.
 A local dev server also shows it at `/app/signup?meta-mobile=1`.
 `/app/signup` instead walks a mobile version of the same screens: workspace
-color, Google or work email, then workspace name and teammates. Submitting
-creates the team and emails a desktop link. The phone stays on “Your team has
-been created. Finish onboarding on desktop.” and does not open the app. Opening
-the email on a computer resumes onboarding with that team and accent. A
-passwordless email signs them in. A Google-required domain still signs in with
-Google on the computer.
+color, work email, then workspace name and teammates. The email has to be a
+Google Workspace work address. Personal mail and other providers are refused.
+There is no Gmail connect step on the phone. Submitting creates the team and emails
+a link to desktop signup. The phone stays on “Your team has been created. Finish
+onboarding on desktop.” and does not open the app. The email asks them to sign up
+on a computer. The button opens `/app/signup` with the chosen accent, where desktop
+onboarding asks them to connect Gmail. A Google-required domain gets the same
+signup email without a team and still signs in with Google on the computer.
 
 On a desktop browser, signed-out `/app/signup` starts at the workspace color picker, followed by feature
 interests and security. No account is required for these slides. The signed-out

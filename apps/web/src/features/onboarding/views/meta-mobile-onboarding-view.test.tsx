@@ -17,14 +17,21 @@ describe('meta mobile onboarding', () => {
     const provision = vi.fn(async () => ({ t: 'created' as const }));
     const lead = vi.fn();
     const identify = vi.fn();
-    renderView({ provision, lead, identify });
+    renderView({
+      provision,
+      lead,
+      identify,
+      verifyWorkEmail: async () => true,
+    });
 
     await screen.findByRole('heading', { name: 'Create your workspace' });
     fireEvent.click(screen.getByRole('radio', { name: 'Coral' }));
     fireEvent.click(screen.getByRole('button', { name: 'Get started' }));
 
-    await screen.findByRole('heading', { name: /Connect your work/ });
-    fireEvent.click(screen.getByRole('button', { name: 'Use email instead' }));
+    await screen.findByRole('heading', {
+      name: 'Sign up with your work email.',
+    });
+    expect(screen.queryByRole('button', { name: /Google/ })).toBeNull();
     fireEvent.input(screen.getByLabelText('Email address'), {
       target: { value: 'Ada@Acme.com' },
     });
@@ -52,19 +59,42 @@ describe('meta mobile onboarding', () => {
     expect(identify).toHaveBeenCalledWith('ada@acme.com');
     expect(lead).toHaveBeenCalledWith('ada@acme.com');
   });
+
+  it('stays on the email step when the address is not Google Workspace', async () => {
+    renderView({
+      provision: async () => ({ t: 'created' }),
+      lead: () => {},
+      identify: () => {},
+      verifyWorkEmail: async () => false,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
+    fireEvent.input(await screen.findByLabelText('Email address'), {
+      target: { value: 'ada@gmail.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(
+      await screen.findByText('Use a Google Workspace work email.')
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('heading', { name: 'Built for teams.' })
+    ).toBeNull();
+  });
 });
 
 function renderView(options: {
   provision: () => Promise<{ t: 'created' }>;
   lead: (email: string) => void;
   identify: (email: string) => void;
+  verifyWorkEmail?: (email: string) => Promise<boolean>;
 }) {
   return render(() => (
     <MetaMobileOnboardingView
-      onGoogle={async () => {}}
       onIdentify={options.identify}
       onLead={options.lead}
       provision={options.provision}
+      verifyWorkEmail={options.verifyWorkEmail}
     />
   ));
 }

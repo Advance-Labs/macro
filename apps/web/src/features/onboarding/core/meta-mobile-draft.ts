@@ -9,6 +9,8 @@ export type MetaMobileDraft = {
   invites: string[];
   /** Set once the workspace email has been sent. */
   ready: boolean;
+  /** Google is required, so the team is finished on the computer. */
+  googleOnDesktop?: boolean;
 };
 
 const isAccent = (value: unknown): value is string =>
@@ -45,6 +47,8 @@ export function parseMetaMobileDraft(
     email,
     invites,
     ready: 'ready' in value && value.ready === true,
+    googleOnDesktop:
+      'googleOnDesktop' in value && value.googleOnDesktop === true,
   };
 }
 

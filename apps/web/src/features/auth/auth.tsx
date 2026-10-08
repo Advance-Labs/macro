@@ -86,7 +86,6 @@ function MetaMobileSignup() {
     >
       <MetaMobileOnboardingView
         signedInEmail={signedInEmail()}
-        onGoogle={() => context.startSso('google', 'signup')}
         onIdentify={(address) =>
           context.identify({ id: address, email: address })
         }

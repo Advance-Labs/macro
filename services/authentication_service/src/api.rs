@@ -24,6 +24,7 @@ mod link;
 mod merge;
 mod mobile_welcome_email;
 mod mobile_workspace;
+mod google_workspace_email;
 
 mod github_pull_requests;
 mod health;

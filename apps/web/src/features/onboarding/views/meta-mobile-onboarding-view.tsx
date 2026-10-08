@@ -1,6 +1,12 @@
-import { createSignal, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
+import {
+  createSignal,
+  Match,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+} from 'solid-js';
 import { ContinueButton, FormInput } from '../components/controls';
-import { GoogleAccountsStep } from '../components/google-accounts-step';
 import { OnboardingShell } from '../components/onboarding-shell';
 import { TeamSetup, TeamSetupFields } from '../components/team-setup';
 import {
@@ -8,6 +14,10 @@ import {
   waitForCreatingBeat,
 } from '../components/workspace-handoff';
 import { WorkspaceIntro } from '../components/workspace-intro';
+import {
+  isGoogleWorkspaceWorkEmail,
+  WORKSPACE_EMAIL_MESSAGE,
+} from '../core/google-workspace-email';
 import {
   type MetaMobileDraft,
   readMetaMobileDraft,
@@ -39,19 +49,22 @@ const failureMessage = (result: ProvisionMobileWorkspaceResult): string => {
 
 /**
  * Mobile stand-in for desktop onboarding, used when a Meta ad opens in
- * Instagram or Safari. The visitor picks a color, leaves an email or Google
- * account, names the team, and invites teammates. The team is created and a
- * desktop link is emailed; this browser never enters the app.
+ * Instagram or Safari. The visitor picks a color, leaves an email, names the
+ * team, and invites teammates. The team is created and a desktop link is
+ * emailed. Gmail is connected on the computer, and this browser never enters
+ * the app.
  */
 export function MetaMobileOnboardingView(props: {
   signedInEmail?: string;
-  onGoogle: () => Promise<void>;
   onIdentify: (email: string) => void;
   onLead: (email: string) => void;
   provision?: typeof provisionMobileWorkspace;
+  verifyWorkEmail?: (email: string) => Promise<boolean>;
 }) {
   const stored = readMetaMobileDraft();
   const provision = props.provision ?? provisionMobileWorkspace;
+  const verifyWorkEmail = props.verifyWorkEmail ?? isGoogleWorkspaceWorkEmail;
+  const [checkingEmail, setCheckingEmail] = createSignal(false);
   const [step, setStep] = createSignal<Step>(
     initialStep(stored, props.signedInEmail)
   );
@@ -59,15 +72,14 @@ export function MetaMobileOnboardingView(props: {
   const [email, setEmail] = createSignal(
     (props.signedInEmail ?? stored?.email ?? '').toLowerCase()
   );
-  const [showingEmail, setShowingEmail] = createSignal(
-    !props.signedInEmail && !!stored?.email
+  const [googleOnDesktop, setGoogleOnDesktop] = createSignal(
+    stored?.googleOnDesktop === true
   );
   const [teamName, setTeamName] = createSignal(stored?.teamName ?? '');
   const [slots, setSlots] = createSignal<string[]>(
     stored?.invites.length ? [...stored.invites, ''] : ['', '']
   );
   const [error, setError] = createSignal<string>();
-  const [connecting, setConnecting] = createSignal(false);
   const accent = () => workspaceAccentNamed(accentName());
   const invites = () =>
     validInviteEmails(
@@ -81,6 +93,7 @@ export function MetaMobileOnboardingView(props: {
     email: email().trim().toLowerCase(),
     invites: invites(),
     ready,
+    googleOnDesktop: googleOnDesktop(),
   });
 
   const goTo = (next: Step) => {
@@ -94,47 +107,56 @@ export function MetaMobileOnboardingView(props: {
     });
   };
 
-  const connectGoogle = () => {
-    if (connecting()) return;
-    setConnecting(true);
-    writeMetaMobileDraft(draft(false));
-    void props.onGoogle().finally(() => setConnecting(false));
-  };
-
   const submitEmail = () => {
     const address = email().trim().toLowerCase();
     if (!isPlausibleEmail(address)) {
       setError('Enter a valid email address.');
       return;
     }
+    if (checkingEmail()) return;
+    setCheckingEmail(true);
     setEmail(address);
-    props.onIdentify(address);
-    goTo('team');
+    void verifyWorkEmail(address)
+      .then((accepted) => {
+        if (!accepted) {
+          setError(WORKSPACE_EMAIL_MESSAGE);
+          return;
+        }
+        props.onIdentify(address);
+        goTo('team');
+      })
+      .catch(() => {
+        setError('We couldn’t verify that email. Try again.');
+      })
+      .finally(() => setCheckingEmail(false));
   };
 
   const create = () => {
     const address = (props.signedInEmail ?? email()).trim().toLowerCase();
     if (!isPlausibleEmail(address) || !teamName().trim()) return;
     setEmail(address);
-    goTo('creating');
+    if (!props.signedInEmail) {
+      goTo('creating');
+      return;
+    }
+    void verifyWorkEmail(address)
+      .then((accepted) => {
+        if (!accepted) {
+          setError(WORKSPACE_EMAIL_MESSAGE);
+          return;
+        }
+        goTo('creating');
+      })
+      .catch(() => setError('We couldn’t verify that email. Try again.'));
   };
 
   return (
     <OnboardingShell
       wide
       onBack={
-        backTarget(step(), showingEmail(), !!props.signedInEmail)
+        backTarget(step(), !!props.signedInEmail)
           ? () => {
-              const target = backTarget(
-                step(),
-                showingEmail(),
-                !!props.signedInEmail
-              );
-              if (target === 'google') {
-                setShowingEmail(false);
-                setError(undefined);
-                return;
-              }
+              const target = backTarget(step(), !!props.signedInEmail);
               if (target) goTo(target);
             }
           : undefined
@@ -144,85 +166,61 @@ export function MetaMobileOnboardingView(props: {
         <Match when={step() === 'theme'}>
           <WorkspaceIntro
             accent={accent()}
+            lede="Choose your workspace color. You’ll add your email and invite teammates next."
             onSelectAccent={setAccentName}
             onContinue={() => goTo('account')}
           />
         </Match>
         <Match when={step() === 'account'}>
-          <Show
-            when={showingEmail()}
-            fallback={
-              <>
-                <GoogleAccountsStep
-                  mode="work"
-                  connecting={connecting() ? 'work' : undefined}
-                  error={error()}
-                  onConnectWork={connectGoogle}
-                  onConnectPersonal={() => {}}
-                />
-                <button
-                  type="button"
-                  class="mx-auto mt-2 block rounded-lg px-4 py-2 text-sm text-ink-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
-                  onClick={() => {
-                    setError(undefined);
-                    setShowingEmail(true);
-                  }}
-                >
-                  Use email instead
-                </button>
-              </>
-            }
+          <form
+            class="mx-auto flex w-full max-w-sm flex-col gap-8"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitEmail();
+            }}
           >
-            <form
-              class="mx-auto flex w-full max-w-sm flex-col gap-8"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitEmail();
-              }}
+            <h1
+              tabindex="-1"
+              class="text-center font-[Roboto_Slab_Variable] text-[clamp(1.75rem,8vw,2.25rem)] font-[315] leading-tight tracking-tight outline-none [text-wrap:balance]"
             >
-              <h1
-                tabindex="-1"
-                class="text-center font-[Roboto_Slab_Variable] text-[clamp(1.75rem,8vw,2.25rem)] font-[315] leading-tight tracking-tight outline-none [text-wrap:balance]"
-              >
-                Sign up with your work email.
-              </h1>
-              <FormInput
-                id="meta-email"
-                type="email"
-                label="Email address"
-                placeholder="name@company.com"
-                value={email()}
-                autoFocus
-                invalid={!!error()}
-                onInput={(value) => {
-                  setEmail(value);
-                  setError(undefined);
-                }}
-              />
-              <Show when={error()}>
-                <p
-                  role="alert"
-                  class="-mt-4 text-center text-sm text-ink-muted"
-                >
-                  {error()}
-                </p>
-              </Show>
-              <ContinueButton label="Continue" onClick={submitEmail} />
-              <p class="text-center text-xs leading-5 text-ink-extra-muted">
-                Your work email becomes your Macro sign-in. You’ll finish
-                connecting Google on your computer. By continuing, you agree to
-                our{' '}
-                <a href="/terms" class="underline underline-offset-2">
-                  terms
-                </a>{' '}
-                and{' '}
-                <a href="/privacy" class="underline underline-offset-2">
-                  privacy policy
-                </a>
-                .
+              Sign up with your work email.
+            </h1>
+            <FormInput
+              id="meta-email"
+              type="email"
+              label="Email address"
+              placeholder="name@company.com"
+              value={email()}
+              autoFocus
+              invalid={!!error()}
+              onInput={(value) => {
+                setEmail(value);
+                setError(undefined);
+              }}
+            />
+            <Show when={error()}>
+              <p role="alert" class="-mt-4 text-center text-sm text-ink-muted">
+                {error()}
               </p>
-            </form>
-          </Show>
+            </Show>
+            <ContinueButton
+              label={checkingEmail() ? 'Checking…' : 'Continue'}
+              disabled={checkingEmail()}
+              onClick={submitEmail}
+            />
+            <p class="text-center text-xs leading-5 text-ink-extra-muted">
+              Use a Google Workspace work email, not personal Gmail. You’ll
+              connect it on your computer. By continuing, you agree to our{' '}
+              <a href="/terms" class="underline underline-offset-2">
+                terms
+              </a>{' '}
+              and{' '}
+              <a href="/privacy" class="underline underline-offset-2">
+                privacy policy
+              </a>
+              .
+            </p>
+          </form>
         </Match>
         <Match when={step() === 'team'}>
           <TeamSetup>
@@ -262,6 +260,7 @@ export function MetaMobileOnboardingView(props: {
             teamName={teamName().trim()}
             email={email()}
             invites={invites()}
+            connectGmailOnDesktop={googleOnDesktop()}
             provision={provision}
             onLead={props.onLead}
             onReady={() => {
@@ -273,11 +272,10 @@ export function MetaMobileOnboardingView(props: {
               setStep('team');
             }}
             onSso={() => {
-              setShowingEmail(false);
-              setError(
-                'This email signs in with Google. Continue with Google, then finish on your computer.'
-              );
-              setStep('account');
+              setGoogleOnDesktop(true);
+              props.onLead(email());
+              writeMetaMobileDraft(draft(true));
+              setStep('ready');
             }}
           />
         </Match>
@@ -292,6 +290,7 @@ function CreatingStep(props: {
   teamName: string;
   email: string;
   invites: string[];
+  connectGmailOnDesktop: boolean;
   provision: typeof provisionMobileWorkspace;
   onLead: (email: string) => void;
   onReady: () => void;
@@ -341,6 +340,7 @@ function CreatingStep(props: {
       accent={props.accent}
       teamName={props.teamName}
       email={props.email}
+      connectGmailOnDesktop={props.connectGmailOnDesktop}
     />
   );
 }
@@ -362,12 +362,7 @@ function accentNameFrom(stored: MetaMobileDraft | undefined): string {
   );
 }
 
-function backTarget(
-  step: Step,
-  showingEmail: boolean,
-  signedIn: boolean
-): Step | 'google' | undefined {
-  if (step === 'account' && showingEmail) return 'google';
+function backTarget(step: Step, signedIn: boolean): Step | undefined {
   if (step === 'account') return 'theme';
   if (step === 'team') return signedIn ? 'theme' : 'account';
   return undefined;
