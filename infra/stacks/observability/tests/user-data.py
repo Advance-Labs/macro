@@ -1,4 +1,4 @@
-"""Exercise the image's real IMDS parser without contacting AWS or writing /opt."""
+"""Exercise the real IMDS validator/renderer without AWS or writes to /opt."""
 import gzip
 import io
 import json
@@ -7,42 +7,71 @@ import runpy
 import tempfile
 from unittest.mock import patch
 
-script = Path(__file__).resolve().parents[1] / 'nixos/read-user-data.py'
-files = {name: '' for name in [
-    'compose.json', 'nginx.conf', 'loki.yaml', 'tempo.yaml', 'prometheus.yaml',
-]}
-files['bootstrap.json'] = json.dumps({'region': 'us-east-2'})
-fixture = {'version': 2, 'volumeId': 'vol-0123456789abcdef0', 'files': files}
+runtime = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'nixos/read-user-data.py'))
+settings = {
+    'region': 'us-east-2', 'grafanaHost': 'grafana-dev.macro.com',
+    'otlpHost': 'otlp-dev.macro.com', 'allowedEmails': ['reader@macro.com', 'admin@macro.com'],
+    'adminEmails': ['admin@macro.com'],
+    'secretArn': 'arn:aws:secretsmanager:us-east-2:123456789012:secret:observability-test',
+    'volumeId': 'vol-0123456789abcdef0', 'logsBucket': 'observability-logs-test',
+    'tracesBucket': 'observability-traces-test',
+}
+fixture = {'version': 3, 'settings': settings}
 
-def check(payload, succeeds):
+
+def check(payload, succeeds, unknown_parameter=False):
     with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory) / 'config'
-        def path(value):
-            assert value == '/opt/observability'
-            return root
-        with patch('pathlib.Path', side_effect=path), \
+        templates = Path(directory) / 'templates'
+        templates.mkdir()
+        output = Path(directory) / 'output'
+        for name in runtime['CONFIG_FILES']:
+            (templates / name).write_text('@@REGION@@')
+        (templates / 'compose.json').write_text(json.dumps({
+            'environment': {'GRAFANA_HOST': '@@GRAFANA_HOST@@', 'ROLE': '@@ROLE_EXPRESSION@@'},
+        }))
+        if unknown_parameter:
+            (templates / 'nginx.conf').write_text('@@UNKNOWN@@')
+        with patch.dict(runtime['main'].__globals__, {'TEMPLATE_ROOT': templates, 'CONFIG_ROOT': output}), \
              patch('urllib.request.build_opener') as opener:
             opener.return_value.open.side_effect = [
                 io.BytesIO(b'test-imds-token'),
                 io.BytesIO(gzip.compress(json.dumps(payload).encode())),
             ]
             try:
-                runpy.run_path(str(script))
-            except SystemExit:
+                runtime['main']()
+            except ValueError:
                 assert not succeeds
-                assert not root.exists(), 'Invalid input wrote configuration'
+                assert not output.exists(), 'Invalid input wrote configuration'
             else:
                 assert succeeds
-                assert (root / 'volume-id').read_text() == fixture['volumeId']
-                assert set(p.name for p in root.iterdir()) == set(files) | {'volume-id'}
+                assert (output / 'volume-id').read_text() == settings['volumeId']
+                assert set(p.name for p in output.iterdir()) == runtime['CONFIG_FILES'] | {'bootstrap.json', 'volume-id'}
+                rendered = json.loads((output / 'compose.json').read_text())
+                assert rendered['environment']['GRAFANA_HOST'] == settings['grafanaHost']
+                assert rendered['environment']['ROLE'] == (
+                    'contains(`["admin@macro.com"]`, email) && \'GrafanaAdmin\' || '
+                    'contains(`["reader@macro.com","admin@macro.com"]`, email) && \'Viewer\' || \'Denied\''
+                )
                 requests = opener.return_value.open.call_args_list
                 assert requests[0].args[0].method == 'PUT'
                 assert requests[1].args[0].get_header('X-aws-ec2-metadata-token') == 'test-imds-token'
 
+
 check(fixture, True)
-check({**fixture, 'version': 1}, False)
-check({**fixture, 'volumeId': '/dev/nvme0n1'}, False)
-check({**fixture, 'files': {**files, '../escape': 'invalid'}}, False)
-check({**fixture, 'files': {**files, 'grafana.ini': 'override baked auth'}}, False)
-check({**fixture, 'files': {**files, 'bootstrap.json': '{"region":"us-east-1"}'}}, False)
-print('PASS: IMDSv2, version, volume identity, file allowlist and region validation')
+for version in [1, 2, 4]:
+    check({**fixture, 'version': version}, False)
+check({**fixture, 'files': {'compose.json': 'override services'}}, False)
+for change in [
+    {'volumeId': '/dev/nvme0n1'}, {'region': 'us-east-1'},
+    {'grafanaHost': 'bad.macro.com\nserver injected'},
+    {'otlpHost': settings['grafanaHost']},
+    {'logsBucket': 'bucket\ninjected'},
+    {'allowedEmails': []}, {'adminEmails': ['unapproved@macro.com']},
+    {'allowedEmails': ['outside@gmail.com']},
+    {'allowedEmails': ["x' || 'GrafanaAdmin'@macro.com"]},
+    {'secretArn': settings['secretArn'].replace('us-east-2', 'us-east-1')},
+    {'unknownSetting': 'injected'},
+]:
+    check({**fixture, 'settings': {**settings, **change}}, False)
+check(fixture, False, unknown_parameter=True)
+print('PASS: IMDSv2, runtime schema, identities, safe JSON rendering and fail-closed validation')

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { gunzipSync } from 'node:zlib';
-import { renderFiles, renderUserData } from './render';
+import { renderUserData } from './render';
 import {
   validateRegion,
   validateRegionalArn,
@@ -67,16 +67,9 @@ test('EC2 user data fits its limit and contains only versioned configuration', (
   const data = gunzipSync(compressed).toString();
   expect(data).not.toContain('@@');
   const payload = JSON.parse(data);
-  expect(payload.version).toBe(2);
-  expect(payload.volumeId).toBe(fixture.volumeId);
-  expect(payload.files).toEqual(renderFiles(fixture));
-  const compose = JSON.parse(renderFiles(fixture)['compose.json']);
-  for (const service of Object.values(compose.services) as {
-    restart: string;
-  }[]) {
-    expect(service.restart).toBe('on-failure');
-  }
-  expect(compose.services.proxy.ports).toEqual(['8080:8080']);
+  expect(Object.keys(payload).sort()).toEqual(['settings', 'version']);
+  expect(payload.version).toBe(3);
+  expect(payload.settings).toEqual(fixture);
 });
 
 test('volume preparation refuses inspection failures and existing signatures', () => {
@@ -119,9 +112,10 @@ test.skipIf(process.env.OBSERVABILITY_SMOKE !== '1')(
   () => {
     const directory = mkdtempSync(join(tmpdir(), 'observability-smoke-'));
     try {
-      for (const [name, content] of Object.entries(renderFiles(fixture))) {
-        writeFileSync(join(directory, name), content);
-      }
+      writeFileSync(
+        join(directory, 'user-data.json'),
+        gunzipSync(Buffer.from(renderUserData(fixture), 'base64'))
+      );
       const result = spawnSync(
         'python3',
         [join(__dirname, 'tests', 'smoke.py'), directory],

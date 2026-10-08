@@ -37,7 +37,7 @@ export function validateRegionalArn(
   }
 }
 
-// Restrict values before interpolating into INI, nginx, shell and JMESPath.
+// Validate runtime values before they reach the NixOS configuration renderer.
 export function validateSettings(settings: Settings): void {
   for (const host of [settings.grafanaHost, settings.otlpHost]) {
     if (!/^[a-z0-9-]+\.macro\.com$/.test(host)) {
@@ -85,9 +85,4 @@ export function validateSettings(settings: Settings): void {
       throw new Error('Invalid telemetry bucket name');
     }
   }
-}
-
-export function roleExpression(settings: Settings): string {
-  const list = (emails: string[]) => `\`${JSON.stringify(emails)}\``;
-  return `contains(${list(settings.adminEmails)}, email) && 'GrafanaAdmin' || contains(${list(settings.allowedEmails)}, email) && 'Viewer' || 'Denied'`;
 }

@@ -4,7 +4,7 @@ import json
 import ipaddress
 import os
 from pathlib import Path
-import shutil
+import runpy
 import subprocess
 import sys
 import time
@@ -19,6 +19,8 @@ build = subprocess.run(
     check=True, capture_output=True, text=True,
 )
 baked_config = Path(build.stdout.strip())
+runtime = runpy.run_path(str(flake / 'nixos/read-user-data.py'))
+runtime['render_payload'](json.loads((root / 'user-data.json').read_text()), baked_config, root)
 region = json.loads((root / 'bootstrap.json').read_text())['region']
 project = root.name.lower()
 compose = json.loads((root / 'compose.json').read_text())
@@ -31,7 +33,9 @@ if subnet := os.environ.get('OBSERVABILITY_SMOKE_SUBNET'):
         raise SystemExit('Smoke subnet must be a private IPv4 network')
     compose['networks'] = {'default': {'ipam': {'config': [{'subnet': str(network)}]}}}
 services = compose['services']
+assert compose['services']['proxy']['ports'] == ['8080:8080']
 for name, service in services.items():
+    assert service['restart'] == 'on-failure'
     service['restart'] = 'no'
     volumes = []
     for mount in service['volumes']:
@@ -45,10 +49,6 @@ for name, service in services.items():
             source = str(root / key)
             Path(source).write_text('smoke-test-credential-not-real-00000000')
             os.chmod(source, 0o444)
-        elif source.startswith('/etc/observability/config/'):
-            config_name = Path(source).name
-            source = str(root / config_name)
-            shutil.copyfile(baked_config / config_name, source)
         volumes.append(':'.join([source, target, *mode]))
     service['volumes'] = volumes
     if name in ['loki', 'tempo']:

@@ -1,5 +1,6 @@
 { pkgs }:
 let
+  backends = import ./backend-config.nix { inherit pkgs; };
   grafana = (pkgs.formats.ini { }).generate "grafana.ini" {
     "server" = {
       domain = "$__env{GRAFANA_HOST}";
@@ -158,6 +159,26 @@ let
   '';
 in
 pkgs.linkFarm "observability-application-config" [
+  {
+    name = "loki.yaml";
+    path = backends.loki;
+  }
+  {
+    name = "tempo.yaml";
+    path = backends.tempo;
+  }
+  {
+    name = "prometheus.yaml";
+    path = backends.prometheus;
+  }
+  {
+    name = "nginx.conf";
+    path = pkgs.writeText "nginx.conf" (import ./proxy.nix { inherit (pkgs) lib; });
+  }
+  {
+    name = "compose.json";
+    path = (pkgs.formats.json { }).generate "compose.json" (import ./containers.nix);
+  }
   {
     name = "grafana.ini";
     path = grafana;

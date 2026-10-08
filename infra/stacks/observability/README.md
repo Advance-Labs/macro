@@ -3,12 +3,22 @@
 This stack starts Grafana alongside Datadog on one private EC2 instance. It
 provisions Grafana, Loki, Tempo, Prometheus and Alloy using Docker Compose on a
 prebuilt NixOS image. Nix declares host packages, Docker, service dependencies,
-health timers and access policy; Pulumi owns AWS resources and nonsecret app
-configuration. `nixos/application-config.nix` declares Grafana settings and
-datasources as Nix attribute sets and the Alloy pipeline as a Nix multiline
-string. Nix generates their INI/YAML/Alloy files and bakes them into the image;
-there are no separately maintained copies. Container versions and mounts remain
-in `render.ts`; the remaining backend/proxy templates live in `assets/`.
+health timers and access policy. All service configuration is authored in Nix:
+
+- `nixos/application-config.nix`: Grafana settings, datasources, Alloy pipeline
+  and the assembled configuration output.
+- `nixos/backend-config.nix`: Loki, Tempo and Prometheus settings as attribute sets.
+- `nixos/containers.nix`: pinned images, resource limits, mounts and service flags,
+  including Prometheus retention.
+- `nixos/proxy.nix`: structured nginx virtual hosts and locations for ingestion
+  routing and the query-only backend gateway.
+
+Nix generates the required INI/YAML/JSON/Alloy/nginx templates into the image;
+there are no separately maintained copies. Alloy retains its native pipeline
+syntax inside a Nix multiline string; nginx uses attribute sets for virtual hosts
+and locations, with native directives in `extraConfig`. Pulumi owns AWS resources
+and sends only validated runtime values such as hostnames, bucket names and
+approved identities.
 Datadog instrumentation, collection and alerts remain unchanged. Nothing sends
 application telemetry here until a subsequent dual-export change is deployed.
 
@@ -43,7 +53,7 @@ OTEL exporter -- HTTPS + bearer token --> ALB --> nginx --> Alloy
   up to a day of local state. S3 does not protect telemetry still buffered locally.
 - No RDS, shared filesystem, Kafka or cluster. Grafana's SQLite stores users,
   dashboards and settings, not log/trace/metric history.
-- Container releases are pinned by version and image digest in `render.ts`.
+- Container releases are pinned by version and image digest in `nixos/containers.nix`.
   Grafana plugin auto-install/update is disabled; upgrades go through review and
   the smoke test. Host packages are pinned by this stack's own `flake.lock` on
   NixOS 26.05; reviewed lock updates and replacement AMIs deliver host patches.
@@ -235,13 +245,18 @@ sudo docker compose -f /opt/observability/compose.json ps
 sudo docker compose -f /opt/observability/compose.json logs --tail 100
 ```
 
-Nonsecret application configuration is delivered as versioned, compressed JSON
-in EC2 user-data. NixOS reads it using IMDSv2 and an explicit file allowlist; the
-standard NixOS user-data evaluator is disabled. Host services and helper scripts
-are baked into the AMI, along with Grafana, datasource and Alloy configuration.
-User-data schema version 2 rejects attempts to supply those baked configuration
-files. Changing them requires a new image and reviewed `amiId`. Changes (including
-allowlists or image versions) replace the instance and cause downtime. The old
+Nonsecret runtime values are delivered as versioned, compressed JSON in EC2
+user-data. NixOS reads them using IMDSv2 and validates the exact schema, region,
+hostnames, bucket/volume/secret identifiers and identity lists before rendering
+anything. The standard NixOS user-data evaluator is disabled. Host services,
+helper scripts and all application templates are baked into the AMI. Schema
+version 3 rejects older payloads, unknown settings and caller-supplied files.
+The renderer parses JSON before substituting values, so the Grafana role
+expression cannot alter the container definition's structure. Rendered files
+are written to `/opt/observability` before Docker starts. Configuration/image
+changes require a new image and reviewed `amiId`; runtime value changes do not
+need an image rebuild. Both kinds of changes (including allowlists or image
+versions) replace the instance and cause downtime. The old
 instance is deleted before replacement, its data volume is cleanly detached,
 then the new host waits for that exact volume. Bootstrap formats only a disk with
 no filesystem/signatures. Both Docker and the stack service refuse to start if
@@ -306,9 +321,10 @@ auth.proxy only in the local fixture to exercise an authenticated Viewer: all
 three data-source health checks and queries succeed, while backend maintenance
 and write endpoints are denied. Production auth.proxy is never enabled.
 
-IMDS tests reject unexpected schema versions, volume identifiers, file paths and
-regions before writing configuration. Disk preparation tests substitute every disk utility and confirm that failed
-inspection cannot trigger formatting. The optional systemd test uses isolated
+IMDS tests reject unexpected schema versions, setting keys, caller-supplied files,
+invalid identifiers, identity lists and regions before writing configuration;
+they also verify safe JSON substitution. Disk preparation tests substitute every
+disk utility and confirm that failed inspection cannot trigger formatting. The optional systemd test uses isolated
 transient user units and stand-in processes to test secret-outage recovery and
 daemon restart/crash recovery. It does not restart the machine or real Docker.
 Real Google login, AWS IAM, EC2 block-device attachment and boot, ALB/TLS and
