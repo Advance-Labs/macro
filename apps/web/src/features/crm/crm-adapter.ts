@@ -3,7 +3,10 @@ import { withEntityNotifications } from '@app/features/soup/entity-notifications
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
 import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import { toast } from '@core/component/Toast/Toast';
-import { enableCrmLists } from '@core/constant/featureFlags';
+import {
+  enableCrmLists,
+  enableCrmPipelines,
+} from '@core/constant/featureFlags';
 import { useUserId } from '@core/context/user';
 import { getInitialsFromName } from '@core/user';
 import { idToEmail } from '@core/user/util';
@@ -22,7 +25,7 @@ import { storageServiceClient } from '@service-storage/client';
 import { useQueryClient } from '@tanstack/solid-query';
 import { createMemo, lazy } from 'solid-js';
 import type { CrmContext } from './context/crm-context';
-import type { ItemListSource } from './context/crm-sources';
+import type { CrmQuery, ItemListSource } from './context/crm-sources';
 import {
   openCreateCompanyModal,
   openCreateContactModal,
@@ -34,6 +37,7 @@ import {
   copyCrmViewLink,
   createAppCrmNavigation,
 } from './navigation-adapter';
+import { PipelineDatabaseEditor, PipelineShare } from './pipeline-adapter';
 import {
   createClosedStageIds,
   createCrmPermissions,
@@ -56,6 +60,8 @@ import {
 } from './queries/contacts';
 import { fetchCrmExportCompanies } from './queries/export';
 import { useCrmLists } from './queries/lists';
+import { useCrmPeopleQuery } from './queries/people';
+import { createPipelinesSource } from './queries/pipelines';
 import {
   useRecordCallsQuery,
   useRecordFilesQuery,
@@ -113,6 +119,31 @@ function withRowNotifications(source: ItemListSource): ItemListSource {
   };
 }
 
+/**
+ * A query contract whose `data` reads as `undefined` until the query is
+ * ready, so views can read it eagerly (e.g. in a memo) without suspending.
+ */
+function withReadyGate<T>(query: CrmQuery<T>): CrmQuery<T> {
+  return {
+    get data() {
+      return queryReadyGate(query) ? query.data : undefined;
+    },
+    get isPending() {
+      return query.isPending;
+    },
+    get isSuccess() {
+      return query.isSuccess;
+    },
+    get isLoading() {
+      return query.isLoading;
+    },
+    get isError() {
+      return query.isError;
+    },
+    refetch: () => query.refetch(),
+  };
+}
+
 /** Only this app-facing adapter constructs production capabilities. */
 export function createAppCrmContext(): CrmContext {
   const deps = {
@@ -123,6 +154,9 @@ export function createAppCrmContext(): CrmContext {
   const userId = useUserId();
   const createSettings = () => useTeamCrmConfig(deps);
   return {
+    createPipelines: (teamId) => createPipelinesSource(deps, teamId),
+    PipelineEditor: PipelineDatabaseEditor,
+    PipelineSharing: PipelineShare,
     feedback: toast,
     downloadCsv: downloadCrmCsv,
     contactInitials: getInitialsFromName,
@@ -132,6 +166,10 @@ export function createAppCrmContext(): CrmContext {
     copyViewLink: copyCrmViewLink,
     listsEnabled() {
       const flag = useFeatureFlag(enableCrmLists);
+      return () => flag().enabled;
+    },
+    pipelinesEnabled() {
+      const flag = useFeatureFlag(enableCrmPipelines);
       return () => flag().enabled;
     },
     createCompanyEmails: (...args) =>
@@ -200,8 +238,10 @@ export function createAppCrmContext(): CrmContext {
     userId,
     isTeamAdmin: useIsTeamAdmin,
     createCompanySource: (...args) => useCompanyQuery(deps, ...args),
-    createContactSource: (...args) => useContactQuery(deps, ...args),
+    createContactSource: (...args) =>
+      withReadyGate(useContactQuery(deps, ...args)),
     createTeamSource: useCurrentTeamQuery,
+    createPeopleSource: (enabled) => useCrmPeopleQuery(deps, enabled),
     createTeamConfigSource: createSettings,
     createCapabilities: () =>
       createCrmPermissions(userId, useCurrentTeamQuery(), createSettings()),

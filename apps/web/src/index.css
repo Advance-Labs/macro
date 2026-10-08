@@ -347,11 +347,13 @@ body.tauri-ios {
   --color-html:        var(--color-orange);
   --color-note:        var(--color-violet);
   --color-task:        var(--color-green);
-  --color-snippet:     var(--color-pink);
+  --color-snippet:     var(--color-note);
+  --color-form:        var(--color-pink);
+  --color-communication: color-mix(in srgb, var(--color-ink-muted) 70%, var(--color-blue));
   --color-pdf:         var(--color-red);
   --color-rss:         var(--color-blue);
   --color-default:     var(--color-content-1);
-  --color-email:       var(--color-default);
+  --color-email:       var(--color-communication);
 }
 
 /* Scope the panel semantic itself so nested bg-panel consumers share the same
@@ -544,11 +546,13 @@ body.tauri-ios {
   --color-html:        var(--color-orange);
   --color-note:        var(--color-violet);
   --color-task:        var(--color-green);
-  --color-snippet:     var(--color-pink);
+  --color-snippet:     var(--color-note);
+  --color-form:        var(--color-pink);
+  --color-communication: color-mix(in srgb, var(--color-ink-muted) 70%, var(--color-blue));
   --color-pdf:         var(--color-red);
   --color-rss:         var(--color-blue);
   --color-default:     var(--color-content-1);
-  --color-email:       var(--color-default);
+  --color-email:       var(--color-communication);
 
   /* Font families */
   /* Apple devices get the system font (SF): `-apple-system` and
@@ -720,7 +724,7 @@ html[data-theme-light='false'] {
    say), so the flattening stops at an island boundary. */
 @utility header-actions {
   & [data-button]:is([data-variant="ghost"], [data-variant="outline"]):not([data-header-island] *) {
-    @apply glass-none rounded-xl border-0 bg-transparent;
+    @apply glass-none border-0 bg-transparent;
 
     &:not(:hover):not(:active) {
       background-image: none;
@@ -901,9 +905,11 @@ html[data-theme-light='false'] {
   --glass-shadow-scale: 0.5;
 }
 
-/* Shared flat menu appearance, on the existing menu elements. */
+/* Shared menu appearance: an opaque menu fill with the glass rim, inset
+   top/bottom highlights, and cast shadow, so menus read as raised in both
+   themes. */
 @utility menu-surface {
-  @apply relative min-h-0 rounded-xl border border-edge-frame bg-menu text-ink shadow-none;
+  @apply glass relative min-h-0 rounded-xl bg-menu text-ink;
   --color-surface: var(--color-menu);
 }
 

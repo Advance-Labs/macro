@@ -1,4 +1,3 @@
-import { isModelPickerOption } from '@core/component/AI/constant/model';
 import {
   type AgentModelTarget,
   useAgentModelsQuery,
@@ -53,9 +52,10 @@ export function createComposerModels(agent: Accessor<RosterAgent | undefined>) {
   );
   const data = () => (target() && query.isSuccess ? query.data : undefined);
   return {
-    models: () =>
-      data()?.models.filter((model) => isModelPickerOption(model.id)) ?? [],
+    models: () => data()?.models ?? [],
     currentModel: () => data()?.currentModel ?? undefined,
+    /** Discovery is in flight, so {@link models} is empty for now, not for good. */
+    pending: () => target() !== undefined && query.isPending,
     message: () => {
       if (!agent()?.runtime.connected)
         return 'Connect the runtime to load models.';

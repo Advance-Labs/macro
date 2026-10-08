@@ -13,15 +13,22 @@ import {
 import { enableSnippets, isFeatureEnabled } from '@core/constant/featureFlags';
 import type { EntityData } from '@entity';
 import type { NotificationSource } from '@notifications';
-import { useSoupAstItemsQuery } from '@queries/soup/items';
+import {
+  type SoupApiItemFilter,
+  useSoupAstItemsQuery,
+} from '@queries/soup/items';
 import {
   isDisplayableSoupItem,
   mapApiSoupItemToEntity,
 } from '@queries/soup/transform-utils';
+import { useDatabasesQuery } from '@queries/storage/databases';
+import { useFormsQuery } from '@queries/storage/forms';
 import type { TagSetResponse } from '@service-properties/generated/schemas/tagSetResponse';
 import { type Accessor, createMemo } from 'solid-js';
 import type { DriveListSource, DriveSelection } from '../context/drive-source';
 import { DRIVE_FACETS } from '../filters/drive-facets';
+import { selectDriveDatabases } from './drive-databases';
+import { selectDriveForms } from './drive-forms';
 import { buildDriveQuery } from './drive-query';
 import {
   driveEntityMatchesLocation,
@@ -29,9 +36,36 @@ import {
 } from './drive-results';
 import { buildDriveSearchRequest } from './drive-search';
 
+// Cached query meta outlives the view, so these filters are built at module
+// scope over plain snapshots and cannot retain the data source's scope.
+
+// REST inserts omit attachment status. Let a scoped server refetch admit them
+// rather than inserting an unverifiable document.
+function driveInsertFilter(current: DriveSelection): SoupApiItemFilter {
+  return (item) => current.scope === 'all' || item.tag !== 'document';
+}
+
+function driveItemFilter(
+  current: DriveSelection,
+  viewer: string | undefined,
+  context: ReturnType<typeof createTagFacetContext>
+): SoupApiItemFilter {
+  return (item) => {
+    if (!isDisplayableSoupItem(item)) return false;
+
+    const entity = mapApiSoupItemToEntity(item);
+
+    if (!driveEntityMatchesLocation(entity, current, viewer)) return false;
+
+    return testFacets(current.facets, DRIVE_FACETS, entity, context);
+  };
+}
+
 /** Query, local/service search and row assembly owned by Drive. */
 export function createDriveDataSource(options: {
   selection: Accessor<DriveSelection>;
+  databasesEnabled: Accessor<boolean>;
+  formsEnabled: Accessor<boolean>;
   userId: Accessor<string | undefined>;
   tagSets: Accessor<readonly TagSetResponse[]>;
   tagSetsReady: Accessor<boolean>;
@@ -40,6 +74,34 @@ export function createDriveDataSource(options: {
   const { selection, userId, notificationSource } = options;
 
   const searchContext = useOptionalSearchContext();
+  const databasesQuery = useDatabasesQuery();
+  const includesDatabases = () => {
+    const current = selection();
+    return (
+      options.databasesEnabled() &&
+      current.location.kind === 'tab' &&
+      current.location.tab !== 'recent' &&
+      current.scope !== 'attachments'
+    );
+  };
+  const databaseEntities = () =>
+    includesDatabases() && !databasesQuery.isPending
+      ? selectDriveDatabases(databasesQuery.data ?? [], selection(), userId())
+      : [];
+  const formsQuery = useFormsQuery();
+  const includesForms = () => {
+    const current = selection();
+    return (
+      options.formsEnabled() &&
+      current.location.kind === 'tab' &&
+      current.location.tab !== 'recent' &&
+      current.scope !== 'attachments'
+    );
+  };
+  const formEntities = () =>
+    includesForms() && formsQuery.isSuccess
+      ? selectDriveForms(formsQuery.data, selection(), userId())
+      : [];
 
   const facetContext = createMemo(() =>
     createTagFacetContext(options.tagSets())
@@ -73,28 +135,15 @@ export function createDriveDataSource(options: {
             ? 'without-email'
             : undefined,
         meta: {
-          // REST inserts omit attachment status. Let a scoped server refetch
-          // admit them rather than inserting an unverifiable document.
-          insertFilter: (item) =>
-            current.scope === 'all' || item.tag !== 'document',
-
-          itemFilter: (item) => {
-            if (!isDisplayableSoupItem(item)) return false;
-
-            const entity = mapApiSoupItemToEntity(item);
-
-            if (!driveEntityMatchesLocation(entity, current, viewer))
-              return false;
-
-            return testFacets(current.facets, DRIVE_FACETS, entity, context);
-          },
+          insertFilter: driveInsertFilter(current),
+          itemFilter: driveItemFilter(current, viewer, context),
         },
       };
     }
   );
 
   // Cold REST data suspends; keep the shell and its controls available.
-  const queryData = () => (query.isLoading ? undefined : query.data);
+  const queryData = () => (query.isPending ? undefined : query.data);
 
   const matchesFacets = (entity: EntityData) =>
     testFacets(selection().facets, DRIVE_FACETS, entity, facetContext());
@@ -154,7 +203,13 @@ export function createDriveDataSource(options: {
   const entities = createMemo(() => {
     if (!facetsReady()) return [];
 
-    const matching = rawEntities().filter((entity) => {
+    const matching = [
+      ...rawEntities().filter(
+        (entity) => entity.type !== 'database' && entity.type !== 'form'
+      ),
+      ...databaseEntities(),
+      ...formEntities(),
+    ].filter((entity) => {
       const matchesLocation = driveEntityMatchesLocation(
         entity,
         selection(),
@@ -174,21 +229,22 @@ export function createDriveDataSource(options: {
 
   const items = createSoupRowStore(() => buildFlatSoupRows(entities()));
 
-  const isFetching = () => {
-    if (search.isSearching())
-      return search.isFetching() || search.isLocalSearchSettling();
-
-    return query.isFetching;
-  };
+  const isFetching = () =>
+    search.isSearching()
+      ? search.isFetching() || search.isLocalSearchSettling()
+      : query.isFetching;
 
   const hasMore = () =>
     search.isSearching() ? search.hasNextPage() : query.hasNextPage;
 
-  const error = () => {
-    if (search.isSearching()) return search.error();
+  const error = () =>
+    search.isSearching() ? search.error() : (query.error ?? undefined);
 
-    return query.error ?? undefined;
-  };
+  // Databases and forms come from their own REST lists beside the Soup query.
+  const databaseError = () =>
+    (includesDatabases() ? databasesQuery.error : undefined) ??
+    (includesForms() ? formsQuery.error : undefined) ??
+    undefined;
 
   return {
     items,
@@ -196,20 +252,35 @@ export function createDriveDataSource(options: {
     isLoading: () => {
       if (items().length > 0) return false;
       if (!facetsReady()) return true;
-      if (search.isSearching()) return isFetching();
+      if (search.isSearching())
+        return (
+          isFetching() ||
+          (includesDatabases() && databasesQuery.isPending) ||
+          (includesForms() && formsQuery.isPending)
+        );
 
-      return query.isLoading || query.isFetching;
+      return (
+        query.isLoading ||
+        query.isFetching ||
+        (includesDatabases() && databasesQuery.isPending) ||
+        (includesForms() && formsQuery.isPending)
+      );
     },
 
     isFetching,
 
     error,
+    databaseError,
 
     hasData: () => {
       if (search.isSearching())
         return items().length > 0 || (!isFetching() && !error());
 
-      return queryData() !== undefined && !query.isPlaceholderData;
+      return (
+        items().length > 0 ||
+        (queryData() !== undefined && !query.isPlaceholderData) ||
+        (includesDatabases() && databasesQuery.isSuccess)
+      );
     },
 
     hasMore,
@@ -232,8 +303,11 @@ export function createDriveDataSource(options: {
     },
 
     refresh: async () => {
-      if (search.isSearching()) await search.refresh();
-      else await query.refresh();
+      await Promise.all([
+        search.isSearching() ? search.refresh() : query.refresh(),
+        includesDatabases() ? databasesQuery.refetch() : Promise.resolve(),
+        includesForms() ? formsQuery.refetch() : Promise.resolve(),
+      ]);
     },
 
     featuredIds: search.featuredIds,

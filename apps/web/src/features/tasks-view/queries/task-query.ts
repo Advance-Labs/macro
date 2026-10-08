@@ -22,8 +22,6 @@ import type {
   TaskTab,
 } from '../types';
 
-import { taskMembershipScope } from './task-membership';
-
 type TaskAst = BackendAstNode;
 
 const entityPropertyLiteral = (
@@ -113,10 +111,10 @@ export type BuildTaskQueryOptions = {
   facetContext?: TaskFacetContext;
   groupBy: TaskGroupBy;
   sort: SortSelection<TaskSortId>[];
-  /** Authorized membership scope; an empty set deliberately matches no tasks. */
-  taskIds?: readonly string[];
   /** Only tasks whose property references this entity. */
   reference?: TaskReferenceScope;
+  /** Board Project columns use the initiative property, not legacy folders. */
+  board?: boolean;
 };
 
 /** Builds the concrete Soup AST used only by the production Tasks view. */
@@ -145,12 +143,9 @@ export function buildTaskQuery(
 
   const taskDocuments = documentScope(options.tab, options.userId);
 
-  let documents: TaskAst = compiledFacets.df
+  const documents: TaskAst = compiledFacets.df
     ? { '&': [taskDocuments, compiledFacets.df] }
     : taskDocuments;
-  if (options.taskIds !== undefined) {
-    documents = { '&': [documents, taskMembershipScope(options.taskIds)] };
-  }
 
   const body: SoupAstBody = {
     ...nonTaskTargets,
@@ -167,6 +162,12 @@ export function buildTaskQuery(
       sort_direction: sortDirection,
     },
     body,
-    groupBy: taskGroupByField(options.groupBy),
+    groupBy:
+      options.board && options.groupBy === 'project'
+        ? {
+            type: 'property',
+            propertyDefinitionId: SYSTEM_PROPERTY_IDS.PROJECT,
+          }
+        : taskGroupByField(options.groupBy),
   };
 }

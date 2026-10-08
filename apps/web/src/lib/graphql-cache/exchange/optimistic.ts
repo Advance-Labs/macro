@@ -116,12 +116,16 @@ export type QueryRevalidation = {
 export type OptimisticMutationOptions = {
   /** Required RFC UUID; reuse only when the newer intent safely replaces the older one. */
   uuid: string;
+  /** Opaque durable client correlation; never included in GraphQL variables. */
+  clientMetadata?: Record<string, unknown>;
   identityBindings?: readonly IdentityBindingWire[];
   /** Runs after durable layer installation, independently of HTTP settlement. */
   onEnqueued?: () => void;
   updates?: readonly OptimisticUpdate[];
   /** Relevant queries that cannot safely be updated still revalidate on success. */
   revalidations?: readonly QueryRevalidation[];
+  /** Calendar events whose occurrence set the mutation cannot predict. */
+  uncertainCalendarEventKeys?: readonly string[];
 };
 
 /** Existing records may be patched; newly created records must be complete. */
@@ -134,9 +138,12 @@ export type OptimisticResponse<T> = T extends readonly (infer Item)[]
 export type OptimisticMutationContext<TData = unknown> = {
   uuid: string;
   optimisticResponse: TData;
+  /** Opaque durable client correlation; never included in GraphQL variables. */
+  clientMetadata?: Record<string, unknown>;
   identityBindings?: IdentityBindingWire[];
   linkPatches: OptimisticLinkPatchWire[];
   revalidations: QueryRevalidationWire[];
+  uncertainCalendarEventKeys?: string[];
 };
 
 /** Caller-facing disposition of one durable optimistic mutation submission. */
@@ -470,12 +477,16 @@ export function executeOptimisticMutation<
   }
   const context: OptimisticMutationContext<OptimisticResponse<TData>> = {
     uuid: options.uuid,
+    clientMetadata: options.clientMetadata,
     optimisticResponse: optimisticData,
     identityBindings: options.identityBindings
       ? [...options.identityBindings]
       : undefined,
     linkPatches: [...(options.updates ?? [])],
     revalidations: (options.revalidations ?? []).map(serializeRevalidation),
+    ...(options.uncertainCalendarEventKeys?.length
+      ? { uncertainCalendarEventKeys: [...options.uncertainCalendarEventKeys] }
+      : {}),
   };
   return client.mutation(document, variables, {
     [OPTIMISTIC_MUTATION_CONTEXT_KEY]: context,
@@ -516,6 +527,7 @@ export function optimisticContextOf(
     }
     return {
       uuid: context.uuid,
+      clientMetadata: context.clientMetadata,
       optimisticResponse: context.optimisticResponse,
       identityBindings: context.identityBindings,
       linkPatches: Array.isArray(context.linkPatches)
@@ -524,6 +536,11 @@ export function optimisticContextOf(
       revalidations: Array.isArray(context.revalidations)
         ? context.revalidations
         : [],
+      uncertainCalendarEventKeys: Array.isArray(
+        context.uncertainCalendarEventKeys
+      )
+        ? context.uncertainCalendarEventKeys
+        : undefined,
     };
   }
   return undefined;
