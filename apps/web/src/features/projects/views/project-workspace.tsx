@@ -39,7 +39,7 @@ export function ProjectWorkspace(props: {
   section: ProjectSection;
   onDelete(): void;
   onOpenTask: ProjectTasksListProps['onOpenTask'];
-  onCreateTask(): void;
+  onCreateTask(dueDate?: Date): void;
   discussion: JSX.Element;
   description: JSX.Element;
 }) {
