@@ -1785,7 +1785,7 @@ async fn channel_picture_can_be_set_replaced_and_removed_by_any_participant() {
 
 #[tokio::test]
 async fn repeated_channel_picture_updates_do_not_publish_false_activity() {
-    use entity_access::domain::models::AdminParticipantRole;
+    use entity_access::domain::models::MemberParticipantRole;
     let channel_id = Uuid::new_v4();
     let repo = FakeMutationRepo::new(channel_id, "macro|sender@test.com");
     let events = FakeEvents::default();
@@ -1797,7 +1797,7 @@ async fn repeated_channel_picture_updates_do_not_publish_false_activity() {
     let picture = Some(Uuid::new_v4());
     for (value, expected_events) in [(None, 0), (picture, 1), (picture, 1), (None, 2), (None, 2)] {
         let access =
-            EntityAccessReceipt::<AdminParticipantRole>::dangerously_assert_authenticated_user(
+            EntityAccessReceipt::<MemberParticipantRole>::dangerously_assert_authenticated_user(
                 macro_id("macro|sender@test.com"),
                 &channel_id.to_string(),
                 EntityType::Channel,
