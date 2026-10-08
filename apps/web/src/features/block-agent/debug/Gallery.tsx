@@ -890,6 +890,16 @@ function PromptAuthorDemo() {
         )}
         inFlight={false}
       />
+      <Message
+        message={prompt(
+          userId() ?? null,
+          `<m-agent-context>${JSON.stringify({
+            version: 1,
+            text: '<channel name="eng">\n  <message author="ana">The deploy is stuck on migrations again.</message>\n  <message author="ben">Seeing the same on staging.</message>\n</channel>',
+          })}</m-agent-context>\n\nCan you look into why the deploy is stuck?`
+        )}
+        inFlight={false}
+      />
     </div>
   );
 }
