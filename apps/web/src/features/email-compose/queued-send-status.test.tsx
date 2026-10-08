@@ -38,14 +38,18 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function showStatus(status: 'FAILED' | 'DELIVERY_UNCONFIRMED') {
+function showStatus(
+  status: 'ACCEPTED' | 'FAILED' | 'DELIVERY_UNCONFIRMED',
+  cancellationPending = false
+) {
   mocks.intents = [
     {
       uuid: 'attempt',
-      phase: 'committed',
+      phase: cancellationPending ? 'pending' : 'committed',
       locallyCancelled: false,
       metadata: {
         kind: 'email-send-v1',
+        replace: cancellationPending,
         payload: {
           draft: {
             draftId: 'draft',
@@ -81,6 +85,23 @@ function showStatus(status: 'FAILED' | 'DELIVERY_UNCONFIRMED') {
   ];
   return render(() => <QueuedSendStatus />);
 }
+
+it('keeps an accepted preparation cancellable while waiting to submit', async () => {
+  showStatus('ACCEPTED');
+  expect(screen.getByRole('status').textContent).toBe('Queued to send');
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  await waitFor(() => expect(mocks.cancel).toHaveBeenCalledOnce());
+  expect(mocks.restore).not.toHaveBeenCalled();
+});
+
+it('keeps a pending cancellation visible after an accepted preparation', () => {
+  showStatus('ACCEPTED', true);
+  expect(screen.getByRole('status').textContent).toBe('Cancellation pending');
+  expect(
+    screen.getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')
+  ).toBe(true);
+  expect(mocks.cancel).not.toHaveBeenCalled();
+});
 
 it('explains a failure before delivery and offers cancellation for recovery', async () => {
   showStatus('FAILED');

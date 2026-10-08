@@ -503,6 +503,7 @@ export function createEmailComposer(props: EmailComposerOptions) {
     initialScheduledTime: props.draft?.scheduled_send_time
       ? new Date(props.draft.scheduled_send_time)
       : undefined,
+    initialDeliveryStatus: props.draft?.scheduled_send_status ?? undefined,
     draftId: currentDraftId,
     saveDraft: saveForSchedule,
     threadId: currentThreadId,
@@ -1200,7 +1201,8 @@ export function createEmailComposer(props: EmailComposerOptions) {
       operation: schedule.operation,
       onSelect: handleSendTimeChange,
       onCancel: cancelSchedule,
-      pickerDisabled: () => scheduleBlocked() || scheduling(),
+      onCheckStatus: schedule.checkStatus,
+      pickerDisabled: () => scheduleBlocked() || schedule.pickerDisabled(),
     },
 
     // Status

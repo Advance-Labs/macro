@@ -6,6 +6,8 @@ use macro_user_id::user_id::MacroUserIdStr;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+mod inbox_move;
+
 async fn lock_attempt(
     tx: &mut PgConnection,
     actor: &MacroUserIdStr<'_>,
@@ -34,6 +36,7 @@ async fn read_attempt(
                   (a.sent OR COALESCE(m.is_sent, false)) AS "sent!",
                   COALESCE(s.processing, false) AS "processing!",
                   s.delivery_status AS "delivery_status?", s.delivery_started_at,
+                  s.delivery_claim_id,
                   a.delivery_unconfirmed
            FROM email_send_attempts a
            LEFT JOIN email_messages m ON m.id = a.message_id AND m.link_id = a.link_id
@@ -64,7 +67,9 @@ async fn read_attempt(
             || (row.delivery_started_at.is_some() && !row.processing)
         {
             SendAttemptStatus::DeliveryUnconfirmed
-        } else if row.processing {
+        } else if row.processing
+            && (row.delivery_claim_id.is_none() || row.delivery_started_at.is_some())
+        {
             SendAttemptStatus::Sending
         } else {
             SendAttemptStatus::Accepted
@@ -113,7 +118,7 @@ impl EmailSendRepo for EmailPgRepo {
         actor: &MacroUserIdStr<'_>,
         link: Uuid,
         attempt: SendAttemptId,
-        prepared: PreparedSend,
+        mut prepared: PreparedSend,
     ) -> Result<SendAttempt, EmailErr> {
         let mut tx = self.pool.begin().await.map_err(anyhow::Error::from)?;
         lock_attempt(&mut tx, actor, link, attempt).await?;
@@ -121,6 +126,16 @@ impl EmailSendRepo for EmailPgRepo {
             read_attempt(&mut tx, actor, link, attempt, Some(&prepared.snapshot)).await?
         {
             return Ok(existing);
+        }
+        if let Some(source) = prepared.source_inbox {
+            inbox_move::move_for_admission(
+                &mut tx,
+                &prepared.message,
+                link,
+                source,
+                &mut prepared.new_thread,
+            )
+            .await?;
         }
         let ids = draft::insert_message_in_transaction(
             &mut tx,
@@ -227,7 +242,7 @@ impl EmailSendRepo for EmailPgRepo {
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(anyhow::Error::from)?;
-                let schedule = sqlx::query!("SELECT sent, processing, delivery_status, delivery_started_at FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2 FOR UPDATE", message_id, link)
+                let schedule = sqlx::query!("SELECT sent, processing, delivery_status, delivery_started_at, delivery_claim_id FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2 FOR UPDATE", message_id, link)
                     .fetch_optional(&mut *tx).await.map_err(anyhow::Error::from)?;
                 // Delivery and deletion can commit while we wait for the message
                 // lock. Its absence does not mean the send was never delivered.
@@ -243,13 +258,16 @@ impl EmailSendRepo for EmailPgRepo {
                     || schedule.as_ref().is_some_and(|s| {
                         s.sent
                             || (s.delivery_status != "failed"
-                                && (s.processing
+                                && ((s.processing && s.delivery_claim_id.is_none())
                                     || s.delivery_started_at.is_some()
                                     || s.delivery_status == "unconfirmed"))
                     })
                 {
                     return Ok(current);
                 }
+                // Holding the schedule lock serializes cancellation with the
+                // managed worker's submission boundary. Deletion revokes its
+                // claim before any provider submission can begin.
                 sqlx::query!(
                     "DELETE FROM email_scheduled_messages WHERE message_id = $1 AND link_id = $2",
                     message_id,

@@ -390,6 +390,7 @@ fn saved_draft_message(saved: SavedUserDraft) -> Message {
             || !attachments_draft.is_empty()
             || !attachments_forwarded.is_empty(),
         scheduled_send_time: draft.send_time,
+        scheduled_send_status: None,
         from: Some(ContactInfo {
             email: String::from(link.email_address),
             name: None,

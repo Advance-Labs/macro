@@ -45,9 +45,9 @@ pub struct SendEmailMessageInput {
 /// Authoritative delivery state; acceptance is not proof of provider delivery.
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
 pub enum EmailSendStatus {
-    /// Durably accepted and waiting for the worker.
+    /// Durably accepted; preparation may be retried and cancellation remains safe.
     Accepted,
-    /// Delivery has been claimed and cannot be cancelled.
+    /// Submission began, or a legacy claim has an unknown outcome; cancellation is unsafe.
     Sending,
     /// Delivery failed before acceptance; cancellation can restore the draft.
     Failed,

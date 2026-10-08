@@ -827,6 +827,12 @@ where
     ) -> async_graphql::Result<Option<GraphqlSoupEmailThread<SoupEdges<NR, PR, ER, FR, AR, AcR>>>>
     {
         let thread_id = parse_id(input.thread_id, "threadId")?;
+        let state = ctx.data::<St>()?;
+        let service = EmailRouterState::<E>::from_ref(state).service();
+        let thread_id = service
+            .resolve_thread_read_id(self.user_id.clone(), thread_id)
+            .await
+            .map_err(|error| async_graphql::Error::new(error.to_string()))?;
         resolve_soup_email_thread::<SoupEdges<NR, PR, ER, FR, AR, AcR>>(
             ctx,
             self.user_id.clone(),

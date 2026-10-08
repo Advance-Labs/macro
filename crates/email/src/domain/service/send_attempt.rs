@@ -66,9 +66,14 @@ where
             input.actor = Some(actor.clone());
             input.send_time =
                 Some(Utc::now() + Duration::seconds(self.sent_undo_delay_secs.into()));
-            let (message, contacts, new_thread) = self
-                .prepare_message(link, &inboxes, input, false, false)
+            let (message, contacts, new_thread, source_inbox) = self
+                .prepare_message(link, &inboxes, input, false, true)
                 .await?;
+            if source_inbox.is_some() && !snapshot.forwarded_attachment_ids.is_empty() {
+                return Err(EmailErr::InvalidSendSnapshot(
+                    "forwarded attachments belong to the original inbox; select that inbox or upload the files before sending".into(),
+                ));
+            }
             let restore_html = snapshot
                 .restore_body_html
                 .as_ref()
@@ -79,6 +84,7 @@ where
                 })
                 .transpose()?;
             Ok(PreparedSend {
+                source_inbox,
                 undo_delay_secs: self.sent_undo_delay_secs,
                 snapshot: snapshot.clone(),
                 message,

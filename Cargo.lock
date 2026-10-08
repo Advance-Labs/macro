@@ -12855,13 +12855,16 @@ dependencies = [
  "native_app_service",
  "rootcause",
  "semver",
+ "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "tokio",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "url",
  "workspace-hack",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -14404,6 +14407,7 @@ version = "0.1.0"
 dependencies = [
  "ai_toolset",
  "anyhow",
+ "async-trait",
  "axum",
  "futures",
  "macro_authorization",

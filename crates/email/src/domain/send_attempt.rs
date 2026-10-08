@@ -48,9 +48,9 @@ pub struct SendSnapshot {
 /// Authoritative state of an admitted or cancelled send attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SendAttemptStatus {
-    /// Committed and awaiting the delivery worker.
+    /// Committed and awaiting provider submission; cancellation is still safe.
     Accepted,
-    /// The worker owns delivery; cancellation is too late.
+    /// Provider submission began, or a legacy worker owns an ambiguous claim.
     Sending,
     /// Preparation or provider rejection needs attention; cancellation is safe.
     Failed,
@@ -83,6 +83,8 @@ pub struct SendAttempt {
 
 /// Validated data for atomic admission. Preparation performs no delivery writes.
 pub struct PreparedSend {
+    /// Authorized source inbox to move atomically with admission, if changed.
+    pub source_inbox: Option<SendSourceInbox>,
     /// Undo delay measured at atomic admission, after acquiring message locks.
     pub undo_delay_secs: u32,
     /// Original immutable request, for detecting mismatched retries.
@@ -99,6 +101,15 @@ pub struct PreparedSend {
     pub restore_text: Option<String>,
     /// Restoration editor document, defaulted from the approved body.
     pub restore_macro: Option<String>,
+}
+
+/// Existing editable draft ownership validated before sending from another inbox.
+#[derive(Debug, Clone, Copy)]
+pub struct SendSourceInbox {
+    /// Inbox whose draft the actor was authorized to edit.
+    pub link_id: Uuid,
+    /// Original conversation, revalidated under the message lock.
+    pub thread_id: Uuid,
 }
 
 /// Persistence operations serialize admission/cancellation and message delivery locks.
@@ -126,6 +137,8 @@ pub trait EmailSendRepo: Send + Sync {
         prepared: PreparedSend,
     ) -> impl Future<Output = Result<SendAttempt, EmailErr>> + Send;
     /// Persist cancellation, even before admission; never cancel another attempt.
+    /// Managed preparation remains cancellable until its fenced submission
+    /// boundary. Submitted or ambiguous legacy claims must remain locked.
     fn cancel_send(
         &self,
         actor: &MacroUserIdStr<'_>,

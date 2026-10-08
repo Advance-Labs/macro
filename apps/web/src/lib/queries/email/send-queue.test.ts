@@ -142,6 +142,29 @@ it('requires durable storage when an enabled cache fails to initialize', () => {
   expect(emailSendQueueSelected('rest')).toBe(false);
 });
 
+it('queues the selected inbox with existing draft identity for atomic admission', async () => {
+  const selectedInbox = '00000000-0000-4000-8000-000000000004';
+  await sendEmailQueued({
+    draft: {
+      ...draft,
+      senderLinkId: selectedInbox,
+      senderEmail: 'other-inbox@example.com',
+    },
+    attachmentIds: ['uploaded'],
+    forwardedAttachmentIds: [],
+  });
+  expect(operations[0].variables?.input).toMatchObject({
+    attempt: { linkId: selectedInbox },
+    message: { draftId: draft.draftId, linkId: selectedInbox },
+    attachmentIds: ['uploaded'],
+  });
+  expect(optimisticContextOf(operations[0])!.durableIntent).toMatchObject({
+    payload: {
+      draft: { senderLinkId: selectedInbox },
+    },
+  });
+});
+
 async function send(): Promise<EmailSendIntent> {
   await sendEmailQueued({
     draft,

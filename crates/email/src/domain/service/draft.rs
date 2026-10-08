@@ -4,6 +4,7 @@ use crate::domain::{
         ResolvedDraftInput, SavedUserDraft, SimpleMessageInfo, ThreadRow,
     },
     ports::EmailRepo,
+    send_attempt::SendSourceInbox,
 };
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -70,8 +71,7 @@ where
                 .draft_attachments_by_message_ids(&message_ids),
             self.email_repo
                 .forwarded_attachments_by_message_ids(&message_ids),
-            self.email_repo
-                .scheduled_send_times_by_message_ids(&message_ids),
+            self.email_repo.scheduled_sends_by_message_ids(&message_ids),
             self.email_repo
                 .message_timestamps(draft.db_id, draft.link_id),
             self.email_repo.labels_by_message_ids(&message_ids),
@@ -82,7 +82,9 @@ where
 
         // Autosaves leave scheduling untouched. Return the stored schedule,
         // not the usually absent input, so normalized cache writes preserve it.
-        draft.send_time = send_times.remove(&draft.db_id);
+        draft.send_time = send_times
+            .remove(&draft.db_id)
+            .map(|schedule| schedule.send_time);
 
         Ok(SavedUserDraft {
             created_at: timestamps.created_at,
@@ -249,7 +251,7 @@ where
             }
             if self
                 .email_repo
-                .scheduled_send_times_by_message_ids(&[msg.db_id])
+                .scheduled_sends_by_message_ids(&[msg.db_id])
                 .await
                 .map_err(anyhow::Error::from)?
                 .contains_key(&msg.db_id)
@@ -284,8 +286,8 @@ where
         input: CreateDraftInput,
         is_draft: bool,
     ) -> Result<CreatedDraft, EmailErr> {
-        let (resolved, contacts, new_thread) = self
-            .prepare_message(link, accessible_inboxes, input, is_draft, true)
+        let (resolved, contacts, new_thread, _) = self
+            .prepare_message(link, accessible_inboxes, input, is_draft, false)
             .await?;
         let link_id = link.id;
         let accessible_link_ids: Vec<Uuid> = accessible_inboxes.iter().map(|l| l.id).collect();
@@ -321,7 +323,7 @@ where
             if rejected.is_some()
                 && self
                     .email_repo
-                    .scheduled_send_times_by_message_ids(&[rejected_id])
+                    .scheduled_sends_by_message_ids(&[rejected_id])
                     .await
                     .map_err(anyhow::Error::from)?
                     .contains_key(&rejected_id)
@@ -356,23 +358,31 @@ where
         accessible_inboxes: &[Link],
         mut input: CreateDraftInput,
         is_draft: bool,
-        allow_inbox_move: bool,
+        defer_inbox_move: bool,
     ) -> Result<
         (
             ResolvedDraftInput,
             crate::domain::models::UpsertedContacts,
             Option<ThreadRow>,
+            Option<SendSourceInbox>,
         ),
         EmailErr,
     > {
         let link_id = link.id;
         let accessible_link_ids: Vec<Uuid> = accessible_inboxes.iter().map(|l| l.id).collect();
 
-        self.validate_existing_message(link_id, &accessible_link_ids, &mut input, allow_inbox_move)
+        let source_inbox = self
+            .validate_existing_message(link_id, &accessible_link_ids, &mut input, defer_inbox_move)
             .await?;
 
+        let source_message_id = input.db_id;
         self.validate_replying_to(link_id, &accessible_link_ids, &mut input)
             .await?;
+        if source_inbox.is_some() && input.db_id != source_message_id {
+            return Err(EmailErr::InvalidSendSnapshot(
+                "another reply draft exists in the selected inbox; review it before sending".into(),
+            ));
+        }
 
         self.validate_thread_hint(link_id, &mut input).await?;
 
@@ -428,7 +438,7 @@ where
             thread_client_id: input.thread_client_binding,
         };
 
-        Ok((resolved, contacts, new_thread))
+        Ok((resolved, contacts, new_thread, source_inbox))
     }
 
     /// Appends the inbox's signature to the outgoing body (send path only).
@@ -464,10 +474,10 @@ where
         link_id: Uuid,
         accessible_link_ids: &[Uuid],
         input: &mut CreateDraftInput,
-        allow_inbox_move: bool,
-    ) -> Result<(), EmailErr> {
+        defer_inbox_move: bool,
+    ) -> Result<Option<SendSourceInbox>, EmailErr> {
         let Some(db_id) = input.db_id else {
-            return Ok(());
+            return Ok(None);
         };
 
         let Some(msg) = self
@@ -489,10 +499,16 @@ where
         }
 
         if msg.link_id != link_id {
-            if !allow_inbox_move {
-                return Err(EmailErr::InvalidSendSnapshot(
-                    "save the draft in the selected inbox before sending".into(),
-                ));
+            if defer_inbox_move {
+                // Send owns the final snapshot. Preserve attachments and the
+                // source draft until admission can move it under its row lock.
+                input.provider_id = None;
+                input.thread_db_id = None;
+                input.provider_thread_id = None;
+                return Ok(Some(SendSourceInbox {
+                    link_id: msg.link_id,
+                    thread_id: msg.thread_db_id,
+                }));
             }
             // The sender was switched to a different inbox. A draft belongs to a
             // single inbox, so discard it (and its now-empty thread) and create a
@@ -524,13 +540,13 @@ where
             input.provider_id = None;
             input.thread_db_id = None;
             input.provider_thread_id = None;
-            return Ok(());
+            return Ok(None);
         }
 
         input.thread_db_id = Some(msg.thread_db_id);
         input.provider_thread_id = msg.provider_thread_id;
 
-        Ok(())
+        Ok(None)
     }
 
     async fn validate_replying_to(

@@ -787,6 +787,7 @@ export function createReplyComposer(
     initialScheduledTime: draftSeed?.scheduled_send_time
       ? new Date(draftSeed.scheduled_send_time)
       : undefined,
+    initialDeliveryStatus: draftSeed?.scheduled_send_status ?? undefined,
     draftId: savedDraftId,
     saveDraft: saveForSchedule,
     threadId: savedDraftThreadId,
@@ -1599,7 +1600,9 @@ export function createReplyComposer(
     scheduleActionLabel: schedule.actionLabel,
     scheduleOperation: schedule.operation,
     cancelSchedule,
-    schedulePickerDisabled: () => scheduleBlocked() || scheduling(),
+    checkScheduleStatus: schedule.checkStatus,
+    schedulePickerDisabled: () =>
+      scheduleBlocked() || schedule.pickerDisabled(),
     editingDisabled,
     sendUnavailableReason,
     hasBodyText,

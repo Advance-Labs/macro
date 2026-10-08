@@ -226,7 +226,7 @@ export type EmailSendAttemptInput = {
 
 /** Authoritative delivery state; acceptance is not proof of provider delivery. */
 export type EmailSendStatus =
-  /** Durably accepted and waiting for the worker. */
+  /** Durably accepted; preparation may be retried and cancellation remains safe. */
   | 'ACCEPTED'
   /** This attempt cannot deliver. */
   | 'CANCELLED'
@@ -234,7 +234,7 @@ export type EmailSendStatus =
   | 'DELIVERY_UNCONFIRMED'
   /** Delivery failed before acceptance; cancellation can restore the draft. */
   | 'FAILED'
-  /** Delivery has been claimed and cannot be cancelled. */
+  /** Submission began, or a legacy claim has an unknown outcome; cancellation is unsafe. */
   | 'SENDING'
   /** Provider delivery was recorded. */
   | 'SENT';

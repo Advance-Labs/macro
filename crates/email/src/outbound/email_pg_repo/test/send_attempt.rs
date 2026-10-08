@@ -4,6 +4,8 @@ use crate::domain::{
     send_attempt::*,
 };
 
+mod preparation_cancel;
+
 fn actor() -> MacroUserIdStr<'static> {
     MacroUserIdStr::parse_from_str("macro|user1@test.com").unwrap()
 }
@@ -46,6 +48,7 @@ fn prepared() -> PreparedSend {
     let snapshot = snapshot();
     let input = &snapshot.message;
     PreparedSend {
+        source_inbox: None,
         undo_delay_secs: 5,
         message: ResolvedDraftInput {
             db_id: message(),
@@ -324,13 +327,6 @@ async fn service_authorizes_send_cancel_and_status_before_touching_attempts(
         name: None,
         photo_url: None,
     });
-    let other_inbox = Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc")?;
-    assert!(matches!(
-        service
-            .send_email(actor(), other_inbox, attempt, input.clone())
-            .await,
-        Err(EmailErr::InvalidSendSnapshot(_))
-    ));
     let unchanged = sqlx::query!(
         "SELECT link_id, subject, is_draft FROM email_messages WHERE id = $1",
         message()
@@ -360,6 +356,8 @@ async fn service_authorizes_send_cancel_and_status_before_touching_attempts(
     );
     Ok(())
 }
+
+mod inbox_move;
 
 #[sqlx::test(
     migrator = "MACRO_DB_MIGRATIONS",

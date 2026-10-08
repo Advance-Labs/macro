@@ -96,7 +96,7 @@ impl ScheduledDeliveryRepo for ScheduledDeliveryAdapter {
         let link = &claim.link;
         let data = &claim.delivery.schedule;
         let scheduled_message = &claim.delivery.schedule;
-        let message_to_send = sent.message;
+        let mut message_to_send = sent.message;
         let db_attachments = sent.attachments;
         let mut tx = ctx
             .db
@@ -104,10 +104,19 @@ impl ScheduledDeliveryRepo for ScheduledDeliveryAdapter {
             .await
             .context("Failed to begin transaction")?;
 
+        email_db_client::threads::provider_identity::lock_provider_thread(
+            tx.as_mut(),
+            link.id,
+            message_to_send
+                .provider_thread_id
+                .as_deref()
+                .context("provider accepted send without a thread ID")?,
+        )
+        .await?;
         if !delivery::complete_delivery(tx.as_mut(), &claim.delivery).await? {
             return Ok(());
         }
-        let result = process_sent_message(tx.as_mut(), &message_to_send).await;
+        let result = process_sent_message(tx.as_mut(), &mut message_to_send).await;
 
         match result {
             Ok(_) => {
@@ -373,8 +382,30 @@ fn apply_sent_ids(message: &mut MessageToSend, sent_ids: SentIds) {
 )]
 async fn process_sent_message(
     tx: &mut sqlx::PgConnection,
-    message: &MessageToSend,
+    message: &mut MessageToSend,
 ) -> anyhow::Result<()> {
+    email_db_client::messages::sent_identity::reconcile_message(
+        tx.as_mut(),
+        message.link_id,
+        message.db_id.context("sent message has no local ID")?,
+        message
+            .provider_id
+            .as_deref()
+            .context("sent message has no provider ID")?,
+    )
+    .await?;
+
+    let thread_db_id = email_db_client::threads::provider_identity::reconcile_sent_thread(
+        tx.as_mut(),
+        message.link_id,
+        message.db_id.context("sent message has no local ID")?,
+        message
+            .provider_thread_id
+            .as_deref()
+            .context("sent message has no provider thread ID")?,
+    )
+    .await?;
+    message.thread_db_id = Some(thread_db_id);
     // mark message as non-draft
     email_db_client::messages::update::mark_message_as_sent(
         tx.as_mut(),
@@ -384,9 +415,6 @@ async fn process_sent_message(
         message.db_id.unwrap(),
     )
     .await?;
-
-    // safe as it was fetched from the database - message is only inserted once thread is created
-    let thread_db_id = message.thread_db_id.unwrap();
 
     // set provider id of thread - needed in case it's a thread with no other messages, as it wouldn't
     // have a provider id yet
@@ -404,6 +432,8 @@ async fn process_sent_message(
         message.link_id,
     )
     .await?;
+
+    email_db_client::threads::update::sync_thread_calendar_flag(tx.as_mut(), thread_db_id).await?;
 
     Ok(())
 }

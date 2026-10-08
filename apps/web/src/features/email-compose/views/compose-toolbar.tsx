@@ -178,6 +178,7 @@ function MobileToolbar(props: {
               operation={ctx.schedule.operation()}
               onSelectTime={ctx.schedule.onSelect}
               onCancelSchedule={ctx.schedule.onCancel}
+              onCheckStatus={ctx.schedule.onCheckStatus}
             />
           </HeaderIsland>
         </Show>

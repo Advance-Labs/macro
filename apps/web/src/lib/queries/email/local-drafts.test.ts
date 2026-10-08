@@ -71,6 +71,41 @@ afterEach(async () => {
 });
 
 describe('draft queue recovery', () => {
+  it('suppresses intermediate offline inbox moves once send owns the final snapshot', async () => {
+    let local = await runtime.saveLocalDraft({
+      ...input('Switch sender offline'),
+      inboxId: 'inbox-a',
+    });
+    const moves: ClaimedMutation[] = [];
+    for (const inboxId of ['inbox-b', 'inbox-c']) {
+      local = await runtime.saveLocalDraft({
+        ...input('Switch sender offline'),
+        inboxId,
+        expectedGeneration: local.generation,
+        expectedRevision: local.revision,
+      });
+      moves.push({
+        ...claimed(await runtime.beginDraftAttempt(local, 'save')),
+        variables: { input: { draftId: 'local', linkId: inboxId } },
+      });
+    }
+    sends.push({
+      uuid: 'send',
+      metadata: {
+        kind: 'email-send-v1',
+        payload: {
+          draft: { draftId: 'local', senderLinkId: 'inbox-c' },
+          workingCopy: local,
+        },
+      },
+    });
+    await runtime.forgetLocalDraft(local.key, local);
+    const lifecycle = runtime.localDraftQueueLifecycle(host);
+    for (const move of moves)
+      expect(await lifecycle.beforeMutationAttempt!(move)).toBe(false);
+    expect(await runtime.readLocalDraft('local')).toBeUndefined();
+  });
+
   it('resumes newer send-time edits in a fresh generation without losing files or server aliases', async () => {
     vi.stubGlobal('File', NodeFile);
     const original = await runtime.saveLocalDraft(input('Approved send'));

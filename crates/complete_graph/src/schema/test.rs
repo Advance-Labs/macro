@@ -334,6 +334,7 @@ impl SoupService for CountingSoupService {
 /// the lazy extraction actually runs.
 #[derive(Clone, Default)]
 struct CountingEmailService {
+    thread_read_redirect: Arc<Mutex<Option<(Uuid, Uuid)>>>,
     thread_is_read: Arc<Mutex<bool>>,
     thread_archived: Arc<Mutex<bool>>,
     archive_mutation_calls: Arc<Mutex<Vec<(MacroUserIdStr<'static>, Uuid, bool)>>>,
@@ -451,6 +452,21 @@ impl EmailUserService for CountingEmailService {
 }
 
 impl EmailService for CountingEmailService {
+    async fn resolve_thread_read_id(
+        &self,
+        macro_id: MacroUserIdStr<'_>,
+        thread_id: Uuid,
+    ) -> Result<Uuid, EmailErr> {
+        assert_eq!(macro_id.as_ref(), VALID_USER_ID);
+        Ok(self
+            .thread_read_redirect
+            .lock()
+            .unwrap()
+            .filter(|(source, _)| *source == thread_id)
+            .map(|(_, canonical)| canonical)
+            .unwrap_or(thread_id))
+    }
+
     async fn set_thread_archived(
         &self,
         user_id: MacroUserIdStr<'static>,
@@ -645,6 +661,40 @@ impl EmailService for CountingEmailService {
 
     async fn list_email_filters(&self, _link: &Link) -> Result<Vec<EmailFilter>, EmailErr> {
         Err(test_email_err())
+    }
+}
+
+#[tokio::test]
+async fn email_thread_redirect_reauthorizes_the_canonical_soup_entity() {
+    let source = Uuid::from_u128(420);
+    let canonical = Uuid::from_u128(421);
+    for visible in [None, Some(source), Some(canonical)] {
+        let harness = harness();
+        *harness.email_service.thread_read_redirect.lock().unwrap() = Some((source, canonical));
+        // Visibility of the retained source alone must never satisfy the
+        // redirected lookup's canonical entity authorization.
+        harness
+            .soup_service
+            .set_raw_response(visible.into_iter().map(soup_email_thread).collect());
+        let response = harness
+            .execute(&format!(
+                r#"{{ user {{ emailThread(input: {{threadId: "{source}"}}) {{ id }} }} }}"#
+            ))
+            .await;
+        if visible == Some(source) {
+            // Even a malformed loader response containing the shared source
+            // cannot stand in for the requested canonical entity.
+            assert_eq!(response.errors.len(), 1);
+            assert!(response.errors[0].message.contains("unrequested entity"));
+        } else {
+            assert!(response.errors.is_empty(), "{:?}", response.errors);
+        }
+        let data = response.data.into_json().unwrap();
+        if visible == Some(canonical) {
+            assert_eq!(data["user"]["emailThread"]["id"], canonical.to_string());
+        } else {
+            assert!(data["user"]["emailThread"].is_null());
+        }
     }
 }
 
@@ -900,6 +950,7 @@ fn full_message(thread_id: Uuid) -> Message {
         is_draft: true,
         has_attachments: true,
         scheduled_send_time: Some(Default::default()),
+        scheduled_send_status: None,
         from: None,
         to: Vec::new(),
         cc: Vec::new(),

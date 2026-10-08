@@ -224,6 +224,7 @@ export type EmailDraftLifecycleState =
       threadId: string;
       inboxId: string;
       sendTime: string;
+      deliveryStatus?: 'pending' | 'sending' | 'failed' | 'unconfirmed';
       observedAt: number;
     }
   | {

@@ -72,6 +72,7 @@ function SendStatus(props: {
       props.intent.phase === 'pending'
     )
       return 'Cancellation pending';
+    if (status() === 'ACCEPTED') return 'Queued to send';
     if (status() === 'SENDING' || props.intent.phase === 'committed')
       return 'Sending';
     return 'Queued to send';

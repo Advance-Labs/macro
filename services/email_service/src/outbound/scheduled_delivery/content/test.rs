@@ -78,6 +78,7 @@ async fn admit(pool: &PgPool) -> anyhow::Result<SendAttemptId> {
             link(),
             attempt,
             PreparedSend {
+                source_inbox: None,
                 undo_delay_secs: 0,
                 snapshot,
                 message,
