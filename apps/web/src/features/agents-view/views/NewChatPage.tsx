@@ -85,7 +85,7 @@ export function NewChatPage(props: {
   const [repositoryPickerOpen, setRepositoryPickerOpen] = createSignal(false);
   // A new conversation starts on Automatic until the caller picks a repository.
   const [repoUrl, setRepoUrl] = createSignal<string | undefined>();
-  const persistedDraft = createPersistedComposerDraft();
+  const persistedDraft = createPersistedComposerDraft(undefined, userId);
   const draft = () => props.draft ?? persistedDraft.draft();
   const setDraft = (text: string) =>
     props.onDraftChange
@@ -194,16 +194,20 @@ export function NewChatPage(props: {
     if (agent.harness === 'cursor') openSettings('Harness');
   };
 
-  const attachmentTracker = createInputAttachmentTracker({
-    // Home supplies its own text draft; attachment persistence here is for Agents.
-    persistenceKey: props.onDraftChange
-      ? undefined
-      : NEW_CONVERSATION_ATTACHMENTS_KEY,
+  const attachmentTracker = createMemo(() => {
+    const identity = userId();
+    return createInputAttachmentTracker({
+      // Home owns its attachments; unknown identities never read shared storage.
+      persistenceKey:
+        !props.onDraftChange && identity
+          ? `${NEW_CONVERSATION_ATTACHMENTS_KEY}:${encodeURIComponent(identity)}`
+          : undefined,
+    });
   });
   const attachFiles = (files: File[]) =>
     void uploadInputAttachments({
       files,
-      tracker: attachmentTracker,
+      tracker: attachmentTracker(),
       uploadFile: (file) =>
         uploadFile(file, 'static', { hideProgressIndicator: true }),
     });
@@ -214,7 +218,7 @@ export function NewChatPage(props: {
       (!prompt.trim() && attachments.length === 0) ||
       !persona ||
       blocked() ||
-      attachmentTracker.hasPending()
+      attachmentTracker().hasPending()
     )
       return;
     recentAgents.remember(persona.id);
@@ -237,7 +241,7 @@ export function NewChatPage(props: {
         : {}),
       effortOverride: effortOverride(),
     });
-    attachmentTracker.clearAttachments();
+    attachmentTracker().clearAttachments();
     // Macro's preferred model stays; coding-agent submenu picks are one-shot.
     setModelOverride(undefined);
     setEffortSelection(undefined);
@@ -312,10 +316,10 @@ export function NewChatPage(props: {
       drawerOpen={coding()}
       placeholder={coding() ? 'Describe what you want to build' : undefined}
       onSend={send}
-      attachments={attachmentTracker.attachments()}
+      attachments={attachmentTracker().attachments()}
       onAttachFiles={attachFiles}
       onRemoveAttachment={(attachment) =>
-        attachmentTracker.removeAttachment(attachment.id)
+        attachmentTracker().removeAttachment(attachment.id)
       }
     />
   );
