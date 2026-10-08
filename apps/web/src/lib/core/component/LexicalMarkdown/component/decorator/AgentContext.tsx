@@ -22,9 +22,9 @@ export const AgentContext: Component<AgentContextDecoratorProps> = (props) => {
         <Popover.Trigger
           aria-label={`What the agent saw: ${label()}`}
           title={label()}
-          class="absolute -top-2 -right-2 rounded p-0.5 text-ink-extra-muted hover:bg-hover hover:text-ink"
+          class="absolute -top-3 -right-3 rounded p-0.5 text-ink-extra-muted hover:bg-hover hover:text-ink"
         >
-          <Eye class="size-3" />
+          <Eye class="size-3.5" />
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content class="z-action-menu flex max-h-[60vh] w-[28rem] max-w-[90vw] flex-col gap-2 overflow-auto rounded-xl border border-edge-muted bg-menu p-3 text-xs text-ink-muted shadow-lg">
