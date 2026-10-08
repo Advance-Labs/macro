@@ -126,6 +126,7 @@ pub(super) async fn compact_if_needed(
             owner: state.owner.clone(),
             model: input.model.clone(),
             reasoning_effort: input.reasoning_effort,
+            speed: input.speed,
             identity: None,
             instructions: None,
             messages: vec![prompt.to_chat_message()],

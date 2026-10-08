@@ -40,6 +40,16 @@ runtime starts on it; no model change appears in the new session's transcript.
 A selected effort is confirmed before the first prompt; settings the runtime
 already reports do not need another control request.
 
+Macro's in-process agent opens each reply with a line from a fast model
+(`gpt-5.4-mini`), usually within half a second of Enter. Small talk
+("hi there", "thanks") gets that line as the whole reply, and the chosen model,
+already started alongside it, is cancelled. A real task ("what is on my calendar tomorrow?") gets a short
+opener ("Let me check your calendar."), then the chosen model's answer after a
+blank line, with no second acknowledgement. The opener answers the user's
+words, never the prompt's hidden context. The sent prompt is fully opaque from
+the first paint, and its `Context` chip is already in place, so nothing shifts
+when the server confirms it.
+
 Repeat from a fresh tab using Home, Agents, and a document's Chat action.
 Focusing an agent composer prepares its transcript renderer locally; focus alone
 must not send a prompt. Record navigation and focus time separately from typing
@@ -1548,3 +1558,24 @@ only that link. If another edit makes the revision stale, the AI reads the lates
 settings and confirms a fresh proposal. Identical retries reuse the saved link.
 Old pending booking review requests can be dismissed so the agent can resume with
 conversational confirmation.
+
+## Accelerated model speed
+
+The lightning button beside the model selector enables Ultrafast for GPT-6 Astra
+and GPT-6.1 Sol (6× token pricing), or Fast for Claude Opus 5.5 (2× token pricing).
+Its tooltip shows the mode, state, and usage multiplier before sending. Other
+models keep standard speed. The preference is saved in browser local storage and
+shared by legacy chat and native Macro agent composers. External coding agents
+use their own speed controls.
+
+Preview the controls at `/app/debug/ui?ui=speed-toggle`.
+Click the bolt and verify its brief scale/rotation animation and highlighted state.
+Reload, change between supported models, and confirm the preference survives.
+Select an unsupported model and verify the bolt is hidden; switching back restores
+the preference. With reduced motion enabled, toggling changes the state without
+animation. Native sessions confirm speed configuration before sending the prompt;
+a rejected configuration must retain the unsent draft and attachments.
+
+Usage records follow the provider's delivered speed for each call, including tool
+loops. OpenAI prompts exceeding 272,000 tokens use the long-context rate for that
+call. Standard and accelerated rates have separate pricing keys.
