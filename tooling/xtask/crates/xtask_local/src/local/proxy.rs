@@ -413,7 +413,16 @@ const STATIC_FILE_LOCAL: &str = r#"    handle_path /local-storage/* {
 /// Public exposure: the browser and this proxy share one origin, so a request
 /// carrying any other `Origin` is a cross-site call riding the user's cookies.
 /// Refuse it before any route sees it (handle blocks run in file order).
-const PUBLIC_ORIGIN_GUARD: &str = r#"    @foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://" + {http.request.hostport}`
+/// The deferred `header` block adds browser hardening headers to every
+/// response, including the proxy's own 403/404 answers, and overrides any
+/// value an upstream service sets.
+const PUBLIC_ORIGIN_GUARD: &str = r#"    header {
+        defer
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+    }
+    @foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://" + {http.request.hostport}`
     handle @foreign_origin {
         respond "cross-origin request refused" 403
     }

@@ -338,6 +338,22 @@ fn public_exposure_hides_api_docs() {
 }
 
 #[test]
+fn public_exposure_sets_browser_hardening_headers() {
+    let public = render(Mode::Local, true, true);
+    let headers = public.find("    header {\n        defer\n").unwrap();
+    let first_route = public.find("handle_path").unwrap();
+    assert!(headers < first_route, "{public}");
+    for h in [
+        "Strict-Transport-Security \"max-age=31536000\"",
+        "X-Content-Type-Options \"nosniff\"",
+        "X-Frame-Options \"SAMEORIGIN\"",
+    ] {
+        assert!(public.contains(h), "{h}");
+    }
+    assert!(!render(Mode::Local, true, false).contains("Strict-Transport-Security"));
+}
+
+#[test]
 fn public_exposure_drops_unrouted_prefixes_and_answers_404_for_the_rest() {
     let public = render(Mode::Local, true, true);
     for prefix in PUBLIC_UNROUTED_PREFIXES {
