@@ -284,9 +284,11 @@ impl InfraEnv {
             "http://search-processing-service:8080".into(),
         );
         // Account deletion awaits both owning services from the auth container.
+        // gen_compose sets PORT=8080 on every Rust service, so the harness
+        // control API listens on 8080 here, not on its config default 8101.
         env.insert(
             "OVERRIDE_AGENT_HARNESS_SERVICE_URL".into(),
-            "http://agent-harness-service:8101".into(),
+            "http://agent-harness-service:8080".into(),
         );
         env.insert(
             "OVERRIDE_SCHEDULED_ACTION_SERVICE_URL".into(),
