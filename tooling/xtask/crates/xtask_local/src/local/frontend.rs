@@ -64,6 +64,11 @@ pub fn static_dir(instance: &Instance) -> std::path::PathBuf {
 /// paths such as passwordless auto-login (`just run_local` uses `vite serve`,
 /// where DEV is already true). Headless `stack up` sets the same origin env.
 pub fn build_static(stage: &Stage, instance: &Instance, mode: Mode) -> Result<()> {
+    // `just build-dev` builds every wasm package first (`build-wasm`). They are
+    // gitignored build output the bundle loads at runtime: without them every
+    // agent session view fails on agent_fold.js, and the AI, database, docx,
+    // pptx, fig and psd blocks lose their engines.
+    prepare_wasm(stage, "just build-wasm")?;
     let dist = {
         let mut cmd = Command::new("bun");
         cmd.current_dir(app_dir())
@@ -103,6 +108,14 @@ pub fn build_static(stage: &Stage, instance: &Instance, mode: Mode) -> Result<()
         anyhow::ensure!(status.success(), "cp -a exited with {status}");
         Ok(())
     })
+}
+
+/// Generate the wasm packages the app imports at runtime (gitignored build
+/// output under apps/web/src/lib/core/*/wasm) with the given `just` recipe(s).
+fn prepare_wasm(stage: &Stage, recipes: &str) -> Result<()> {
+    let mut prepare = Command::new("bash");
+    prepare.current_dir(app_dir()).args(["-lc", recipes]);
+    stage.run("Preparing frontend dependencies", &mut prepare)
 }
 
 /// The env the dev server runs with. Both local and dev point the whole app at
@@ -331,12 +344,10 @@ pub fn start(
              previous run. Free it (`lsof -ti tcp:{port} | xargs kill`) and retry."
         );
     }
-    let mut prepare = Command::new("bash");
-    prepare.current_dir(app_dir()).args([
-        "-lc",
+    prepare_wasm(
+        stage,
         "just ensure-cache-wasm && just ensure-agent-fold-wasm",
-    ]);
-    stage.run("Preparing frontend dependencies", &mut prepare)?;
+    )?;
 
     // Vite's node-http-proxy WebSocket upgrades hang under Bun (including
     // 1.3.13). Use Node for the dev server, while keeping Bun for dependencies
