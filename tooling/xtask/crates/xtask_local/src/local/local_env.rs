@@ -825,10 +825,12 @@ impl BootStubEnv {
         env.insert("LIVEKIT_API_KEY".into(), "local-livekit-key".into());
         env.insert("LIVEKIT_API_SECRET".into(), "local-livekit-secret".into());
         env.insert("OPENAI_API_KEY".into(), "local-openai-key".into());
-        // Required by the agent router. Present so it builds on a stack with no
-        // Doppler; real provider calls still fail on the dummy keys.
+        // Required by the agent router (ModelRouter::try_from_env reads all five
+        // provider keys). Present so it builds on a stack with no Doppler; real
+        // provider calls still fail on the dummy keys.
         // Doppler's shared_ai name is singular: FIREWORK_API_KEY.
         env.insert("FIREWORK_API_KEY".into(), "local-firework-key".into());
+        env.insert("CEREBRAS_API_KEY".into(), "local-cerebras-key".into());
         env.insert(
             "GOOGLE_GENERATIVE_AI_API_KEY".into(),
             "local-google-generative-ai-key".into(),
