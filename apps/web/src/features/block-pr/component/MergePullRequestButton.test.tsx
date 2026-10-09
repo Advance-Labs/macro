@@ -47,10 +47,23 @@ const target = {
   title: 'Fix reply state',
 };
 
-function renderButton(props: { status: string; onMerged?: () => void }) {
+const passingChecks = [{ status: 'completed', conclusion: 'success' }];
+
+function renderButton(props: {
+  status: string;
+  draft?: boolean;
+  checks?: ReadonlyArray<{ status: string; conclusion: string | null }> | null;
+  onMerged?: () => void;
+}) {
   return render(() => (
     <QueryClientProvider client={queryClient}>
-      <MergePullRequestButton target={target} {...props} />
+      <MergePullRequestButton
+        target={target}
+        checks={props.checks === undefined ? passingChecks : props.checks}
+        draft={props.draft ?? false}
+        status={props.status}
+        onMerged={props.onMerged}
+      />
     </QueryClientProvider>
   ));
 }
@@ -66,7 +79,12 @@ describe('MergePullRequestButton', () => {
     const [status, setStatus] = createSignal('open');
     render(() => (
       <QueryClientProvider client={queryClient}>
-        <MergePullRequestButton target={target} status={status()} />
+        <MergePullRequestButton
+          target={target}
+          status={status()}
+          draft={false}
+          checks={passingChecks}
+        />
       </QueryClientProvider>
     ));
     expect(
@@ -91,6 +109,8 @@ describe('MergePullRequestButton', () => {
           <MergePullRequestButton
             target={target}
             status="open"
+            draft={false}
+            checks={passingChecks}
             onMerged={onMerged}
           />
         </div>
@@ -116,6 +136,31 @@ describe('MergePullRequestButton', () => {
     });
     expect(mocks.success).toHaveBeenCalledWith('Merged macro-inc/macro#6369');
     expect(openHost).not.toHaveBeenCalled();
+  });
+
+  it('hides merge for a draft or when CI is not passing', () => {
+    const [draft, setDraft] = createSignal(true);
+    const [checks, setChecks] = createSignal(passingChecks);
+    render(() => (
+      <QueryClientProvider client={queryClient}>
+        <MergePullRequestButton
+          target={target}
+          status="open"
+          draft={draft()}
+          checks={checks()}
+        />
+      </QueryClientProvider>
+    ));
+    expect(screen.queryByRole('button')).toBeNull();
+    setDraft(false);
+    setChecks([{ status: 'in_progress', conclusion: null }]);
+    expect(screen.queryByRole('button')).toBeNull();
+    setChecks([{ status: 'completed', conclusion: 'failure' }]);
+    expect(screen.queryByRole('button')).toBeNull();
+    setChecks(passingChecks);
+    expect(
+      screen.getByRole('button', { name: 'Merge pull request #6369' })
+    ).toBeTruthy();
   });
 
   it('does nothing when the confirmation is dismissed', async () => {
