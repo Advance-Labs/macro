@@ -94,7 +94,8 @@ fn caddyfile(mode: Mode, static_frontend: bool) -> String {
 /// non-inventory routes, the mode's static-file block, the optional
 /// static-frontend block, then the tail. `public` applies the
 /// [`super::exposure`] hardening: no wildcard CORS, a same-origin guard, no
-/// Mailpit route, and LocalStack storage only for signed-in sessions.
+/// Mailpit route or API docs, and LocalStack storage and every HTTP service
+/// except authentication only for signed-in sessions.
 fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
     let static_block = if !mode.spec().static_files_via_localstack {
         STATIC_FILE_DEV
@@ -137,7 +138,8 @@ fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
     } else {
         ""
     };
-    let special_routes = SPECIAL_ROUTES.replace("SYNC_ORIGIN_HEADER", sync_origin);
+    let special_routes =
+        SPECIAL_ROUTES.replace("SYNC_ORIGIN_HEADER", sync_origin) + &worker_routes(public);
     format!(
         "{CADDY_HEAD}{cors_block}{routes}{special_routes}{mailpit_block}{static_block}{frontend_block}{CADDY_TAIL}{preview_block}",
         routes = service_routes(mode, public)
@@ -158,7 +160,7 @@ fn service_routes(mode: Mode, public: bool) -> String {
             continue;
         };
         if svc.in_mode(mode) {
-            let gated = public && SESSION_GATED_PREFIXES.contains(&prefix);
+            let gated = public && !SESSION_EXEMPT_PREFIXES.contains(&prefix);
             out.push_str(&local_route_block(
                 prefix,
                 svc.compose_name,
@@ -174,31 +176,43 @@ fn service_routes(mode: Mode, public: bool) -> String {
     out
 }
 
-/// Service prefixes that answer anonymous requests by design but must not on a
-/// publicly exposed stack. The unfurl service fetches arbitrary URLs for link
-/// previews and image proxying without checking a session, which would make
-/// the stack an open fetch relay; the app only calls it from signed-in pages,
-/// and same-origin requests (fetches and `<img>` loads) carry the session
-/// cookie the gate checks.
-const SESSION_GATED_PREFIXES: &[&str] = &["/unfurl"];
+/// Inventory prefixes a publicly exposed stack serves without a session. Every
+/// other HTTP service sits behind [`session_gated_block`]: several answer
+/// anonymous requests by design (link-shared document metadata and edits,
+/// entity previews and permission probes, harness pairing, the unfurl URL
+/// fetcher), which is fine inside a private network but not on the internet.
+/// The authentication service is the gate itself (login, code exchange, token
+/// refresh), and the WebSocket services check the session on upgrade.
+const SESSION_EXEMPT_PREFIXES: &[&str] = &["/auth"];
+
+/// A `handle_path` route that only forwards requests whose session the
+/// authentication service accepts (`/permissions/me`; it reads the same cookie
+/// or bearer token the services do). The app calls these routes from signed-in
+/// pages, and same-origin fetches and `<img>` loads carry the session cookie.
+/// `/health` stays open for uptime probes.
+fn session_gated_block(prefix: &str, upstream: &str) -> String {
+    let m = format!("{}_session", matcher_name(prefix));
+    format!(
+        "    handle_path {prefix}/* {{
+        {m} not path /health
+        forward_auth {m} authentication-service:8080 {{
+            uri /permissions/me
+        }}
+        reverse_proxy {upstream}
+    }}
+"
+    )
+}
 
 /// One Caddy route to a local service container (always on `:8080`). HTTP uses
 /// `handle_path` (which strips the prefix); WebSocket needs the bare-prefix
 /// `@matcher` + explicit strip so the frontend's trailing-slash-less connect URL
 /// still matches. The target is the canonical compose service name, which always
 /// resolves on the proxy's networks. `gated` puts a session check (see
-/// [`SESSION_GATED_PREFIXES`]) in front of an HTTP route.
+/// [`session_gated_block`]) in front of an HTTP route.
 fn local_route_block(prefix: &str, target: &str, is_websocket: bool, gated: bool) -> String {
     if gated && !is_websocket {
-        return format!(
-            "    handle_path {prefix}/* {{
-        forward_auth authentication-service:8080 {{
-            uri /permissions/me
-        }}
-        reverse_proxy {target}:8080
-    }}
-"
-        );
+        return session_gated_block(prefix, &format!("{target}:8080"));
     }
     if is_websocket {
         let m = matcher_name(prefix);
@@ -282,6 +296,27 @@ const LOCAL_CORS: &str = r#"    @cors header Origin *
     }
 "#;
 
+/// HTTP workers that aren't in the Rust inventory (own ports, not `:8080`).
+/// They render and transform document content for signed-in pages, so a
+/// public stack gates them like the inventory services.
+const WORKER_ROUTES: &[(&str, &str)] = &[
+    ("/lexical", "lexical-service:8096"),
+    ("/ai-editing", "ai-editing-worker:8933"),
+];
+
+fn worker_routes(public: bool) -> String {
+    WORKER_ROUTES
+        .iter()
+        .map(|(prefix, upstream)| {
+            if public {
+                session_gated_block(prefix, upstream)
+            } else {
+                format!("    handle_path {prefix}/* {{\n        reverse_proxy {upstream}\n    }}\n")
+            }
+        })
+        .collect()
+}
+
 /// Routes for services that aren't in the Rust inventory (external / base-compose
 /// services on their own ports), so they can't be generated from it. The
 /// WebSocket routes match the bare prefix too (the frontend connects without a
@@ -306,12 +341,6 @@ SYNC_ORIGIN_HEADER        }
         reverse_proxy analytics-proxy:8098 {
             header_up CF-Connecting-IP {http.request.remote.host}
         }
-    }
-    handle_path /lexical/* {
-        reverse_proxy lexical-service:8096
-    }
-    handle_path /ai-editing/* {
-        reverse_proxy ai-editing-worker:8933
     }
 "#;
 
@@ -346,6 +375,11 @@ const STATIC_FILE_LOCAL: &str = r#"    handle_path /local-storage/* {
 const PUBLIC_ORIGIN_GUARD: &str = r#"    @foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://" + {http.request.hostport}`
     handle @foreign_origin {
         respond "cross-origin request refused" 403
+    }
+    # Service API maps (OpenAPI JSON, Swagger UI) stay off the public origin.
+    @api_docs path */api-doc */api-doc/* */swagger-ui */swagger-ui/*
+    handle @api_docs {
+        respond 404
     }
 "#;
 

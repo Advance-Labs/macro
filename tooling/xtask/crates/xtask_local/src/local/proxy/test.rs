@@ -282,20 +282,56 @@ fn public_exposure_gates_localstack_storage_behind_a_session() {
     assert!(!render(Mode::Local, true, false).contains("forward_auth"));
 }
 
+/// The `handle_path` block for `prefix`, up to its closing brace.
+fn route_block<'a>(caddy: &'a str, prefix: &str) -> &'a str {
+    let start = caddy
+        .find(&format!("handle_path {prefix}/* {{"))
+        .unwrap_or_else(|| panic!("no route for {prefix}: {caddy}"));
+    let rest = &caddy[start..];
+    &rest[..rest.find("\n    }\n").unwrap()]
+}
+
 #[test]
-fn public_exposure_gates_the_unfurl_fetcher_behind_a_session() {
+fn public_exposure_gates_every_http_service_but_auth_behind_a_session() {
     let public = render(Mode::Local, true, true);
-    let start = public.find("handle_path /unfurl/*").unwrap();
-    let rest = &public[start..];
-    let auth = rest
-        .find("forward_auth authentication-service:8080")
-        .unwrap();
-    let upstream = rest.find("reverse_proxy unfurl_service:8080").unwrap();
-    assert!(auth < upstream, "unfurl must authenticate first: {rest}");
+    let http_prefixes = inventory::RUST_SERVICES
+        .iter()
+        .filter(|svc| !svc.is_websocket && svc.in_mode(Mode::Local))
+        .filter_map(|svc| svc.path_prefix)
+        .chain(["/lexical", "/ai-editing"]);
+    for prefix in http_prefixes {
+        let block = route_block(&public, prefix);
+        if prefix == "/auth" {
+            assert!(!block.contains("forward_auth"), "{block}");
+            continue;
+        }
+        let m = format!("{}_session", matcher_name(prefix));
+        assert!(block.contains(&format!("{m} not path /health")), "{block}");
+        let auth = block
+            .find(&format!("forward_auth {m} authentication-service:8080"))
+            .unwrap_or_else(|| panic!("{prefix} is not gated: {block}"));
+        let upstream = block.find("reverse_proxy").unwrap();
+        assert!(auth < upstream, "{prefix} must authenticate first: {block}");
+    }
 
     let private = render(Mode::Local, true, false);
+    assert!(!private.contains("forward_auth"), "{private}");
     assert!(private.contains(
-        "handle_path /unfurl/* {
-        reverse_proxy unfurl_service:8080"
+        "handle_path /dss/* {
+        reverse_proxy document_storage_service:8080"
     ));
+    assert!(private.contains(
+        "handle_path /lexical/* {
+        reverse_proxy lexical-service:8096"
+    ));
+}
+
+#[test]
+fn public_exposure_hides_api_docs() {
+    let public = render(Mode::Local, true, true);
+    let docs = public.find("handle @api_docs").unwrap();
+    let first_route = public.find("handle_path").unwrap();
+    assert!(docs < first_route, "{public}");
+    assert!(public.contains("@api_docs path */api-doc */api-doc/* */swagger-ui */swagger-ui/*"));
+    assert!(!render(Mode::Local, true, false).contains("@api_docs"));
 }
