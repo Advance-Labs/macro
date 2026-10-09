@@ -4,6 +4,7 @@ use pollster::block_on;
 use serde_json::json;
 
 mod embedded;
+mod generated;
 
 const PAGE: &str = "query Page($input: SoupInput!) { user { id soup(input: $input) { items { __typename id ... on GraphqlSoupEmailThread { isRead } } nextCursor } } }";
 const DETAIL: &str = "query Detail($id: ID!, $show: Boolean! = true) { user { alias: emailThread(input: {threadId: $id}) { ...Fields @include(if: $show) } } } fragment Fields on GraphqlSoupEmailThread { seen: isRead }";
@@ -54,8 +55,46 @@ fn patches(update: QueryUpdate) -> Json {
     serde_json::to_value(patches).unwrap()
 }
 
+/// Applies an update under the JS document applier's rules: every patch
+/// targets an existing non-root path, changes it, and overlaps no other patch.
+fn apply(snapshot: &mut Json, update: QueryUpdate) -> CacheRevision {
+    let cursor = revision(&update);
+    match update {
+        QueryUpdate::Hit { data, .. } => *snapshot = data,
+        QueryUpdate::Patch { patches, .. } => {
+            let paths: Vec<Json> = patches
+                .iter()
+                .map(|patch| serde_json::to_value(&patch.path).unwrap())
+                .collect();
+            for (index, path) in paths.iter().enumerate() {
+                let path = path.as_array().unwrap();
+                assert!(!path.is_empty(), "a patch cannot replace the root");
+                for other in &paths[index + 1..] {
+                    let other = other.as_array().unwrap();
+                    let shared = path.len().min(other.len());
+                    assert_ne!(path[..shared], other[..shared], "patches overlap");
+                }
+            }
+            for patch in patches {
+                let mut slot = &mut *snapshot;
+                for part in patch.path {
+                    slot = match part {
+                        live_query::ResponsePathSegment::Field(name) => slot.get_mut(name.as_str()),
+                        live_query::ResponsePathSegment::Index(index) => slot.get_mut(index),
+                    }
+                    .expect("patch targets an existing path");
+                }
+                assert_ne!(*slot, patch.value, "unchanged values are not published");
+                *slot = patch.value;
+            }
+        }
+        QueryUpdate::Miss { .. } => panic!("unexpected miss"),
+    }
+    cursor
+}
+
 #[test]
-fn targets_one_field_in_a_thousand_rows_for_every_subscriber() {
+fn patches_one_field_in_a_thousand_rows_for_every_subscriber() {
     block_on(async {
         let mut engine = Engine::with_capacity(InMemoryStorage::new(), 1);
         seed(&mut engine, 1000).await;
@@ -69,7 +108,6 @@ fn targets_one_field_in_a_thousand_rows_for_every_subscriber() {
             .unwrap();
         assert!(matches!(&first, QueryUpdate::Hit { data: result, .. } if *result == data(1000)));
         change(&mut engine, "17", "isRead", CacheValue::Bool(true)).await;
-        let before = engine.storage().record_get_count();
         for (op, previous) in [(1, first), (2, second)] {
             let update = engine
                 .watch_query(op, PAGE, None, &vars(), &[], Some(revision(&previous)))
@@ -80,9 +118,42 @@ fn targets_one_field_in_a_thousand_rows_for_every_subscriber() {
                 json!([{"path": ["user", "soup", "items", 17, "isRead"], "value": true}])
             );
         }
+    });
+}
+
+#[test]
+fn unrelated_changes_publish_an_empty_patch_without_rereading() {
+    block_on(async {
+        // A one-record hot tier makes any re-read visible as storage reads.
+        let mut engine = Engine::with_capacity(InMemoryStorage::new(), 1);
+        seed(&mut engine, 2).await;
+        let first = engine
+            .watch_query(1, PAGE, None, &vars(), &[], None)
+            .await
+            .unwrap();
+        change(&mut engine, "unrelated", "isRead", CacheValue::Bool(true)).await;
+        let before = engine.storage().record_get_count();
+        let next = engine
+            .watch_query(1, PAGE, None, &vars(), &[], Some(revision(&first)))
+            .await
+            .unwrap();
+        assert_eq!(engine.storage().record_get_count(), before);
+        let cursor = revision(&next);
+        assert_eq!(cursor, engine.current_revision());
+        assert_eq!(patches(next), json!([]));
+        change(&mut engine, "1", "isRead", CacheValue::Bool(true)).await;
+        let before = engine.storage().record_get_count();
+        let next = engine
+            .watch_query(1, PAGE, None, &vars(), &[], Some(cursor))
+            .await
+            .unwrap();
         assert!(
-            engine.storage().record_get_count() - before <= 2,
-            "must not hydrate the other 999 records"
+            engine.storage().record_get_count() > before,
+            "a changed dependency re-reads the query"
+        );
+        assert_eq!(
+            patches(next),
+            json!([{"path": ["user", "soup", "items", 1, "isRead"], "value": true}])
         );
     });
 }
@@ -142,7 +213,7 @@ fn aliases_fragments_defaults_and_synthetic_relations_need_no_selected_identity(
 }
 
 #[test]
-fn structural_edits_rebuild_paths_and_tombstones_cannot_patch_stale_indices() {
+fn reorders_and_tombstones_replace_the_list_instead_of_patching_stale_indices() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
         seed(&mut engine, 2).await;
@@ -163,10 +234,14 @@ fn structural_edits_rebuild_paths_and_tombstones_cannot_patch_stale_indices() {
             .watch_query(1, PAGE, None, &vars(), &[], Some(revision(&initial)))
             .await
             .unwrap();
-        assert!(matches!(&replacement, QueryUpdate::Hit { data, .. } if *data == reordered));
+        let cursor = revision(&replacement);
+        assert_eq!(
+            patches(replacement),
+            json!([{"path":["user","soup","items"],"value":reordered["user"]["soup"]["items"]}])
+        );
         change(&mut engine, "0", "isRead", CacheValue::Bool(true)).await;
         let next = engine
-            .watch_query(1, PAGE, None, &vars(), &[], Some(revision(&replacement)))
+            .watch_query(1, PAGE, None, &vars(), &[], Some(cursor))
             .await
             .unwrap();
         let cursor = revision(&next);
@@ -185,16 +260,22 @@ fn structural_edits_rebuild_paths_and_tombstones_cannot_patch_stale_indices() {
             .watch_query(1, PAGE, None, &vars(), &[], Some(cursor))
             .await
             .unwrap();
-        assert!(
-            matches!(&deleted, QueryUpdate::Hit { data, .. } if data["user"]["soup"]["items"].as_array().unwrap().len() == 1)
+        let cursor = revision(&deleted);
+        assert_eq!(
+            patches(deleted),
+            json!([{"path":["user","soup","items"],"value":[
+                {"__typename": "GraphqlSoupEmailThread", "id": "0", "isRead": true}
+            ]}])
         );
         change(&mut engine, "0", "isRead", CacheValue::Bool(false)).await;
         let after = engine
-            .watch_query(1, PAGE, None, &vars(), &[], Some(revision(&deleted)))
+            .watch_query(1, PAGE, None, &vars(), &[], Some(cursor))
             .await
             .unwrap();
-        assert!(
-            matches!(after, QueryUpdate::Hit { data, .. } if data["user"]["soup"]["items"][0]["isRead"] == false)
+        assert_eq!(
+            patches(after),
+            json!([{"path":["user","soup","items",0,"isRead"],"value":false}]),
+            "compacted indices are diffed against the published list"
         );
     });
 }
@@ -372,7 +453,7 @@ fn network_identity_aliases_and_default_arguments_round_trip() {
 }
 
 #[test]
-fn account_changes_discard_query_bindings_and_old_entities() {
+fn account_changes_discard_query_watches_and_old_entities() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
         engine

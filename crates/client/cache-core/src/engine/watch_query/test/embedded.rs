@@ -47,9 +47,9 @@ fn options(values: &[&str]) -> CacheValue {
 }
 
 #[test]
-fn nested_property_edits_patch_each_subscriber_without_reading_other_rows() {
+fn nested_property_edits_patch_each_subscriber() {
     block_on(async {
-        let mut engine = Engine::with_capacity(InMemoryStorage::new(), 1);
+        let mut engine = Engine::new(InMemoryStorage::new());
         engine
             .write_query(None, PROPERTIES, None, &vars(), &property_page(1000), None)
             .await
@@ -72,7 +72,6 @@ fn nested_property_edits_patch_each_subscriber_without_reading_other_rows() {
             vec!["initial"],
         ] {
             set_value(&mut engine, 17, options(&values)).await;
-            let before = engine.storage().record_get_count();
             for (op, cursor) in &mut cursors {
                 let update = engine
                     .watch_query(*op, PROPERTIES, None, &vars(), &[], Some(*cursor))
@@ -87,16 +86,12 @@ fn nested_property_edits_patch_each_subscriber_without_reading_other_rows() {
                     }])
                 );
             }
-            assert!(
-                engine.storage().record_get_count() - before <= 2,
-                "a nested value must not reload the other 999 rows"
-            );
         }
     });
 }
 
 #[test]
-fn embedded_nulls_type_changes_and_missing_fields_rebuild_the_selected_shape() {
+fn embedded_nulls_and_type_changes_replace_the_value_and_missing_fields_miss() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
         engine
@@ -131,8 +126,12 @@ fn embedded_nulls_type_changes_and_missing_fields_rebuild_the_selected_shape() {
                 .await
                 .unwrap();
             cursor = revision(&update);
-            assert!(
-                matches!(update, QueryUpdate::Hit { data, .. } if data["user"]["soup"]["items"][0]["properties"][0]["value"] == expected)
+            assert_eq!(
+                patches(update),
+                json!([{
+                    "path": ["user", "soup", "items", 0, "properties", 0, "value"],
+                    "value": expected
+                }])
             );
         }
         set_value(
@@ -155,7 +154,7 @@ fn embedded_nulls_type_changes_and_missing_fields_rebuild_the_selected_shape() {
 }
 
 #[test]
-fn nested_lists_preserve_aliases_and_rebuild_after_membership_changes() {
+fn nested_lists_preserve_aliases_and_replace_changed_membership() {
     block_on(async {
         let mut engine = Engine::new(InMemoryStorage::new());
         let mut data = property_page(1);
@@ -196,7 +195,12 @@ fn nested_lists_preserve_aliases_and_rebuild_after_membership_changes() {
             .watch_query(1, PROPERTIES, None, &vars(), &[], Some(cursor))
             .await
             .unwrap();
-        assert!(matches!(next, QueryUpdate::Hit { data: actual, .. } if actual == data));
+        assert_eq!(
+            patches(next),
+            json!([{
+                "path": ["user", "soup", "items", 0, "properties", 0, "value", "references"], "value": []
+            }])
+        );
     });
 }
 
@@ -308,21 +312,7 @@ proptest! {
                 };
                 set_value(&mut engine, id, value).await;
                 let next = engine.watch_query(1, PROPERTIES, None, &vars(), &[], Some(cursor)).await.unwrap();
-                cursor = revision(&next);
-                match next {
-                    QueryUpdate::Hit { data, .. } => snapshot = data,
-                    QueryUpdate::Patch { patches, .. } => for patch in patches {
-                        let mut slot = &mut snapshot;
-                        for part in patch.path {
-                            slot = match part {
-                                live_query::ResponsePathSegment::Field(name) => slot.get_mut(&name),
-                                live_query::ResponsePathSegment::Index(index) => slot.get_mut(index),
-                            }.expect("patch targets an existing selected field");
-                        }
-                        *slot = patch.value;
-                    },
-                    QueryUpdate::Miss { .. } => panic!("complete property values cannot miss"),
-                }
+                cursor = apply(&mut snapshot, next);
                 let full = engine.read_query(None, PROPERTIES, None, &vars()).await.unwrap();
                 let ReadResult::Hit { data } = full else { panic!("full read missed") };
                 prop_assert_eq!(&snapshot, &data);

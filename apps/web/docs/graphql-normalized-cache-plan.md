@@ -652,21 +652,24 @@ await client.mutation(DeleteEntityPropertyDocument, {
 
 ### Projection contract
 
-Cache-core compiles response paths while reading normalized records. Bindings
-understand response aliases, argument-qualified fields, concrete fragment types,
-variable defaults and `@include`/`@skip`. Identity aliases are supported. A
-subscription retains selected-field bindings rather than another complete
-response. Bindings are bounded by count and estimated retained bytes.
+A subscription retains the last response it was sent and the normalized records
+that read traversed, bounded by count and estimated retained bytes. Subsequent
+reads carry the last accepted engine revision. When the change journal shows no
+traversed record changed, the engine returns an empty patch without reading.
+Otherwise it re-runs the ordinary cache read, which owns response aliases,
+argument-qualified fields, concrete fragment types, variable defaults and
+`@include`/`@skip`, and diffs the result against the retained response. A field
+cannot be missed by an incomplete binding.
 
-Subsequent reads carry the last accepted engine revision. For scalar, scalar-list
-and opaque-scalar changes, the engine reads only changed dependency records and
-returns response-path patches. The JS adapter preserves immutable urql snapshots
-and applies those paths in one Solid batch. Relationships, embedded-object edits,
-list reordering, invalidation, eviction, cursor mismatch and journal gaps use a
-complete cache read to rebuild bindings. Query teardown and account/engine reset
-discard the corresponding retained state. Unknown directives, schema drift and
-incomplete cached results follow the query's normal network policy; `cache-only`
-never starts a network request.
+Diffs only target paths present in the previous response. Objects whose key set
+changed (another fragment type) and lists whose length or item identities
+(`id`, `__typename`) changed are replaced at their own path; a changed scalar in
+a scalar list replaces the list. The JS adapter preserves immutable urql
+snapshots and applies those paths in one Solid batch. Invalidation, eviction,
+cursor mismatch and journal gaps return a complete result. Query teardown and
+account/engine reset discard the corresponding retained state. Unknown
+directives, schema drift and incomplete cached results follow the query's normal
+network policy; `cache-only` never starts a network request.
 
 ### Collection semantics and limits
 
