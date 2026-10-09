@@ -181,6 +181,26 @@ export function createCrmWorkspace(
     panel.handle.setDisplayName('Customers');
   });
 
+  // Companies arrive in pages of 100 (the team list is capped at 500 server
+  // side), but the Stage/Owner filters and the group-header counts run on the
+  // rows already loaded. Load the remaining pages up front on the company
+  // tabs, so a filter or a count covers the whole list and not only the rows
+  // scrolled into view so far.
+  createEffect(() => {
+    const tab = soupView.activeTab() ?? VIEW_TAB_PRESETS.companies.default;
+    if (tab !== 'active' && tab !== 'hidden') return;
+    if (soupView.searchText()) return;
+    const source = soupView.source;
+    if (
+      !source.hasNextPage() ||
+      source.isFetching() ||
+      source.isFetchingNextPage()
+    ) {
+      return;
+    }
+    void source.fetchNextPage();
+  });
+
   // Bridge live soup sort state back to preferences. `defer: true` skips the
   // initial run on mount, so we only write when the user actually changes it.
   createEffect(
