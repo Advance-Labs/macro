@@ -68,3 +68,19 @@ fn isolated_target_dirs_do_not_collide() {
         .collect();
     assert_eq!(dirs.len(), isolated_services().count());
 }
+
+#[test]
+fn replace_file_swaps_contents_and_leaves_no_temp_file() {
+    let dir = std::env::temp_dir().join(format!("zigbuild-replace-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("built");
+    let dest = dir.join("service");
+    std::fs::write(&src, b"new").unwrap();
+    std::fs::write(&dest, b"old").unwrap();
+
+    super::replace_file(&src, &dest).unwrap();
+
+    assert_eq!(std::fs::read(&dest).unwrap(), b"new");
+    assert!(!dir.join("service.replacing").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

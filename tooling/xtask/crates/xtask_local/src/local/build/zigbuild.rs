@@ -74,11 +74,28 @@ pub fn run(stage: &Stage, target: Target) -> Result<()> {
             .join("debug")
             .join(svc.cargo_bin);
         let dest = ws.join(target.debug_dir()).join(svc.cargo_bin);
-        std::fs::copy(&built, &dest)
+        replace_file(&built, &dest)
             .with_context(|| format!("copying {} to {}", built.display(), dest.display()))?;
     }
 
     Ok(())
+}
+
+/// Copies `src` over `dest` through a temporary file and a rename.
+///
+/// A running stack executes `dest` from its bind mount, and writing into an
+/// executing file fails with `ETXTBSY` ("Text file busy"). A rename swaps the
+/// directory entry instead: the running process keeps the old inode and the
+/// next start picks up the new binary.
+fn replace_file(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let mut tmp_name = dest.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".replacing");
+    let tmp = dest.with_file_name(tmp_name);
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(src, &tmp)?;
+    std::fs::rename(&tmp, dest).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 /// Where a `--no-default-features` service builds. Under `target/` so it is
