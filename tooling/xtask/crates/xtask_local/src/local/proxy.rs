@@ -140,7 +140,7 @@ fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
     let special_routes = SPECIAL_ROUTES.replace("SYNC_ORIGIN_HEADER", sync_origin);
     format!(
         "{CADDY_HEAD}{cors_block}{routes}{special_routes}{mailpit_block}{static_block}{frontend_block}{CADDY_TAIL}{preview_block}",
-        routes = service_routes(mode)
+        routes = service_routes(mode, public)
     )
 }
 
@@ -151,17 +151,19 @@ const DEV_GATEWAY_ORIGIN: &str = "https://dev-gateway.macro.com";
 /// Generate the reverse-proxy routes for every inventoried service that exposes
 /// a path prefix. The inventory is the single source, so adding a service's
 /// proxy route is one field there — not a hand-edit here that can drift.
-fn service_routes(mode: Mode) -> String {
+fn service_routes(mode: Mode, public: bool) -> String {
     let mut out = String::new();
     for svc in inventory::RUST_SERVICES {
         let Some(prefix) = svc.path_prefix else {
             continue;
         };
         if svc.in_mode(mode) {
+            let gated = public && SESSION_GATED_PREFIXES.contains(&prefix);
             out.push_str(&local_route_block(
                 prefix,
                 svc.compose_name,
                 svc.is_websocket,
+                gated,
             ));
         } else if mode == Mode::Dev && svc.in_mode(Mode::Local) {
             // Local-only: do not start the binary against shared-dev, but keep
@@ -172,12 +174,32 @@ fn service_routes(mode: Mode) -> String {
     out
 }
 
+/// Service prefixes that answer anonymous requests by design but must not on a
+/// publicly exposed stack. The unfurl service fetches arbitrary URLs for link
+/// previews and image proxying without checking a session, which would make
+/// the stack an open fetch relay; the app only calls it from signed-in pages,
+/// and same-origin requests (fetches and `<img>` loads) carry the session
+/// cookie the gate checks.
+const SESSION_GATED_PREFIXES: &[&str] = &["/unfurl"];
+
 /// One Caddy route to a local service container (always on `:8080`). HTTP uses
 /// `handle_path` (which strips the prefix); WebSocket needs the bare-prefix
 /// `@matcher` + explicit strip so the frontend's trailing-slash-less connect URL
 /// still matches. The target is the canonical compose service name, which always
-/// resolves on the proxy's networks.
-fn local_route_block(prefix: &str, target: &str, is_websocket: bool) -> String {
+/// resolves on the proxy's networks. `gated` puts a session check (see
+/// [`SESSION_GATED_PREFIXES`]) in front of an HTTP route.
+fn local_route_block(prefix: &str, target: &str, is_websocket: bool, gated: bool) -> String {
+    if gated && !is_websocket {
+        return format!(
+            "    handle_path {prefix}/* {{
+        forward_auth authentication-service:8080 {{
+            uri /permissions/me
+        }}
+        reverse_proxy {target}:8080
+    }}
+"
+        );
+    }
     if is_websocket {
         let m = matcher_name(prefix);
         format!(

@@ -281,3 +281,21 @@ fn public_exposure_gates_localstack_storage_behind_a_session() {
     }
     assert!(!render(Mode::Local, true, false).contains("forward_auth"));
 }
+
+#[test]
+fn public_exposure_gates_the_unfurl_fetcher_behind_a_session() {
+    let public = render(Mode::Local, true, true);
+    let start = public.find("handle_path /unfurl/*").unwrap();
+    let rest = &public[start..];
+    let auth = rest
+        .find("forward_auth authentication-service:8080")
+        .unwrap();
+    let upstream = rest.find("reverse_proxy unfurl_service:8080").unwrap();
+    assert!(auth < upstream, "unfurl must authenticate first: {rest}");
+
+    let private = render(Mode::Local, true, false);
+    assert!(private.contains(
+        "handle_path /unfurl/* {
+        reverse_proxy unfurl_service:8080"
+    ));
+}
