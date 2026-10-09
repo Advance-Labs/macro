@@ -108,7 +108,9 @@ function proxyServers(): Servers | undefined {
   if (!proxyOrigin || !wsProxyOrigin) return undefined;
   return {
     'auth-service': `${proxyOrigin}/auth`,
-    'auth-logout': serverHostLocal['auth-logout'],
+    // No hosted FusionAuth logout page behind the proxy: land back on the app
+    // (signed out) instead of the dev-only localhost:3000 placeholder.
+    'auth-logout': `${proxyOrigin}/app/`,
     'pdf-service': serverHostLocal['pdf-service'], // no local container
     'document-storage-service': `${proxyOrigin}/dss`,
     'websocket-service': `${wsProxyOrigin}/websocket`,
