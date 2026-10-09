@@ -184,6 +184,9 @@ pub fn generate(
     // external network/volume definitions, which the schema can't represent.
     let mut value = serde_yaml::to_value(&compose).context("serializing compose override")?;
     apply_tags(&mut value, mode, instance);
+    if mode.spec().runs_local_infra && super::exposure::enabled(instance)? {
+        harden_for_exposure(&mut value, &mounts);
+    }
     if mode.spec().runs_local_infra && !instance.is_default() {
         set_external_networks_and_volumes(&mut value, instance);
     }
@@ -493,6 +496,42 @@ fn apply_tags(value: &mut Value, mode: Mode, instance: &Instance) {
                 }
             }
         }
+    }
+}
+
+/// Public-exposure hardening (see [`super::exposure`]): every published port
+/// binds to loopback, Mailpit publishes nothing (it only receives mail on the
+/// compose networks), and the agent harness keeps its binaries mount but loses
+/// the host Docker socket the base compose gives it.
+fn harden_for_exposure(value: &mut Value, mounts: &[String]) {
+    let Some(services) = value.get_mut("services").and_then(Value::as_mapping_mut) else {
+        return;
+    };
+    for (_, service) in services.iter_mut() {
+        let Some(ports) = service.get_mut("ports") else {
+            continue;
+        };
+        let list = match ports {
+            Value::Tagged(tagged) => &mut tagged.value,
+            other => other,
+        };
+        if let Some(seq) = list.as_sequence_mut() {
+            for entry in seq.iter_mut() {
+                if let Some(mapping) = entry.as_str() {
+                    *entry = Value::from(super::exposure::loopback_port(mapping));
+                }
+            }
+        }
+    }
+    if let Some(mailpit) = services.get_mut("mailpit").and_then(Value::as_mapping_mut) {
+        mailpit.insert("ports".into(), override_tag(Value::Sequence(vec![])));
+    }
+    if let Some(harness) = services
+        .get_mut(EGRESS_SERVICE)
+        .and_then(Value::as_mapping_mut)
+    {
+        let volumes = mounts.iter().cloned().map(Value::from).collect();
+        harness.insert("volumes".into(), override_tag(Value::Sequence(volumes)));
     }
 }
 

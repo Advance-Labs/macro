@@ -77,22 +77,33 @@ pub fn write_caddyfile(instance: &Instance, mode: Mode, static_frontend: bool) -
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating proxy dir {}", dir.display()))?;
     }
-    std::fs::write(&path, caddyfile(mode, static_frontend))
+    let public = mode.spec().runs_local_infra && super::exposure::enabled(instance)?;
+    std::fs::write(&path, render(mode, static_frontend, public))
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
+}
+
+/// [`render`] for a private (not publicly exposed) stack.
+#[cfg(test)]
+fn caddyfile(mode: Mode, static_frontend: bool) -> String {
+    render(mode, static_frontend, false)
 }
 
 /// Assemble the Caddyfile: the listener head (HTTPS + optional local CORS),
 /// the generated per-service routes (from the inventory), the special
 /// non-inventory routes, the mode's static-file block, the optional
-/// static-frontend block, then the tail.
-fn caddyfile(mode: Mode, static_frontend: bool) -> String {
-    let static_block = if mode.spec().static_files_via_localstack {
-        STATIC_FILE_LOCAL
-    } else {
+/// static-frontend block, then the tail. `public` applies the
+/// [`super::exposure`] hardening: no wildcard CORS, a same-origin guard, no
+/// Mailpit route, and LocalStack storage only for signed-in sessions.
+fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
+    let static_block = if !mode.spec().static_files_via_localstack {
         STATIC_FILE_DEV
+    } else if public {
+        STATIC_FILE_LOCAL_SIGNED_IN
+    } else {
+        STATIC_FILE_LOCAL
     };
-    let mailpit_block = if static_frontend && mode.spec().runs_local_infra {
+    let mailpit_block = if static_frontend && mode.spec().runs_local_infra && !public {
         MAILPIT_ROUTE
     } else {
         ""
@@ -111,7 +122,13 @@ fn caddyfile(mode: Mode, static_frontend: bool) -> String {
     // it on Caddy so HTTPS and `*.localhost` origins work without touching
     // every service allowlist. `run_dev` still fans out to the shared-dev
     // gateway, so it keeps service CORS as-is.
-    let cors_block = if mode == Mode::Local { LOCAL_CORS } else { "" };
+    let cors_block = if public {
+        PUBLIC_ORIGIN_GUARD
+    } else if mode == Mode::Local {
+        LOCAL_CORS
+    } else {
+        ""
+    };
     // Sync actively rejects unknown origins, including HTTPS machine names,
     // before upgrading a socket. Local CORS is owned by this proxy; normalize
     // only the local worker's upstream origin to its existing dev allowlist.
@@ -295,6 +312,38 @@ const STATIC_FILE_LOCAL: &str = r#"    handle_path /local-storage/* {
         route {
             @svc path /api/* /internal/*
             reverse_proxy @svc static-file-service:8080
+            rewrite * /static-file-storage{uri}
+            reverse_proxy localstack:4566
+        }
+    }
+"#;
+
+/// Public exposure: the browser and this proxy share one origin, so a request
+/// carrying any other `Origin` is a cross-site call riding the user's cookies.
+/// Refuse it before any route sees it (handle blocks run in file order).
+const PUBLIC_ORIGIN_GUARD: &str = r#"    @foreign_origin expression `{http.request.header.Origin} != "" && {http.request.header.Origin} != "https://" + {http.request.hostport}`
+    handle @foreign_origin {
+        respond "cross-origin request refused" 403
+    }
+"#;
+
+/// [`STATIC_FILE_LOCAL`] for a publicly exposed stack. LocalStack answers any
+/// S3 request without checking credentials, so its objects are only served to
+/// requests whose session cookie the authentication service accepts.
+const STATIC_FILE_LOCAL_SIGNED_IN: &str = r#"    handle_path /local-storage/* {
+        forward_auth authentication-service:8080 {
+            uri /permissions/me
+        }
+        reverse_proxy localstack:4566
+    }
+    handle_path /static-file/* {
+        # Keep service dispatch before the S3 rewrite inside this exclusive handle.
+        route {
+            @svc path /api/* /internal/*
+            reverse_proxy @svc static-file-service:8080
+            forward_auth authentication-service:8080 {
+                uri /permissions/me
+            }
             rewrite * /static-file-storage{uri}
             reverse_proxy localstack:4566
         }

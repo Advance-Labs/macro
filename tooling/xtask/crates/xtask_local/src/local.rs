@@ -22,6 +22,7 @@ pub mod docker;
 pub mod doctor;
 pub mod e2e;
 pub mod env_layer;
+pub mod exposure;
 pub mod frontend;
 pub mod fusionauth;
 pub mod gen_compose;

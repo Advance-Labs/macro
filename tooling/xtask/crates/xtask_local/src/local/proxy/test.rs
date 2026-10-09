@@ -247,3 +247,37 @@ fn proxy_origin_is_https() {
         ca_pem().display()
     );
 }
+
+#[test]
+fn public_exposure_drops_mailpit_and_wildcard_cors() {
+    let private = render(Mode::Local, true, false);
+    assert!(private.contains("handle /mailpit/*"));
+    assert!(private.contains("@cors header Origin *"));
+
+    let public = render(Mode::Local, true, true);
+    assert!(!public.contains("mailpit"), "{public}");
+    assert!(!public.contains("Access-Control-Allow-Origin"), "{public}");
+    assert!(public.contains("@foreign_origin"));
+    // The guard must precede every route: Caddy runs handle blocks in order.
+    let guard = public.find("handle @foreign_origin").unwrap();
+    let first_route = public.find("handle_path").unwrap();
+    assert!(guard < first_route, "{public}");
+}
+
+#[test]
+fn public_exposure_gates_localstack_storage_behind_a_session() {
+    let public = render(Mode::Local, true, true);
+    for block in ["handle_path /local-storage/*", "handle_path /static-file/*"] {
+        let start = public.find(block).unwrap();
+        let rest = &public[start..];
+        let auth = rest
+            .find("forward_auth authentication-service:8080")
+            .unwrap();
+        let s3 = rest.find("reverse_proxy localstack:4566").unwrap();
+        assert!(
+            auth < s3,
+            "{block} must authenticate before reaching S3: {rest}"
+        );
+    }
+    assert!(!render(Mode::Local, true, false).contains("forward_auth"));
+}
