@@ -568,15 +568,6 @@ export const enableInboxNotifiedSort = defineFlag({
   default: onInDev,
 });
 
-// Desktop Home Signal reads the backend work feed (one merged, stacked,
-// live-updating query) instead of merging Soup, notification, and
-// touched-by-me sources on the client. Local override:
-// VITE_ENABLE_HOME_WORK_FEED.
-export const enableHomeWorkFeed = defineFlag({
-  key: 'enable-home-work-feed',
-  env: 'ENABLE_HOME_WORK_FEED',
-});
-
 export const enableGraphqlSoup = defineFlag({
   key: 'enable-graphql-soup',
   env: 'ENABLE_GRAPHQL_SOUP',

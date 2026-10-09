@@ -230,7 +230,7 @@ Noise-only email activity. Each entity appears once, ordered by its latest
 notification or own action. On desktop, the funnel button to the right of **Home**
 opens **Filter Home**.
 
-With the `enable-home-work-feed` and GraphQL Soup flags on, desktop Signal reads
+With the GraphQL Soup flag on, desktop Signal reads
 the server work feed (`user.workFeed` plus the `workFeedUpdates` subscription)
 instead of merging sources in the browser; Noise, search, and touch devices keep
 the merged feed. Verify these against a backend that serves the work feed: a

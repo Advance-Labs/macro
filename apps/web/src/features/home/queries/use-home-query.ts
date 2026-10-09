@@ -17,7 +17,6 @@ import { useGlobalNotificationSource } from '@components/app/GlobalAppState';
 import {
   enableCalendarUi,
   enableGraphqlSoup,
-  enableHomeWorkFeed,
   enableInboxNotifiedSort,
   enableSnippets,
   enableSupportedSoupForeignEntities,
@@ -229,18 +228,16 @@ export type HomeListDataSource = HomeDataSource & {
 };
 
 /**
- * Home's list. Desktop Signal reads the server work feed when its flag is
- * on; every other view (Noise, touch devices, search) merges Soup,
- * notification and recent-activity sources on the client.
+ * Home's list. Desktop Signal reads the server work feed wherever GraphQL
+ * Soup is on, since the feed's live changes ride its websocket and cache;
+ * every other view (Noise, touch devices, search) merges Soup, notification
+ * and recent-activity sources on the client.
  */
 export function useHomeDataSource(
   state: HomeDataSourceInput
 ): HomeListDataSource {
-  const workFeedFlag = useFeatureFlag(enableHomeWorkFeed);
-  // The work feed's live updates ride the GraphQL Soup websocket.
   const graphqlSoup = useFeatureFlag(enableGraphqlSoup);
   const usesWorkFeed = () =>
-    workFeedFlag().enabled &&
     graphqlSoup().enabled &&
     state.tab === 'signal' &&
     !isTouchDevice() &&

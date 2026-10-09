@@ -30,10 +30,10 @@ vi.mock('@entity', async () => ({
   ...(await import('@entity/utils/company-properties')),
 }));
 vi.mock('@notifications', async () => await import('@notifications/types'));
-const flags = vi.hoisted(() => ({ workFeed: false }));
+const flags = vi.hoisted(() => ({ graphqlSoup: false }));
 vi.mock('@app/lib/analytics/posthog', () => ({
   useFeatureFlag: (flag: { key: string }) => () => ({
-    enabled: flag.key === 'enable-home-work-feed' ? flags.workFeed : true,
+    enabled: flag.key === 'enable-graphql-soup' ? flags.graphqlSoup : true,
   }),
 }));
 const workFeedSource = vi.hoisted(() => ({
@@ -179,7 +179,7 @@ describe('Home data source', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.setSystemTime(new Date(2026, 8, 10, 12));
-    flags.workFeed = false;
+    flags.graphqlSoup = false;
     touch.device = false;
   });
   afterEach(() => {
@@ -509,11 +509,11 @@ describe('Home data source', () => {
   });
 });
 
-describe('Home work feed rollout', () => {
+describe('Home work feed', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.setSystemTime(new Date(2026, 8, 10, 12));
-    flags.workFeed = true;
+    flags.graphqlSoup = true;
     touch.device = false;
     workFeedSource.items = () => [
       {
