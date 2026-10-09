@@ -233,6 +233,40 @@ just run_local --no-doppler --env-file ./local.env
 
 Keys in the file override the code-defined defaults, so you only need to list the integrations you care about. With Doppler access, `just run_local` (without `--no-doppler`) supplies everything automatically.
 
+### Long-lived or shared stacks
+
+The fixed test secrets are fine on your own machine. A stack that other people
+reach, or that holds data you keep, should replace them. The same `--env-file`
+can override the internal keys (`INTERNAL_API_SECRET_KEY` and its aliases,
+`INTERNAL_CALL_SECRET`, `URL_SIGNING_HMAC`, `DOCUMENT_PERMISSION_JWT`,
+`ACCOUNT_LINK_STATE_SECRET`), the Macro API token pair
+(`MACRO_API_TOKEN_PUBLIC_KEY`, `MACRO_API_TOKEN_PRIVATE_SECRET_KEY`), the
+Postgres password (`MACRO_LOCAL_POSTGRES_PASSWORD`, plus `DATABASE_URL`,
+`DATABASE_URL_READONLY` and `MACRO_DB_URL` that embed it) and the FusionAuth
+identity. The kickstart reads `FUSIONAUTH_API_KEY`, `JWT_SECRET_KEY`,
+`FUSIONAUTH_CLIENT_SECRET_KEY` and `INTERNAL_API_SECRET_KEY` from the same
+resolved env, so FusionAuth and the services stay in agreement. It also reads
+`FUSIONAUTH_ADMIN_EMAIL`/`FUSIONAUTH_ADMIN_PASSWORD` and the tenant mail server
+`FUSIONAUTH_SMTP_{HOST,PORT,SECURITY,USERNAME,PASSWORD}`,
+`FUSIONAUTH_MAIL_FROM` and `FUSIONAUTH_MAIL_FROM_NAME`, so login codes can go
+to real inboxes. These values only take effect on a fresh init: run `stack up`
+with `--no-snapshot` once.
+
+Two authentication settings matter for such a stack:
+
+- `DISABLE_LOCAL_AUTH_SHORTCUTS=true` stops the passwordless start response
+  from returning the login code and restores the login-code rate limits.
+- `MACRO_SIGNUP_ALLOWLIST` limits who can create an account, in every
+  environment: comma- or space-separated exact addresses and `@domain` entries.
+
+Set `MACRO_LOCAL_PUBLIC=1` in the shell when the proxy will be reachable from
+other machines. The setting is recorded for the instance, so later commands
+keep it. Every published port then binds to `127.0.0.1`. Mailpit is neither
+published nor routed. The agent harness loses the host Docker socket. The proxy
+drops its wildcard CORS and refuses requests from other origins. LocalStack
+storage is served only to signed-in sessions. Delete
+`infra/local/generated/<instance>/public-exposure` to turn it off.
+
 ## Tracing, Logs, and the Debug Browser
 
 `just run_local` and `just stack up` support two global (per-machine, shared
