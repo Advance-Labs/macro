@@ -172,3 +172,63 @@ fn config_errors_do_not_reveal_entries() {
     assert!(!debug.contains("not-an-email"));
     assert!(!display.contains("not-an-email"));
 }
+
+#[test]
+fn entry_allowlist_admits_listed_domains_and_addresses_only() {
+    let policy = SignupPolicy::from_allowlist_entries(
+        " @Example.com,\n partner@Other.test  @team.example.org ",
+    )
+    .expect("valid entries");
+
+    for allowed in [
+        "anyone@example.com",
+        "ANYONE@EXAMPLE.COM",
+        "partner@other.test",
+        "x@team.example.org",
+    ] {
+        assert_eq!(policy.authorize_public_email(allowed), Ok(()), "{allowed}");
+    }
+    for denied in [
+        "someone@other.test",
+        "anyone@sub.example.com",
+        "anyone@example.com.evil.test",
+        "anyone@macro.com",
+        "example.com@evil.test",
+    ] {
+        assert_eq!(
+            policy.authorize_public_email(denied),
+            Err(SignupPolicyDenial::PublicEmailNotAllowed),
+            "{denied}"
+        );
+    }
+    assert_eq!(
+        policy.authorize_public_email("not-an-email"),
+        Err(SignupPolicyDenial::InvalidPublicEmail)
+    );
+    assert_eq!(policy.allowed_email_count(), Some(1));
+}
+
+#[test]
+fn entry_allowlist_rejects_empty_and_malformed_entries_without_echoing_them() {
+    assert_eq!(
+        SignupPolicy::from_allowlist_entries(" , \n"),
+        Err(SignupPolicyConfigError::EmptyAllowlist)
+    );
+    assert_eq!(
+        SignupPolicy::from_allowlist_entries("@example.com, @"),
+        Err(SignupPolicyConfigError::InvalidDomain { index: 1 })
+    );
+    assert_eq!(
+        SignupPolicy::from_allowlist_entries("@localhost"),
+        Err(SignupPolicyConfigError::InvalidDomain { index: 0 })
+    );
+    let error = SignupPolicy::from_allowlist_entries("secret-value-not-an-email").unwrap_err();
+    assert_eq!(error, SignupPolicyConfigError::InvalidEmail { index: 0 });
+    assert!(!error.to_string().contains("secret-value"));
+}
+
+#[test]
+fn json_allowlist_still_admits_macro_addresses() {
+    let policy = SignupPolicy::from_allowlist_json(r#"["person@example.test"]"#).unwrap();
+    assert_eq!(policy.authorize_public_email("anyone@macro.com"), Ok(()));
+}

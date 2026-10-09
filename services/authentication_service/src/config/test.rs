@@ -458,3 +458,60 @@ fn cursor_kms_key_required_when_both_absent() {
     let error = resolve_cursor_api_key_kms_key_id(&configured, None).unwrap_err();
     assert!(error.to_string().contains("CURSOR_API_KEY_KMS_KEY_ID"));
 }
+
+#[test]
+fn macro_signup_allowlist_overrides_every_environment() {
+    for environment in ["local", "develop", "production"] {
+        let mut values = config_values();
+        values["ENVIRONMENT"] = serde_json::json!(environment);
+        values["MACRO_SIGNUP_ALLOWLIST"] = serde_json::json!("@allowed.test, guest@example.test");
+        let config: Config = serde_json::from_value(values).unwrap();
+        let policy = config.signup_policy().unwrap();
+
+        assert_eq!(policy.authorize_public_email("anyone@allowed.test"), Ok(()));
+        assert_eq!(policy.authorize_public_email("guest@example.test"), Ok(()));
+        assert_eq!(
+            policy.authorize_public_email(UNLISTED_PUBLIC_EMAIL),
+            Err(SignupPolicyDenial::PublicEmailNotAllowed),
+            "{environment}"
+        );
+    }
+}
+
+#[test]
+fn blank_macro_signup_allowlist_keeps_the_environment_default() {
+    for value in ["", "  "] {
+        let mut values = config_values();
+        values["ENVIRONMENT"] = serde_json::json!("local");
+        values["MACRO_SIGNUP_ALLOWLIST"] = serde_json::json!(value);
+        let config: Config = serde_json::from_value(values).unwrap();
+        assert_eq!(
+            config
+                .signup_policy()
+                .unwrap()
+                .authorize_public_email(UNLISTED_PUBLIC_EMAIL),
+            Ok(())
+        );
+    }
+}
+
+#[test]
+fn malformed_macro_signup_allowlist_fails_startup_without_leaking_value() {
+    let mut values = config_values();
+    values["ENVIRONMENT"] = serde_json::json!("local");
+    values["MACRO_SIGNUP_ALLOWLIST"] = serde_json::json!("@, secret-not-an-email");
+    let config: Config = serde_json::from_value(values).unwrap();
+    let error = config.signup_policy().unwrap_err();
+    assert!(error.to_string().contains("MACRO_SIGNUP_ALLOWLIST"));
+    assert!(!format!("{error:?}").contains("secret-not-an-email"));
+}
+
+#[test]
+fn local_auth_shortcuts_stay_on_unless_disabled() {
+    let config: Config = serde_json::from_value(config_values()).unwrap();
+    assert!(!config.disable_local_auth_shortcuts);
+    let mut values = config_values();
+    values["DISABLE_LOCAL_AUTH_SHORTCUTS"] = serde_json::json!(true);
+    let config: Config = serde_json::from_value(values).unwrap();
+    assert!(config.disable_local_auth_shortcuts);
+}

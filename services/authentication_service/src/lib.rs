@@ -7,6 +7,7 @@ mod account_link_state;
 mod api;
 mod config;
 mod generate_password;
+mod local_shortcuts;
 mod microsoft_token_cipher;
 pub mod outbound;
 mod rate_limit_config;

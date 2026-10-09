@@ -70,6 +70,9 @@ maybe_env_vars! {
     pub struct LoopsApiKey;
     /// JSON array of exact email addresses allowed to sign up in Develop.
     pub struct DevelopmentSignupAllowlistJson;
+    /// Comma- or whitespace-separated signup allowlist (`@domain` or exact
+    /// address entries) that applies in every environment when set.
+    pub struct MacroSignupAllowlist;
     /// Stripe promotion code GTM invite links grant at checkout. Defaults to `1MF`.
     pub struct GtmInvitePromoCode;
     /// Hours a GTM invite link stays openable after creation. Defaults to 48.
@@ -191,6 +194,15 @@ pub struct Config {
     /// `DEVELOPMENT_SIGNUP_ALLOWLIST_JSON`. Production and Local ignore it.
     #[macro_config_default(false)]
     pub development_bypass_signup_allowlist: bool,
+    /// Signup allowlist that applies in every environment when set: a comma-
+    /// or whitespace-separated list of exact addresses and `@domain` entries
+    /// (`@example.com, partner@other.test`). Takes precedence over the
+    /// environment's default policy. Unset keeps that default.
+    pub macro_signup_allowlist: MacroSignupAllowlist,
+    /// Cancel the local-build login shortcuts (`return_passwordless_code`,
+    /// `no_rate_limit`) at runtime. See `local_shortcuts`.
+    #[macro_config_default(false)]
+    pub disable_local_auth_shortcuts: bool,
     /// Stripe promotion code applied at checkout for accounts that signed up
     /// through a GTM invite link (optional, defaults to `1MF`).
     pub gtm_invite_promo_code: GtmInvitePromoCode,
@@ -316,6 +328,9 @@ impl Config {
     ) -> anyhow::Result<SignupPolicy> {
         // Temporarily open Develop signups even when Doppler disables the bypass.
         // Remove this override to restore the configured allowlist policy.
+        if let Some(policy) = resolve_signup_allowlist_override(&self.macro_signup_allowlist)? {
+            return Ok(policy);
+        }
         let bypass_allowlist =
             self.development_bypass_signup_allowlist || matches!(environment, Environment::Develop);
         resolve_signup_policy(
@@ -359,6 +374,19 @@ fn resolve_microsoft_credentials(
             "MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_TENANT_ID must all be set to nonblank values or all be unset"
         ),
     }
+}
+
+/// `MACRO_SIGNUP_ALLOWLIST`, when set to a nonblank value, replaces the
+/// environment's policy everywhere (Local included). Errors never echo the
+/// configured value.
+fn resolve_signup_allowlist_override(
+    allowlist: &MacroSignupAllowlist,
+) -> anyhow::Result<Option<SignupPolicy>> {
+    nonblank_value(allowlist.value())
+        .map(|raw| {
+            SignupPolicy::from_allowlist_entries(raw).context("MACRO_SIGNUP_ALLOWLIST is invalid")
+        })
+        .transpose()
 }
 
 fn resolve_signup_policy(

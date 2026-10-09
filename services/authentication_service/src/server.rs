@@ -108,6 +108,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     // Parse our configuration from the environment.
     let config = Config::from_env().context("expected to be able to generate config")?;
+    crate::local_shortcuts::init(config.disable_local_auth_shortcuts);
     let signup_policy = Arc::new(
         config
             .signup_policy()

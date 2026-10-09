@@ -204,9 +204,10 @@ pub async fn handler(
         })?;
 
     // Hand the code back only when explicitly compiled for local/dev tooling
-    // that needs to complete passwordless login without reading the email.
+    // that needs to complete passwordless login without reading the email,
+    // and not switched off at runtime (`DISABLE_LOCAL_AUTH_SHORTCUTS`).
     let body = PasswordlessStartedResponse {
-        code: cfg!(feature = "return_passwordless_code").then_some(code),
+        code: crate::local_shortcuts::return_passwordless_code().then_some(code),
     };
 
     Ok((StatusCode::OK, Json(body)).into_response())

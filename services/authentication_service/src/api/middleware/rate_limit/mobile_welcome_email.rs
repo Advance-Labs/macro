@@ -17,7 +17,7 @@ pub(in crate::api) async fn handler(
     req: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    if !super::RATE_LIMIT_ENABLED {
+    if !crate::local_shortcuts::rate_limit_enabled() {
         tracing::trace!("rate limit disabled");
         return Ok(next.run(req).await);
     }
