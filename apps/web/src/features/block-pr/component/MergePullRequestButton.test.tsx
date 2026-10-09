@@ -13,6 +13,7 @@ import { confirmDialog } from '@ui';
 import { err, ok } from 'neverthrow';
 import { createSignal } from 'solid-js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { PullRequestCheck } from '../primitives/pull-request-ready-to-merge';
 import { MergePullRequestButton } from './MergePullRequestButton';
 
 const mocks = vi.hoisted(() => ({
@@ -47,12 +48,14 @@ const target = {
   title: 'Fix reply state',
 };
 
-const passingChecks = [{ status: 'completed', conclusion: 'success' }];
+const passingChecks: PullRequestCheck[] = [
+  { status: 'completed', conclusion: 'success' },
+];
 
 function renderButton(props: {
   status: string;
   draft?: boolean;
-  checks?: ReadonlyArray<{ status: string; conclusion: string | null }> | null;
+  checks?: readonly PullRequestCheck[] | null;
   onMerged?: () => void;
 }) {
   return render(() => (
@@ -140,7 +143,7 @@ describe('MergePullRequestButton', () => {
 
   it('hides merge for a draft or when CI is not passing', () => {
     const [draft, setDraft] = createSignal(true);
-    const [checks, setChecks] = createSignal(passingChecks);
+    const [checks, setChecks] = createSignal<PullRequestCheck[]>(passingChecks);
     render(() => (
       <QueryClientProvider client={queryClient}>
         <MergePullRequestButton
