@@ -33,6 +33,7 @@ fn read_lambda(file: xtask_paths::RepoFile<'static>) -> Result<String> {
 /// adding/removing either client re-inits the stack automatically.
 pub fn write_kickstart(
     instance: &Instance,
+    secrets: &kickstart::KickstartSecrets,
     google: Option<&kickstart::GoogleIdp>,
     github: Option<&kickstart::GithubIdp>,
 ) -> Result<()> {
@@ -40,7 +41,8 @@ pub fn write_kickstart(
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating kickstart dir {}", dir.display()))?;
 
-    let doc = kickstart::build(
+    let doc = kickstart::build_with(
+        secrets,
         instance.port(Port::Frontend),
         instance.port(Port::Auth),
         instance.port(Port::DocCognition),
@@ -76,12 +78,27 @@ pub fn wait_ready(stage: &Stage, instance: &Instance) -> Result<()> {
     // Require an actual 200: `curl -f` only fails on 400+, so FusionAuth's
     // maintenance-mode 302 (e.g. after a boot-time DB connect failure) would
     // otherwise pass as ready and every later login would 500.
+    // The key travels in the environment, not the command line, so a rotated
+    // key never shows up in process listings or verbose step output.
     let script = format!(
-        "for i in $(seq 1 480); do [ \"$(curl -sS -o /dev/null -w '%{{http_code}}' --max-time 3 -H 'Authorization: {key}' {url} 2>/dev/null)\" = 200 ] && exit 0; sleep 0.5; done; \
+        "for i in $(seq 1 480); do [ \"$(curl -sS -o /dev/null -w '%{{http_code}}' --max-time 3 -H \"Authorization: $FUSIONAUTH_KICKSTART_KEY\" {url} 2>/dev/null)\" = 200 ] && exit 0; sleep 0.5; done; \
          echo 'timed out waiting for the FusionAuth kickstart (a 302 here means maintenance mode: FusionAuth could not reach its db)'; exit 1",
-        key = identity::FUSIONAUTH_API_KEY,
     );
     let mut cmd = Command::new("bash");
-    cmd.arg("-lc").arg(script);
+    cmd.arg("-lc")
+        .arg(script)
+        .env("FUSIONAUTH_KICKSTART_KEY", kickstart_api_key(instance));
     stage.run("Waiting for FusionAuth (kickstart)", &mut cmd)
+}
+
+/// The API key the instance's generated kickstart registered, so readiness
+/// polls authenticate with whatever key that run configured. Falls back to the
+/// fixed local key when no kickstart has been written yet.
+fn kickstart_api_key(instance: &Instance) -> String {
+    let path = gen_compose::kickstart_dir(instance).join("kickstart.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|doc| doc["apiKeys"][0]["key"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| identity::FUSIONAUTH_API_KEY.to_owned())
 }

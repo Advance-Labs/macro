@@ -725,7 +725,8 @@ fn prepare(
     if mode.spec().runs_local_infra {
         let google = kickstart::GoogleIdp::from_env(&env.merged);
         let github = kickstart::GithubIdp::from_env(&env.merged);
-        fusionauth::write_kickstart(instance, google.as_ref(), github.as_ref())?;
+        let secrets = kickstart::KickstartSecrets::from_env(&env.merged)?;
+        fusionauth::write_kickstart(instance, &secrets, google.as_ref(), github.as_ref())?;
     }
     if args.build.build_aux_services {
         build_aux_service_images(stage, instance, &env)?;

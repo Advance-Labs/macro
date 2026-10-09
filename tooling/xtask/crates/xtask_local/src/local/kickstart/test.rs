@@ -338,3 +338,89 @@ fn dcs_oauth_redirect_follows_the_instance_port() {
         "named instance must not keep the default DCS callback: {named:?}"
     );
 }
+
+#[test]
+fn kickstart_secrets_default_to_the_fixed_local_identity() {
+    let secrets = KickstartSecrets::from_env(&env(&[])).unwrap();
+    assert_eq!(secrets, KickstartSecrets::default());
+    assert_eq!(secrets.api_key, identity::FUSIONAUTH_API_KEY);
+    assert_eq!(secrets.mail.host, "mailpit");
+    assert_eq!(secrets.mail.username, None);
+}
+
+#[test]
+fn rotated_env_secrets_reach_every_kickstart_request() {
+    let secrets = KickstartSecrets::from_env(&env(&[
+        (
+            "FUSIONAUTH_API_KEY",
+            "rotated-api-key-0123456789abcdef0123456789",
+        ),
+        ("JWT_SECRET_KEY", "rotated-jwt"),
+        ("FUSIONAUTH_CLIENT_SECRET_KEY", "rotated-client"),
+        ("INTERNAL_API_SECRET_KEY", "rotated-internal"),
+        ("FUSIONAUTH_ADMIN_EMAIL", "ops@example.test"),
+        ("FUSIONAUTH_ADMIN_PASSWORD", "rotated-admin"),
+        ("FUSIONAUTH_SMTP_HOST", "smtp.example.test"),
+        ("FUSIONAUTH_SMTP_PORT", "465"),
+        ("FUSIONAUTH_SMTP_SECURITY", "SSL"),
+        ("FUSIONAUTH_SMTP_USERNAME", "mailer"),
+        ("FUSIONAUTH_SMTP_PASSWORD", "smtp-secret"),
+        ("FUSIONAUTH_MAIL_FROM", "ops@example.test"),
+        ("FUSIONAUTH_MAIL_FROM_NAME", "Example Ops"),
+    ]))
+    .unwrap();
+    let doc = build_with(
+        &secrets,
+        3000,
+        8080,
+        8085,
+        "function populate() {}",
+        "function reconcile() {}",
+        None,
+        None,
+    );
+    let text = doc.to_string();
+    for fixed in [
+        identity::FUSIONAUTH_API_KEY,
+        identity::JWT_SECRET,
+        identity::CLIENT_SECRET,
+        "macroIsGreat!",
+        identity::MAIL_FROM,
+        "\"x-internal-auth-key\":\"local\"",
+    ] {
+        assert!(
+            !text.contains(fixed),
+            "fixed fixture {fixed} leaked: {text}"
+        );
+    }
+    assert_eq!(doc["apiKeys"][0]["key"], secrets.api_key.as_str());
+    let requests = doc["requests"].as_array().unwrap();
+    let tenant = requests
+        .iter()
+        .find(|r| r["method"] == "PATCH")
+        .expect("tenant request");
+    let mail = &tenant["body"]["tenant"]["emailConfiguration"];
+    assert_eq!(mail["host"], "smtp.example.test");
+    assert_eq!(mail["port"], 465);
+    assert_eq!(mail["security"], "SSL");
+    assert_eq!(mail["username"], "mailer");
+    assert_eq!(mail["password"], "smtp-secret");
+    assert_eq!(mail["defaultFromEmail"], "ops@example.test");
+    let webhooks: Vec<_> = requests
+        .iter()
+        .filter(|r| r["url"] == "/api/webhook")
+        .collect();
+    assert_eq!(webhooks.len(), 2);
+    for hook in webhooks {
+        assert_eq!(
+            hook["body"]["webhook"]["headers"]["x-internal-auth-key"],
+            "rotated-internal"
+        );
+    }
+}
+
+#[test]
+fn kickstart_secrets_reject_malformed_mail_settings() {
+    assert!(KickstartSecrets::from_env(&env(&[("FUSIONAUTH_SMTP_PORT", "smtp")])).is_err());
+    assert!(KickstartSecrets::from_env(&env(&[("FUSIONAUTH_SMTP_SECURITY", "STARTTLS")])).is_err());
+}

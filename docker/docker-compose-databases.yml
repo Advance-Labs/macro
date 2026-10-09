@@ -21,8 +21,10 @@ services:
       - '5432'
     environment:
       - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - PGPASSWORD=password
+      # Overridable for long-lived stacks (`--env-file`); initdb applies it to
+      # a fresh volume only.
+      - POSTGRES_PASSWORD=${MACRO_LOCAL_POSTGRES_PASSWORD:-password}
+      - PGPASSWORD=${MACRO_LOCAL_POSTGRES_PASSWORD:-password}
     volumes:
       # pg18+ images keep PGDATA in a version-specific subdir; mount the parent
       # so the data dir lands inside the volume (see docker-library/postgres#1259).

@@ -13,9 +13,26 @@ use super::{stage::Stage, workspace_root};
 /// but host tooling connects via localhost:<mapped-port>).
 fn host_database_url(instance: &Instance) -> String {
     format!(
-        "postgres://user:password@localhost:{}/macrodb",
+        "postgres://user:{}@localhost:{}/macrodb",
+        postgres_password(instance),
         instance.port(Port::Postgres)
     )
+}
+
+/// The Postgres password the instance runs with: `MACRO_LOCAL_POSTGRES_PASSWORD`
+/// from its generated env (where an `--env-file` override lands, and what
+/// compose interpolates into the container), else the fixed local default.
+/// Must be URL-safe; it is embedded in the connection URL as-is.
+fn postgres_password(instance: &Instance) -> String {
+    let path = instance.artifact_dir().join("local.generated.env");
+    dotenvy::from_path_iter(path)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .find(|(key, _)| key == "MACRO_LOCAL_POSTGRES_PASSWORD")
+        .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "password".to_owned())
 }
 
 /// The macro_db_client crate dir (sqlx migrations live under ./migrations).

@@ -105,11 +105,158 @@ impl GithubIdp {
     }
 }
 
+/// The secrets and mail settings the kickstart writes into FusionAuth.
+///
+/// Defaults are the fixed [`identity`] fixtures. [`Self::from_env`] reads the
+/// resolved run env instead, so an `--env-file` that rotates a service-side
+/// secret (`FUSIONAUTH_API_KEY`, `JWT_SECRET_KEY`, …) rotates the FusionAuth
+/// side with it and the two cannot drift. That is what lets a long-lived,
+/// non-throwaway stack replace every checked-in credential.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KickstartSecrets {
+    pub api_key: String,
+    pub jwt_secret: String,
+    pub client_secret: String,
+    /// Sent by the user webhooks as `x-internal-auth-key`; must equal the
+    /// services' `INTERNAL_API_SECRET_KEY`.
+    pub internal_auth_key: String,
+    pub admin_email: String,
+    pub admin_password: String,
+    pub mail: KickstartMail,
+}
+
+/// The tenant SMTP settings FusionAuth sends passwordless codes through.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KickstartMail {
+    pub host: String,
+    pub port: u16,
+    /// FusionAuth's `security` value: `NONE`, `SSL` or `TLS`.
+    pub security: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub from_email: String,
+    pub from_name: String,
+}
+
+impl Default for KickstartSecrets {
+    fn default() -> Self {
+        KickstartSecrets {
+            api_key: identity::FUSIONAUTH_API_KEY.into(),
+            jwt_secret: identity::JWT_SECRET.into(),
+            client_secret: identity::CLIENT_SECRET.into(),
+            internal_auth_key: identity::INTERNAL_AUTH_KEY.into(),
+            admin_email: "admin@macro.com".into(),
+            admin_password: "macroIsGreat!".into(),
+            mail: KickstartMail {
+                host: "mailpit".into(),
+                port: 1025,
+                security: "NONE".into(),
+                username: None,
+                password: None,
+                from_email: identity::MAIL_FROM.into(),
+                from_name: "Macro Local".into(),
+            },
+        }
+    }
+}
+
+impl KickstartSecrets {
+    /// Read the kickstart secrets from the resolved run env, falling back to
+    /// the fixed fixtures for every key that is absent or blank. The keys are
+    /// the same ones the services read (`FUSIONAUTH_API_KEY`,
+    /// `JWT_SECRET_KEY`, `FUSIONAUTH_CLIENT_SECRET_KEY`,
+    /// `INTERNAL_API_SECRET_KEY`), plus FusionAuth-only settings:
+    /// `FUSIONAUTH_ADMIN_EMAIL`, `FUSIONAUTH_ADMIN_PASSWORD`, and the tenant
+    /// mail server `FUSIONAUTH_SMTP_{HOST,PORT,SECURITY,USERNAME,PASSWORD}`,
+    /// `FUSIONAUTH_MAIL_FROM`, `FUSIONAUTH_MAIL_FROM_NAME`.
+    pub fn from_env(env: &BTreeMap<String, String>) -> anyhow::Result<Self> {
+        let get = |key: &str| {
+            env.get(key)
+                .map(|v| v.trim())
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let d = Self::default();
+        let port = match get("FUSIONAUTH_SMTP_PORT") {
+            Some(port) => port
+                .parse()
+                .map_err(|_| anyhow::anyhow!("FUSIONAUTH_SMTP_PORT must be a port number"))?,
+            None => d.mail.port,
+        };
+        let security = get("FUSIONAUTH_SMTP_SECURITY").unwrap_or(d.mail.security);
+        if !matches!(security.as_str(), "NONE" | "SSL" | "TLS") {
+            anyhow::bail!("FUSIONAUTH_SMTP_SECURITY must be NONE, SSL or TLS");
+        }
+        Ok(KickstartSecrets {
+            api_key: get("FUSIONAUTH_API_KEY").unwrap_or(d.api_key),
+            jwt_secret: get("JWT_SECRET_KEY").unwrap_or(d.jwt_secret),
+            client_secret: get("FUSIONAUTH_CLIENT_SECRET_KEY").unwrap_or(d.client_secret),
+            internal_auth_key: get("INTERNAL_API_SECRET_KEY").unwrap_or(d.internal_auth_key),
+            admin_email: get("FUSIONAUTH_ADMIN_EMAIL").unwrap_or(d.admin_email),
+            admin_password: get("FUSIONAUTH_ADMIN_PASSWORD").unwrap_or(d.admin_password),
+            mail: KickstartMail {
+                host: get("FUSIONAUTH_SMTP_HOST").unwrap_or(d.mail.host),
+                port,
+                security,
+                username: get("FUSIONAUTH_SMTP_USERNAME"),
+                password: get("FUSIONAUTH_SMTP_PASSWORD"),
+                from_email: get("FUSIONAUTH_MAIL_FROM").unwrap_or(d.mail.from_email),
+                from_name: get("FUSIONAUTH_MAIL_FROM_NAME").unwrap_or(d.mail.from_name),
+            },
+        })
+    }
+}
+
+/// The tenant `emailConfiguration`: SMTP server, sender, and the passwordless
+/// template. Credentials are only emitted when configured (Mailpit takes none).
+fn email_configuration(mail: &KickstartMail, template_id: &str) -> Value {
+    let mut config = json!({
+        "host": mail.host.as_str(),
+        "port": mail.port,
+        "security": mail.security.as_str(),
+        "defaultFromEmail": mail.from_email.as_str(),
+        "defaultFromName": mail.from_name.as_str(),
+        "passwordlessEmailTemplateId": template_id,
+    });
+    if let Some(username) = &mail.username {
+        config["username"] = json!(username);
+    }
+    if let Some(password) = &mail.password {
+        config["password"] = json!(password);
+    }
+    config
+}
+
+/// [`build_with`] using the fixed local fixtures.
+#[cfg(test)]
+pub fn build(
+    frontend_port: u16,
+    auth_port: u16,
+    doc_cognition_port: u16,
+    lambda_body: &str,
+    reconcile_lambda_body: &str,
+    google: Option<&GoogleIdp>,
+    github: Option<&GithubIdp>,
+) -> Value {
+    build_with(
+        &KickstartSecrets::default(),
+        frontend_port,
+        auth_port,
+        doc_cognition_port,
+        lambda_body,
+        reconcile_lambda_body,
+        google,
+        github,
+    )
+}
+
 /// Build the kickstart document. `lambda_body` is the JS source of
 /// `populate_jwt_local.js`; `reconcile_lambda_body` is the reconcile lambda
 /// attached to `google_gmail` (only used when `google` is configured); redirect
 /// URLs are templated from the instance ports.
-pub fn build(
+#[allow(clippy::too_many_arguments)]
+pub fn build_with(
+    secrets: &KickstartSecrets,
     frontend_port: u16,
     auth_port: u16,
     doc_cognition_port: u16,
@@ -154,7 +301,7 @@ pub fn build(
                 "id": key_id,
                 "algorithm": "HS256",
                 "name": "Local JWT Signing Key",
-                "secret": identity::JWT_SECRET,
+                "secret": secrets.jwt_secret.as_str(),
                 "type": "HMAC",
             }}
         }),
@@ -181,7 +328,8 @@ pub fn build(
                 "defaultSubject": "Your Macro login code",
                 "defaultHtmlTemplate": "<p>Your Macro login code:</p><h1>${code}</h1>",
                 "defaultTextTemplate": "Your Macro login code: ${code}",
-                "fromEmail": identity::MAIL_FROM,
+                "fromEmail": secrets.mail.from_email.as_str(),
+                "fromName": secrets.mail.from_name.as_str(),
             }}
         }),
         // 4. Tenant — with SMTP pointed at Mailpit + the passwordless template,
@@ -214,14 +362,7 @@ pub fn build(
                     "refreshTokenTimeToLiveInMinutes": 43200,
                     "timeToLiveInSeconds": 3600,
                 },
-                "emailConfiguration": {
-                    "host": "mailpit",
-                    "port": 1025,
-                    "security": "NONE",
-                    "defaultFromEmail": identity::MAIL_FROM,
-                    "defaultFromName": "Macro Local",
-                    "passwordlessEmailTemplateId": template_id,
-                },
+                "emailConfiguration": email_configuration(&secrets.mail, template_id),
                 // Make the passwordless code a 6-digit number (matches the dev
                 // Pulumi tenant config), not FusionAuth's default long token.
                 "externalIdentifierConfiguration": {
@@ -251,7 +392,7 @@ pub fn build(
                 },
                 "oauthConfiguration": {
                     "clientId": app_id,
-                    "clientSecret": identity::CLIENT_SECRET,
+                    "clientSecret": secrets.client_secret.as_str(),
                     "enabledGrants": ["authorization_code", "refresh_token"],
                     "authorizedRedirectURLs": redirect_urls,
                     "authorizedURLValidationPolicy": "AllowWildcards",
@@ -278,8 +419,8 @@ pub fn build(
             "url": "/api/user/registration",
             "body": {
                 "user": {
-                    "email": "admin@macro.com",
-                    "password": "macroIsGreat!",
+                    "email": secrets.admin_email.as_str(),
+                    "password": secrets.admin_password.as_str(),
                 },
                 "registration": {
                     "applicationId": "3c219e58-ed0e-4b18-ad48-f4f92793ae32", // FusionAuth's reserved client application id
@@ -305,7 +446,7 @@ pub fn build(
                     "user.create.complete": true,
                     "user.email.verified": true,
                 },
-                "headers": { "x-internal-auth-key": identity::INTERNAL_AUTH_KEY },
+                "headers": { "x-internal-auth-key": secrets.internal_auth_key.as_str() },
             }}
         }),
         json!({
@@ -318,7 +459,7 @@ pub fn build(
                 "url": "http://authentication-service:8080/webhooks/user/delete",
                 "global": true,
                 "eventsEnabled": { "user.delete.complete": true },
-                "headers": { "x-internal-auth-key": identity::INTERNAL_AUTH_KEY },
+                "headers": { "x-internal-auth-key": secrets.internal_auth_key.as_str() },
             }}
         }),
     ];
@@ -444,7 +585,7 @@ pub fn build(
 
     json!({
         "//": "GENERATED by xtask (cargo x run-local). Deterministic local FusionAuth bootstrap. Do not edit.",
-        "apiKeys": [ { "key": identity::FUSIONAUTH_API_KEY, "description": "Local Development API Key" } ],
+        "apiKeys": [ { "key": secrets.api_key.as_str(), "description": "Local Development API Key" } ],
         // `defaultTenantId` renames FusionAuth's built-in default tenant to our
         // fixed id at schema-creation time, so the tenant request above can
         // adopt it instead of creating a second tenant.
