@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 
 use super::gen_compose::{caddyfile_path, tls_certs_dir};
 use super::instance::{Instance, Port};
-use super::{Mode, inventory};
+use super::{Mode, inventory, resources};
 
 /// The host-facing proxy origin. The local reverse proxy speaks HTTPS using
 /// a machine certificate signed by the checked-in development CA.
@@ -98,11 +98,11 @@ fn caddyfile(mode: Mode, static_frontend: bool) -> String {
 /// except authentication only for signed-in sessions.
 fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
     let static_block = if !mode.spec().static_files_via_localstack {
-        STATIC_FILE_DEV
+        STATIC_FILE_DEV.to_owned()
     } else if public {
-        STATIC_FILE_LOCAL_SIGNED_IN
+        static_file_local_public()
     } else {
-        STATIC_FILE_LOCAL
+        STATIC_FILE_LOCAL.to_owned()
     };
     let mailpit_block = if static_frontend && mode.spec().runs_local_infra && !public {
         MAILPIT_ROUTE
@@ -138,10 +138,28 @@ fn render(mode: Mode, static_frontend: bool, public: bool) -> String {
     } else {
         ""
     };
-    let special_routes =
-        SPECIAL_ROUTES.replace("SYNC_ORIGIN_HEADER", sync_origin) + &worker_routes(public);
+    // The upstream WebSocket echo service and the sync worker's HTTP endpoints
+    // (document existence, wake-up, peer → user lookups) answer without a
+    // session; on a public stack only signed-in pages reach them. Browsers send
+    // the session cookie on same-origin WebSocket upgrades.
+    let session_gate = if public {
+        SPECIAL_ROUTE_SESSION_GATE
+    } else {
+        ""
+    };
+    let special_routes = SPECIAL_ROUTES
+        .replace("SYNC_ORIGIN_HEADER", sync_origin)
+        .replace("SESSION_GATE", session_gate)
+        + &worker_routes(public);
+    // Anything no route claims gets an explicit 404 on a public stack instead
+    // of Caddy's empty 200.
+    let fallback_block = if public && static_frontend {
+        PUBLIC_FALLBACK
+    } else {
+        ""
+    };
     format!(
-        "{CADDY_HEAD}{cors_block}{routes}{special_routes}{mailpit_block}{static_block}{frontend_block}{CADDY_TAIL}{preview_block}",
+        "{CADDY_HEAD}{cors_block}{routes}{special_routes}{mailpit_block}{static_block}{frontend_block}{fallback_block}{CADDY_TAIL}{preview_block}",
         routes = service_routes(mode, public)
     )
 }
@@ -159,6 +177,9 @@ fn service_routes(mode: Mode, public: bool) -> String {
         let Some(prefix) = svc.path_prefix else {
             continue;
         };
+        if public && PUBLIC_UNROUTED_PREFIXES.contains(&prefix) {
+            continue;
+        }
         if svc.in_mode(mode) {
             let gated = public && !SESSION_EXEMPT_PREFIXES.contains(&prefix);
             out.push_str(&local_route_block(
@@ -184,6 +205,11 @@ fn service_routes(mode: Mode, public: bool) -> String {
 /// The authentication service is the gate itself (login, code exchange, token
 /// refresh), and the WebSocket services check the session on upgrade.
 const SESSION_EXEMPT_PREFIXES: &[&str] = &["/auth"];
+
+/// Prefixes a publicly exposed stack does not route at all: agent sandbox
+/// previews and the Lexical worker, which the web app does not call. Their
+/// paths fall through to the public catch-all 404.
+const PUBLIC_UNROUTED_PREFIXES: &[&str] = &["/preview", "/lexical"];
 
 /// A `handle_path` route that only forwards requests whose session the
 /// authentication service accepts (`/permissions/me`; it reads the same cookie
@@ -307,6 +333,7 @@ const WORKER_ROUTES: &[(&str, &str)] = &[
 fn worker_routes(public: bool) -> String {
     WORKER_ROUTES
         .iter()
+        .filter(|(prefix, _)| !(public && PUBLIC_UNROUTED_PREFIXES.contains(prefix)))
         .map(|(prefix, upstream)| {
             if public {
                 session_gated_block(prefix, upstream)
@@ -323,12 +350,12 @@ fn worker_routes(public: bool) -> String {
 /// trailing slash, which `handle_path /x/*` would miss).
 const SPECIAL_ROUTES: &str = r#"    @websocket path /websocket /websocket/*
     handle @websocket {
-        uri strip_prefix /websocket
+SESSION_GATE        uri strip_prefix /websocket
         reverse_proxy websocket-service:6969
     }
     @sync path /sync /sync/*
     handle @sync {
-        uri strip_prefix /sync
+SESSION_GATE        uri strip_prefix /sync
         reverse_proxy sync-service:8787 {
 SYNC_ORIGIN_HEADER        }
     }
@@ -341,6 +368,20 @@ SYNC_ORIGIN_HEADER        }
         reverse_proxy analytics-proxy:8098 {
             header_up CF-Connecting-IP {http.request.remote.host}
         }
+    }
+"#;
+
+/// The session check [`SPECIAL_ROUTES`] gets on a public stack (indented for
+/// the `handle` blocks it lands in).
+const SPECIAL_ROUTE_SESSION_GATE: &str = "        forward_auth authentication-service:8080 {
+            uri /permissions/me
+        }
+";
+
+/// Public headless stacks answer unrouted paths with 404. A `handle` without a
+/// matcher sorts after every other `handle`, so this only sees leftovers.
+const PUBLIC_FALLBACK: &str = r#"    handle {
+        respond 404
     }
 "#;
 
@@ -383,28 +424,95 @@ const PUBLIC_ORIGIN_GUARD: &str = r#"    @foreign_origin expression `{http.reque
     }
 "#;
 
-/// [`STATIC_FILE_LOCAL`] for a publicly exposed stack. LocalStack answers any
-/// S3 request without checking credentials, so its objects are only served to
-/// requests whose session cookie the authentication service accepts.
-const STATIC_FILE_LOCAL_SIGNED_IN: &str = r#"    handle_path /local-storage/* {
-        forward_auth authentication-service:8080 {
-            uri /permissions/me
-        }
-        reverse_proxy localstack:4566
-    }
-    handle_path /static-file/* {
+/// [`STATIC_FILE_LOCAL`] for a publicly exposed stack. LocalStack is the whole
+/// AWS API (every S3 bucket, SQS, KMS, DynamoDB) and answers it without
+/// checking credentials, so the public origin forwards only signed-in
+/// requests, and only the S3 object requests the app itself makes:
+///
+/// - `/local-storage/<bucket>/<key>`: `GET`/`HEAD`/`PUT` of one object in a
+///   catalogued bucket, carrying an S3 presigned-URL signature (the services
+///   presign uploads and downloads). The one unsigned form is `GET`/`HEAD` in
+///   doc-storage, because local stacks hand out document URLs without the
+///   CloudFront signature production uses.
+/// - `/static-file/<key>`: `GET`/`HEAD` of one static-file object.
+///
+/// Everything else (bucket listings and other bucket- or object-level
+/// sub-resources, other AWS protocols selected by `X-Amz-Target`, a form or
+/// JSON body, a header signature or a non-S3 credential scope, LocalStack's
+/// own `/_localstack` API, dot segments) is refused with 403. LocalStack sees
+/// `Host: localstack:4566`, the host the services address it by, so it never
+/// interprets the public hostname.
+///
+/// The presigned-signature requirement is a shape check, not authorization:
+/// local services sign with the AWS SDK's fixed test credentials, which
+/// LocalStack cannot verify (so its signature validation stays off) and which
+/// anyone could reproduce. What it buys is that a signed-in user can reach one
+/// object by its full key, never list a bucket or reach another AWS API.
+fn static_file_local_public() -> String {
+    let buckets = resources::BUCKETS
+        .iter()
+        .map(|bucket| bucket.name)
+        .collect::<Vec<_>>()
+        .join("|");
+    let object =
+        format!("{STORAGE_COMMON} && {{http.request.uri.path}}.matches('^/({buckets})/[^/]')");
+    let local_storage = format!(
+        "{object} && {{http.request.method}} in ['GET', 'HEAD', 'PUT'] && ({PRESIGNED} || ({{http.request.method}} in ['GET', 'HEAD'] && {{http.request.uri.path}}.startsWith('/{doc}/')))",
+        doc = resources::DOC_STORAGE_BUCKET,
+    );
+    let static_file = format!(
+        "{STORAGE_COMMON} && {{http.request.uri.path}}.matches('^/[^/]') && {{http.request.method}} in ['GET', 'HEAD']"
+    );
+    format!(
+        r#"    handle_path /local-storage/* {{
+        route {{
+            forward_auth authentication-service:8080 {{
+                uri /permissions/me
+            }}
+            @storage_refused not expression `{local_storage}`
+            respond @storage_refused "storage request refused" 403
+            reverse_proxy localstack:4566 {{
+                header_up Host localstack:4566
+            }}
+        }}
+    }}
+    handle_path /static-file/* {{
         # Keep service dispatch before the S3 rewrite inside this exclusive handle.
-        route {
+        route {{
             @svc path /api/* /internal/*
             reverse_proxy @svc static-file-service:8080
-            forward_auth authentication-service:8080 {
+            forward_auth authentication-service:8080 {{
                 uri /permissions/me
-            }
-            rewrite * /static-file-storage{uri}
-            reverse_proxy localstack:4566
-        }
-    }
-"#;
+            }}
+            @static_refused not expression `{static_file}`
+            respond @static_refused "storage request refused" 403
+            rewrite * /static-file-storage{{uri}}
+            reverse_proxy localstack:4566 {{
+                header_up Host localstack:4566
+            }}
+        }}
+    }}
+"#
+    )
+}
+
+/// CEL conditions every public storage request must meet: no other AWS
+/// protocol (`X-Amz-Target`, form or JSON bodies, a header signature, a
+/// non-S3 credential scope), no dot segments or backslashes in the key, and
+/// only presigned-URL / response-override query parameters.
+const STORAGE_COMMON: &str = concat!(
+    "{http.request.header.X-Amz-Target} == ''",
+    " && !{http.request.header.Authorization}.startsWith('AWS')",
+    " && !{http.request.header.Content-Type}.matches('(?i)(x-www-form-urlencoded|amz-json)')",
+    " && !{http.request.uri.path}.matches('(^|/)[.][.]?(/|$)')",
+    " && !{http.request.uri.path}.contains('\\\\')",
+    " && {http.request.uri.query}.matches('^(((?i:x-amz-[a-z0-9-]+)=[^&]*|x-id=(GetObject|PutObject|HeadObject)|response-[a-z-]+=[^&]*)(&|$))*$')",
+    " && !{http.request.uri.query}.matches('(?i)(^|&)x-amz-target=')",
+    " && (!{http.request.uri.query}.matches('(?i)(^|&)x-amz-credential=') || {http.request.uri.query}.matches('(?i)(^|&)x-amz-credential=[^&]*(%2F|/)s3(%2F|/)aws4_request(&|$)'))",
+);
+
+/// CEL: the request carries an S3 presigned-URL signature.
+const PRESIGNED: &str = "{http.request.uri.query}.matches('(^|&)X-Amz-Signature=[^&]+')";
 
 /// Dev: no local LocalStack — route all static-file paths through the local
 /// static-file-service (which is pointed at dev S3).

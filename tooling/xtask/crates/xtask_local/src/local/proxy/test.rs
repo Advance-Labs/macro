@@ -298,7 +298,8 @@ fn public_exposure_gates_every_http_service_but_auth_behind_a_session() {
         .iter()
         .filter(|svc| !svc.is_websocket && svc.in_mode(Mode::Local))
         .filter_map(|svc| svc.path_prefix)
-        .chain(["/lexical", "/ai-editing"]);
+        .chain(["/lexical", "/ai-editing"])
+        .filter(|prefix| !PUBLIC_UNROUTED_PREFIXES.contains(prefix));
     for prefix in http_prefixes {
         let block = route_block(&public, prefix);
         if prefix == "/auth" {
@@ -334,4 +335,96 @@ fn public_exposure_hides_api_docs() {
     assert!(docs < first_route, "{public}");
     assert!(public.contains("@api_docs path */api-doc */api-doc/* */swagger-ui */swagger-ui/*"));
     assert!(!render(Mode::Local, true, false).contains("@api_docs"));
+}
+
+#[test]
+fn public_exposure_drops_unrouted_prefixes_and_answers_404_for_the_rest() {
+    let public = render(Mode::Local, true, true);
+    for prefix in PUBLIC_UNROUTED_PREFIXES {
+        assert!(
+            !public.contains(&format!("{prefix}/*")),
+            "{prefix}: {public}"
+        );
+    }
+    assert!(!public.contains("preview_gateway:8080"), "{public}");
+    assert!(!public.contains("lexical-service"), "{public}");
+    assert!(
+        public.contains("    handle {\n        respond 404\n    }\n"),
+        "{public}"
+    );
+
+    let private = render(Mode::Local, true, false);
+    assert!(private.contains("handle_path /preview/*"), "{private}");
+    assert!(private.contains("handle_path /lexical/*"), "{private}");
+    assert!(
+        !private.contains("    handle {\n        respond 404"),
+        "{private}"
+    );
+}
+
+#[test]
+fn public_exposure_gates_websocket_and_sync_behind_a_session() {
+    let public = render(Mode::Local, true, true);
+    for (handle, upstream) in [
+        (
+            "handle @websocket {",
+            "reverse_proxy websocket-service:6969",
+        ),
+        ("handle @sync {", "reverse_proxy sync-service:8787"),
+    ] {
+        let rest = &public[public.find(handle).unwrap()..];
+        let block = &rest[..rest.find("\n    }\n").unwrap()];
+        let auth = block
+            .find("forward_auth authentication-service:8080")
+            .unwrap_or_else(|| panic!("{handle} is not gated: {block}"));
+        assert!(auth < block.find(upstream).unwrap(), "{block}");
+    }
+    let private = render(Mode::Local, true, false);
+    assert!(private.contains("handle @websocket {\n        uri strip_prefix /websocket"));
+    assert!(private.contains("handle @sync {\n        uri strip_prefix /sync"));
+}
+
+/// Public storage forwards only S3 object requests: signed in, then the CEL
+/// allowlist, then LocalStack with the host the services sign for.
+#[test]
+fn public_storage_admits_only_s3_object_requests() {
+    let public = render(Mode::Local, true, true);
+    let storage = &public[public.find("handle_path /local-storage/* {").unwrap()..];
+    let storage = &storage[..storage.find("handle_path /static-file/*").unwrap()];
+    let auth = storage
+        .find("forward_auth authentication-service:8080")
+        .unwrap();
+    let refuse = storage.find("respond @storage_refused").unwrap();
+    let upstream = storage.find("reverse_proxy localstack:4566").unwrap();
+    assert!(auth < refuse && refuse < upstream, "{storage}");
+    assert!(
+        storage.contains("header_up Host localstack:4566"),
+        "{storage}"
+    );
+    for bucket in resources::BUCKETS {
+        assert!(
+            storage.contains(bucket.name),
+            "{} missing: {storage}",
+            bucket.name
+        );
+    }
+    for needle in [
+        "{http.request.method} in ['GET', 'HEAD', 'PUT']",
+        "{http.request.header.X-Amz-Target} == ''",
+        "X-Amz-Signature=",
+        "startsWith('/doc-storage/')",
+        "s3(%2F|/)aws4_request",
+        "(^|/)[.][.]?(/|$)",
+    ] {
+        assert!(storage.contains(needle), "{needle} missing: {storage}");
+    }
+
+    let static_file = &public[public.find("handle_path /static-file/* {").unwrap()..];
+    let refuse = static_file.find("respond @static_refused").unwrap();
+    assert!(refuse < static_file.find("rewrite * /static-file-storage").unwrap());
+    assert!(static_file.contains("{http.request.method} in ['GET', 'HEAD']"));
+
+    let private = render(Mode::Local, true, false);
+    assert!(!private.contains("expression"), "{private}");
+    assert!(!private.contains("header_up Host localstack"), "{private}");
 }
