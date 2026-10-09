@@ -13,7 +13,11 @@ import {
 } from './LiveElicitation';
 import { PermissionCard } from './PermissionCard';
 
-/** Full live approvals and questions shared by conversation surfaces. */
+/**
+ * Full live approvals and questions shared by conversation surfaces. Each
+ * card is capped at a fixed height and scrolls inside, so a long form or a
+ * draft under review never pushes the conversation off screen.
+ */
 export function InteractionCard(props: {
   request: AgentInteraction;
   controller: InteractionController;
@@ -23,27 +27,29 @@ export function InteractionCard(props: {
     !props.controller.canAnswer() || props.controller.answering(props.request);
   return match(props.request)
     .with({ kind: 'permission' }, (request) => (
-      <PermissionCard
-        options={request.options}
-        canAnswer={props.controller.canAnswer()}
-        disabled={locked()}
-        action={
-          props.tool?.name.kind === 'native'
-            ? props.tool.name.name
-            : props.tool?.name.tool
-        }
-        detail={
-          props.tool?.detail.kind === 'terminal'
-            ? (props.tool.detail.command ?? undefined)
-            : JSON.stringify(props.tool?.detail, null, 2)
-        }
-        onSelect={(optionId) =>
-          void props.controller.respond({
-            ...request,
-            answer: { kind: 'selected', optionId },
-          })
-        }
-      />
+      <div class="max-h-80 min-w-0 overflow-y-auto rounded-xl">
+        <PermissionCard
+          options={request.options}
+          canAnswer={props.controller.canAnswer()}
+          disabled={locked()}
+          action={
+            props.tool?.name.kind === 'native'
+              ? props.tool.name.name
+              : props.tool?.name.tool
+          }
+          detail={
+            props.tool?.detail.kind === 'terminal'
+              ? (props.tool.detail.command ?? undefined)
+              : JSON.stringify(props.tool?.detail, null, 2)
+          }
+          onSelect={(optionId) =>
+            void props.controller.respond({
+              ...request,
+              answer: { kind: 'selected', optionId },
+            })
+          }
+        />
+      </div>
     ))
     .with({ kind: 'elicitation' }, (request) => {
       // Keep the answer's typed shape intact; the controller checks liveness.
@@ -84,7 +90,7 @@ export function InteractionCard(props: {
       return (
         <section
           aria-label="Agent question"
-          class="space-y-3 rounded-xl border border-edge-muted bg-panel p-4"
+          class="max-h-80 space-y-3 overflow-y-auto rounded-xl border border-edge-muted bg-panel p-4"
         >
           <p class="text-sm font-medium">{request.message}</p>
           <Show when={!props.controller.canAnswer()}>
