@@ -86,6 +86,15 @@ export function CompanyGridLayout(props: LayoutProps) {
     const hasStageValue =
       existingStage?.valueType === 'SELECT_STRING' &&
       (existingStage.value?.length ?? 0) > 0;
+    if (hasStageValue && existingStage && !existingStage.options?.length) {
+      // Fetched company properties carry the value but not the definition's
+      // options, so a team stage would render as its raw option id. Borrow
+      // the options of the active stage definition for display and editing.
+      const options = dealStages.stageProperty().options;
+      if (options?.length) {
+        map.set(stageDefinitionId, { ...existingStage, options });
+      }
+    }
     if (!hasStageValue) {
       const stageStub = dealStages.stageProperty();
       const resolvedId = dealStages.resolveStage(entity);
