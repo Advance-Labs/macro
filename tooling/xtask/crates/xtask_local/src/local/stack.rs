@@ -381,6 +381,7 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
             target,
             args.build_aux_services,
         )?;
+        sync_gmail_forwarder(&stage, mode, &instance, &env, &state, target)?;
         false
     };
 
@@ -406,6 +407,44 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// `GMAIL_FORWARDER_SA_KEY` gates the `gmail_forwarder` sidecar into the
+/// generated compose override, but an in-place rebuild never regenerated the
+/// override, so a key added after `up` never started the sidecar. When the gate
+/// is on, re-render the override against the recorded binaries and (re)create
+/// the sidecar. With the gate off this is a no-op.
+fn sync_gmail_forwarder(
+    stage: &Stage,
+    mode: Mode,
+    instance: &Instance,
+    env: &env_layer::ResolvedEnv,
+    state: &StackState,
+    target: arch::Target,
+) -> Result<()> {
+    let enabled = env
+        .merged
+        .get("GMAIL_FORWARDER_SA_KEY")
+        .is_some_and(|key| !key.trim().is_empty());
+    if !enabled || !mode.spec().runs_local_infra {
+        return Ok(());
+    }
+    let binaries = match state.binaries_dir.as_deref() {
+        Some(dir) => super::build::BinariesDir::classify(dir)?,
+        None => {
+            super::build::BinariesDir::TargetDir(super::workspace_root().join(target.debug_dir()))
+        }
+    };
+    super::gen_compose::generate(mode, instance, &binaries, state.frontend == "static", true)?;
+    let mut up = super::compose_cmd(instance, env);
+    up.args([
+        "up",
+        "-d",
+        "--force-recreate",
+        "--no-deps",
+        "gmail_forwarder",
+    ]);
+    stage.run("Starting gmail_forwarder", &mut up)
 }
 
 fn remount(

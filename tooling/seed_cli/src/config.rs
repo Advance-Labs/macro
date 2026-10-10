@@ -41,6 +41,12 @@ maybe_env_vars! {
     pub struct GmailTestAccountTokens;
     /// GCP service-account key JSON for `gmail forward` (Pub/Sub subscriber)
     pub struct GmailForwarderSaKey;
+    /// Pub/Sub topic Gmail watch notifications publish to (`gmail forward`
+    /// attaches its subscription here); upstream's test topic when unset
+    pub struct GmailPubsubTopic;
+    /// Parent (`projects/<id>/subscriptions`) of `gmail forward`'s default
+    /// subscription; upstream's test project when unset
+    pub struct GmailPubsubSubscriptionPrefix;
 }
 
 /// Clients for initializing native markdown document content.

@@ -65,3 +65,61 @@ fn plan_is_deterministic_and_never_future_dated() {
     let sent = a.iter().filter(|m| m.labels.contains(&"SENT")).count();
     assert!(sent > 0, "threads must include outgoing replies");
 }
+
+#[test]
+fn forward_topic_prefers_flag_then_env_then_upstream_default() {
+    assert_eq!(
+        resolve_forward_topic(None, None),
+        "projects/macro-email-testing/topics/gmail-local-watch"
+    );
+    assert_eq!(
+        resolve_forward_topic(None, Some("  ".into())),
+        "projects/macro-email-testing/topics/gmail-local-watch"
+    );
+    assert_eq!(
+        resolve_forward_topic(
+            None,
+            Some("projects/advlabs-macro-ops/topics/gmail-watch".into())
+        ),
+        "projects/advlabs-macro-ops/topics/gmail-watch"
+    );
+    assert_eq!(
+        resolve_forward_topic(Some("projects/p/topics/t".into()), Some("ignored".into())),
+        "projects/p/topics/t"
+    );
+}
+
+#[test]
+fn forward_subscription_uses_the_env_prefix_unless_a_flag_is_given() {
+    assert_eq!(
+        resolve_forward_subscription(None, None),
+        "projects/macro-email-testing/subscriptions/gmail-local-watch-sub"
+    );
+    assert_eq!(
+        resolve_forward_subscription(
+            None,
+            Some("projects/advlabs-macro-ops/subscriptions/".into())
+        ),
+        "projects/advlabs-macro-ops/subscriptions/gmail-local-watch-sub"
+    );
+    assert_eq!(
+        resolve_forward_subscription(
+            Some("projects/p/subscriptions/s".into()),
+            Some("projects/ignored/subscriptions".into())
+        ),
+        "projects/p/subscriptions/s"
+    );
+}
+
+#[test]
+fn forward_args_no_longer_hardcode_the_test_project() {
+    use clap::Parser;
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        args: ForwardArgs,
+    }
+    let cli = Cli::try_parse_from(["forward"]).unwrap();
+    assert!(cli.args.topic.is_none());
+    assert!(cli.args.subscription.is_none());
+}

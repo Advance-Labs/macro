@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn gmail_forwarder_subscription_parent_is_env_configurable_with_upstream_default() {
+    let cmd = gmail_forwarder_command("advlabs");
+    let at = cmd.iter().position(|a| a == "--subscription").unwrap();
+    assert_eq!(
+        cmd[at + 1],
+        "${GMAIL_PUBSUB_SUBSCRIPTION_PREFIX:-projects/macro-email-testing/subscriptions}/gmail-local-watch-advlabs"
+    );
+    assert_eq!(cmd[0], "/app/out/seed_cli");
+    assert!(
+        !cmd.iter().any(|a| a == "--topic"),
+        "the topic comes from GMAIL_PUBSUB_TOPIC in the container env"
+    );
+}
+
+#[test]
 fn fusionauth_kickstart_is_privately_relabelled_and_replaces_inherited_mounts() {
     for name in [None, Some("selinux-test")] {
         let instance = Instance::derive(name, None).unwrap();

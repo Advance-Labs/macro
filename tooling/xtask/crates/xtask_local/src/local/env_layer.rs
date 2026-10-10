@@ -136,6 +136,8 @@ pub fn resolve(
         }
     }
 
+    apply_gmail_pubsub_topic(&mut env);
+
     // Remote-AWS modes (dev): pin ENVIRONMENT/project, strip any leaked local
     // endpoints, and resolve the developer's real AWS credentials (incl. session
     // token) over the dev_personal placeholders — the process-env layer can't add
@@ -155,6 +157,21 @@ pub fn resolve(
         env_file: env_file.map(Path::to_path_buf),
         generated_path,
     })
+}
+
+/// `GMAIL_PUBSUB_TOPIC` (e.g. from `--env-file`) names the Pub/Sub topic Gmail
+/// `users.watch` publishes to. When set, it also becomes email_service's
+/// `GMAIL_GCP_QUEUE` (the topic the service registers watches on), so the
+/// watch, the `gmail_forwarder` subscription and the service agree on one
+/// value. Unset or blank leaves `GMAIL_GCP_QUEUE` as resolved.
+fn apply_gmail_pubsub_topic(env: &mut BTreeMap<String, String>) {
+    let topic = env
+        .get("GMAIL_PUBSUB_TOPIC")
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    if let Some(topic) = topic {
+        env.insert("GMAIL_GCP_QUEUE".to_string(), topic);
+    }
 }
 
 fn should_overlay_process_env(key: &str, value: &str) -> bool {

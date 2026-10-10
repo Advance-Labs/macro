@@ -52,6 +52,31 @@ const AUX_HOST_PORT_SERVICES: &[&str] = &[
     "analytics_proxy",
 ];
 
+/// Pub/Sub subscription parent the `gmail_forwarder` sidecar uses when the
+/// resolved env does not set `GMAIL_PUBSUB_SUBSCRIPTION_PREFIX` (upstream's
+/// shared test project).
+pub const DEFAULT_GMAIL_PUBSUB_SUBSCRIPTION_PREFIX: &str =
+    "projects/macro-email-testing/subscriptions";
+
+/// The `gmail_forwarder` sidecar's command. The subscription parent is a
+/// Compose `${VAR:-default}` reference, resolved from the generated env file at
+/// `docker compose` time, so a self-hosted stack can point at its own GCP
+/// project. The watch topic the subscription attaches to is read by `seed_cli`
+/// itself from `GMAIL_PUBSUB_TOPIC` in the container env.
+pub fn gmail_forwarder_command(instance_name: &str) -> Vec<String> {
+    vec![
+        "/app/out/seed_cli".to_string(),
+        "gmail".to_string(),
+        "forward".to_string(),
+        "--target".to_string(),
+        "http://email-service:8080/gmail/webhook".to_string(),
+        "--subscription".to_string(),
+        format!(
+            "${{GMAIL_PUBSUB_SUBSCRIPTION_PREFIX:-{DEFAULT_GMAIL_PUBSUB_SUBSCRIPTION_PREFIX}}}/gmail-local-watch-{instance_name}"
+        ),
+    ]
+}
+
 /// The host directory bind-mounted into FusionAuth at
 /// `/usr/local/fusionauth/kickstart`. The kickstart writer fills it.
 pub fn kickstart_dir(instance: &Instance) -> PathBuf {
@@ -151,23 +176,7 @@ pub fn generate(
             Some(dct::Service {
                 image: Some(RUNTIME_IMAGE_TAG.to_string()),
                 volumes: mounts.iter().cloned().map(dct::Volumes::Simple).collect(),
-                command: Some(dct::Command::Args(
-                    [
-                        "/app/out/seed_cli",
-                        "gmail",
-                        "forward",
-                        "--target",
-                        "http://email-service:8080/gmail/webhook",
-                        "--subscription",
-                        &format!(
-                            "projects/macro-email-testing/subscriptions/gmail-local-watch-{}",
-                            instance.name()
-                        ),
-                    ]
-                    .iter()
-                    .map(|s| s.to_string())
-                    .collect(),
-                )),
+                command: Some(dct::Command::Args(gmail_forwarder_command(instance.name()))),
                 env_file: Some(dct::StringOrList::Simple("${MACRO_ENV_FILE}".to_string())),
                 networks: net_aliases(&[("services", &["gmail-forwarder"])]),
                 ..Default::default()

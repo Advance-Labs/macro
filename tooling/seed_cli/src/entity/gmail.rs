@@ -28,7 +28,8 @@ use rand::{Rng, SeedableRng};
 mod test;
 
 use crate::config::{
-    GmailForwarderSaKey, GmailTestAccountTokens, GoogleClientId, GoogleClientSecretKey,
+    GmailForwarderSaKey, GmailPubsubSubscriptionPrefix, GmailPubsubTopic, GmailTestAccountTokens,
+    GoogleClientId, GoogleClientSecretKey,
 };
 use crate::entity::email::{FAKE_CONTACTS, SUBJECTS, sample_bodies};
 
@@ -67,21 +68,47 @@ pub struct ForwardArgs {
     /// for `--instance 2634`). Local HTTPS uses `infra/local/certs/ca.pem`.
     #[arg(long, default_value = "https://localhost:8090/email/gmail/webhook")]
     target: String,
-    /// The Pub/Sub pull subscription attached to the Gmail watch topic
-    #[arg(
-        long,
-        default_value = "projects/macro-email-testing/subscriptions/gmail-local-watch-sub"
-    )]
-    subscription: String,
+    /// The Pub/Sub pull subscription attached to the Gmail watch topic.
+    /// Default: `$GMAIL_PUBSUB_SUBSCRIPTION_PREFIX/gmail-local-watch-sub`, with
+    /// the prefix defaulting to `projects/macro-email-testing/subscriptions`
+    #[arg(long)]
+    subscription: Option<String>,
     /// OIDC audience the webhook validates (`GmailClient` hardcodes this)
     #[arg(long, default_value = "macro-gmail-webhook")]
     webhook_audience: String,
-    /// Topic to attach the subscription to if it does not exist yet
-    #[arg(
-        long,
-        default_value = "projects/macro-email-testing/topics/gmail-local-watch"
-    )]
-    topic: String,
+    /// Topic to attach the subscription to if it does not exist yet.
+    /// Default: `$GMAIL_PUBSUB_TOPIC`, else
+    /// `projects/macro-email-testing/topics/gmail-local-watch`
+    #[arg(long)]
+    topic: Option<String>,
+}
+
+/// Gmail watch topic when neither `--topic` nor `GMAIL_PUBSUB_TOPIC` is set.
+const DEFAULT_GMAIL_PUBSUB_TOPIC: &str = "projects/macro-email-testing/topics/gmail-local-watch";
+/// Subscription parent when neither `--subscription` nor
+/// `GMAIL_PUBSUB_SUBSCRIPTION_PREFIX` is set.
+const DEFAULT_GMAIL_PUBSUB_SUBSCRIPTION_PREFIX: &str = "projects/macro-email-testing/subscriptions";
+
+/// A flag wins, then a non-blank env value, then the upstream default.
+fn resolve_forward_topic(flag: Option<String>, env: Option<String>) -> String {
+    flag.or(non_blank(env))
+        .unwrap_or_else(|| DEFAULT_GMAIL_PUBSUB_TOPIC.to_string())
+}
+
+/// A flag wins; otherwise `gmail-local-watch-sub` under the env prefix (or the
+/// upstream default prefix).
+fn resolve_forward_subscription(flag: Option<String>, prefix_env: Option<String>) -> String {
+    flag.unwrap_or_else(|| {
+        let prefix = non_blank(prefix_env)
+            .unwrap_or_else(|| DEFAULT_GMAIL_PUBSUB_SUBSCRIPTION_PREFIX.to_string());
+        format!("{}/gmail-local-watch-sub", prefix.trim_end_matches('/'))
+    })
+}
+
+fn non_blank(value: Option<String>) -> Option<String> {
+    value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 /// Arguments for `gmail seed`.
@@ -862,17 +889,19 @@ async fn ensure_subscription(
 async fn forward(args: ForwardArgs) -> anyhow::Result<()> {
     let http = http_client()?;
     let webhook = webhook_client(&args.target)?;
-    let mut sa = SaToken::from_env(http.clone()).await?;
-    ensure_subscription(&http, &mut sa, &args.subscription, &args.topic).await?;
-    let pull_url = format!(
-        "https://pubsub.googleapis.com/v1/{}:pull",
-        args.subscription
+    let subscription = resolve_forward_subscription(
+        args.subscription,
+        GmailPubsubSubscriptionPrefix::new().map(|p| p.to_string()),
     );
+    let topic = resolve_forward_topic(args.topic, GmailPubsubTopic::new().map(|t| t.to_string()));
+    let mut sa = SaToken::from_env(http.clone()).await?;
+    ensure_subscription(&http, &mut sa, &subscription, &topic).await?;
+    let pull_url = format!("https://pubsub.googleapis.com/v1/{}:pull", subscription);
     let ack_url = format!(
         "https://pubsub.googleapis.com/v1/{}:acknowledge",
-        args.subscription
+        subscription
     );
-    tracing::info!(subscription = %args.subscription, target = %args.target, "forwarding gmail notifications (ctrl-c to stop)");
+    tracing::info!(subscription = %subscription, target = %args.target, "forwarding gmail notifications (ctrl-c to stop)");
 
     let mut forwarded = 0u64;
     loop {
@@ -929,7 +958,7 @@ async fn forward(args: ForwardArgs) -> anyhow::Result<()> {
                     "messageId": entry["message"]["messageId"],
                     "publishTime": entry["message"]["publishTime"],
                 },
-                "subscription": args.subscription,
+                "subscription": subscription,
             });
             let webhook_token = sa.webhook_bearer(&args.webhook_audience).await?.to_string();
             match webhook
