@@ -1,5 +1,9 @@
-import FaviconSvg from '@icon/macro-logo.svg?raw';
-import FaviconBadgeSvg from '@icon/macro-logo-badge.svg?raw';
+/**
+ * Advance Labs fork: the tab icon is the Advance Labs mark (a raster PNG, so it
+ * is not tinted with the theme accent). The notification badge is still drawn
+ * on top in `updateFavicon`.
+ */
+const BRAND_MARK_URL = `${import.meta.env.ASSETS_PATH}/advlabs-favicon.png`;
 
 const FAVICON_SIZE = 48;
 
@@ -20,21 +24,11 @@ function setFavicon(url: string): void {
   currentFaviconLink.href = url;
 }
 
-/** escapes a color value for use in SVG */
-function escapeColorForSvg(color: string): string {
-  return color.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-/** insert color and url encode SVG */
-function processSvg(svg: string, color: string) {
-  return `data:image/svg+xml,${encodeURIComponent(svg.replace(/currentColor/g, escapeColorForSvg(color)))}`;
-}
-
 /**
  * Return a data url for the macro logo svg filled with the given color.
  */
-export function getFaviconUrl(color: string) {
-  return processSvg(FaviconSvg, color);
+export function getFaviconUrl(_color: string) {
+  return BRAND_MARK_URL;
 }
 
 /**
@@ -63,7 +57,7 @@ export function updateFavicon(
   canvas.height = FAVICON_SIZE;
 
   const img = new Image();
-  img.src = processSvg(hasBadge ? FaviconBadgeSvg : FaviconSvg, faviconColor);
+  img.src = BRAND_MARK_URL;
 
   img.onload = () => {
     if (requestedIcon !== key) return;

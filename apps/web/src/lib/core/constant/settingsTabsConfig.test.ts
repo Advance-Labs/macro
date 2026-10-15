@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseHiddenSettingsTabs,
   SETTINGS_TAB_GROUPS,
   settingsSlugToTab,
   settingsTabToSlug,
@@ -49,5 +50,18 @@ describe('settings navigation', () => {
     expect(workspace?.items.map((item) => item.tab)).toContain('Connected');
     expect(developer?.items.map((item) => item.tab)).toContain('Connections');
     expect(developer?.items.map((item) => item.tab)).toContain('Harness');
+  });
+});
+
+describe('deployment-hidden settings tabs', () => {
+  it('parses a comma-separated list, trimming blanks', () => {
+    expect([
+      ...parseHiddenSettingsTabs(' Usage, Billing ,,Mobile App'),
+    ]).toEqual(['Usage', 'Billing', 'Mobile App']);
+  });
+
+  it('hides nothing when unset or empty', () => {
+    expect(parseHiddenSettingsTabs(undefined).size).toBe(0);
+    expect(parseHiddenSettingsTabs('').size).toBe(0);
   });
 });

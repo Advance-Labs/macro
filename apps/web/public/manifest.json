@@ -1,11 +1,11 @@
 {
-  "short_name": "Macro",
-  "name": "Macro",
+  "short_name": "AL Ops",
+  "name": "Advance Labs Ops",
   "icons": [
     {
-      "src": "./macro-favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
+      "src": "./advlabs-favicon.png",
+      "sizes": "256x256",
+      "type": "image/png"
     }
   ],
   "start_url": ".",

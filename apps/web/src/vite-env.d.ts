@@ -4,6 +4,10 @@ interface ImportMetaEnv {
   readonly __APP_BUILD_TIME__?: number;
   readonly __LOCAL_JWT__: string;
   readonly __GIT_BRANCH__: string;
+  /** Public assets folder for this build (see `getAssetsPath` in vite.base.ts). */
+  readonly ASSETS_PATH: string;
+  /** Comma-separated settings tab ids a deployment hides (see settingsTabsConfig). */
+  readonly VITE_HIDDEN_SETTINGS_TABS?: string;
 
   readonly VITE_SEGMENT_WRITE_KEY: string;
   readonly VITE_POSTHOG_API_KEY: string;

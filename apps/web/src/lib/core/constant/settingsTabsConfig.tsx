@@ -280,6 +280,25 @@ export const settingsSlugToTab = (
   slug ? SETTINGS_SLUG_TO_TAB.get(slug) : undefined;
 
 /**
+ * Parse the comma-separated `VITE_HIDDEN_SETTINGS_TABS` build setting into a set
+ * of settings tab ids (e.g. `Usage,Billing`). Lets a self-hosted deployment drop
+ * tabs for services it does not run. Unset or empty hides nothing.
+ */
+export const parseHiddenSettingsTabs = (
+  raw: string | undefined
+): ReadonlySet<string> =>
+  new Set(
+    (raw ?? '')
+      .split(',')
+      .map((tab) => tab.trim())
+      .filter(Boolean)
+  );
+
+const HIDDEN_SETTINGS_TABS = parseHiddenSettingsTabs(
+  import.meta.env.VITE_HIDDEN_SETTINGS_TABS
+);
+
+/**
  * Returns a predicate gating which settings tabs are available given feature
  * flags and platform. This is the single gate that the settings panel and the
  * app sidebar both rely on — keep tab rendering guarded by it so we never
@@ -295,6 +314,7 @@ export const useSettingsTabAvailable = () => {
   const hasAdminPanel = useHasPermission(PERMISSION_IDS.WRITE_ADMIN_PANEL);
 
   return (tab: SettingsTab): boolean => {
+    if (HIDDEN_SETTINGS_TABS.has(tab)) return false;
     switch (tab) {
       case 'Appearance':
       case 'Account':
