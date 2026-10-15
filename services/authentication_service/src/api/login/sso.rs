@@ -35,7 +35,33 @@ pub(crate) struct LoginQueryParams {
     referral_code: Option<String>,
 }
 
+/// Origin of this service's own public URL (`BASE_URL`, e.g.
+/// `https://ops.example.com/auth`). A self-hosted deployment serves the app from
+/// that same origin, so the app's own pages there are safe redirect targets.
+/// `None` when `BASE_URL` is unset or unparsable, which leaves only the fixed
+/// hosts below.
+static SELF_ORIGIN: std::sync::LazyLock<Option<url::Origin>> = std::sync::LazyLock::new(|| {
+    crate::config::BaseUrl::new()
+        .ok()
+        .and_then(|base| Url::parse(base.as_ref()).ok())
+        .filter(|base| base.scheme() == "https")
+        .map(|base| base.origin())
+});
+
 pub(crate) fn is_allowed_original_url(url: &Url) -> bool {
+    is_allowed_original_url_for(url, SELF_ORIGIN.as_ref())
+}
+
+/// [`is_allowed_original_url`] with the self-hosted origin passed in, so tests
+/// don't depend on the process environment. A URL on `self_origin` must match it
+/// exactly (scheme, host and port), never by suffix.
+fn is_allowed_original_url_for(url: &Url, self_origin: Option<&url::Origin>) -> bool {
+    if let Some(origin) = self_origin
+        && url.scheme() == "https"
+        && &url.origin() == origin
+    {
+        return true;
+    }
     match url.scheme() {
         // The app owns the custom scheme and handles all macro URI routes itself.
         "macro" => true,

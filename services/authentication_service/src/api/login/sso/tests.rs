@@ -214,3 +214,41 @@ async fn it_works_with_double_encoded_scheme() {
         assert_eq!(original_url.0.as_str(), "https://example.com/");
     });
 }
+
+#[test]
+fn self_hosted_origin_is_accepted_exactly() {
+    let origin = Url::parse("https://ops.example.dev/auth")
+        .expect("test URL should parse")
+        .origin();
+    for allowed in [
+        "https://ops.example.dev/app/inbox-link-callback",
+        "https://ops.example.dev/app/login",
+        "https://macro.com/app/login",
+    ] {
+        let url = Url::parse(allowed).expect("test URL should parse");
+        assert!(
+            is_allowed_original_url_for(&url, Some(&origin)),
+            "{url} should be allowed"
+        );
+    }
+    for rejected in [
+        "http://ops.example.dev/app/login",
+        "https://ops.example.dev:8443/app/login",
+        "https://ops.example.dev.evil.com/app/login",
+        "https://evil.ops.example.dev/app/login",
+        "https://example.dev/app/login",
+        "https://evil.com/app/login",
+    ] {
+        let url = Url::parse(rejected).expect("test URL should parse");
+        assert!(
+            !is_allowed_original_url_for(&url, Some(&origin)),
+            "{url} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn without_self_origin_only_fixed_hosts_are_allowed() {
+    let url = Url::parse("https://ops.example.dev/app/login").expect("test URL should parse");
+    assert!(!is_allowed_original_url_for(&url, None));
+}
