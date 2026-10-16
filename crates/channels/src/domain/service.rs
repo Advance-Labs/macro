@@ -127,6 +127,20 @@ fn require_user_actor(actor: &Sender) -> Result<MacroUserIdStr<'static>, Channel
         .ok_or_else(|| ChannelMutationErr::BadRequest("authenticated user required".to_string()))
 }
 
+macro_env_var::maybe_env_vars! {
+    struct ChannelsTeamOnlyRecipients;
+}
+
+/// Advance Labs fork: when `CHANNELS_TEAM_ONLY_RECIPIENTS` is `true` (or `1`), new DMs,
+/// private channels and added participants are limited to members of the actor's team.
+/// Contacts known only from synced email can then not be pulled into a conversation they
+/// would never receive. Unset keeps upstream behaviour.
+static TEAM_ONLY_RECIPIENTS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    ChannelsTeamOnlyRecipients::new()
+        .as_deref()
+        .is_some_and(|value| matches!(value.trim(), "true" | "1"))
+});
+
 fn participant_ids(participants: &[ChannelParticipant]) -> Vec<MacroUserIdStr<'static>> {
     participants
         .iter()
@@ -265,6 +279,46 @@ where
         Ok(summary)
     }
 
+    /// Reject recipients outside the actor's team when `enabled`
+    /// (see [`TEAM_ONLY_RECIPIENTS`]). The actor itself is always allowed.
+    async fn require_team_recipients<'r>(
+        &self,
+        enabled: bool,
+        actor: &MacroUserIdStr<'static>,
+        recipients: impl IntoIterator<Item = &'r MacroUserIdStr<'static>>,
+    ) -> Result<(), ChannelMutationErr> {
+        if !enabled {
+            return Ok(());
+        }
+        let team_id = self
+            .repo
+            .get_user_team_id(actor)
+            .await
+            .map_err(|e| ChannelMutationErr::Repo(e.into()))?
+            .ok_or_else(|| {
+                ChannelMutationErr::Forbidden(
+                    "conversations are limited to your team, and you are not in a team".to_string(),
+                )
+            })?;
+        for recipient in recipients {
+            if recipient == actor {
+                continue;
+            }
+            let in_team = self
+                .repo
+                .user_has_team(recipient.as_ref().to_string(), team_id)
+                .await
+                .map_err(|e| ChannelMutationErr::Repo(e.into()))?;
+            if !in_team {
+                return Err(ChannelMutationErr::Forbidden(format!(
+                    "{} is not a member of your team; conversations are limited to teammates",
+                    recipient.as_ref()
+                )));
+            }
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(err, skip(self, recipient_id))]
     async fn get_or_create_dm(
         &self,
@@ -272,6 +326,12 @@ where
         GetOrCreateDmRequest { recipient_id }: GetOrCreateDmRequest,
     ) -> Result<GetOrCreateChannelResponse, ChannelMutationErr> {
         let actor = require_user_actor(&actor)?;
+        self.require_team_recipients(
+            *TEAM_ONLY_RECIPIENTS,
+            &actor,
+            std::iter::once(&recipient_id),
+        )
+        .await?;
         let pair = DmPair::new(actor.clone(), recipient_id).map_err(|_| {
             ChannelMutationErr::BadRequest(
                 "recipient_id cannot be the same as the user_id".to_string(),
@@ -292,6 +352,8 @@ where
                 "recipients must be a non-empty list of 'macro|<email>'".to_string(),
             ));
         }
+        self.require_team_recipients(*TEAM_ONLY_RECIPIENTS, &actor, req.recipients.iter())
+            .await?;
 
         let mut lookup = req.recipients.clone();
         lookup.insert(actor.clone());
@@ -466,6 +528,8 @@ where
                 "cannot add/remove participants from direct message channels".to_string(),
             ));
         }
+        self.require_team_recipients(*TEAM_ONLY_RECIPIENTS, &actor_user, req.participants.iter())
+            .await?;
 
         let mut membership_changed = false;
         for participant in &req.participants {

@@ -152,6 +152,8 @@ uuid = { workspace = true }
 ai_toolset = { path = "../ai_toolset", optional = true }
 async-trait = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
+# Advance Labs fork: CHANNELS_TEAM_ONLY_RECIPIENTS (domain/service.rs).
+macro_env_var = { path = "../macro_env_var" }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [dev-dependencies]

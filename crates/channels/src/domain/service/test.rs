@@ -43,6 +43,7 @@ struct FakeMutationRepoState {
     channel_team_id: Option<Uuid>,
     user_team_id: Option<Uuid>,
     user_team_id_lookups: usize,
+    non_team_users: Vec<String>,
     join_code: Option<Uuid>,
     participants: Vec<ChannelParticipant>,
     participant_additions: usize,
@@ -67,6 +68,7 @@ impl FakeMutationRepo {
                 channel_team_id: None,
                 user_team_id: None,
                 user_team_id_lookups: 0,
+                non_team_users: Vec::new(),
                 join_code: None,
                 participants: vec![
                     ChannelParticipant {
@@ -201,8 +203,8 @@ impl ChannelRepo for FakeMutationRepo {
         Ok("Project".to_string())
     }
 
-    async fn user_has_team(&self, _user_id: String, _team_id: Uuid) -> Result<bool, Self::Err> {
-        Ok(true)
+    async fn user_has_team(&self, user_id: String, _team_id: Uuid) -> Result<bool, Self::Err> {
+        Ok(!self.state.lock().unwrap().non_team_users.contains(&user_id))
     }
 
     async fn get_user_team_id(
@@ -1922,4 +1924,72 @@ async fn channel_picture_removal_does_not_require_static_file_availability() {
     );
     svc.set_channel_picture(access, None).await.unwrap();
     assert_eq!(*repo.picture_updates.lock().unwrap(), [(channel_id, None)]);
+}
+
+fn team_repo(team: Option<Uuid>, outsiders: &[&str]) -> FakeMutationRepo {
+    let repo = FakeMutationRepo::new(Uuid::new_v4(), "macro|lucas@test.com");
+    {
+        let mut state = repo.state.lock().unwrap();
+        state.user_team_id = team;
+        state.non_team_users = outsiders.iter().map(|s| s.to_string()).collect();
+    }
+    repo
+}
+
+#[tokio::test]
+async fn team_only_recipients_disabled_allows_anyone() {
+    let svc = ChannelServiceImpl::new(team_repo(None, &["macro|client@outside.com"]));
+    let outsider = macro_id("macro|client@outside.com");
+    svc.require_team_recipients(false, &macro_id("macro|lucas@test.com"), [&outsider])
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn team_only_recipients_rejects_actor_without_team() {
+    let svc = ChannelServiceImpl::new(team_repo(None, &[]));
+    let mate = macro_id("macro|matt@test.com");
+    let err = svc
+        .require_team_recipients(true, &macro_id("macro|lucas@test.com"), [&mate])
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ChannelMutationErr::Forbidden(_)));
+}
+
+#[tokio::test]
+async fn team_only_recipients_allows_teammates_and_self() {
+    let svc = ChannelServiceImpl::new(team_repo(
+        Some(Uuid::new_v4()),
+        &["macro|client@outside.com"],
+    ));
+    let me = macro_id("macro|lucas@test.com");
+    let mate = macro_id("macro|matt@test.com");
+    svc.require_team_recipients(true, &me, [&mate, &me])
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn team_only_recipients_rejects_outsider() {
+    let svc = ChannelServiceImpl::new(team_repo(
+        Some(Uuid::new_v4()),
+        &["macro|client@outside.com"],
+    ));
+    let mate = macro_id("macro|matt@test.com");
+    let outsider = macro_id("macro|client@outside.com");
+    let err = svc
+        .require_team_recipients(true, &macro_id("macro|lucas@test.com"), [&mate, &outsider])
+        .await
+        .unwrap_err();
+    match err {
+        ChannelMutationErr::Forbidden(message) => assert!(message.contains("client@outside.com")),
+        other => panic!("expected Forbidden, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn team_only_recipients_ignores_actor_listed_as_recipient() {
+    let svc = ChannelServiceImpl::new(team_repo(Some(Uuid::new_v4()), &["macro|lucas@test.com"]));
+    let me = macro_id("macro|lucas@test.com");
+    svc.require_team_recipients(true, &me, [&me]).await.unwrap();
 }
