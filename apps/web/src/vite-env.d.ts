@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly ASSETS_PATH: string;
   /** Comma-separated settings tab ids a deployment hides (see settingsTabsConfig). */
   readonly VITE_HIDDEN_SETTINGS_TABS?: string;
+  /** Outbound dialer base URL; the CRM Calls tab links to it when set. */
+  readonly VITE_DIALER_URL?: string;
 
   readonly VITE_SEGMENT_WRITE_KEY: string;
   readonly VITE_POSTHOG_API_KEY: string;
