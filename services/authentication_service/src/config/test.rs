@@ -515,3 +515,13 @@ fn local_auth_shortcuts_stay_on_unless_disabled() {
     let config: Config = serde_json::from_value(values).unwrap();
     assert!(config.disable_local_auth_shortcuts);
 }
+
+#[test]
+fn upstream_signup_extras_stay_on_unless_skipped() {
+    let config: Config = serde_json::from_value(config_values()).unwrap();
+    assert!(!config.skip_upstream_signup_extras);
+    let mut values = config_values();
+    values["SKIP_UPSTREAM_SIGNUP_EXTRAS"] = serde_json::json!(true);
+    let config: Config = serde_json::from_value(values).unwrap();
+    assert!(config.skip_upstream_signup_extras);
+}

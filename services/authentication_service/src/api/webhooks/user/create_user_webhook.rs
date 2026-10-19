@@ -258,6 +258,22 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
 
     tracing::trace!(user_id=?user_id, organization_id=?organization_id, "created user");
 
+    let skip_extras = crate::signup_extras::skipped();
+    if skip_extras {
+        // No /onboarding redirect: the web app sends a user there while
+        // tutorialComplete is false. Best-effort, like the seeding it replaces.
+        match MacroUserIdStr::parse_from_str(&user_id) {
+            Ok(id) => {
+                let _ = macro_db_client::user::patch::patch_user_tutorial(&ctx.db, &id.0, true)
+                    .await
+                    .inspect_err(|e| tracing::error!(error=?e, "unable to mark tutorial complete"));
+            }
+            Err(e) => {
+                tracing::error!(error=?e, "unable to parse user id to mark tutorial complete")
+            }
+        }
+    }
+
     // Mark the account as freshly created so the auth callback completing this
     // flow can attribute the login as a signup (analytics). Best-effort.
     let _ = ctx
@@ -314,6 +330,10 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
                 .await
                 .inspect_err(|e| tracing::warn!(error=?e, "failed to track PostHog sign_up event"));
 
+            if skip_extras {
+                return;
+            }
+
             let user_data = MetaUserData {
                 email: Some(email),
                 client_ip_address: Some(ip_address),
@@ -351,28 +371,30 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
     // condition for the mobile-lead nurture sequence — so a lead who converts
     // stops being asked to sign up. Fire-and-forget: a Loops failure must never
     // block user creation.
-    tokio::spawn({
-        let loops_client = ctx.loops_client.clone();
-        let email = loops_client::normalize_email(&email);
-        let user_id = user_id.clone();
-        async move {
-            let _ = loops_client
-                .send_event(
-                    &email,
-                    "user_registered",
-                    &serde_json::json!({
-                        "signupStage": "registered",
-                        "hasAccount": true,
-                        "source": "macro-signup",
-                    }),
-                    Some(&format!("user-registered-{user_id}")),
-                )
-                .await
-                .inspect_err(
-                    |e| tracing::error!(error=?e, "failed to send Loops user_registered event"),
-                );
-        }
-    });
+    if !skip_extras {
+        tokio::spawn({
+            let loops_client = ctx.loops_client.clone();
+            let email = loops_client::normalize_email(&email);
+            let user_id = user_id.clone();
+            async move {
+                let _ = loops_client
+                    .send_event(
+                        &email,
+                        "user_registered",
+                        &serde_json::json!({
+                            "signupStage": "registered",
+                            "hasAccount": true,
+                            "source": "macro-signup",
+                        }),
+                        Some(&format!("user-registered-{user_id}")),
+                    )
+                    .await
+                    .inspect_err(
+                        |e| tracing::error!(error=?e, "failed to send Loops user_registered event"),
+                    );
+            }
+        });
+    }
 
     // add user to all active experiments
     tokio::spawn({
@@ -418,75 +440,78 @@ async fn create_user_webhook(ctx: &ApiContext, req: FusionAuthUserWebhook) -> an
     // mentions the guide, so seeding runs first. Fire-and-forget: neither a
     // failed seeding (retried, then skipped) nor a failed channel creation
     // may block user creation.
-    tokio::spawn({
-        let document_storage_service_client = ctx.document_storage_service_client.clone();
-        let channel_service = ctx.channel_service.clone();
-        let channel_messages = ctx.channel_messages.clone();
-        let entity_access_service = ctx.entity_access_service.clone();
-        let favorites_service = ctx.favorites_service.clone();
-        let user_id = user_id.clone();
-        let email = email.clone();
-        let support_channel_name = support_channel_name.clone();
-        async move {
-            initialize_starter_docs_with_retries(&document_storage_service_client, &user_id).await;
+    if !skip_extras {
+        tokio::spawn({
+            let document_storage_service_client = ctx.document_storage_service_client.clone();
+            let channel_service = ctx.channel_service.clone();
+            let channel_messages = ctx.channel_messages.clone();
+            let entity_access_service = ctx.entity_access_service.clone();
+            let favorites_service = ctx.favorites_service.clone();
+            let user_id = user_id.clone();
+            let email = email.clone();
+            let support_channel_name = support_channel_name.clone();
+            async move {
+                initialize_starter_docs_with_retries(&document_storage_service_client, &user_id)
+                    .await;
 
-            let owner_id = match MacroUserIdStr::try_from(user_id) {
-                Ok(owner_id) => owner_id,
-                Err(e) => {
-                    tracing::error!(error=?e, "unable to parse user id for support channel");
-                    return;
+                let owner_id = match MacroUserIdStr::try_from(user_id) {
+                    Ok(owner_id) => owner_id,
+                    Err(e) => {
+                        tracing::error!(error=?e, "unable to parse user id for support channel");
+                        return;
+                    }
+                };
+
+                let participants = match MACRO_SUPPORT_EMAILS
+                    .into_iter()
+                    .map(MacroUserIdStr::try_from_email)
+                    .collect::<Result<HashSet<_>, _>>()
+                {
+                    Ok(participants) => participants,
+                    Err(e) => {
+                        tracing::error!(error=?e, "unable to parse support user ids for support channel");
+                        return;
+                    }
+                };
+
+                let channel = match channel_service
+                    .create_system_channel(
+                        owner_id.clone(),
+                        CreateChannelRequest {
+                            name: Some(support_channel_name),
+                            channel_type: ChannelType::Private,
+                            team_id: None,
+                            auto_join_team: false,
+                            participants,
+                        },
+                    )
+                    .await
+                {
+                    Ok(channel) => channel,
+                    Err(e) => {
+                        tracing::error!(error=?e, %email, "failed to create Macro support channel");
+                        return;
+                    }
+                };
+
+                let channel_entity = EntityType::Channel.with_entity_str(&channel.id);
+                if let Err(e) = favorites_service
+                    .add_favorite_with_established_access(&owner_id, &channel_entity)
+                    .await
+                {
+                    tracing::error!(error=?e, channel_id=%channel.id, %email, "failed to favorite Macro support channel");
                 }
-            };
 
-            let participants = match MACRO_SUPPORT_EMAILS
-                .into_iter()
-                .map(MacroUserIdStr::try_from_email)
-                .collect::<Result<HashSet<_>, _>>()
-            {
-                Ok(participants) => participants,
-                Err(e) => {
-                    tracing::error!(error=?e, "unable to parse support user ids for support channel");
-                    return;
-                }
-            };
-
-            let channel = match channel_service
-                .create_system_channel(
-                    owner_id.clone(),
-                    CreateChannelRequest {
-                        name: Some(support_channel_name),
-                        channel_type: ChannelType::Private,
-                        team_id: None,
-                        auto_join_team: false,
-                        participants,
-                    },
-                )
-                .await
-            {
-                Ok(channel) => channel,
-                Err(e) => {
-                    tracing::error!(error=?e, %email, "failed to create Macro support channel");
-                    return;
-                }
-            };
-
-            let channel_entity = EntityType::Channel.with_entity_str(&channel.id);
-            if let Err(e) = favorites_service
-                .add_favorite_with_established_access(&owner_id, &channel_entity)
-                .await
-            {
-                tracing::error!(error=?e, channel_id=%channel.id, %email, "failed to favorite Macro support channel");
-            }
-
-            let welcome_gateway =
-                AuthorizedSupportChannelMessages::new(channel_messages, entity_access_service);
-            let _ = post_support_channel_welcome(&welcome_gateway, &channel.id, owner_id)
+                let welcome_gateway =
+                    AuthorizedSupportChannelMessages::new(channel_messages, entity_access_service);
+                let _ = post_support_channel_welcome(&welcome_gateway, &channel.id, owner_id)
                 .await
                 .inspect_err(|e| {
                 tracing::error!(error=?e, channel_id=%channel.id, %email, "failed to post Macro support welcome message");
             });
-        }
-    });
+            }
+        });
+    }
 
     tracing::trace!(email, fusionauth_user_id, elapsed=?start_time.elapsed(), "created user");
 

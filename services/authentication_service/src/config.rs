@@ -203,6 +203,10 @@ pub struct Config {
     /// `no_rate_limit`) at runtime. See `local_shortcuts`.
     #[macro_config_default(false)]
     pub disable_local_auth_shortcuts: bool,
+    /// Skip upstream's macro.com-only signup extras (starter docs, support
+    /// channel, onboarding flow, marketing events). See `signup_extras`.
+    #[macro_config_default(false)]
+    pub skip_upstream_signup_extras: bool,
     /// Stripe promotion code applied at checkout for accounts that signed up
     /// through a GTM invite link (optional, defaults to `1MF`).
     pub gtm_invite_promo_code: GtmInvitePromoCode,
