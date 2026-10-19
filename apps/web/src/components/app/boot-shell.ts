@@ -19,6 +19,8 @@ const BOOT_SHELL_HINT_KEY = 'macro:boot-shell';
 export type BootShellHint = {
   /** Visible SidebarRail nav item ids, in order. */
   rail?: string[];
+  /** Whether the rail is expanded to show labels. */
+  railExpanded?: boolean;
   /** Whether the rail shows the Get-the-mobile-app button. */
   mobileApp?: boolean;
   /** Home's composer: the Agents new-chat layout or the legacy greeting. */

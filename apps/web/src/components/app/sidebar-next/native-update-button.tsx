@@ -1,7 +1,8 @@
 import ArrowCircleUpIcon from '@phosphor/arrow-circle-up.svg';
-import { Button } from '@ui';
+import { Button, cn } from '@ui';
 import { createSignal, lazy, Show, Suspense } from 'solid-js';
 import { NavGlyph } from './nav-glyph';
+import { RailLabel, useRailButton } from './rail-label';
 
 const NativeUpdateDialog = lazy(() => import('./native-update-dialog'));
 
@@ -10,6 +11,7 @@ export function NativeUpdateButton(props: {
   onRestart: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
+  const rail = useRailButton();
   let trigger: HTMLButtonElement | undefined;
 
   return (
@@ -17,8 +19,9 @@ export function NativeUpdateButton(props: {
       <Button
         ref={trigger}
         variant="accent"
-        size="icon-md"
-        class="size-10 cursor-default rounded-xl"
+        size={rail.size()}
+        {...rail.buttonProps()}
+        class={cn(rail.class(), 'cursor-default rounded-xl')}
         label="Update available"
         tooltip="Update available"
         tooltipPlacement="right"
@@ -28,6 +31,7 @@ export function NativeUpdateButton(props: {
         onClick={() => setOpen(true)}
       >
         <NavGlyph icon={ArrowCircleUpIcon} class="size-6" />
+        <RailLabel>Update available</RailLabel>
       </Button>
       <Show when={open()}>
         <Suspense>

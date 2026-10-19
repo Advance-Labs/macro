@@ -17,7 +17,7 @@ import { useNextMeetingBadge } from './queries/use-next-meeting-badge';
 import { useSidebarUnread } from './queries/use-sidebar-unread';
 import { SearchRailButton } from './search-bar-button';
 import { useNavItemGates } from './use-nav-item-gates';
-import { SidebarPrefsProvider } from './use-sidebar-prefs';
+import { SidebarPrefsProvider, useSidebarPrefs } from './use-sidebar-prefs';
 
 function ChannelsListNav(props: Omit<ListNavProps, 'activeCall'>) {
   const hasActiveCall = useHasActiveChannelsCall();
@@ -30,11 +30,11 @@ function CalendarListNav(props: Omit<ListNavProps, 'badge'>) {
 }
 
 /**
- * The app sidebar: a single always-narrow column of 40px icon buttons, labels
- * in tooltips.
+ * The app sidebar: a narrow column of 40px icon buttons, labels in tooltips.
+ * The toggle above Settings pops it out to a wider column that shows each
+ * label beside its icon; the choice persists per browser.
  *
- * Always narrow by design — there is no slim mode or hover-peek overlay.
- * `cmd+.` toggles navigation in the active workspace. The `g`-prefixed
+ * There is no hover-peek overlay. `cmd+.` toggles navigation in the active workspace. The `g`-prefixed
  * nav shortcuts are registered by `GoToHotkeys`, which `Layout` mounts
  * separately. There is no room for leader-key hints on the buttons, so each
  * button's tooltip carries its shortcut instead.
@@ -50,10 +50,14 @@ const SidebarRailContent = () => {
   const analytics = useAnalytics();
   const layout = useSplitLayout();
   const hasUnread = useSidebarUnread();
+  const { expanded } = useSidebarPrefs();
 
   // The next load's boot shell draws this rail before any JS runs.
   createEffect(() =>
-    rememberBootShell({ rail: visibleNavItems(gates()).map((item) => item.id) })
+    rememberBootShell({
+      rail: visibleNavItems(gates()).map((item) => item.id),
+      railExpanded: expanded(),
+    })
   );
 
   const _openHome = (event: MouseEvent) => {
@@ -74,7 +78,8 @@ const SidebarRailContent = () => {
       {...hotkeyScopeNeutralAttribute}
       data-ui="sidebar-rail"
       class={cn(
-        'relative flex h-full w-14 shrink-0 flex-col items-center gap-1 overflow-hidden border-edge-frame bg-panel px-2 pb-3 pt-2',
+        'relative flex h-full shrink-0 flex-col gap-1 overflow-hidden border-edge-frame bg-panel px-2 pb-3 pt-2 transition-[width] duration-150 motion-reduce:transition-none',
+        expanded() ? 'w-52 items-stretch' : 'w-14 items-center',
         !isPlatform('desktop') &&
           (globalSplitManager()?.splits().length ?? 1) <= 1 &&
           'border-r'
@@ -84,7 +89,12 @@ const SidebarRailContent = () => {
       <SearchRailButton />
 
       <nav class="min-h-0 overflow-y-auto pt-4">
-        <ul class="flex flex-col items-center gap-1">
+        <ul
+          class={cn(
+            'flex flex-col gap-1',
+            expanded() ? 'items-stretch' : 'items-center'
+          )}
+        >
           <For each={visibleNavItems(gates())}>
             {(item) => (
               <li class="flex">

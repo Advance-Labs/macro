@@ -3,7 +3,7 @@ import { globalSplitManager } from '@app/signal/splitLayout';
 import { navigateToSidebarView } from '@components/app/app-sidebar/sidebar';
 import { useSplitLayout } from '@components/app/split-layout/layout';
 import DotsThreeIcon from '@phosphor/dots-three.svg';
-import { Dropdown } from '@ui';
+import { cn, Dropdown } from '@ui';
 import { createSignal, For, Show } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { CustomizeSidebarModal } from './customize-sidebar-modal';
@@ -12,6 +12,7 @@ import {
   type NavItemGates,
   type SidebarNextNavItem,
 } from './nav-items';
+import { RailLabel, useRailButton } from './rail-label';
 
 export type MoreMenuProps = {
   gates: NavItemGates;
@@ -41,6 +42,7 @@ export function MoreMenu(props: MoreMenuProps) {
   const [customizeSidebarOpen, setCustomizeSidebarOpen] = createSignal(false);
   const analytics = useAnalytics();
   const layout = useSplitLayout();
+  const rail = useRailButton();
   const hiddenItems = () => moreMenuItems(props.gates);
 
   return (
@@ -48,8 +50,9 @@ export function MoreMenu(props: MoreMenuProps) {
       <Dropdown placement="right-start" gutter={6}>
         <Dropdown.Trigger
           variant="ghost"
-          size="icon-md"
-          class="size-10 shrink-0 cursor-default rounded-xl"
+          size={rail.size()}
+          {...rail.buttonProps()}
+          class={cn(rail.class(), 'shrink-0 cursor-default rounded-xl')}
           label="More"
           tooltip="More options"
           tooltipPlacement="right"
@@ -57,6 +60,7 @@ export function MoreMenu(props: MoreMenuProps) {
           data-sidebar-next-item="more"
         >
           <DotsThreeIcon class="size-5" />
+          <RailLabel>More</RailLabel>
         </Dropdown.Trigger>
         <Dropdown.Content class="min-w-[14rem]">
           <Show when={hiddenItems().length > 0}>

@@ -4,12 +4,14 @@ import { TOKENS } from '@core/hotkey/tokens';
 import { DropdownMenu } from '@kobalte/core/dropdown-menu';
 import MagnifyingGlassIcon from '@phosphor/magnifying-glass.svg';
 import { Dropdown } from '@ui';
-import type { ComponentProps } from 'solid-js';
+import type { ComponentProps, JSX } from 'solid-js';
 
 /** Shared discovery menu for the expanded sidebar and compact rail. */
 export function SidebarSearchMenu(props: {
   onSearch: (newSplit: boolean) => void;
   triggerProps?: ComponentProps<typeof Dropdown.Trigger>;
+  /** Rendered after the trigger's glyph, e.g. the expanded rail's label. */
+  triggerLabel?: JSX.Element;
 }) {
   let selectedAction: (() => void) | undefined;
   let newSplit = false;
@@ -29,6 +31,7 @@ export function SidebarSearchMenu(props: {
     >
       <Dropdown.Trigger size="icon-md" {...props.triggerProps} label="Search">
         <MagnifyingGlassIcon class="size-5" />
+        {props.triggerLabel}
       </Dropdown.Trigger>
       <DropdownMenu.Portal>
         <ContextMenuContent

@@ -124,6 +124,11 @@
         padding: 8px 8px 12px;
         border-right: 1px solid var(--bs-edge);
       }
+      /* Expanded rail: SidebarRail's 208px column; glyphs keep their x. */
+      .bs-rail[data-expanded] {
+        width: 208px;
+        align-items: flex-start;
+      }
       .bs-btn {
         display: flex;
         width: 40px;
@@ -488,7 +493,7 @@
             : ["home", "reminders", "documents", "mail", "channels", "tasks", "calendar", "agents", "companies"];
           const railButton = (id) =>
             I[id] ? `<div class="bs-btn"${id === view ? " data-active" : ""}>${icon(id === "home" && view === "home" ? "home-fill" : id)}</div>` : "";
-          const rail = `<div class="bs-rail">
+          const rail = `<div class="bs-rail"${hint.railExpanded ? " data-expanded" : ""}>
             <div class="bs-btn">${icon("plus")}</div>
             <div class="bs-btn">${icon("search")}</div>
             <div class="bs-nav">${railItems.map(railButton).join("")}</div>

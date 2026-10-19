@@ -15,6 +15,7 @@ import { Button, cn } from '@ui';
 import { createSignal, onCleanup, Show } from 'solid-js';
 import { NavGlyph } from './nav-glyph';
 import type { SidebarNextNavItem } from './nav-items';
+import { RailLabel, useRailButton } from './rail-label';
 import { SidebarUnreadDot } from './unread-dot';
 import { useSidebarPrefs } from './use-sidebar-prefs';
 
@@ -51,8 +52,8 @@ const activeContentKey = () => {
  * behind it — active detection, navigation, shift-click into a new split, the
  * open-in-split context menu.
  *
- * There is no room for a label or a `g`-leader hint in a 36px square, so both
- * live in the tooltip instead.
+ * There is no room for a label or a `g`-leader hint in a 40px square, so both
+ * live in the tooltip, unless the rail is expanded to show the label inline.
  *
  * Named for the shape it grows into: each nav is expected to expand into a list
  * of its own live items (Email accounts, Chat channels, Drive files). The slot
@@ -60,6 +61,7 @@ const activeContentKey = () => {
  */
 export const ListNav = (props: ListNavProps) => {
   const { hideSidebarItem } = useSidebarPrefs();
+  const rail = useRailButton();
   const analytics = useAnalytics();
   const layout = useSplitLayout();
   const location = useLocation();
@@ -186,7 +188,7 @@ export const ListNav = (props: ListNavProps) => {
       content={content}
       onOpenChange={props.onContextMenuOpenChange}
       // The trigger defaults to `w-full h-7`, which clips the round button.
-      triggerClass="size-10"
+      triggerClass={rail.triggerClass()}
       additionalActions={
         <Show when={props.item.id !== 'home'}>
           <MenuSeparator />
@@ -199,9 +201,11 @@ export const ListNav = (props: ListNavProps) => {
     >
       <Button
         variant="ghost"
-        size="icon-md"
+        size={rail.size()}
+        {...rail.buttonProps()}
         class={cn(
-          'size-10 cursor-default rounded-xl',
+          rail.class(),
+          'cursor-default rounded-xl',
           isActive() && 'bg-hover text-ink'
         )}
         label={props.item.label}
@@ -235,16 +239,30 @@ export const ListNav = (props: ListNavProps) => {
           filled={isActive()}
           class="size-5"
         />
+        <RailLabel>{props.item.label}</RailLabel>
         <Show
           when={props.activeCall}
-          fallback={<SidebarUnreadDot active={props.unread} />}
+          fallback={
+            <SidebarUnreadDot
+              active={props.unread}
+              class={
+                rail.expanded() ? 'top-1/2 right-3 -translate-y-1/2' : undefined
+              }
+            />
+          }
         >
-          {/* Sits outside the button box: the glyph is inset from the
-              corner, so a badge flush to it lands on the icon. The rail's
-              horizontal padding absorbs the overhang. */}
+          {/* Collapsed, it sits outside the button box: the glyph is inset
+              from the corner, so a badge flush to it lands on the icon. The
+              rail's horizontal padding absorbs the overhang. Expanded, it
+              trails the label instead. */}
           <span
             aria-hidden="true"
-            class="pointer-events-none absolute -top-0.5 -right-0.5 flex size-3 items-center justify-center text-accent"
+            class={cn(
+              'pointer-events-none absolute flex size-3 items-center justify-center text-accent',
+              rail.expanded()
+                ? 'top-1/2 right-3 -translate-y-1/2'
+                : '-top-0.5 -right-0.5'
+            )}
           >
             <PhoneCallIcon class="size-full" />
           </span>
@@ -254,7 +272,12 @@ export const ListNav = (props: ListNavProps) => {
             <span
               aria-hidden="true"
               data-sidebar-badge
-              class="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-accent px-1 text-[9px] font-semibold leading-3 text-surface ring-2 ring-panel"
+              class={cn(
+                'pointer-events-none rounded-full bg-accent px-1 text-[9px] font-semibold leading-3 text-surface',
+                rail.expanded()
+                  ? 'shrink-0'
+                  : 'absolute bottom-0 left-1/2 -translate-x-1/2 ring-2 ring-panel'
+              )}
             >
               {badge()}
             </span>

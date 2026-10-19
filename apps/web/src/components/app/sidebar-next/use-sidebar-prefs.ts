@@ -3,6 +3,27 @@ import { createSignal, onMount } from 'solid-js';
 
 const STORAGE_KEY = 'macro:sidebar:prefs';
 const LEGACY_PINNED_KEY = 'macro:sidebar:pinned-items';
+const EXPANDED_KEY = 'macro:sidebar:expanded';
+
+/**
+ * Read synchronously, unlike the item prefs: the rail's width is visible on
+ * the first frame, so a deferred read would flash narrow before widening.
+ */
+function loadExpanded(): boolean {
+  try {
+    return localStorage.getItem(EXPANDED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveExpanded(expanded: boolean): void {
+  try {
+    localStorage.setItem(EXPANDED_KEY, String(expanded));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 /** Items hidden from the rail by default (reachable via the More menu). */
 export const DEFAULT_HIDDEN_IDS = ['calls', 'reviews'] as const;
@@ -73,6 +94,15 @@ export const [SidebarPrefsProvider, useSidebarPrefs] =
     const [prefs, setPrefs] = createSignal<SidebarPrefs>(defaultPrefs());
     onMount(() => setPrefs(loadPrefs()));
 
+    // Whether the rail is popped out to show each item's label.
+    const [expanded, setExpandedSignal] = createSignal(loadExpanded());
+
+    function toggleExpanded(): void {
+      const next = !expanded();
+      setExpandedSignal(next);
+      saveExpanded(next);
+    }
+
     function updatePrefs(
       mutator: (current: SidebarPrefs) => SidebarPrefs
     ): void {
@@ -138,6 +168,8 @@ export const [SidebarPrefsProvider, useSidebarPrefs] =
 
     return {
       prefs,
+      expanded,
+      toggleExpanded,
       hideSidebarItem,
       setSidebarItemVisible,
       reorderSidebarItems,

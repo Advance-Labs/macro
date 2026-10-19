@@ -9,6 +9,8 @@ import { useEmail, useUserId } from '@core/context/user';
 import { TOKENS } from '@core/hotkey/tokens';
 import DeviceMobileDownloadIcon from '@icon/device-mobile-download.svg';
 import { useTauri } from '@macro/tauri';
+import CaretDoubleLeftIcon from '@phosphor/caret-double-left.svg';
+import CaretDoubleRightIcon from '@phosphor/caret-double-right.svg';
 import GearIcon from '@phosphor/gear.svg';
 import GearFillIcon from '@phosphor-fill/gear-fill.svg';
 import { isRealNamePart, useOwnUserName } from '@queries/auth/user-name-self';
@@ -16,6 +18,8 @@ import { Button, cn, pressHandlers } from '@ui';
 import { createEffect, createMemo, Show } from 'solid-js';
 import { NativeUpdateButton } from './native-update-button';
 import { NavGlyph } from './nav-glyph';
+import { RailLabel, useRailButton } from './rail-label';
+import { useSidebarPrefs } from './use-sidebar-prefs';
 
 /**
  * Sizes the gear and punches a gap around the avatar badge (16px, centred at
@@ -43,6 +47,7 @@ const MobileAppButton = () => {
   const analytics = useAnalytics();
   const { openSettings, openSettingsInSplit, activeTabId } = useSettingsState();
   const isTabAvailable = useSettingsTabAvailable();
+  const rail = useRailButton();
 
   const isActive = () => isSettingsActive() && activeTabId() === 'Mobile App';
 
@@ -61,9 +66,11 @@ const MobileAppButton = () => {
     <Show when={isTabAvailable('Mobile App')}>
       <Button
         variant="ghost"
-        size="icon-md"
+        size={rail.size()}
+        {...rail.buttonProps()}
         class={cn(
-          'size-10 cursor-default rounded-xl',
+          rail.class(),
+          'cursor-default rounded-xl',
           isActive() && 'bg-hover text-ink'
         )}
         label="Get the mobile app"
@@ -76,14 +83,52 @@ const MobileAppButton = () => {
         {...pressHandlers(open)}
       >
         <NavGlyph icon={DeviceMobileDownloadIcon} class="size-5" />
+        <RailLabel>Get the mobile app</RailLabel>
       </Button>
     </Show>
   );
 };
 
 /**
- * The rail's bottom actions: a ready app update, the mobile app link, then
- * Settings, opened like any other rail view. The gear carries the account photo
+ * Pops the rail out to a labelled column, or folds it back to icons. The
+ * choice persists per browser.
+ */
+const ExpandToggleButton = () => {
+  const analytics = useAnalytics();
+  const { toggleExpanded } = useSidebarPrefs();
+  const rail = useRailButton();
+  const label = () => (rail.expanded() ? 'Collapse sidebar' : 'Expand sidebar');
+
+  return (
+    <Button
+      variant="ghost"
+      size={rail.size()}
+      {...rail.buttonProps()}
+      class={cn(rail.class(), 'cursor-default rounded-xl')}
+      label={label()}
+      tooltipPlacement="right"
+      draggable={false}
+      aria-expanded={rail.expanded()}
+      data-sidebar-next-item="expand-toggle"
+      onClick={() => {
+        analytics.track('sidebar_click', {
+          view: rail.expanded() ? 'collapse' : 'expand',
+        });
+        toggleExpanded();
+      }}
+    >
+      <NavGlyph
+        icon={rail.expanded() ? CaretDoubleLeftIcon : CaretDoubleRightIcon}
+        class="size-5"
+      />
+      <RailLabel>Collapse</RailLabel>
+    </Button>
+  );
+};
+
+/**
+ * The rail's bottom actions: a ready app update, the mobile app link, the
+ * expand toggle, then Settings, opened like any other rail view. The gear carries the account photo
  * as a badge, so people with several accounts can tell which one they are in.
  */
 export const FooterActions = (props: {
@@ -96,6 +141,7 @@ export const FooterActions = (props: {
   const userId = useUserId();
   const email = useEmail();
   const userName = useOwnUserName();
+  const rail = useRailButton();
 
   // Prefer the user's real name (first/last); fall back to their email.
   const accountName = createMemo(() => {
@@ -117,7 +163,12 @@ export const FooterActions = (props: {
   };
 
   return (
-    <div class="flex w-full shrink-0 flex-col items-center gap-1">
+    <div
+      class={cn(
+        'flex w-full shrink-0 flex-col gap-1',
+        rail.expanded() ? 'items-stretch' : 'items-center'
+      )}
+    >
       <Show when={tauri}>
         {(native) => (
           <Show when={native().nativeUpdateStatus().status === 'Ready'}>
@@ -129,6 +180,7 @@ export const FooterActions = (props: {
         )}
       </Show>
       <MobileAppButton />
+      <ExpandToggleButton />
       <SidebarOpenInSplitMenu
         content={() => SETTINGS_CONTENT}
         // Route through settings state so the menu reuses an open settings
@@ -136,13 +188,15 @@ export const FooterActions = (props: {
         onOpenCurrentSplit={() => openSettings(currentTab())}
         onOpenNewSplit={() => openSettingsInSplit(currentTab())}
         onOpenChange={props.onMenuOpenChange}
-        triggerClass="size-10"
+        triggerClass={rail.triggerClass()}
       >
         <Button
           variant="ghost"
-          size="icon-md"
+          size={rail.size()}
+          {...rail.buttonProps()}
           class={cn(
-            'size-10 cursor-default rounded-xl',
+            rail.class(),
+            'cursor-default rounded-xl',
             isSettingsActive() && 'bg-hover text-ink'
           )}
           label="Settings"
@@ -158,7 +212,7 @@ export const FooterActions = (props: {
           data-sidebar-next-item="settings"
           {...pressHandlers(open)}
         >
-          <div class="pointer-events-none relative size-6">
+          <div class="pointer-events-none relative size-6 shrink-0">
             <NavGlyph
               icon={GearIcon}
               iconActive={GearFillIcon}
@@ -181,6 +235,7 @@ export const FooterActions = (props: {
               </Show>
             </div>
           </div>
+          <RailLabel>Settings</RailLabel>
         </Button>
       </SidebarOpenInSplitMenu>
     </div>
